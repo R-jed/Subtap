@@ -92,16 +92,6 @@ def doctor(
     ws_ok = subtap_dir.exists() and os.access(str(subtap_dir), os.W_OK) if subtap_dir.exists() else False
     checks.append(("workspace", "工作空间", ws_ok, "" if ws_ok else f"不可写或不存在：{subtap_dir}"))
 
-    config_path = subtap_dir / "config.yaml"
-    cfg_ok = config_path.exists()
-    if cfg_ok:
-        try:
-            from subtap.schemas.config import load_config
-            load_config(config_path)
-        except Exception as e:
-            cfg_ok = False
-    checks.append(("config", "配置文件", cfg_ok, "" if cfg_ok else f"缺失或损坏：{config_path}"))
-
     # --release 模式：增加模型和 TUI 检查
     if release:
         # MLX 运行时
@@ -148,7 +138,7 @@ def doctor(
 
     # ── 配置状态 ───────────────────────────────────────────
     typer.echo("\n▸ 配置状态")
-    config_path = Path.home() / ".subtap" / "config.yaml"
+    config_path = subtap_dir / "config.yaml"
     if config_path.exists():
         typer.echo(f"  ✓ {config_path} 存在")
         try:
@@ -172,6 +162,10 @@ def doctor(
         for ms in registry.status():
             icon = typer.style("✓", fg=typer.colors.GREEN) if ms.installed else typer.style("✗", fg=typer.colors.RED)
             typer.echo(f"  {icon} {ms.name}")
+            if not ms.installed:
+                typer.echo(f"    路径：{ms.path}")
+                if ms.missing_files:
+                    typer.echo(f"    缺失：{', '.join(ms.missing_files)}")
     except Exception as e:
         typer.echo(f"  ⚠ 无法检查模型状态：{e}")
 

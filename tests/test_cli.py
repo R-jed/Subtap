@@ -169,16 +169,26 @@ def test_setup_skip_models():
         assert "模型安装（已跳过）" in result.output
 
 
-def test_doctor_enhanced_checks():
+def test_doctor_enhanced_checks(monkeypatch, tmp_path):
     """Test enhanced doctor checks."""
     from unittest.mock import patch, MagicMock
     from pathlib import Path
 
+    # 隔离 Path.home()
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    # 创建模拟配置文件
+    config_dir = tmp_path / ".subtap"
+    config_dir.mkdir()
+    (config_dir / "config.yaml").write_text("")
+
     with patch("subtap.core.models.ModelRegistry.status") as mock_status:
         mock_status.return_value = [
-            MagicMock(name="aligner", installed=True, path=Path("/tmp/aligner")),
-            MagicMock(name="asr", installed=True, path=Path("/tmp/asr")),
+            MagicMock(name="aligner", installed=True, path=tmp_path / "models" / "aligner"),
+            MagicMock(name="asr", installed=True, path=tmp_path / "models" / "asr"),
         ]
         result = runner.invoke(app, ["doctor"])
-        assert "模型状态" in result.output
         assert "配置状态" in result.output
+        assert "模型状态" in result.output
+        assert "asr" in result.output
+        assert "aligner" in result.output
