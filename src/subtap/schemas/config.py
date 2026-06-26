@@ -62,6 +62,14 @@ class WorkspaceConfig(BaseModel):
     keep_intermediate: bool = True
 
 
+class OutputConfig(BaseModel):
+    """Output system configuration."""
+
+    keep_versions: int = 5
+    generate_report: bool = True
+    generate_metrics: bool = True
+
+
 class SubtapConfig(BaseModel):
     """Root configuration for Subtap."""
 
@@ -71,6 +79,7 @@ class SubtapConfig(BaseModel):
     align: AlignConfig = Field(default_factory=AlignConfig)
     models: ModelConfig = Field(default_factory=ModelConfig)
     workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
+    output: OutputConfig = Field(default_factory=OutputConfig)
 
 
 _DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[3] / "configs" / "default.yaml"

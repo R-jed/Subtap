@@ -179,3 +179,78 @@ def test_versioning_cleanup_old_versions(tmp_path):
     assert (tmp_path / "video" / "v4").exists()
     assert (tmp_path / "video" / "v5").exists()
     assert (tmp_path / "video" / "v6").exists()
+
+
+def test_output_engine_init(tmp_path):
+    """Test OutputEngine initialization."""
+    from subtap.output.engine import OutputEngine
+    from subtap.schemas.config import OutputConfig
+
+    config = OutputConfig()
+    engine = OutputEngine(tmp_path, "video.mp3", config)
+
+    assert engine.output_dir == tmp_path
+    assert engine.input_name == "video"
+    assert engine.version == 1
+
+
+def test_output_engine_write_final(tmp_path):
+    """Test writing final output."""
+    from subtap.output.engine import OutputEngine
+    from subtap.schemas.config import OutputConfig
+
+    config = OutputConfig()
+    engine = OutputEngine(tmp_path, "video.mp3", config)
+
+    output_path = engine.write_final("srt", "1\n00:00:01,000 --> 00:00:02,000\nHello")
+    assert output_path.exists()
+    assert output_path.name == "video.srt"
+
+
+def test_output_engine_write_report(tmp_path):
+    """Test writing report."""
+    from subtap.output.engine import OutputEngine
+    from subtap.schemas.config import OutputConfig
+
+    config = OutputConfig()
+    engine = OutputEngine(tmp_path, "video.mp3", config)
+
+    output_path = engine.write_report("# Report")
+    assert output_path.exists()
+    assert output_path.name == "video_report.md"
+
+
+def test_output_engine_write_metrics(tmp_path):
+    """Test writing metrics."""
+    from subtap.output.engine import OutputEngine
+    from subtap.schemas.config import OutputConfig
+
+    config = OutputConfig()
+    engine = OutputEngine(tmp_path, "video.mp3", config)
+
+    metrics = {"total_duration": 24.8}
+    output_path = engine.write_metrics(metrics)
+    assert output_path.exists()
+    assert output_path.name == "video_metrics.json"
+
+
+def test_output_engine_finalize(tmp_path):
+    """Test finalizing output."""
+    from subtap.output.engine import OutputEngine
+    from subtap.schemas.config import OutputConfig
+
+    config = OutputConfig()
+    engine = OutputEngine(tmp_path, "video.mp3", config)
+
+    engine.write_final("srt", "content")
+    result = engine.finalize_output()
+
+    assert "files" in result
+    assert "checksum" in result
+    assert "version" in result
+    assert result["version"] == 1
+
+    # Check latest symlink
+    latest_link = tmp_path / "video" / "latest"
+    assert latest_link.exists()
+    assert latest_link.is_symlink()
