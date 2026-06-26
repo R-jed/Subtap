@@ -1,6 +1,7 @@
 """Tests for output system."""
 
 import pytest
+from pathlib import Path
 from subtap.output.exceptions import OutputError
 
 
@@ -124,3 +125,57 @@ def test_lifecycle_finalize(tmp_path):
 
     assert "files" in result
     assert "checksum" in result
+
+
+def test_versioning_first_version(tmp_path):
+    """Test first version creation."""
+    from subtap.output.versioning import VersionManager
+
+    manager = VersionManager(tmp_path, "video")
+    version = manager.next_version()
+    assert version == 1
+
+
+def test_versioning_increment(tmp_path):
+    """Test version increment."""
+    from subtap.output.versioning import VersionManager
+
+    # Create v1
+    (tmp_path / "video" / "v1").mkdir(parents=True)
+
+    manager = VersionManager(tmp_path, "video")
+    version = manager.next_version()
+    assert version == 2
+
+
+def test_versioning_create_latest_link(tmp_path):
+    """Test latest symlink creation."""
+    from subtap.output.versioning import VersionManager
+
+    manager = VersionManager(tmp_path, "video")
+    manager.create_latest_link(1)
+
+    latest_link = tmp_path / "video" / "latest"
+    assert latest_link.exists()
+    assert latest_link.is_symlink()
+    assert latest_link.readlink() == Path("v1")
+
+
+def test_versioning_cleanup_old_versions(tmp_path):
+    """Test old version cleanup."""
+    from subtap.output.versioning import VersionManager
+
+    # Create v1, v2, v3, v4, v5, v6
+    for i in range(1, 7):
+        (tmp_path / "video" / f"v{i}").mkdir(parents=True)
+
+    manager = VersionManager(tmp_path, "video")
+    manager.cleanup_old_versions(keep_last=3)
+
+    # Should keep v4, v5, v6
+    assert not (tmp_path / "video" / "v1").exists()
+    assert not (tmp_path / "video" / "v2").exists()
+    assert not (tmp_path / "video" / "v3").exists()
+    assert (tmp_path / "video" / "v4").exists()
+    assert (tmp_path / "video" / "v5").exists()
+    assert (tmp_path / "video" / "v6").exists()
