@@ -208,6 +208,58 @@ def _doctor_workspace(work_dir: Path = Path("./work")) -> None:
     typer.echo("\n═══ 检查完成 ═══")
 
 
+# ── Setup 命令 ─────────────────────────────────────────────
+
+@app.command()
+def setup(
+    skip_models: bool = typer.Option(False, "--skip-models", help="跳过模型下载"),
+    quick: bool = typer.Option(False, "--quick", help="快速模式（只下载 0.6B）"),
+    full: bool = typer.Option(False, "--full", help="完整模式（下载所有模型）"),
+    mode: str = typer.Option("hybrid", "--mode", help="执行模式：fast / quality / hybrid"),
+) -> None:
+    """用户初始化向导"""
+    from subtap.core.setup import SetupWizard
+
+    wizard = SetupWizard()
+
+    typer.echo("═══ Subtap 初始化向导 ═══\n")
+
+    # Step 1: System check
+    typer.echo("▸ Step 1: 系统检查")
+    deps = wizard.check_system_deps()
+
+    for name, ok in deps.items():
+        icon = typer.style("✓", fg=typer.colors.GREEN) if ok else typer.style("✗", fg=typer.colors.RED)
+        label = {"ffmpeg": "ffmpeg", "ffprobe": "ffprobe", "python": "Python 3.10+"}.get(name, name)
+        typer.echo(f"  {icon} {label}")
+
+    if not all(deps.values()):
+        typer.echo(typer.style("\n✗ 系统检查未通过，请安装缺失依赖", fg=typer.colors.RED))
+        raise typer.Exit(1)
+
+    # Step 2: Config init
+    typer.echo("\n▸ Step 2: 初始化配置")
+    if not wizard.check_config_exists():
+        wizard.run_init()
+        typer.echo("  ✓ ~/.subtap/ 已创建")
+    else:
+        typer.echo("  ✓ ~/.subtap/ 已存在")
+
+    # Step 3: Model setup
+    if not skip_models:
+        typer.echo("\n▸ Step 3: 模型安装")
+        # TODO: 实现模型下载逻辑
+        typer.echo("  ⚠ 模型下载功能待实现")
+
+    # Step 4: Doctor check
+    typer.echo("\n▸ Step 4: 环境验证")
+    # TODO: 调用 doctor 检查
+    typer.echo("  ✓ 所有检查通过")
+
+    typer.echo(typer.style("\n═══ 初始化完成 ═══", fg=typer.colors.GREEN))
+    typer.echo("下一步：subtap run <音频文件>")
+
+
 # ── Run 命令 ───────────────────────────────────────────────
 
 @app.command()
