@@ -314,3 +314,48 @@ def test_output_engine_with_timestamp(tmp_path):
     config = OutputConfig(timestamp=True)
     engine = OutputEngine(tmp_path, "video.mp3", config)
     assert engine.config.timestamp is True
+
+
+def test_full_output_flow(tmp_path):
+    """Test complete output flow."""
+    from subtap.output.engine import OutputEngine
+    from subtap.schemas.config import OutputConfig
+
+    config = OutputConfig()
+    engine = OutputEngine(tmp_path, "video.mp3", config)
+
+    # Write final output
+    engine.write_final("srt", "1\n00:00:01,000 --> 00:00:02,000\nHello")
+
+    # Write report
+    engine.write_report("# Report\n\nQuality: 92/100")
+
+    # Write metrics
+    engine.write_metrics({"total_duration": 24.8})
+
+    # Write artifacts
+    engine.write_artifacts({
+        "asr": {"segments": [1, 2, 3]},
+        "segments": {"sentences": [1, 2]}
+    })
+
+    # Finalize
+    result = engine.finalize_output()
+
+    # Verify structure
+    version_dir = tmp_path / "video" / "v1"
+    assert version_dir.exists()
+    assert (version_dir / "video.srt").exists()
+    assert (version_dir / "video_report.md").exists()
+    assert (version_dir / "video_metrics.json").exists()
+    assert (version_dir / "artifacts" / "asr.json").exists()
+    assert (version_dir / "artifacts" / "segments.json").exists()
+
+    # Verify latest link
+    latest_link = tmp_path / "video" / "latest"
+    assert latest_link.exists()
+    assert latest_link.is_symlink()
+
+    # Verify result
+    assert result["version"] == 1
+    assert "checksum" in result
