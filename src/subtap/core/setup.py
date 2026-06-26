@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import shutil
 import sys
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class SetupWizard:
@@ -37,5 +40,6 @@ class SetupWizard:
         try:
             init()
             return True
-        except Exception:
+        except Exception as e:
+            logger.error("初始化失败: %s", e)
             return False
