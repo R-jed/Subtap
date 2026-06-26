@@ -68,6 +68,7 @@ class OutputConfig(BaseModel):
     keep_versions: int = 5
     generate_report: bool = True
     generate_metrics: bool = True
+    timestamp: bool = True
 
 
 class SubtapConfig(BaseModel):

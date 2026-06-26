@@ -300,6 +300,7 @@ def run(
     policy: str = typer.Option("local", "--policy", "-p", help="执行策略：local / hybrid / fast"),
     no_git_check: bool = typer.Option(False, "--no-git-check", help="跳过 Git 状态检查"),
     no_cleanroom: bool = typer.Option(False, "--no-cleanroom", help="跳过工作环境卫生检查"),
+    timestamp: bool = typer.Option(True, "--timestamp/--no-timestamp", help="输出目录是否带时间戳"),
 ) -> None:
     """运行完整字幕生成流程
 
@@ -318,12 +319,18 @@ def run(
     """
     from subtap.schemas.config import load_config
     from subtap.core.pipeline import Pipeline
+    from subtap.output.engine import OutputEngine
 
     if not input_path.exists():
         typer.echo(f"✗ 错误：文件未找到 {input_path}", err=True)
         raise typer.Exit(1)
 
     config = load_config(Path.home() / ".subtap" / "config.yaml")
+    config.output.timestamp = timestamp  # CLI overrides config
+
+    # Create OutputEngine
+    engine = OutputEngine(output_dir, input_path.stem, config.output)
+
     pipeline = Pipeline(config, work_dir=work_dir)
     pipeline.workspace.ensure_dirs()
 

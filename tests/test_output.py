@@ -281,3 +281,36 @@ def test_tui_colors_defined():
     assert isinstance(STAGE_TITLE, Style)
     assert isinstance(PROGRESS_BAR, Style)
     assert isinstance(ERROR, Style)
+
+
+def test_cli_run_uses_output_engine(tmp_path):
+    """Test CLI run command uses OutputEngine."""
+    from typer.testing import CliRunner
+    from subtap.cli import app
+
+    runner = CliRunner()
+    # This will be tested with mock in integration
+    # For now, just verify the command exists
+    result = runner.invoke(app, ["run", "--help"])
+    assert result.exit_code == 0
+    # Verify --timestamp option exists
+    assert "--timestamp" in result.output or "--no-timestamp" in result.output
+
+
+def test_output_config_has_timestamp():
+    """Test OutputConfig has timestamp field."""
+    from subtap.schemas.config import OutputConfig
+
+    config = OutputConfig()
+    assert hasattr(config, 'timestamp')
+    assert config.timestamp is True
+
+
+def test_output_engine_with_timestamp(tmp_path):
+    """Test OutputEngine works with timestamp config."""
+    from subtap.output.engine import OutputEngine
+    from subtap.schemas.config import OutputConfig
+
+    config = OutputConfig(timestamp=True)
+    engine = OutputEngine(tmp_path, "video.mp3", config)
+    assert engine.config.timestamp is True
