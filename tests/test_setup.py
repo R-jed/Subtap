@@ -86,6 +86,9 @@ def test_setup_model_selection_fast_mode():
         wizard.setup_models(mode="fast", quick=False, full=False)
         # Should download asr_0.6b and aligner
         assert mock_download.call_count == 2
+        calls = [call.args[1] for call in mock_download.call_args_list]
+        assert "aligner" in calls
+        assert "asr_0.6b" in calls
 
 
 def test_setup_model_selection_quality_mode():
@@ -96,6 +99,9 @@ def test_setup_model_selection_quality_mode():
         wizard.setup_models(mode="quality", quick=False, full=False)
         # Should download asr_1.7b and aligner
         assert mock_download.call_count == 2
+        calls = [call.args[1] for call in mock_download.call_args_list]
+        assert "aligner" in calls
+        assert "asr_1.7b" in calls
 
 
 def test_setup_model_selection_quick():
@@ -106,6 +112,9 @@ def test_setup_model_selection_quick():
         wizard.setup_models(mode="hybrid", quick=True, full=False)
         # Should download asr_0.6b and aligner
         assert mock_download.call_count == 2
+        calls = [call.args[1] for call in mock_download.call_args_list]
+        assert "aligner" in calls
+        assert "asr_0.6b" in calls
 
 
 def test_setup_model_selection_full():
@@ -116,3 +125,20 @@ def test_setup_model_selection_full():
         wizard.setup_models(mode="hybrid", quick=False, full=True)
         # Should download asr_0.6b, asr_1.7b, and aligner
         assert mock_download.call_count == 3
+        calls = [call.args[1] for call in mock_download.call_args_list]
+        assert "aligner" in calls
+        assert "asr_0.6b" in calls
+        assert "asr_1.7b" in calls
+
+
+def test_setup_model_selection_hybrid_default():
+    """Test hybrid mode (default) downloads asr_0.6b."""
+    wizard = SetupWizard()
+    with patch.object(wizard, '_download_model') as mock_download:
+        mock_download.return_value = True
+        wizard.setup_models(mode="hybrid", quick=False, full=False)
+        # Should download asr_0.6b and aligner
+        assert mock_download.call_count == 2
+        calls = [call.args[1] for call in mock_download.call_args_list]
+        assert "aligner" in calls
+        assert "asr_0.6b" in calls

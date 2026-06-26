@@ -61,22 +61,24 @@ class SetupWizard:
         config = load_config(Path.home() / ".subtap" / "config.yaml")
         downloader = ModelDownloader(config)
 
+        results = []
+
         # Always download aligner
-        self._download_model(downloader, "aligner")
+        results.append(self._download_model(downloader, "aligner"))
 
         # ASR model selection
         if full:
-            self._download_model(downloader, "asr_0.6b")
-            self._download_model(downloader, "asr_1.7b")
+            results.append(self._download_model(downloader, "asr_0.6b"))
+            results.append(self._download_model(downloader, "asr_1.7b"))
         elif quick or mode == "fast":
-            self._download_model(downloader, "asr_0.6b")
+            results.append(self._download_model(downloader, "asr_0.6b"))
         elif mode == "quality":
-            self._download_model(downloader, "asr_1.7b")
+            results.append(self._download_model(downloader, "asr_1.7b"))
         else:
             # hybrid mode - default to 0.6B
-            self._download_model(downloader, "asr_0.6b")
+            results.append(self._download_model(downloader, "asr_0.6b"))
 
-        return True
+        return all(results)
 
     def _download_model(self, downloader, model_name: str) -> bool:
         """Download a single model.
@@ -89,7 +91,7 @@ class SetupWizard:
             True if download succeeded.
         """
         try:
-            path = downloader.download(model_name)
+            downloader.download(model_name)
             return True
         except NotImplementedError:
             # Model download not implemented yet
