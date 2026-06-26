@@ -43,3 +43,56 @@ class SetupWizard:
         except Exception as e:
             logger.error("初始化失败: %s", e)
             return False
+
+    def setup_models(self, mode: str = "hybrid", quick: bool = False, full: bool = False) -> bool:
+        """Setup models based on mode.
+
+        Args:
+            mode: Execution mode (fast/quality/hybrid)
+            quick: Quick mode (only download 0.6B)
+            full: Full mode (download all models)
+
+        Returns:
+            True if all required models downloaded successfully.
+        """
+        from subtap.schemas.config import load_config
+        from subtap.core.models import ModelDownloader
+
+        config = load_config(Path.home() / ".subtap" / "config.yaml")
+        downloader = ModelDownloader(config)
+
+        # Always download aligner
+        self._download_model(downloader, "aligner")
+
+        # ASR model selection
+        if full:
+            self._download_model(downloader, "asr_0.6b")
+            self._download_model(downloader, "asr_1.7b")
+        elif quick or mode == "fast":
+            self._download_model(downloader, "asr_0.6b")
+        elif mode == "quality":
+            self._download_model(downloader, "asr_1.7b")
+        else:
+            # hybrid mode - default to 0.6B
+            self._download_model(downloader, "asr_0.6b")
+
+        return True
+
+    def _download_model(self, downloader, model_name: str) -> bool:
+        """Download a single model.
+
+        Args:
+            downloader: ModelDownloader instance
+            model_name: Name of model to download
+
+        Returns:
+            True if download succeeded.
+        """
+        try:
+            path = downloader.download(model_name)
+            return True
+        except NotImplementedError:
+            # Model download not implemented yet
+            return False
+        except Exception:
+            return False

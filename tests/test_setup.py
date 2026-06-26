@@ -76,3 +76,43 @@ def test_run_init_failure():
     with patch("subtap.cli.init", side_effect=Exception("Init failed")):
         result = wizard.run_init()
         assert result is False
+
+
+def test_setup_model_selection_fast_mode():
+    """Test model selection in fast mode."""
+    wizard = SetupWizard()
+    with patch.object(wizard, '_download_model') as mock_download:
+        mock_download.return_value = True
+        wizard.setup_models(mode="fast", quick=False, full=False)
+        # Should download asr_0.6b and aligner
+        assert mock_download.call_count == 2
+
+
+def test_setup_model_selection_quality_mode():
+    """Test model selection in quality mode."""
+    wizard = SetupWizard()
+    with patch.object(wizard, '_download_model') as mock_download:
+        mock_download.return_value = True
+        wizard.setup_models(mode="quality", quick=False, full=False)
+        # Should download asr_1.7b and aligner
+        assert mock_download.call_count == 2
+
+
+def test_setup_model_selection_quick():
+    """Test quick mode downloads only 0.6B."""
+    wizard = SetupWizard()
+    with patch.object(wizard, '_download_model') as mock_download:
+        mock_download.return_value = True
+        wizard.setup_models(mode="hybrid", quick=True, full=False)
+        # Should download asr_0.6b and aligner
+        assert mock_download.call_count == 2
+
+
+def test_setup_model_selection_full():
+    """Test full mode downloads all models."""
+    wizard = SetupWizard()
+    with patch.object(wizard, '_download_model') as mock_download:
+        mock_download.return_value = True
+        wizard.setup_models(mode="hybrid", quick=False, full=True)
+        # Should download asr_0.6b, asr_1.7b, and aligner
+        assert mock_download.call_count == 3
