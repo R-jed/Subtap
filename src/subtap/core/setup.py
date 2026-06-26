@@ -94,7 +94,8 @@ class SetupWizard:
             downloader.download(model_name)
             return True
         except NotImplementedError:
-            # Model download not implemented yet
+            logger.warning("模型 %s 下载未实现", model_name)
             return False
-        except Exception:
+        except Exception as e:
+            logger.warning("模型 %s 下载失败: %s", model_name, e)
             return False

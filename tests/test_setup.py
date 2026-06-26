@@ -142,3 +142,29 @@ def test_setup_model_selection_hybrid_default():
         calls = [call.args[1] for call in mock_download.call_args_list]
         assert "aligner" in calls
         assert "asr_0.6b" in calls
+
+
+def test_setup_model_download_partial_failure():
+    """Test setup_models returns False when some downloads fail."""
+    wizard = SetupWizard()
+    call_count = 0
+
+    def mock_download(downloader, model_name):
+        nonlocal call_count
+        call_count += 1
+        # aligner succeeds, asr fails
+        return model_name == "aligner"
+
+    with patch.object(wizard, '_download_model', side_effect=mock_download):
+        result = wizard.setup_models(mode="fast", quick=False, full=False)
+        assert result is False
+        assert call_count == 2  # aligner + asr_0.6b
+
+
+def test_setup_model_download_all_fail():
+    """Test setup_models returns False when all downloads fail."""
+    wizard = SetupWizard()
+
+    with patch.object(wizard, '_download_model', return_value=False):
+        result = wizard.setup_models(mode="fast", quick=False, full=False)
+        assert result is False
