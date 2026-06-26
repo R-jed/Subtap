@@ -3,7 +3,7 @@ models/
 
 # 运行产物
 work/
-output/
+/output/
 demo_work/
 demo_output/
 
