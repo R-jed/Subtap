@@ -192,3 +192,25 @@ def test_doctor_enhanced_checks(monkeypatch, tmp_path):
         assert "模型状态" in result.output
         assert "asr" in result.output
         assert "aligner" in result.output
+
+
+def test_setup_full_flow():
+    """Test complete setup flow."""
+    from unittest.mock import patch
+
+    with patch("subtap.core.setup.SetupWizard.check_system_deps") as mock_deps, \
+         patch("subtap.core.setup.SetupWizard.check_config_exists") as mock_config, \
+         patch("subtap.core.setup.SetupWizard.setup_models") as mock_models:
+
+        mock_deps.return_value = {"ffmpeg": True, "ffprobe": True, "python": True}
+        mock_config.return_value = False
+        mock_models.return_value = True
+
+        result = runner.invoke(app, ["setup"])
+
+        assert result.exit_code == 0
+        assert "系统检查" in result.output
+        assert "初始化配置" in result.output
+        assert "初始化完成" in result.output
+        # Verify setup_models was called
+        mock_models.assert_called_once()

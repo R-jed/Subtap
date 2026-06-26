@@ -273,8 +273,8 @@ def setup(
         typer.echo("\n▸ Step 3: 模型安装（已跳过）")
     else:
         typer.echo("\n▸ Step 3: 模型安装")
-        # TODO: 实现模型下载逻辑
-        typer.echo("  ⚠ 模型下载功能待实现")
+        wizard.setup_models(mode=mode, quick=quick, full=full)
+        typer.echo("  ✓ 模型安装完成")
 
     # Step 4: Doctor check
     typer.echo("\n▸ Step 4: 环境验证")
