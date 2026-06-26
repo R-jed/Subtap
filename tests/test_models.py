@@ -8,6 +8,7 @@ from subtap.core.models import (
     ModelRegistry,
     ModelDownloader,
     ModelVerifier,
+    ModelRemover,
     MODEL_REGISTRY,
 )
 from subtap.schemas.config import SubtapConfig
@@ -226,3 +227,29 @@ def test_cli_models_install_shows_path(tmp_path: Path, monkeypatch):
     result = runner.invoke(app, ["models", "install", "asr"])
     assert result.exit_code == 0
     assert "asr" in result.output
+
+
+# ── List and Remove tests ──
+
+def test_model_registry_list(tmp_path: Path):
+    """Test listing available models."""
+    config = _config_with_model_root(tmp_path)
+    registry = ModelRegistry(config)
+    models = registry.list_available()
+    assert "asr" in models
+    assert "aligner" in models
+
+
+def test_model_remover_removes(tmp_path: Path):
+    """Test model removal."""
+    config = _config_with_model_root(tmp_path)
+    remover = ModelRemover(config)
+
+    # Create fake model directory
+    model_dir = tmp_path / "models" / "asr"
+    model_dir.mkdir(parents=True)
+    (model_dir / "config.json").write_text("{}")
+
+    result = remover.remove("asr")
+    assert result is True
+    assert not model_dir.exists()

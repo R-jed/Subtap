@@ -56,6 +56,10 @@ class ModelRegistry:
         self.config = config
         self.root = _get_model_root(config)
 
+    def list_available(self) -> list[str]:
+        """List all available model names."""
+        return list(MODEL_REGISTRY.keys())
+
     def status(self) -> list[ModelStatus]:
         """Check status of all registered models."""
         results: list[ModelStatus] = []
@@ -151,3 +155,32 @@ class ModelVerifier:
                 results["status"] = "missing"
 
         return results
+
+
+class ModelRemover:
+    """Remove installed models."""
+
+    def __init__(self, config: SubtapConfig):
+        self.config = config
+        self.root = _get_model_root(config)
+
+    def remove(self, model_name: str) -> bool:
+        """Remove a model directory.
+
+        Args:
+            model_name: Name of model to remove
+
+        Returns:
+            True if removal succeeded.
+        """
+        import shutil
+
+        info = MODEL_REGISTRY.get(model_name)
+        if info is None:
+            raise ValueError(f"Unknown model: {model_name}")
+
+        model_dir = self.root / info["subdir"]
+        if model_dir.exists():
+            shutil.rmtree(model_dir)
+            return True
+        return False

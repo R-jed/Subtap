@@ -213,9 +213,9 @@ def _doctor_workspace(work_dir: Path = Path("./work")) -> None:
 @app.command()
 def setup(
     skip_models: bool = typer.Option(False, "--skip-models", help="跳过模型下载"),
-    quick: bool = typer.Option(False, "--quick", help="快速模式（只下载 0.6B）"),
-    full: bool = typer.Option(False, "--full", help="完整模式（下载所有模型）"),
-    mode: str = typer.Option("hybrid", "--mode", help="执行模式：fast / quality / hybrid"),
+    quick: bool = typer.Option(False, "--quick", help="快速模式（只下载 0.6B）[待实现]"),
+    full: bool = typer.Option(False, "--full", help="完整模式（下载所有模型）[待实现]"),
+    mode: str = typer.Option("hybrid", "--mode", help="执行模式：fast / quality / hybrid [待实现]"),
 ) -> None:
     """用户初始化向导"""
     from subtap.core.setup import SetupWizard
@@ -246,7 +246,9 @@ def setup(
         typer.echo("  ✓ ~/.subtap/ 已存在")
 
     # Step 3: Model setup
-    if not skip_models:
+    if skip_models:
+        typer.echo("\n▸ Step 3: 模型安装（已跳过）")
+    else:
         typer.echo("\n▸ Step 3: 模型安装")
         # TODO: 实现模型下载逻辑
         typer.echo("  ⚠ 模型下载功能待实现")
@@ -254,7 +256,7 @@ def setup(
     # Step 4: Doctor check
     typer.echo("\n▸ Step 4: 环境验证")
     # TODO: 调用 doctor 检查
-    typer.echo("  ✓ 所有检查通过")
+    typer.echo("  ⚠ 环境验证功能待实现")
 
     typer.echo(typer.style("\n═══ 初始化完成 ═══", fg=typer.colors.GREEN))
     typer.echo("下一步：subtap run <音频文件>")
@@ -979,3 +981,39 @@ def models_verify() -> None:
         typer.echo(typer.style("\n✓ 所有模型验证通过", fg=typer.colors.GREEN))
     else:
         typer.echo(typer.style("\n✗ 部分模型异常，请检查", fg=typer.colors.YELLOW))
+
+
+@models_app.command("list")
+def models_list() -> None:
+    """列出可用模型"""
+    from subtap.schemas.config import load_config
+    from subtap.core.models import ModelRegistry
+
+    config = load_config(Path.home() / ".subtap" / "config.yaml")
+    registry = ModelRegistry(config)
+
+    typer.echo("═══ 可用模型 ═══")
+    for name in registry.list_available():
+        typer.echo(f"  • {name}")
+
+
+@models_app.command("remove")
+def models_remove(
+    model_name: str = typer.Argument(..., help="要移除的模型名称"),
+) -> None:
+    """移除已安装的模型"""
+    from subtap.schemas.config import load_config
+    from subtap.core.models import ModelRemover
+
+    config = load_config(Path.home() / ".subtap" / "config.yaml")
+    remover = ModelRemover(config)
+
+    try:
+        result = remover.remove(model_name)
+        if result:
+            typer.echo(f"✓ 已移除 {model_name}")
+        else:
+            typer.echo(f"⚠ {model_name} 不存在")
+    except ValueError as e:
+        typer.echo(f"✗ 错误：{e}", err=True)
+        raise typer.Exit(1)
