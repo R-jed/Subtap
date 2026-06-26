@@ -29,7 +29,7 @@ def version() -> None:
     typer.echo(f"系统 {platform.system()} {platform.machine()}")
 
 
-@app.command()
+@app.command(hidden=True)
 def init() -> None:
     """初始化工作空间（~/.subtap/）"""
     home = Path.home()
@@ -66,8 +66,14 @@ def init() -> None:
 @app.command()
 def doctor(
     release: bool = typer.Option(False, "--release", help="执行发布前完整检查"),
+    workspace: bool = typer.Option(False, "--workspace", "-ws", help="检查工作区状态"),
 ) -> None:
     """检查系统依赖和运行环境"""
+    # ── Workspace mode ──────────────────────────────────────
+    if workspace:
+        _doctor_workspace()
+        return
+
     checks: list[tuple[str, str, bool, str]] = []
 
     # 基础依赖
@@ -147,6 +153,61 @@ def doctor(
         raise typer.Exit(1)
 
 
+def _doctor_workspace(work_dir: Path = Path("./work")) -> None:
+    """检查工作区状态：Git、环境卫生、模型、Pipeline 状态。"""
+    typer.echo("═══ 工作区状态检查 ═══\n")
+
+    # 1. Git 状态
+    from subtap.engine.git_guard import GitGuard
+    git_guard = GitGuard(work_dir)
+    if git_guard.is_git_repo():
+        git_status = git_guard.get_git_status()
+        typer.echo("▸ Git 状态")
+        typer.echo(f"  分支: {git_status['branch']}")
+        typer.echo(f"  提交: {git_status['commit_hash']}")
+        dirty_icon = typer.style("✗ 脏", fg=typer.colors.RED) if git_status["is_dirty"] else typer.style("✓ 干净", fg=typer.colors.GREEN)
+        typer.echo(f"  状态: {dirty_icon}")
+        if git_status["changed_files"]:
+            for f in git_status["changed_files"][:5]:
+                typer.echo(f"    - {f}")
+    else:
+        typer.echo("▸ Git 状态")
+        typer.echo(typer.style("  ⚠ 非 Git 仓库", fg=typer.colors.YELLOW))
+
+    # 2. 工作环境卫生
+    from subtap.engine.cleanroom import Cleanroom
+    cleanroom = Cleanroom(work_dir)
+    cr_result = cleanroom.check_workspace()
+    typer.echo("\n▸ 工作环境卫生")
+    clean_icon = typer.style("✓ 干净", fg=typer.colors.GREEN) if cr_result["is_clean"] else typer.style("⚠ 有问题", fg=typer.colors.YELLOW)
+    typer.echo(f"  状态: {clean_icon}")
+    if cr_result["issues"]:
+        for issue in cr_result["issues"]:
+            typer.echo(f"    - {issue}")
+
+    # 3. 模型状态
+    model_status = cleanroom.check_model_status()
+    typer.echo("\n▸ 模型状态")
+    for m in model_status["models"]:
+        icon = typer.style("✓", fg=typer.colors.GREEN) if m["installed"] else typer.style("✗", fg=typer.colors.RED)
+        typer.echo(f"  {icon} {m['name']}")
+
+    # 4. Pipeline 状态（检查中间文件）
+    typer.echo("\n▸ Pipeline 中间文件")
+    for name, label in [
+        ("chunks/chunks.jsonl", "切段结果"),
+        ("asr/asr.jsonl", "ASR 结果"),
+        ("cleaned.jsonl", "清洗结果"),
+        ("sentences.jsonl", "断句结果"),
+        ("aligned.jsonl", "对齐结果"),
+    ]:
+        p = work_dir / name
+        icon = typer.style("✓", fg=typer.colors.GREEN) if p.exists() else typer.style("○", fg=typer.colors.WHITE)
+        typer.echo(f"  {icon} {label}")
+
+    typer.echo("\n═══ 检查完成 ═══")
+
+
 # ── Run 命令 ───────────────────────────────────────────────
 
 @app.command()
@@ -155,18 +216,28 @@ def run(
     work_dir: Path = typer.Option(Path("./work"), "-w", "--work-dir", help="工作目录"),
     output_dir: Path = typer.Option(Path("./output"), "-o", "--output-dir", help="输出目录"),
     fmt: str = typer.Option("srt", "--format", "-f", help="导出格式：srt / ass / txt"),
+    mode: str = typer.Option("hybrid", "--mode", "-m", help="执行模式：fast / quality / hybrid"),
     skip_clean: bool = typer.Option(False, "--skip-clean", help="跳过文本清洗阶段"),
     skip_align: bool = typer.Option(False, "--skip-align", help="跳过时间轴对齐阶段"),
     use_tui: bool = typer.Option(True, "--tui/--no-tui", help="启用 TUI 界面（默认开启）"),
+    policy: str = typer.Option("local", "--policy", "-p", help="执行策略：local / hybrid / fast"),
+    no_git_check: bool = typer.Option(False, "--no-git-check", help="跳过 Git 状态检查"),
+    no_cleanroom: bool = typer.Option(False, "--no-cleanroom", help="跳过工作环境卫生检查"),
 ) -> None:
     """运行完整字幕生成流程
 
     [bold]流程：[/bold] 音频标准化 → 切段 → 语音识别 → 文本清洗 → 智能断句 → 时间轴对齐 → 字幕导出
 
+    [bold]模式：[/bold]
+      fast     — 最快速度，跳过清洗和对齐
+      quality  — 完整流程，使用大模型，质量最高
+      hybrid   — 平衡速度和质量（默认）
+
     [bold]示例：[/bold]
       subtap run video.mp3
-      subtap run audio.mp3 -o ./subtitles --format ass
-      subtap run input.mp3 --no-tui --skip-clean
+      subtap run audio.mp3 --mode fast
+      subtap run input.mp3 --mode quality -o ./subtitles
+      subtap run input.mp3 --no-git-check --no-cleanroom
     """
     from subtap.schemas.config import load_config
     from subtap.core.pipeline import Pipeline
@@ -179,23 +250,111 @@ def run(
     pipeline = Pipeline(config, work_dir=work_dir)
     pipeline.workspace.ensure_dirs()
 
+    # ── Pre-flight checks ──────────────────────────────────
+    # Cleanroom check
+    if not no_cleanroom:
+        from subtap.engine.cleanroom import Cleanroom
+        cleanroom = Cleanroom(work_dir)
+        cr_result = cleanroom.check_workspace()
+        if not cr_result["is_clean"]:
+            typer.echo("▸ 工作环境卫生检查...")
+            for issue in cr_result["issues"]:
+                typer.echo(f"  ⚠ {issue}")
+            clean_report = cleanroom.clean_workspace()
+            typer.echo(f"  ✓ 已清理 {clean_report['cleaned_count']} 项")
+
+    # Git guard check
+    if not no_git_check:
+        from subtap.engine.git_guard import GitGuard
+        git_guard = GitGuard(work_dir)
+        if git_guard.is_git_repo():
+            gg_result = git_guard.pre_task_check()
+            if not gg_result["ok"]:
+                typer.echo("▸ Git 状态检查...")
+                for issue in gg_result["issues"]:
+                    typer.echo(f"  ⚠ {issue}")
+                # Auto-commit dirty state
+                commit_result = git_guard.auto_commit_if_needed()
+                if commit_result["committed"]:
+                    typer.echo(f"  ✓ 已自动提交: {commit_result['commit_hash']}")
+
+    # ── Mode-based skip flags ────────────────────────────────
+    if mode == "fast":
+        skip_clean = True
+        skip_align = True
+    elif mode == "quality":
+        skip_clean = False
+        skip_align = False
+    # hybrid mode uses defaults
+
+    # ── Pipeline execution ──────────────────────────────────
     if use_tui:
         from subtap.ui.tui import TUIRunner
-        runner = TUIRunner(use_tui=True)
+        runner = TUIRunner(use_tui=True, mode=mode)
     else:
         from subtap.ui.tui import PlainRunner
         runner = PlainRunner()
 
+    timings = {}
     try:
-        runner.run_pipeline(
+        result = runner.run_pipeline(
             pipeline, input_path, output_dir, fmt=fmt,
             skip_clean=skip_clean, skip_align=skip_align,
         )
+        timings = result.get("timings", {})
     except SystemExit:
         raise
     except Exception as e:
         typer.echo(f"\n✗ 处理失败：{e}", err=True)
         raise typer.Exit(1)
+
+    # ── Generate report and debug output ────────────────────
+    try:
+        from subtap.quality.scorer import Scorer
+        from subtap.core.report import generate_report
+
+        # Quality assessment
+        aligned_path = work_dir / "aligned.jsonl"
+        if aligned_path.exists():
+            scorer = Scorer(aligned_path)
+            quality_report = scorer.score()
+
+            # Generate report
+            report_content = generate_report(
+                quality_score=quality_report.total_score,
+                error_count=quality_report.error_count,
+                fixable_count=quality_report.fixable_count,
+                fixed_count=0,
+                segment_count=0,
+                timings=timings,
+                mode=mode,
+                input_file=input_path,
+                output_format=fmt,
+            )
+
+            # Write report
+            output_dir.mkdir(parents=True, exist_ok=True)
+            report_path = output_dir / "report.md"
+            report_path.write_text(report_content, encoding="utf-8")
+            typer.echo(f"\n▸ 质量报告：{report_path}")
+
+            # Write debug.json
+            debug_data = {
+                "mode": mode,
+                "input_file": str(input_path),
+                "output_format": fmt,
+                "quality_score": quality_report.total_score,
+                "timings": timings,
+                "error_count": quality_report.error_count,
+            }
+            debug_path = output_dir / "debug.json"
+            debug_path.write_text(
+                json.dumps(debug_data, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+    except Exception as e:
+        # Report generation is optional - don't fail the whole run
+        typer.echo(f"\n⚠ 报告生成失败：{e}", err=True)
 
 
 # ── 单阶段命令 ─────────────────────────────────────────────
@@ -380,6 +539,56 @@ def export(
     typer.echo(typer.style("\n✓ 完成", fg=typer.colors.GREEN))
 
 
+# ── Resume / Retry 命令 ────────────────────────────────────
+
+@app.command()
+def resume(
+    work_dir: Path = typer.Option(Path("./work"), "-w", "--work-dir", help="工作目录"),
+    input_path: Path = typer.Argument(..., help="输入媒体文件路径"),
+    output_dir: Path = typer.Option(Path("./output"), "-o", "--output-dir", help="输出目录"),
+    fmt: str = typer.Option("srt", "--format", "-f", help="导出格式"),
+) -> None:
+    """从中断点恢复执行（跳过已完成的阶段）"""
+    from subtap.schemas.config import load_config
+    from subtap.engine.controller import PipelineController
+
+    config = load_config(Path.home() / ".subtap" / "config.yaml")
+    ctrl = PipelineController(config, work_dir)
+
+    typer.echo("▸ 恢复执行...")
+    try:
+        result = ctrl.resume_pipeline(input_path, output_dir, fmt=fmt)
+        if result:
+            typer.echo(f"  ✓ 总耗时：{result.get('total_time_sec', 0):.1f}s")
+    except Exception as e:
+        typer.echo(f"✗ 恢复失败：{e}", err=True)
+        raise typer.Exit(1)
+
+
+@app.command()
+def retry(
+    stage_name: str = typer.Argument(..., help="要重试的阶段名称（asr/align/export 等）"),
+    work_dir: Path = typer.Option(Path("./work"), "-w", "--work-dir", help="工作目录"),
+) -> None:
+    """重试失败的阶段"""
+    from subtap.schemas.config import load_config
+    from subtap.engine.controller import PipelineController
+
+    config = load_config(Path.home() / ".subtap" / "config.yaml")
+    ctrl = PipelineController(config, work_dir)
+
+    typer.echo(f"▸ 重试 {stage_name}...")
+    try:
+        result = ctrl.retry_stage(stage_name)
+        typer.echo(f"  ✓ {stage_name} 重试成功")
+    except ValueError as e:
+        typer.echo(f"✗ {e}", err=True)
+        raise typer.Exit(1)
+    except Exception as e:
+        typer.echo(f"✗ 重试失败：{e}", err=True)
+        raise typer.Exit(1)
+
+
 # ── Demo 命令 ──────────────────────────────────────────────
 
 @app.command()
@@ -441,6 +650,209 @@ def demo() -> None:
             typer.echo(f"  {line}")
         if len(lines) > 20:
             typer.echo(f"  ...（共 {len(lines)} 行）")
+
+
+# ── Quality 命令 ────────────────────────────────────────────
+
+@app.command()
+def quality(
+    aligned_path: Path = typer.Argument(..., help="aligned.jsonl 路径"),
+    report_only: bool = typer.Option(False, "--report-only", help="只显示报告，不修复"),
+    fix: bool = typer.Option(False, "--fix", help="自动修复可修复的问题"),
+    output: Path | None = typer.Option(None, "-o", "--output", help="修复后的输出路径"),
+) -> None:
+    """评估字幕质量并可选自动修复
+
+    [bold]示例：[/bold]
+      subtap quality work/aligned.jsonl
+      subtap quality work/aligned.jsonl --report-only
+      subtap quality work/aligned.jsonl --fix
+      subtap quality work/aligned.jsonl --fix -o output/fixed.jsonl
+    """
+    from subtap.quality.scorer import Scorer
+    from subtap.quality.error_detector import ErrorDetector
+    from subtap.quality.fixer import Fixer
+
+    if not aligned_path.exists():
+        typer.echo(f"✗ 文件未找到：{aligned_path}", err=True)
+        raise typer.Exit(1)
+
+    # Score
+    scorer = Scorer(aligned_path)
+    report = scorer.score()
+
+    # Display report
+    typer.echo("═══ 字幕质量报告 ═══\n")
+    typer.echo(f"评分：{report.total_score:.0f}/100")
+    typer.echo(f"  对齐误差：      {report.alignment_error:.0f}/100")
+    typer.echo(f"  断句质量：      {report.segmentation_quality:.0f}/100")
+    typer.echo(f"  可读性：        {report.readability:.0f}/100")
+
+    # Detect errors
+    detector = ErrorDetector(aligned_path)
+    errors = detector.detect()
+
+    typer.echo(f"\n错误：{len(errors)} 个（{report.fixable_count} 可修复）")
+    for error in errors:
+        severity_icon = {
+            "critical": typer.style("✗", fg=typer.colors.RED),
+            "warning": typer.style("⚠", fg=typer.colors.YELLOW),
+            "info": typer.style("ℹ", fg=typer.colors.BLUE),
+        }.get(error.severity, "•")
+        typer.echo(f"  {severity_icon} #{error.segment_id} {error.message} → {error.suggestion}")
+
+    # Fix if requested
+    if fix and not report_only:
+        fixer = Fixer(aligned_path)
+        output_path = output or aligned_path.parent / "fixed_aligned.jsonl"
+        actions = fixer.fix(errors, output_path)
+
+        applied = [a for a in actions if a.applied]
+        if applied:
+            typer.echo(f"\n✓ 已修复 {len(applied)} 个问题 → {output_path}")
+            for action in applied:
+                typer.echo(f"  ✓ #{action.segment_id}: {action.description}")
+        else:
+            typer.echo("\n没有可自动修复的问题")
+
+    # Write quality event to log
+    log_path = aligned_path.parent / "logs" / "event.log.jsonl"
+    if log_path.parent.exists():
+        import json, time
+        event = {
+            "stage": "quality_check",
+            "quality_score": report.total_score,
+            "error_count": len(errors),
+            "fixable_count": report.fixable_count,
+            "timestamp": time.time(),
+        }
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+
+# ── Analyze 命令 ────────────────────────────────────────────
+
+@app.command()
+def analyze(
+    srt_path: Path = typer.Argument(..., help="SRT 字幕文件路径"),
+) -> None:
+    """分析字幕文件质量并输出报告
+
+    [bold]示例：[/bold]
+      subtap analyze output.srt
+      subtap analyze subtitles/final.srt
+    """
+    from subtap.quality.scorer import Scorer
+    from subtap.quality.error_detector import ErrorDetector
+
+    if not srt_path.exists():
+        typer.echo(f"✗ 文件未找到：{srt_path}", err=True)
+        raise typer.Exit(1)
+
+    # Parse SRT to aligned format for analysis
+    segments = _parse_srt_to_aligned(srt_path)
+    if not segments:
+        typer.echo("✗ 无法解析 SRT 文件", err=True)
+        raise typer.Exit(1)
+
+    # Create temporary aligned.jsonl for analysis
+    import tempfile, json
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, encoding="utf-8") as f:
+        for seg in segments:
+            f.write(json.dumps(seg, ensure_ascii=False) + "\n")
+        temp_path = Path(f.name)
+
+    try:
+        # Score
+        scorer = Scorer(temp_path)
+        report = scorer.score()
+
+        # Detect errors
+        detector = ErrorDetector(temp_path)
+        errors = detector.detect()
+
+        # Display analysis
+        typer.echo("═══ 字幕分析报告 ═══\n")
+        typer.echo(f"文件：{srt_path.name}")
+        typer.echo(f"字幕数：{len(segments)} 条\n")
+
+        typer.echo(f"质量评分：{report.total_score:.0f}/100")
+        typer.echo(f"  对齐误差：      {report.alignment_error:.0f}/100")
+        typer.echo(f"  断句质量：      {report.segmentation_quality:.0f}/100")
+        typer.echo(f"  可读性：        {report.readability:.0f}/100")
+
+        # Show errors
+        if errors:
+            typer.echo(f"\n问题：{len(errors)} 个")
+            for error in errors:
+                severity_icon = {
+                    "critical": typer.style("✗", fg=typer.colors.RED),
+                    "warning": typer.style("⚠", fg=typer.colors.YELLOW),
+                    "info": typer.style("ℹ", fg=typer.colors.BLUE),
+                }.get(error.severity, "•")
+                typer.echo(f"  {severity_icon} #{error.segment_id} {error.message}")
+        else:
+            typer.echo("\n✓ 未发现问题")
+
+        # Suggestions
+        typer.echo("\n建议：")
+        if report.total_score < 80:
+            typer.echo("  1. 使用 --mode quality 重新生成可提升质量")
+        if any(e.error_type == "too_long" for e in errors):
+            typer.echo("  2. 过长字幕建议拆分以提高可读性")
+        if any(e.error_type == "overlap" for e in errors):
+            typer.echo("  3. 时间轴重叠需要修复")
+        if report.total_score >= 90:
+            typer.echo("  ✓ 质量优秀，可直接用于剪辑软件")
+
+    finally:
+        temp_path.unlink()
+
+
+def _parse_srt_to_aligned(srt_path: Path) -> list[dict]:
+    """Parse SRT file to aligned segment format for analysis.
+
+    Args:
+        srt_path: Path to SRT file.
+
+    Returns:
+        List of aligned segment dicts.
+    """
+    import re
+    content = srt_path.read_text(encoding="utf-8")
+    segments = []
+
+    # Parse SRT format: sequence number, timestamp, text
+    pattern = r"(\d+)\n(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})\n(.+?)(?=\n\n|\n\d+\n|\Z)"
+    matches = re.findall(pattern, content, re.DOTALL)
+
+    for seq, start, end, text in matches:
+        # Convert timestamp to seconds
+        start_sec = _srt_time_to_seconds(start)
+        end_sec = _srt_time_to_seconds(end)
+        text = text.strip().replace("\n", " ")
+
+        segments.append({
+            "sentence_id": int(seq) - 1,
+            "start_sec": start_sec,
+            "end_sec": end_sec,
+            "text": text,
+        })
+
+    return segments
+
+
+def _srt_time_to_seconds(time_str: str) -> float:
+    """Convert SRT timestamp to seconds.
+
+    Args:
+        time_str: SRT timestamp (HH:MM:SS,mmm)
+
+    Returns:
+        Time in seconds.
+    """
+    hours, minutes, seconds = time_str.replace(",", ".").split(":")
+    return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
 
 
 # ── Models 子命令组 ────────────────────────────────────────
