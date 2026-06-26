@@ -1017,3 +1017,6 @@ def models_remove(
     except ValueError as e:
         typer.echo(f"✗ 错误：{e}", err=True)
         raise typer.Exit(1)
+    except OSError as e:
+        typer.echo(f"✗ 删除失败：{e}", err=True)
+        raise typer.Exit(1)

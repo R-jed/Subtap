@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -173,8 +174,6 @@ class ModelRemover:
         Returns:
             True if removal succeeded.
         """
-        import shutil
-
         info = MODEL_REGISTRY.get(model_name)
         if info is None:
             raise ValueError(f"Unknown model: {model_name}")

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from subtap.core.models import (
     ModelRegistry,
     ModelDownloader,
@@ -253,3 +255,59 @@ def test_model_remover_removes(tmp_path: Path):
     result = remover.remove("asr")
     assert result is True
     assert not model_dir.exists()
+
+
+def test_model_remover_not_exists(tmp_path: Path):
+    """Test removing non-existent model directory returns False."""
+    config = _config_with_model_root(tmp_path)
+    remover = ModelRemover(config)
+
+    # Don't create model directory
+    result = remover.remove("asr")
+    assert result is False
+
+
+def test_model_remover_unknown_model(tmp_path: Path):
+    """Test removing unknown model raises ValueError."""
+    config = _config_with_model_root(tmp_path)
+    remover = ModelRemover(config)
+
+    with pytest.raises(ValueError, match="Unknown model"):
+        remover.remove("nonexistent_model")
+
+
+def test_cli_models_list(tmp_path: Path, monkeypatch):
+    """Test CLI models list command."""
+    from typer.testing import CliRunner
+    from subtap.cli import app
+
+    config = _config_with_model_root(tmp_path)
+    import subtap.schemas.config as cfg_mod
+    monkeypatch.setattr(cfg_mod, "load_config", lambda p: config)
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "fakehome")
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["models", "list"])
+    assert result.exit_code == 0
+    assert "可用模型" in result.output
+    assert "asr" in result.output
+    assert "aligner" in result.output
+
+
+def test_cli_models_remove(tmp_path: Path, monkeypatch):
+    """Test CLI models remove command."""
+    from typer.testing import CliRunner
+    from subtap.cli import app
+    from unittest.mock import patch
+
+    config = _config_with_model_root(tmp_path)
+    import subtap.schemas.config as cfg_mod
+    monkeypatch.setattr(cfg_mod, "load_config", lambda p: config)
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "fakehome")
+
+    runner = CliRunner()
+    with patch("subtap.core.models.ModelRemover.remove") as mock_remove:
+        mock_remove.return_value = True
+        result = runner.invoke(app, ["models", "remove", "asr"])
+        assert result.exit_code == 0
+        assert "已移除" in result.output
