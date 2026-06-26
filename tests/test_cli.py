@@ -214,3 +214,12 @@ def test_setup_full_flow():
         assert "初始化完成" in result.output
         # Verify setup_models was called
         mock_models.assert_called_once()
+
+
+def test_demo_command_exists():
+    """Test demo command exists with expected options."""
+    result = runner.invoke(app, ["demo", "--help"])
+    assert result.exit_code == 0
+    assert "演示" in result.output
+    assert "--output-dir" in result.output
+    assert "--skip-tui" in result.output

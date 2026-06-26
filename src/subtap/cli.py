@@ -676,32 +676,27 @@ def retry(
 # ── Demo 命令 ──────────────────────────────────────────────
 
 @app.command()
-def demo() -> None:
+def demo(
+    output_dir: Path = typer.Option(Path("./demo_output"), "-o", "--output-dir", help="输出目录"),
+    skip_tui: bool = typer.Option(False, "--skip-tui", help="跳过 TUI 展示"),
+) -> None:
     """运行演示：使用内置测试音频展示完整流程
 
-    自动查找 ~/Downloads/ASR-SRT测试音频/ 下的音频文件，
-    执行完整 pipeline 并输出示例 SRT。
+    自动查找项目内置测试音频，执行完整 pipeline 并输出示例 SRT。
     """
     from subtap.schemas.config import load_config
     from subtap.core.pipeline import Pipeline
 
-    # 查找测试音频
-    demo_dir = Path.home() / "Downloads" / "ASR-SRT测试音频"
-    test_files = [
-        demo_dir / "高质量中文语音.mp3",
-        demo_dir / "数字测试.mp3",
-    ]
-    input_file = None
-    for f in test_files:
-        if f.exists():
-            input_file = f
-            break
+    # 查找内置测试音频
+    samples_dir = Path(__file__).resolve().parents[2] / "samples"
+    test_files = list(samples_dir.glob("*.mp3")) + list(samples_dir.glob("*.wav"))
 
-    if input_file is None:
-        typer.echo("✗ 未找到测试音频文件", err=True)
-        typer.echo(f"  请确认目录存在：{demo_dir}", err=True)
+    if not test_files:
+        typer.echo("✗ 未找到内置测试音频", err=True)
+        typer.echo(f"  请将测试音频放入：{samples_dir}", err=True)
         raise typer.Exit(1)
 
+    input_file = test_files[0]
     typer.echo("═══ Subtap 演示 ═══")
     typer.echo(f"  输入：{input_file.name}")
     typer.echo()
@@ -710,12 +705,16 @@ def demo() -> None:
     pipeline = Pipeline(config, work_dir=Path("./demo_work"))
     pipeline.workspace.ensure_dirs()
 
-    from subtap.ui.tui import TUIRunner
-    runner = TUIRunner(use_tui=True)
+    if skip_tui:
+        from subtap.ui.tui import PlainRunner
+        runner = PlainRunner()
+    else:
+        from subtap.ui.tui import TUIRunner
+        runner = TUIRunner(use_tui=True)
 
     try:
-        runner.run_pipeline(
-            pipeline, input_file, Path("./demo_output"), fmt="srt",
+        result = runner.run_pipeline(
+            pipeline, input_file, output_dir, fmt="srt",
             skip_clean=True, skip_align=True,
         )
     except SystemExit:
@@ -725,7 +724,7 @@ def demo() -> None:
         raise typer.Exit(1)
 
     # 显示示例 SRT 内容
-    srt_path = Path("./demo_output/output.srt")
+    srt_path = output_dir / "output.srt"
     if srt_path.exists():
         typer.echo()
         typer.echo("═══ 示例 SRT（前 20 行）═══")
