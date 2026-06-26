@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "subtap"
+version = "0.1.0"
+description = "Local-first TUI subtitle tool with plugin-based ASR/LLM/Aligner pipeline"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = [
+    "typer>=0.9.0",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "pydub>=0.25.1",
+    "rich>=13.0",
+    "audioop-lts>=0.2.2; python_version>='3.13'",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[project.scripts]
+subtap = "subtap.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/subtap"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

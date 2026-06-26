@@ -1,0 +1,102 @@
+"""MLX Qwen ASR backend implementation.
+
+Uses mlx_audio.stt.generate_transcription for speech-to-text.
+"""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+
+from subtap.schemas.config import ASRConfig
+from subtap.schemas.models import Chunk, ASRSegment
+
+logger = logging.getLogger(__name__)
+
+# Local model paths (relative to project root)
+_PROJECT_ROOT = Path(__file__).resolve().parents[4]
+_MODEL_0_6B = str(_PROJECT_ROOT / "models" / "asr_0.6b")
+_MODEL_1_7B = str(_PROJECT_ROOT / "models" / "asr_1.7b")
+
+
+class MLXQwenASR:
+    """ASR backend using mlx_audio STT."""
+
+    name = "mlx-qwen-asr"
+
+    def __init__(self, config: ASRConfig):
+        self.config = config
+        self._model = None
+        # Use 0.6B by default (faster), 1.7B if batch_size > 1
+        self._model_path = _MODEL_0_6B
+
+    def _load_model(self):
+        """Lazy-load the MLX STT model."""
+        if self._model is not None:
+            return
+        try:
+            from mlx_audio.stt.generate import load_model
+            logger.info("Loading ASR model from: %s", self._model_path)
+            self._model = load_model(self._model_path)
+            logger.info("ASR model loaded successfully")
+        except ImportError:
+            raise ImportError(
+                "mlx_audio is required for MLX Qwen ASR. "
+                "Install: pip install mlx-audio"
+            )
+
+    def transcribe(
+        self,
+        chunks: list[Chunk],
+        language: str | None = None,
+        hotwords: list[str] | None = None,
+    ) -> list[ASRSegment]:
+        """Transcribe chunks sequentially using MLX STT."""
+        self._load_model()
+        segments: list[ASRSegment] = []
+
+        for chunk in chunks:
+            audio_path = Path(chunk.path)
+            if not audio_path.is_absolute():
+                audio_path = Path.cwd() / audio_path
+
+            if not audio_path.exists():
+                logger.warning("Chunk file not found: %s, skipping", audio_path)
+                continue
+
+            logger.info("Transcribing chunk %d: %s", chunk.chunk_id, audio_path)
+
+            try:
+                from mlx_audio.stt.generate import generate_transcription
+                result = generate_transcription(
+                    model=self._model,
+                    audio=str(audio_path),
+                    format="json",
+                )
+            except Exception as e:
+                logger.error("ASR failed for chunk %d: %s", chunk.chunk_id, e)
+                continue
+
+            # Extract text from result
+            text = ""
+            if isinstance(result, dict):
+                text = result.get("text", "")
+                if not text and "segments" in result:
+                    segs = result["segments"]
+                    text = " ".join(s.get("text", "") for s in segs) if segs else ""
+            elif isinstance(result, str):
+                text = result
+            elif hasattr(result, "text"):
+                text = result.text
+
+            logger.info("Chunk %d result: %s", chunk.chunk_id, text[:100])
+            segments.append(ASRSegment(
+                chunk_id=chunk.chunk_id,
+                segment_id=0,
+                start_sec=chunk.start_sec,
+                end_sec=chunk.end_sec,
+                text=text.strip(),
+                confidence=None,
+            ))
+
+        return segments

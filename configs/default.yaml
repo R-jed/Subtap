@@ -1,0 +1,29 @@
+audio:
+  sample_rate: 16000
+  channels: 1
+  format: wav
+  vad:
+    min_silence_sec: 0.4
+    min_chunk_sec: 1.0
+    max_chunk_sec: 30.0
+
+asr:
+  backend: mlx-qwen-asr
+  hotwords: []
+  batch_size: 4
+
+clean:
+  backend: ollama:qwen3-coder
+  glossary_path: null
+  style_rules: []
+
+align:
+  backend: mlx-qwen-aligner
+
+models:
+  root: ~/models/subtap
+  auto_download: false
+
+workspace:
+  root: ./work
+  keep_intermediate: true

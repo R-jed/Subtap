@@ -1,0 +1,228 @@
+"""Tests for model management system."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from subtap.core.models import (
+    ModelRegistry,
+    ModelDownloader,
+    ModelVerifier,
+    MODEL_REGISTRY,
+)
+from subtap.schemas.config import SubtapConfig
+
+
+def _config_with_model_root(tmp_path: Path) -> SubtapConfig:
+    """Config with model root pointing to tmp."""
+    from subtap.schemas.config import AudioConfig, ASRConfig, CleanConfig, AlignConfig, ModelConfig, WorkspaceConfig
+    return SubtapConfig(
+        audio=AudioConfig(),
+        asr=ASRConfig(),
+        clean=CleanConfig(),
+        align=AlignConfig(),
+        models=ModelConfig(root=str(tmp_path / "models")),
+        workspace=WorkspaceConfig(root=str(tmp_path / "work")),
+    )
+
+
+# ── Registry tests ──
+
+def test_model_registry_has_expected_models():
+    """MODEL_REGISTRY contains asr and aligner."""
+    assert "asr" in MODEL_REGISTRY
+    assert "aligner" in MODEL_REGISTRY
+    assert "required_files" in MODEL_REGISTRY["asr"]
+
+
+def test_registry_status_all_missing(tmp_path: Path):
+    """Status shows all models missing when no files exist."""
+    config = _config_with_model_root(tmp_path)
+    registry = ModelRegistry(config)
+    status = registry.status()
+    assert len(status) == 2
+    assert all(not ms.installed for ms in status)
+
+
+def test_registry_status_asr_installed(tmp_path: Path):
+    """Status shows asr installed when files exist."""
+    config = _config_with_model_root(tmp_path)
+    asr_dir = Path(config.models.root).expanduser() / "asr"
+    asr_dir.mkdir(parents=True)
+    (asr_dir / "config.json").write_text("{}")
+    (asr_dir / "model.safetensors").write_bytes(b"\x00" * 100)
+
+    registry = ModelRegistry(config)
+    status = registry.status()
+    asr_status = next(s for s in status if s.name == "asr")
+    assert asr_status.installed
+
+
+def test_registry_get_path(tmp_path: Path):
+    """get_path returns correct directory."""
+    config = _config_with_model_root(tmp_path)
+    registry = ModelRegistry(config)
+    path = registry.get_path("asr")
+    assert path.name == "asr"
+    assert "models" in str(path)
+
+
+def test_registry_get_path_unknown(tmp_path: Path):
+    """get_path raises ValueError for unknown model."""
+    config = _config_with_model_root(tmp_path)
+    registry = ModelRegistry(config)
+    try:
+        registry.get_path("nonexistent")
+        assert False
+    except ValueError:
+        pass
+
+
+def test_registry_is_available_false(tmp_path: Path):
+    """is_available returns False when files missing."""
+    config = _config_with_model_root(tmp_path)
+    registry = ModelRegistry(config)
+    assert not registry.is_available("asr")
+
+
+def test_registry_is_available_true(tmp_path: Path):
+    """is_available returns True when all files present."""
+    config = _config_with_model_root(tmp_path)
+    asr_dir = Path(config.models.root).expanduser() / "asr"
+    asr_dir.mkdir(parents=True)
+    (asr_dir / "config.json").write_text("{}")
+    (asr_dir / "model.safetensors").write_bytes(b"\x00" * 100)
+
+    registry = ModelRegistry(config)
+    assert registry.is_available("asr")
+
+
+# ── Downloader tests ──
+
+def test_downloader_download_exists(tmp_path: Path):
+    """Downloader returns path when model already present."""
+    config = _config_with_model_root(tmp_path)
+    asr_dir = Path(config.models.root).expanduser() / "asr"
+    asr_dir.mkdir(parents=True)
+    (asr_dir / "config.json").write_text("{}")
+    (asr_dir / "model.safetensors").write_bytes(b"\x00" * 100)
+
+    downloader = ModelDownloader(config)
+    result = downloader.download("asr")
+    assert result == asr_dir
+
+
+def test_downloader_download_not_implemented(tmp_path: Path):
+    """Downloader raises NotImplementedError for missing models."""
+    config = _config_with_model_root(tmp_path)
+    downloader = ModelDownloader(config)
+    try:
+        downloader.download("asr")
+        assert False
+    except NotImplementedError as e:
+        assert "place model files" in str(e)
+
+
+def test_downloader_unknown_model(tmp_path: Path):
+    """Downloader raises ValueError for unknown model."""
+    config = _config_with_model_root(tmp_path)
+    downloader = ModelDownloader(config)
+    try:
+        downloader.download("nonexistent")
+        assert False
+    except ValueError:
+        pass
+
+
+# ── Verifier tests ──
+
+def test_verifier_missing(tmp_path: Path):
+    """Verifier reports missing when no files."""
+    config = _config_with_model_root(tmp_path)
+    verifier = ModelVerifier(config)
+    result = verifier.verify("asr")
+    assert result["status"] == "missing"
+
+
+def test_verifier_ok(tmp_path: Path):
+    """Verifier reports ok when files present."""
+    config = _config_with_model_root(tmp_path)
+    asr_dir = Path(config.models.root).expanduser() / "asr"
+    asr_dir.mkdir(parents=True)
+    (asr_dir / "config.json").write_text("{}")
+    (asr_dir / "model.safetensors").write_bytes(b"\x00" * 100)
+
+    verifier = ModelVerifier(config)
+    result = verifier.verify("asr")
+    assert result["status"] == "ok"
+
+
+def test_verifier_corrupt(tmp_path: Path):
+    """Verifier reports corrupt when file is empty."""
+    config = _config_with_model_root(tmp_path)
+    asr_dir = Path(config.models.root).expanduser() / "asr"
+    asr_dir.mkdir(parents=True)
+    (asr_dir / "config.json").write_text("{}")
+    (asr_dir / "model.safetensors").write_bytes(b"")  # empty
+
+    verifier = ModelVerifier(config)
+    result = verifier.verify("asr")
+    assert result["status"] == "corrupt"
+
+
+def test_verifier_unknown_model(tmp_path: Path):
+    """Verifier returns unknown for unregistered model."""
+    config = _config_with_model_root(tmp_path)
+    verifier = ModelVerifier(config)
+    result = verifier.verify("nonexistent")
+    assert result["status"] == "unknown"
+
+
+# ── CLI models tests ──
+
+def test_cli_models_status(tmp_path: Path, monkeypatch):
+    """CLI models status runs without crash."""
+    from typer.testing import CliRunner
+    from subtap.cli import app
+
+    config = _config_with_model_root(tmp_path)
+    import subtap.schemas.config as cfg_mod
+    monkeypatch.setattr(cfg_mod, "load_config", lambda p: config)
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "fakehome")
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["models", "status"])
+    assert result.exit_code == 0
+    assert "asr" in result.output
+
+
+def test_cli_models_verify(tmp_path: Path, monkeypatch):
+    """CLI models verify runs without crash."""
+    from typer.testing import CliRunner
+    from subtap.cli import app
+
+    config = _config_with_model_root(tmp_path)
+    import subtap.schemas.config as cfg_mod
+    monkeypatch.setattr(cfg_mod, "load_config", lambda p: config)
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "fakehome")
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["models", "verify"])
+    assert result.exit_code == 0
+    assert "asr" in result.output
+
+
+def test_cli_models_install_shows_path(tmp_path: Path, monkeypatch):
+    """CLI models install shows expected file location."""
+    from typer.testing import CliRunner
+    from subtap.cli import app
+
+    config = _config_with_model_root(tmp_path)
+    import subtap.schemas.config as cfg_mod
+    monkeypatch.setattr(cfg_mod, "load_config", lambda p: config)
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "fakehome")
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["models", "install", "asr"])
+    assert result.exit_code == 0
+    assert "asr" in result.output
