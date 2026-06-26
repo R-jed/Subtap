@@ -254,3 +254,17 @@ def test_output_engine_finalize(tmp_path):
     latest_link = tmp_path / "video" / "latest"
     assert latest_link.exists()
     assert latest_link.is_symlink()
+
+
+def test_tui_colors_defined():
+    """Test TUI color styles are defined."""
+    from subtap.ui.colors import (
+        STAGE_TITLE, PROGRESS_BAR, PROGRESS_ACTIVE,
+        ERROR, FILE_PATH, TIMING, SUCCESS, HEADER
+    )
+
+    from rich.style import Style
+
+    assert isinstance(STAGE_TITLE, Style)
+    assert isinstance(PROGRESS_BAR, Style)
+    assert isinstance(ERROR, Style)
