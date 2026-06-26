@@ -256,6 +256,19 @@ def test_output_engine_finalize(tmp_path):
     assert latest_link.is_symlink()
 
 
+def test_tui_runner_with_output_engine(tmp_path):
+    """Test TUIRunner with OutputEngine."""
+    from subtap.ui.tui import TUIRunner
+    from subtap.output.engine import OutputEngine
+    from subtap.schemas.config import OutputConfig
+
+    config = OutputConfig()
+    engine = OutputEngine(tmp_path, "video.mp3", config)
+
+    runner = TUIRunner(use_tui=False, output_engine=engine)
+    assert runner.output_engine == engine
+
+
 def test_tui_colors_defined():
     """Test TUI color styles are defined."""
     from subtap.ui.colors import (
