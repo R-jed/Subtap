@@ -146,6 +146,35 @@ def doctor(
         if not ok:
             all_ok = False
 
+    # ── 配置状态 ───────────────────────────────────────────
+    typer.echo("\n▸ 配置状态")
+    config_path = Path.home() / ".subtap" / "config.yaml"
+    if config_path.exists():
+        typer.echo(f"  ✓ {config_path} 存在")
+        try:
+            from subtap.schemas.config import load_config
+            load_config(config_path)
+            typer.echo("  ✓ 配置文件有效")
+        except Exception as e:
+            typer.echo(f"  ✗ 配置文件无效：{e}")
+    else:
+        typer.echo(f"  ✗ {config_path} 不存在")
+
+    # ── 模型状态 ───────────────────────────────────────────
+    typer.echo("\n▸ 模型状态")
+    try:
+        from subtap.schemas.config import load_config
+        from subtap.core.models import ModelRegistry
+
+        config = load_config(config_path)
+        registry = ModelRegistry(config)
+
+        for ms in registry.status():
+            icon = typer.style("✓", fg=typer.colors.GREEN) if ms.installed else typer.style("✗", fg=typer.colors.RED)
+            typer.echo(f"  {icon} {ms.name}")
+    except Exception as e:
+        typer.echo(f"  ⚠ 无法检查模型状态：{e}")
+
     if all_ok:
         typer.echo(typer.style("\n✓ 所有检查通过！", fg=typer.colors.GREEN))
     else:

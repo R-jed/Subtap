@@ -143,3 +143,42 @@ def test_setup_system_check():
         mock_check.return_value = {"ffmpeg": True, "ffprobe": True, "python": True}
         result = runner.invoke(app, ["setup", "--skip-models"])
         assert "系统检查" in result.output
+
+
+def test_setup_system_check_failure():
+    """Test setup system check when deps are missing."""
+    from unittest.mock import patch
+
+    with patch("subtap.core.setup.SetupWizard.check_system_deps") as mock_check:
+        mock_check.return_value = {"ffmpeg": False, "ffprobe": True, "python": True}
+        result = runner.invoke(app, ["setup", "--skip-models"])
+        assert result.exit_code == 1
+        assert "系统检查未通过" in result.output
+
+
+def test_setup_skip_models():
+    """Test setup with --skip-models flag."""
+    from unittest.mock import patch
+
+    with patch("subtap.core.setup.SetupWizard.check_system_deps") as mock_deps, \
+         patch("subtap.core.setup.SetupWizard.check_config_exists") as mock_config:
+        mock_deps.return_value = {"ffmpeg": True, "ffprobe": True, "python": True}
+        mock_config.return_value = True
+        result = runner.invoke(app, ["setup", "--skip-models"])
+        assert result.exit_code == 0
+        assert "模型安装（已跳过）" in result.output
+
+
+def test_doctor_enhanced_checks():
+    """Test enhanced doctor checks."""
+    from unittest.mock import patch, MagicMock
+    from pathlib import Path
+
+    with patch("subtap.core.models.ModelRegistry.status") as mock_status:
+        mock_status.return_value = [
+            MagicMock(name="aligner", installed=True, path=Path("/tmp/aligner")),
+            MagicMock(name="asr", installed=True, path=Path("/tmp/asr")),
+        ]
+        result = runner.invoke(app, ["doctor"])
+        assert "模型状态" in result.output
+        assert "配置状态" in result.output
