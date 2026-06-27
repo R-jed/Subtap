@@ -118,13 +118,6 @@ def doctor(
             rich_ok = False
         checks.append(("rich", "Rich TUI", rich_ok, "" if rich_ok else "未安装，请：pip install rich"))
 
-        # 模型文件
-        project_root = Path(__file__).resolve().parents[2]
-        for name, label in [("asr_0.6b", "ASR 0.6B"), ("aligner", "对齐模型")]:
-            model_dir = project_root / "models" / name
-            model_ok = model_dir.exists() and any(model_dir.iterdir())
-            checks.append((name, label, model_ok, "" if model_ok else f"缺失：{model_dir}"))
-
     # 打印结果
     all_ok = True
     for _name, label, ok, detail in checks:
@@ -147,8 +140,10 @@ def doctor(
             typer.echo("  ✓ 配置文件有效")
         except Exception as e:
             typer.echo(f"  ✗ 配置文件无效：{e}")
+            all_ok = False
     else:
         typer.echo(f"  ✗ {config_path} 不存在")
+        all_ok = False
 
     # ── 模型状态 ───────────────────────────────────────────
     typer.echo("\n▸ 模型状态")
@@ -163,6 +158,7 @@ def doctor(
             icon = typer.style("✓", fg=typer.colors.GREEN) if ms.installed else typer.style("✗", fg=typer.colors.RED)
             typer.echo(f"  {icon} {ms.name}")
             if not ms.installed:
+                all_ok = False
                 typer.echo(f"    路径：{ms.path}")
                 if ms.missing_files:
                     typer.echo(f"    缺失：{', '.join(ms.missing_files)}")
@@ -1112,3 +1108,7 @@ def models_remove(
     except OSError as e:
         typer.echo(f"✗ 删除失败：{e}", err=True)
         raise typer.Exit(1)
+
+
+if __name__ == "__main__":
+    app()
