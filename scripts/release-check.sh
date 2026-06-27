@@ -11,10 +11,11 @@ echo ""
 CHECKS=(
     "pip install -e ."
     "subtap setup --skip-models"
-    "subtap doctor"
-    "subtap demo --help"
+    "subtap --help"
     "subtap run --help"
+    "subtap doctor"
     "subtap models list"
+    "python -m subtap.cli --help"
 )
 
 PASSED=0

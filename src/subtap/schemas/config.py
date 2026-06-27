@@ -51,8 +51,10 @@ class AlignConfig(BaseModel):
 class ModelConfig(BaseModel):
     """Model management configuration."""
 
-    root: str = "~/models/subtap"
+    root: str = "models"
     auto_download: bool = False
+    hf_endpoint: str = "https://huggingface.co"
+    hf_mirror_endpoint: str = "https://hf-mirror.com"
 
 
 class WorkspaceConfig(BaseModel):

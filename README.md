@@ -11,6 +11,10 @@
 - **插拔式架构**：ASR / LLM / Aligner 后端可替换
 - **中间产物落盘**：所有阶段输出 JSONL，支持断点续跑
 
+## 支持范围
+
+当前版本面向 macOS 开发版源码安装，已在 Apple Silicon 环境验证。当前不提供 Developer ID 签名、公证或正式二进制分发。
+
 ## 安装
 
 ```bash
@@ -32,18 +36,20 @@ subtap setup
 subtap doctor
 ```
 
-### 模型下载
+## 模型安装
 
-```bash
-# ASR 模型（Qwen3-ASR-0.6B-8bit，约 960 MB）
-huggingface-cli download aufklarer/Qwen3-ASR-0.6B-MLX-8bit --local-dir models/asr_0.6b
+模型统一放在项目根目录 `models/`：
 
-# ASR 模型（Qwen3-ASR-1.7B-8bit，约 2.3 GB，可选）
-huggingface-cli download aufklarer/Qwen3-ASR-1.7B-MLX-8bit --local-dir models/asr_1.7b
+- `models/asr_0.6b`
+- `models/asr_1.7b`（可选）
+- `models/aligner`
 
-# 对齐模型（Qwen3-ForcedAligner-0.6B-8bit，约 1.2 GB）
-huggingface-cli download mlx-community/Qwen3-ForcedAligner-0.6B-8bit --local-dir models/aligner
-```
+运行 `subtap setup` 后选择模型安装方式：
+
+1. Hugging Face 直连
+2. Hugging Face 国内镜像：`https://hf-mirror.com`
+3. ModelScope
+4. 手动下载后放入 `models/`
 
 ## 快速开始
 

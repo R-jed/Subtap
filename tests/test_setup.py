@@ -1,7 +1,6 @@
 """Tests for setup business logic."""
 
 import pytest
-from pathlib import Path
 from unittest.mock import patch
 
 from subtap.core.setup import SetupWizard
@@ -69,6 +68,22 @@ def test_run_init_success():
         mock_init.assert_called_once()
 
 
+def test_choose_download_source_valid():
+    """Test choose_download_source with valid source names."""
+    wizard = SetupWizard()
+    assert wizard.choose_download_source("hf") == "hf"
+    assert wizard.choose_download_source("hf-mirror") == "hf-mirror"
+    assert wizard.choose_download_source("modelscope") == "modelscope"
+    assert wizard.choose_download_source("manual") == "manual"
+
+
+def test_choose_download_source_invalid():
+    """Test choose_download_source raises ValueError for unknown source."""
+    wizard = SetupWizard()
+    with pytest.raises(ValueError, match="未知下载方式"):
+        wizard.choose_download_source("invalid_source")
+
+
 def test_run_init_failure():
     """Test failed init."""
     wizard = SetupWizard()
@@ -78,12 +93,12 @@ def test_run_init_failure():
         assert result is False
 
 
-def test_setup_model_selection_fast_mode():
-    """Test model selection in fast mode."""
+def test_setup_model_selection_default():
+    """Test default downloads asr_0.6b and aligner."""
     wizard = SetupWizard()
     with patch.object(wizard, '_download_model') as mock_download:
         mock_download.return_value = True
-        wizard.setup_models(mode="fast", quick=False, full=False)
+        wizard.setup_models(source="hf")
         # Should download asr_0.6b and aligner
         assert mock_download.call_count == 2
         calls = [call.args[1] for call in mock_download.call_args_list]
@@ -91,38 +106,12 @@ def test_setup_model_selection_fast_mode():
         assert "asr_0.6b" in calls
 
 
-def test_setup_model_selection_quality_mode():
-    """Test model selection in quality mode."""
+def test_setup_model_selection_include_optional():
+    """Test include_optional downloads all models."""
     wizard = SetupWizard()
     with patch.object(wizard, '_download_model') as mock_download:
         mock_download.return_value = True
-        wizard.setup_models(mode="quality", quick=False, full=False)
-        # Should download asr_1.7b and aligner
-        assert mock_download.call_count == 2
-        calls = [call.args[1] for call in mock_download.call_args_list]
-        assert "aligner" in calls
-        assert "asr_1.7b" in calls
-
-
-def test_setup_model_selection_quick():
-    """Test quick mode downloads only 0.6B."""
-    wizard = SetupWizard()
-    with patch.object(wizard, '_download_model') as mock_download:
-        mock_download.return_value = True
-        wizard.setup_models(mode="hybrid", quick=True, full=False)
-        # Should download asr_0.6b and aligner
-        assert mock_download.call_count == 2
-        calls = [call.args[1] for call in mock_download.call_args_list]
-        assert "aligner" in calls
-        assert "asr_0.6b" in calls
-
-
-def test_setup_model_selection_full():
-    """Test full mode downloads all models."""
-    wizard = SetupWizard()
-    with patch.object(wizard, '_download_model') as mock_download:
-        mock_download.return_value = True
-        wizard.setup_models(mode="hybrid", quick=False, full=True)
+        wizard.setup_models(source="hf", include_optional=True)
         # Should download asr_0.6b, asr_1.7b, and aligner
         assert mock_download.call_count == 3
         calls = [call.args[1] for call in mock_download.call_args_list]
@@ -131,32 +120,19 @@ def test_setup_model_selection_full():
         assert "asr_1.7b" in calls
 
 
-def test_setup_model_selection_hybrid_default():
-    """Test hybrid mode (default) downloads asr_0.6b."""
-    wizard = SetupWizard()
-    with patch.object(wizard, '_download_model') as mock_download:
-        mock_download.return_value = True
-        wizard.setup_models(mode="hybrid", quick=False, full=False)
-        # Should download asr_0.6b and aligner
-        assert mock_download.call_count == 2
-        calls = [call.args[1] for call in mock_download.call_args_list]
-        assert "aligner" in calls
-        assert "asr_0.6b" in calls
-
-
 def test_setup_model_download_partial_failure():
     """Test setup_models returns False when some downloads fail."""
     wizard = SetupWizard()
     call_count = 0
 
-    def mock_download(downloader, model_name):
+    def mock_download(downloader, model_name, source="hf"):
         nonlocal call_count
         call_count += 1
         # aligner succeeds, asr fails
         return model_name == "aligner"
 
     with patch.object(wizard, '_download_model', side_effect=mock_download):
-        result = wizard.setup_models(mode="fast", quick=False, full=False)
+        result = wizard.setup_models(source="hf")
         assert result is False
         assert call_count == 2  # aligner + asr_0.6b
 
@@ -166,5 +142,33 @@ def test_setup_model_download_all_fail():
     wizard = SetupWizard()
 
     with patch.object(wizard, '_download_model', return_value=False):
-        result = wizard.setup_models(mode="fast", quick=False, full=False)
+        result = wizard.setup_models(source="hf")
         assert result is False
+
+
+def test_setup_models_uses_selected_source(monkeypatch, tmp_path):
+    """Test setup_models passes source to ModelDownloader.download()."""
+    from subtap.core.setup import SetupWizard
+
+    calls = []
+
+    class FakeDownloader:
+        def __init__(self, config):
+            pass
+
+        def download(self, model_name, source="hf", progress=None):
+            calls.append((model_name, source))
+            return tmp_path / "models" / model_name
+
+    monkeypatch.setattr("subtap.core.models.ModelDownloader", FakeDownloader)
+    monkeypatch.setattr(
+        "subtap.schemas.config.load_config",
+        lambda path: __import__("subtap.schemas.config").schemas.config.SubtapConfig(),
+    )
+
+    ok = SetupWizard().setup_models(source="hf-mirror", include_optional=False)
+
+    assert ok is True
+    assert ("asr_0.6b", "hf-mirror") in calls
+    assert ("aligner", "hf-mirror") in calls
+    assert all(name != "asr_1.7b" for name, _source in calls)

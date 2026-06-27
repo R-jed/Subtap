@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import platform
 import shutil
@@ -94,36 +95,19 @@ def doctor(
 
     # --release 模式：增加模型和 TUI 检查
     if release:
+        import importlib.util
+
         # MLX 运行时
-        try:
-            import mlx
-            mlx_ok = True
-        except ImportError:
-            mlx_ok = False
+        mlx_ok = importlib.util.find_spec("mlx") is not None
         checks.append(("mlx", "MLX 运行时", mlx_ok, "" if mlx_ok else "未安装，请：pip install mlx"))
 
         # mlx-audio
-        try:
-            import mlx_audio
-            mla_ok = True
-        except ImportError:
-            mla_ok = False
+        mla_ok = importlib.util.find_spec("mlx_audio") is not None
         checks.append(("mlx-audio", "MLX Audio", mla_ok, "" if mla_ok else "未安装，请：pip install mlx-audio"))
 
         # rich
-        try:
-            import rich
-            rich_ok = True
-        except ImportError:
-            rich_ok = False
+        rich_ok = importlib.util.find_spec("rich") is not None
         checks.append(("rich", "Rich TUI", rich_ok, "" if rich_ok else "未安装，请：pip install rich"))
-
-        # 模型文件
-        project_root = Path(__file__).resolve().parents[2]
-        for name, label in [("asr_0.6b", "ASR 0.6B"), ("aligner", "对齐模型")]:
-            model_dir = project_root / "models" / name
-            model_ok = model_dir.exists() and any(model_dir.iterdir())
-            checks.append((name, label, model_ok, "" if model_ok else f"缺失：{model_dir}"))
 
     # 打印结果
     all_ok = True
@@ -147,8 +131,10 @@ def doctor(
             typer.echo("  ✓ 配置文件有效")
         except Exception as e:
             typer.echo(f"  ✗ 配置文件无效：{e}")
+            all_ok = False
     else:
         typer.echo(f"  ✗ {config_path} 不存在")
+        all_ok = False
 
     # ── 模型状态 ───────────────────────────────────────────
     typer.echo("\n▸ 模型状态")
@@ -163,6 +149,7 @@ def doctor(
             icon = typer.style("✓", fg=typer.colors.GREEN) if ms.installed else typer.style("✗", fg=typer.colors.RED)
             typer.echo(f"  {icon} {ms.name}")
             if not ms.installed:
+                all_ok = False
                 typer.echo(f"    路径：{ms.path}")
                 if ms.missing_files:
                     typer.echo(f"    缺失：{', '.join(ms.missing_files)}")
@@ -236,9 +223,13 @@ def _doctor_workspace(work_dir: Path = Path("./work")) -> None:
 @app.command()
 def setup(
     skip_models: bool = typer.Option(False, "--skip-models", help="跳过模型下载"),
-    quick: bool = typer.Option(False, "--quick", help="快速模式（只下载 0.6B）[待实现]"),
-    full: bool = typer.Option(False, "--full", help="完整模式（下载所有模型）[待实现]"),
-    mode: str = typer.Option("hybrid", "--mode", help="执行模式：fast / quality / hybrid [待实现]"),
+    download_source: str = typer.Option(
+        "ask",
+        "--download-source",
+        help="模型下载方式：ask / hf / hf-mirror / modelscope / manual",
+    ),
+    include_optional: bool = typer.Option(False, "--include-optional", help="同时下载可选大模型"),
+    model_endpoint: str | None = typer.Option(None, "--model-endpoint", help="自定义 Hugging Face 镜像地址"),
 ) -> None:
     """用户初始化向导"""
     from subtap.core.setup import SetupWizard
@@ -273,8 +264,15 @@ def setup(
         typer.echo("\n▸ Step 3: 模型安装（已跳过）")
     else:
         typer.echo("\n▸ Step 3: 模型安装")
-        wizard.setup_models(mode=mode, quick=quick, full=full)
-        typer.echo("  ✓ 模型安装完成")
+        ok = wizard.setup_models(
+            source=download_source,
+            include_optional=include_optional,
+            endpoint=model_endpoint,
+        )
+        if ok:
+            typer.echo("  ✓ 模型安装完成")
+        else:
+            typer.echo("  ⚠ 模型安装未完成")
 
     # Step 4: Doctor check
     typer.echo("\n▸ Step 4: 环境验证")
@@ -332,7 +330,6 @@ def run(
     """
     from subtap.schemas.config import load_config
     from subtap.core.pipeline import Pipeline
-    from subtap.output.engine import OutputEngine
 
     if not input_path.exists():
         typer.echo(f"✗ 错误：文件未找到 {input_path}", err=True)
@@ -340,9 +337,6 @@ def run(
 
     config = load_config(Path.home() / ".subtap" / "config.yaml")
     config.output.timestamp = timestamp  # CLI overrides config
-
-    # Create OutputEngine
-    engine = OutputEngine(output_dir, input_path.stem, config.output)
 
     pipeline = Pipeline(config, work_dir=work_dir)
     pipeline.workspace.ensure_dirs()
@@ -394,7 +388,7 @@ def run(
     profiler.wrap_pipeline(pipeline)
 
     if use_tui:
-        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from concurrent.futures import ThreadPoolExecutor
         from subtap.ui.dashboard import PipelineDashboard
         from subtap.ui.event_bridge import EventBridge
 
@@ -713,7 +707,7 @@ def retry(
 
     typer.echo(f"▸ 重试 {stage_name}...")
     try:
-        result = ctrl.retry_stage(stage_name)
+        ctrl.retry_stage(stage_name)
         typer.echo(f"  ✓ {stage_name} 重试成功")
     except ValueError as e:
         typer.echo(f"✗ {e}", err=True)
@@ -763,7 +757,7 @@ def demo(
         runner = TUIRunner(use_tui=True)
 
     try:
-        result = runner.run_pipeline(
+        runner.run_pipeline(
             pipeline, input_file, output_dir, fmt="srt",
             skip_clean=True, skip_align=True,
         )
@@ -851,7 +845,8 @@ def quality(
     # Write quality event to log
     log_path = aligned_path.parent / "logs" / "event.log.jsonl"
     if log_path.parent.exists():
-        import json, time
+        import json
+        import time
         event = {
             "stage": "quality_check",
             "quality_score": report.total_score,
@@ -889,7 +884,8 @@ def analyze(
         raise typer.Exit(1)
 
     # Create temporary aligned.jsonl for analysis
-    import tempfile, json
+    import tempfile
+    import json
     with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, encoding="utf-8") as f:
         for seg in segments:
             f.write(json.dumps(seg, ensure_ascii=False) + "\n")
@@ -1014,7 +1010,7 @@ def models_status() -> None:
 
 @models_app.command("install")
 def models_install(
-    model_name: str = typer.Argument(..., help="要安装的模型（asr / aligner / all）"),
+    model_name: str = typer.Argument(..., help="要安装的模型（asr_0.6b / asr_1.7b / aligner / all）"),
 ) -> None:
     """安装模型文件到本地"""
     from subtap.schemas.config import load_config
@@ -1047,8 +1043,10 @@ def models_verify() -> None:
     config = load_config(Path.home() / ".subtap" / "config.yaml")
     verifier = ModelVerifier(config)
 
+    from subtap.core.models import MODEL_REGISTRY
+
     all_ok = True
-    for name in ["asr", "aligner"]:
+    for name in MODEL_REGISTRY:
         result = verifier.verify(name)
         if result["status"] == "ok":
             typer.echo(typer.style(f"  ✓ {name}: 正常", fg=typer.colors.GREEN))
@@ -1099,3 +1097,7 @@ def models_remove(
     except OSError as e:
         typer.echo(f"✗ 删除失败：{e}", err=True)
         raise typer.Exit(1)
+
+
+if __name__ == "__main__":
+    app()
