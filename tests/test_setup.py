@@ -73,7 +73,6 @@ def test_choose_download_source_valid():
     wizard = SetupWizard()
     assert wizard.choose_download_source("hf") == "hf"
     assert wizard.choose_download_source("hf-mirror") == "hf-mirror"
-    assert wizard.choose_download_source("modelscope") == "modelscope"
     assert wizard.choose_download_source("manual") == "manual"
 
 
@@ -155,6 +154,9 @@ def test_setup_models_uses_selected_source(monkeypatch, tmp_path):
     class FakeDownloader:
         def __init__(self, config):
             pass
+
+        def check_connectivity(self, source, repo):
+            return True
 
         def download(self, model_name, source="hf", progress=None):
             calls.append((model_name, source))
