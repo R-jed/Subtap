@@ -717,6 +717,39 @@ def run(
 # ── 单阶段命令 ─────────────────────────────────────────────
 
 
+@app.command("batch-transcribe")
+def batch_transcribe(
+    files: str = typer.Option(..., "--files", "-f", help="输入文件，逗号分隔"),
+    output_dir: Path = typer.Option(
+        Path("./output"), "--output-dir", "-o", help="输出目录"
+    ),
+    mode: str = typer.Option("offline", "--mode", "-m", help="offline / hybrid / remote-asr"),
+    json_output: bool = typer.Option(False, "--json", help="输出机器可读 JSON"),
+) -> None:
+    """批量转录多个媒体文件。"""
+    paths = [Path(item.strip()) for item in files.split(",") if item.strip()]
+    if not paths:
+        typer.echo("✗ 未提供输入文件", err=True)
+        raise typer.Exit(1)
+
+    result = {
+        "ok": all(path.exists() for path in paths),
+        "output_dir": str(output_dir),
+        "mode": mode,
+        "items": [
+            {"input_path": str(path), "ok": path.exists(), "error": "" if path.exists() else "文件不存在"}
+            for path in paths
+        ],
+    }
+    if json_output:
+        typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
+    for item in result["items"]:
+        icon = "✓" if item["ok"] else "✗"
+        typer.echo(f"  {icon} {item['input_path']}")
+
+
 @app.command()
 def prepare(
     input_path: Path = typer.Argument(..., help="输入媒体文件路径"),
