@@ -34,6 +34,7 @@ class EventBus:
         self._subscribers: dict[EventType, list[Callable]] = {}
         self._queue: asyncio.Queue[PipelineEvent] = asyncio.Queue(maxsize=buffer_size)
         self._running = False
+        self._stop_event = asyncio.Event()
 
     def subscribe(self, event_type: EventType, callback: Callable) -> None:
         """Subscribe to an event type."""
@@ -51,9 +52,15 @@ class EventBus:
     async def start(self) -> None:
         """Start event processing loop."""
         self._running = True
+        self._stop_event.clear()
         while self._running:
-            event = await self._queue.get()
-            await self._dispatch(event)
+            try:
+                event = await asyncio.wait_for(self._queue.get(), timeout=0.1)
+                await self._dispatch(event)
+            except asyncio.TimeoutError:
+                continue
+            except asyncio.CancelledError:
+                break
 
     async def _dispatch(self, event: PipelineEvent) -> None:
         """Dispatch event to subscribers."""
@@ -66,3 +73,4 @@ class EventBus:
     def stop(self) -> None:
         """Stop event processing loop."""
         self._running = False
+        self._stop_event.set()
