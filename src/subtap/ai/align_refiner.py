@@ -77,12 +77,14 @@ class AlignEngine:
                     end_sec=mid_point,
                     text=prev.text,
                 )
-                result.append(AlignedSegment(
-                    sentence_id=curr.sentence_id,
-                    start_sec=mid_point,
-                    end_sec=curr.end_sec,
-                    text=curr.text,
-                ))
+                result.append(
+                    AlignedSegment(
+                        sentence_id=curr.sentence_id,
+                        start_sec=mid_point,
+                        end_sec=curr.end_sec,
+                        text=curr.text,
+                    )
+                )
             else:
                 result.append(curr)
 
@@ -119,12 +121,14 @@ class AlignEngine:
                     end_sec=new_prev_end,
                     text=prev.text,
                 )
-                result.append(AlignedSegment(
-                    sentence_id=curr.sentence_id,
-                    start_sec=new_curr_start,
-                    end_sec=curr.end_sec,
-                    text=curr.text,
-                ))
+                result.append(
+                    AlignedSegment(
+                        sentence_id=curr.sentence_id,
+                        start_sec=new_curr_start,
+                        end_sec=curr.end_sec,
+                        text=curr.text,
+                    )
+                )
             else:
                 result.append(curr)
 

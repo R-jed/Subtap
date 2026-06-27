@@ -21,7 +21,13 @@ class Workspace:
 
     def ensure_dirs(self) -> None:
         """Create all workspace subdirectories."""
-        for d in [self.audio_dir, self.chunks_dir, self.asr_dir, self.cleaned_dir, self.logs_dir]:
+        for d in [
+            self.audio_dir,
+            self.chunks_dir,
+            self.asr_dir,
+            self.cleaned_dir,
+            self.logs_dir,
+        ]:
             d.mkdir(parents=True, exist_ok=True)
 
     @property

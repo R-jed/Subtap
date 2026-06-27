@@ -87,8 +87,7 @@ class OutputLifecycle:
             try:
                 output_path = self._artifacts_dir / f"{name}.json"
                 output_path.write_text(
-                    json.dumps(content, indent=2, ensure_ascii=False),
-                    encoding="utf-8"
+                    json.dumps(content, indent=2, ensure_ascii=False), encoding="utf-8"
                 )
                 self._written_files.append(output_path)
                 logger.info("写入 artifact: %s", output_path)
@@ -126,12 +125,14 @@ class OutputLifecycle:
                 file_hash = hashlib.sha256(content).hexdigest()[:16]
                 checksums.append(f"{file_path.name}:{file_hash}")
 
-        combined_checksum = hashlib.sha256(
-            "|".join(checksums).encode()
-        ).hexdigest()[:16]
+        combined_checksum = hashlib.sha256("|".join(checksums).encode()).hexdigest()[
+            :16
+        ]
 
         result = {
-            "files": [str(f.relative_to(self.version_dir)) for f in self._written_files],
+            "files": [
+                str(f.relative_to(self.version_dir)) for f in self._written_files
+            ],
             "checksum": combined_checksum,
             "version_dir": str(self.version_dir),
         }

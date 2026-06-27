@@ -84,8 +84,12 @@ class VersionManager:
             return
 
         existing = sorted(
-            [p for p in self._base_dir.iterdir() if p.is_dir() and p.name.startswith("v")],
-            key=lambda p: int(p.name[1:])
+            [
+                p
+                for p in self._base_dir.iterdir()
+                if p.is_dir() and p.name.startswith("v")
+            ],
+            key=lambda p: int(p.name[1:]),
         )
 
         if len(existing) <= keep_last:

@@ -12,7 +12,7 @@ def test_pip_install():
     result = subprocess.run(
         [sys.executable, "-m", "pip", "install", "-e", "."],
         capture_output=True,
-        text=True
+        text=True,
     )
     assert result.returncode == 0
 
@@ -30,7 +30,8 @@ def test_subtap_setup_help():
 
     try:
         from subtap.cli import app
-        with patch('sys.argv', ['subtap', 'setup', '--help']):
+
+        with patch("sys.argv", ["subtap", "setup", "--help"]):
             try:
                 app()
             except SystemExit:
@@ -46,9 +47,7 @@ def test_subtap_setup_help():
 def test_subtap_doctor():
     """Test subtap doctor works."""
     result = subprocess.run(
-        [sys.executable, "-m", "subtap.cli", "doctor"],
-        capture_output=True,
-        text=True
+        [sys.executable, "-m", "subtap.cli", "doctor"], capture_output=True, text=True
     )
     assert result.returncode == 0
 
@@ -58,7 +57,7 @@ def test_subtap_demo_help():
     result = subprocess.run(
         [sys.executable, "-m", "subtap.cli", "demo", "--help"],
         capture_output=True,
-        text=True
+        text=True,
     )
     assert result.returncode == 0
 
@@ -68,7 +67,7 @@ def test_subtap_run_help():
     result = subprocess.run(
         [sys.executable, "-m", "subtap.cli", "run", "--help"],
         capture_output=True,
-        text=True
+        text=True,
     )
     assert result.returncode == 0
 
@@ -78,7 +77,7 @@ def test_subtap_models_list():
     result = subprocess.run(
         [sys.executable, "-m", "subtap.cli", "models", "list"],
         capture_output=True,
-        text=True
+        text=True,
     )
     assert result.returncode == 0
 

@@ -6,7 +6,6 @@ import json
 import logging
 from pathlib import Path
 
-from subtap.output.exceptions import OutputError
 from subtap.output.lifecycle import OutputLifecycle
 from subtap.output.naming import NamingStrategy
 from subtap.output.versioning import VersionManager
@@ -77,8 +76,7 @@ class OutputEngine:
         """
         name = self.naming.get_metrics_name()
         return self.lifecycle.write_user_artifact(
-            name,
-            json.dumps(metrics, indent=2, ensure_ascii=False)
+            name, json.dumps(metrics, indent=2, ensure_ascii=False)
         )
 
     def write_run_log(self, log_entry: dict) -> Path:

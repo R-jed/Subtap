@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Callable, Optional
 
-from subtap.engine.state import PipelineState, StageState, StageStatus, STAGE_ORDER, STAGE_CN
+from subtap.engine.state import PipelineState, StageStatus, STAGE_ORDER
 from subtap.engine.policy import ExecutionPolicy
 from subtap.engine.events import EventLogger
 from subtap.schemas.config import SubtapConfig
@@ -40,7 +40,9 @@ class PipelineController:
         self._git_commit_hash: str = ""
         self._workspace_clean: bool = True
 
-    def set_preflight_state(self, git_commit_hash: str = "", workspace_clean: bool = True) -> None:
+    def set_preflight_state(
+        self, git_commit_hash: str = "", workspace_clean: bool = True
+    ) -> None:
         """Set pre-flight state for event logging."""
         self._git_commit_hash = git_commit_hash
         self._workspace_clean = workspace_clean
@@ -75,7 +77,9 @@ class PipelineController:
         for stage_name in target_stages:
             if self.policy.should_skip(stage_name):
                 self.state.mark_skipped(stage_name)
-                self.event_log.log_stage_skipped(stage_name, f"policy={self.policy.mode.value}")
+                self.event_log.log_stage_skipped(
+                    stage_name, f"policy={self.policy.mode.value}"
+                )
                 continue
 
             self._execute_stage_with_retry(stage_name, timings)
@@ -150,10 +154,13 @@ class PipelineController:
             return {}
 
         from subtap.ui.tui import PlainRunner
+
         runner = PlainRunner()
         return runner.run_pipeline(
             type(self)(self.config, self.workspace.root, self.policy.mode.value),
-            input_path, output_dir, fmt=fmt,
+            input_path,
+            output_dir,
+            fmt=fmt,
             skip_clean=self.policy.should_skip("clean"),
             skip_align=self.policy.should_skip("align"),
         )
@@ -162,7 +169,8 @@ class PipelineController:
         """Execute a stage with automatic retry on failure."""
         self.state.mark_running(stage_name)
         self.event_log.log(
-            stage_name, "start",
+            stage_name,
+            "start",
             git_commit_hash=self._git_commit_hash,
             workspace_clean=self._workspace_clean,
         )
@@ -180,7 +188,9 @@ class PipelineController:
                 timings[stage_name] = duration
                 self.state.mark_success(stage_name, result, duration)
                 self.event_log.log(
-                    stage_name, "success", duration=duration,
+                    stage_name,
+                    "success",
+                    duration=duration,
                     extra={"result_keys": list(result.keys())},
                     git_commit_hash=self._git_commit_hash,
                     workspace_clean=self._workspace_clean,
@@ -194,7 +204,9 @@ class PipelineController:
                     stage.retry_count = attempt + 1
                     self.state.mark_retrying(stage_name)
                     self.event_log.log(
-                        stage_name, "retrying", retry_count=attempt + 1,
+                        stage_name,
+                        "retrying",
+                        retry_count=attempt + 1,
                         git_commit_hash=self._git_commit_hash,
                         workspace_clean=self._workspace_clean,
                     )
@@ -203,7 +215,10 @@ class PipelineController:
                     timings[stage_name] = duration
                     self.state.mark_failed(stage_name, str(e))
                     self.event_log.log(
-                        stage_name, "failed", error=str(e), retry_count=attempt + 1,
+                        stage_name,
+                        "failed",
+                        error=str(e),
+                        retry_count=attempt + 1,
                         git_commit_hash=self._git_commit_hash,
                         workspace_clean=self._workspace_clean,
                     )
@@ -221,42 +236,73 @@ class PipelineController:
 
     def _run_prepare(self, **_) -> dict:
         from subtap.core.media import prepare_media
+
         media_info = prepare_media(
             Path(self.workspace.root / ".input_path"),
-            self.workspace, self.config,
+            self.workspace,
+            self.config,
         )
         return {"media_info": media_info.model_dump()}
 
     def _run_chunk(self, **_) -> dict:
         from subtap.core.vad import split_chunks
+
         chunks = split_chunks(self.workspace, self.config)
-        return {"chunk_count": len(chunks), "chunks_jsonl": str(self.workspace.chunks_jsonl)}
+        return {
+            "chunk_count": len(chunks),
+            "chunks_jsonl": str(self.workspace.chunks_jsonl),
+        }
 
     def _run_asr(self, **_) -> dict:
         from subtap.core.asr import run_asr
-        result = run_asr(self.workspace, self.config, backend_name=self.policy.asr_backend)
-        return {"segment_count": result["segment_count"], "asr_jsonl": str(self.workspace.asr_jsonl)}
+
+        result = run_asr(
+            self.workspace, self.config, backend_name=self.policy.asr_backend
+        )
+        return {
+            "segment_count": result["segment_count"],
+            "asr_jsonl": str(self.workspace.asr_jsonl),
+        }
 
     def _run_clean(self, **_) -> dict:
         from subtap.core.clean import run_clean
+
         result = run_clean(self.workspace, self.config)
-        return {"segment_count": result["segment_count"], "cleaned_jsonl": str(self.workspace.cleaned_jsonl)}
+        return {
+            "segment_count": result["segment_count"],
+            "cleaned_jsonl": str(self.workspace.cleaned_jsonl),
+        }
 
     def _run_segment(self, **_) -> dict:
         from subtap.core.segment import run_segment
-        result = run_segment(self.workspace, self.config)
-        return {"sentence_count": result["sentence_count"], "sentences_jsonl": str(self.workspace.sentences_jsonl)}
+
+        result = run_segment(self.workspace)
+        return {
+            "sentence_count": result["sentence_count"],
+            "sentences_jsonl": str(self.workspace.sentences_jsonl),
+        }
 
     def _run_align(self, **_) -> dict:
         from subtap.core.align import run_align
-        result = run_align(self.workspace, self.config, backend_name=self.policy.align_backend)
-        return {"aligned_count": result["aligned_count"], "aligned_jsonl": str(self.workspace.aligned_jsonl)}
+
+        result = run_align(
+            self.workspace, self.config, backend_name=self.policy.align_backend
+        )
+        return {
+            "aligned_count": result["aligned_count"],
+            "aligned_jsonl": str(self.workspace.aligned_jsonl),
+        }
 
     def _run_export(self, fmt: str = "srt", output_dir: str | None = None, **_) -> dict:
         from subtap.core.export import run_export
+
         out = Path(output_dir) if output_dir else self.workspace.root / "output"
         result = run_export(self.workspace.aligned_jsonl, out, fmt=fmt)
-        return {"output_path": result["output_path"], "format": result["format"], "segment_count": result["segment_count"]}
+        return {
+            "output_path": result["output_path"],
+            "format": result["format"],
+            "segment_count": result["segment_count"],
+        }
 
 
 # Avoid circular import at module level

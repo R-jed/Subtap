@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -59,7 +58,9 @@ class TestCheckWorkspace:
 
     def test_preserves_output_srt(self, workspace: Path, cleanroom: Cleanroom):
         # Output SRT files must NOT be flagged
-        (workspace / "output" / "test.srt").write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n")
+        (workspace / "output" / "test.srt").write_text(
+            "1\n00:00:01,000 --> 00:00:02,000\nHello\n"
+        )
         (workspace / "output" / "test.json").write_text("{}")
 
         result = cleanroom.check_workspace()

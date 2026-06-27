@@ -36,11 +36,9 @@ class GlossaryLearner:
 
     def _init_rapidfuzz(self):
         """Initialize rapidfuzz with fallback."""
-        try:
-            import rapidfuzz
-            self._rapidfuzz_available = True
-        except ImportError:
-            self._rapidfuzz_available = False
+        import importlib.util
+
+        self._rapidfuzz_available = importlib.util.find_spec("rapidfuzz") is not None
 
     def learn(
         self,
@@ -72,11 +70,13 @@ class GlossaryLearner:
 
         replacement_rules = []
         for error_term, count in repeated_errors.items():
-            replacement_rules.append({
-                "from": error_term,
-                "to": error_term,  # User should specify correction
-                "count": str(count),
-            })
+            replacement_rules.append(
+                {
+                    "from": error_term,
+                    "to": error_term,  # User should specify correction
+                    "count": str(count),
+                }
+            )
 
         return GlossaryUpdate(
             new_terms=new_terms,
@@ -113,19 +113,26 @@ class GlossaryLearner:
                     word_counts[clean_word] += 1
 
         # Filter by minimum occurrences
-        repeated = {word: count for word, count in word_counts.items() if count >= min_occurrences}
+        repeated = {
+            word: count
+            for word, count in word_counts.items()
+            if count >= min_occurrences
+        }
 
         # If rapidfuzz available, find fuzzy similar terms
         if self._rapidfuzz_available and len(repeated) > 1:
             try:
                 from rapidfuzz import fuzz
+
                 terms = list(repeated.keys())
                 for i in range(len(terms)):
                     for j in range(i + 1, len(terms)):
                         score = fuzz.ratio(terms[i], terms[j])
                         if score >= 80:  # 80% similar
                             # Merge counts
-                            repeated[terms[i]] = repeated.get(terms[i], 0) + repeated.get(terms[j], 0)
+                            repeated[terms[i]] = repeated.get(
+                                terms[i], 0
+                            ) + repeated.get(terms[j], 0)
             except Exception:
                 pass  # Use basic counts
 
@@ -143,6 +150,7 @@ class GlossaryLearner:
             List of potential domain terms.
         """
         import re
+
         terms = set()
 
         for seg in segments:
@@ -155,7 +163,10 @@ class GlossaryLearner:
             # Chinese technical terms (common patterns)
             if "学习" in text or "算法" in text or "模型" in text:
                 for word in text.split():
-                    if any(keyword in word for keyword in ["学习", "算法", "模型", "神经", "网络"]):
+                    if any(
+                        keyword in word
+                        for keyword in ["学习", "算法", "模型", "神经", "网络"]
+                    ):
                         terms.add(word)
 
         return list(terms)

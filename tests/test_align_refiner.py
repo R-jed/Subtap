@@ -17,7 +17,9 @@ def refiner() -> AlignEngine:
 def overlapping_segments() -> list[AlignedSegment]:
     return [
         AlignedSegment(sentence_id=0, start_sec=0.0, end_sec=2.5, text="第一句。"),
-        AlignedSegment(sentence_id=1, start_sec=2.3, end_sec=4.0, text="第二句。"),  # Overlaps
+        AlignedSegment(
+            sentence_id=1, start_sec=2.3, end_sec=4.0, text="第二句。"
+        ),  # Overlaps
         AlignedSegment(sentence_id=2, start_sec=4.0, end_sec=6.0, text="第三句。"),
     ]
 
@@ -40,7 +42,9 @@ class TestSmoothTiming:
     def test_smooths_small_jumps(self, refiner: AlignEngine):
         segments = [
             AlignedSegment(sentence_id=0, start_sec=0.0, end_sec=2.0, text="第一句。"),
-            AlignedSegment(sentence_id=1, start_sec=2.5, end_sec=4.0, text="第二句。"),  # 0.5s gap
+            AlignedSegment(
+                sentence_id=1, start_sec=2.5, end_sec=4.0, text="第二句。"
+            ),  # 0.5s gap
         ]
         result = refiner._smooth_timing(segments)
         # Should not change much (gap within tolerance)
@@ -63,7 +67,9 @@ class TestFixOverlaps:
         for i in range(len(result) - 1):
             assert result[i].end_sec <= result[i + 1].start_sec
 
-    def test_preserves_non_overlapping(self, refiner: AlignEngine, normal_segments: list):
+    def test_preserves_non_overlapping(
+        self, refiner: AlignEngine, normal_segments: list
+    ):
         result = refiner._fix_overlaps(normal_segments)
         assert result[0].end_sec == 2.0
         assert result[1].start_sec == 2.0
@@ -94,7 +100,9 @@ class TestSnapToSilence:
         # Should snap to nearest silence boundary
         assert result[0].end_sec <= 2.1
 
-    def test_preserves_reasonable_timing(self, refiner: AlignEngine, normal_segments: list):
+    def test_preserves_reasonable_timing(
+        self, refiner: AlignEngine, normal_segments: list
+    ):
         result = refiner._snap_to_silence(normal_segments)
         assert result[0].end_sec == 2.0
 
@@ -105,20 +113,28 @@ class TestSnapToSilence:
 class TestRefinerPipeline:
     """Test full refinement pipeline."""
 
-    def test_refine_returns_aligned_segments(self, refiner: AlignEngine, overlapping_segments: list):
+    def test_refine_returns_aligned_segments(
+        self, refiner: AlignEngine, overlapping_segments: list
+    ):
         result = refiner.refine(overlapping_segments)
         assert all(isinstance(s, AlignedSegment) for s in result)
 
-    def test_refine_fixes_overlaps(self, refiner: AlignEngine, overlapping_segments: list):
+    def test_refine_fixes_overlaps(
+        self, refiner: AlignEngine, overlapping_segments: list
+    ):
         result = refiner.refine(overlapping_segments)
         for i in range(len(result) - 1):
             assert result[i].end_sec <= result[i + 1].start_sec
 
-    def test_refine_preserves_count(self, refiner: AlignEngine, overlapping_segments: list):
+    def test_refine_preserves_count(
+        self, refiner: AlignEngine, overlapping_segments: list
+    ):
         result = refiner.refine(overlapping_segments)
         assert len(result) == len(overlapping_segments)
 
-    def test_refine_no_time_regression(self, refiner: AlignEngine, overlapping_segments: list):
+    def test_refine_no_time_regression(
+        self, refiner: AlignEngine, overlapping_segments: list
+    ):
         result = refiner.refine(overlapping_segments)
         for seg in result:
             assert seg.end_sec >= seg.start_sec

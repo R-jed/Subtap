@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import deque
 
-from subtap.metrics.events import EventBus, EventType, PipelineEvent
+from subtap.metrics.events import EventBus, PipelineEvent
 
 
 class ChunkTracer:
@@ -28,12 +28,14 @@ class ChunkTracer:
         avg_latency = sum(self._latency_window) / len(self._latency_window)
 
         # 记录分块数据
-        self._chunks.append({
-            "id": chunk_data.get("chunk_id", "unknown"),
-            "time": latency,
-            "avg": avg_latency,
-            "model": chunk_data.get("model", "unknown"),
-        })
+        self._chunks.append(
+            {
+                "id": chunk_data.get("chunk_id", "unknown"),
+                "time": latency,
+                "avg": avg_latency,
+                "model": chunk_data.get("model", "unknown"),
+            }
+        )
 
     def get_slow_chunks(self, threshold: float = 1.5) -> list[dict]:
         """获取超过阈值倍平均延迟的分块。"""
@@ -42,7 +44,4 @@ class ChunkTracer:
 
         # 使用最近一次计算的平均值
         avg = self._chunks[-1]["avg"]
-        return [
-            chunk for chunk in self._chunks
-            if chunk["time"] > avg * threshold
-        ]
+        return [chunk for chunk in self._chunks if chunk["time"] > avg * threshold]

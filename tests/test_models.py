@@ -18,7 +18,15 @@ from subtap.schemas.config import SubtapConfig
 
 def _config_with_model_root(tmp_path: Path) -> SubtapConfig:
     """Config with model root pointing to tmp."""
-    from subtap.schemas.config import AudioConfig, ASRConfig, CleanConfig, AlignConfig, ModelConfig, WorkspaceConfig
+    from subtap.schemas.config import (
+        AudioConfig,
+        ASRConfig,
+        CleanConfig,
+        AlignConfig,
+        ModelConfig,
+        WorkspaceConfig,
+    )
+
     return SubtapConfig(
         audio=AudioConfig(),
         asr=ASRConfig(),
@@ -30,6 +38,7 @@ def _config_with_model_root(tmp_path: Path) -> SubtapConfig:
 
 
 # ── Registry tests ──
+
 
 def test_model_registry_has_expected_models():
     """MODEL_REGISTRY contains asr_0.6b, asr_1.7b and aligner."""
@@ -100,6 +109,7 @@ def test_registry_is_available_true(tmp_path: Path):
 
 # ── Downloader tests ──
 
+
 def test_downloader_download_calls_urlopen(tmp_path: Path, monkeypatch):
     """Downloader calls urlopen for each file."""
     from unittest.mock import MagicMock
@@ -115,12 +125,16 @@ def test_downloader_download_calls_urlopen(tmp_path: Path, monkeypatch):
         mock_response = MagicMock()
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=False)
-        mock_response.getheader = lambda name, default=None: "10" if name.lower() == "content-length" else default
+        mock_response.getheader = lambda name, default=None: (
+            "10" if name.lower() == "content-length" else default
+        )
         # 第一次 read 返回数据，第二次返回空字节结束循环
         read_count = [0]
+
         def mock_read(size=-1):
             read_count[0] += 1
             return b"x" * 10 if read_count[0] == 1 else b""
+
         mock_response.read = mock_read
         return mock_response
 
@@ -156,11 +170,15 @@ def test_download_cleans_up_on_failure(tmp_path: Path, monkeypatch):
             mock_response = MagicMock()
             mock_response.__enter__ = MagicMock(return_value=mock_response)
             mock_response.__exit__ = MagicMock(return_value=False)
-            mock_response.getheader = lambda name, default=None: "10" if name.lower() == "content-length" else default
+            mock_response.getheader = lambda name, default=None: (
+                "10" if name.lower() == "content-length" else default
+            )
             read_count = [0]
+
             def mock_read(size=-1):
                 read_count[0] += 1
                 return b"x" * 10 if read_count[0] == 1 else b""
+
             mock_response.read = mock_read
             return mock_response
         # 第二个文件下载失败
@@ -176,6 +194,7 @@ def test_download_cleans_up_on_failure(tmp_path: Path, monkeypatch):
 
 
 # ── Verifier tests ──
+
 
 def test_verifier_missing(tmp_path: Path):
     """Verifier reports missing when no files."""
@@ -221,6 +240,7 @@ def test_verifier_unknown_model(tmp_path: Path):
 
 # ── CLI models tests ──
 
+
 def test_cli_models_status(tmp_path: Path, monkeypatch):
     """CLI models status runs without crash."""
     from typer.testing import CliRunner
@@ -228,6 +248,7 @@ def test_cli_models_status(tmp_path: Path, monkeypatch):
 
     config = _config_with_model_root(tmp_path)
     import subtap.schemas.config as cfg_mod
+
     monkeypatch.setattr(cfg_mod, "load_config", lambda p: config)
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "fakehome")
 
@@ -244,6 +265,7 @@ def test_cli_models_verify(tmp_path: Path, monkeypatch):
 
     config = _config_with_model_root(tmp_path)
     import subtap.schemas.config as cfg_mod
+
     monkeypatch.setattr(cfg_mod, "load_config", lambda p: config)
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "fakehome")
 
@@ -261,6 +283,7 @@ def test_cli_models_install_shows_path(tmp_path: Path, monkeypatch):
 
     config = _config_with_model_root(tmp_path)
     import subtap.schemas.config as cfg_mod
+
     monkeypatch.setattr(cfg_mod, "load_config", lambda p: config)
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "fakehome")
 
@@ -268,11 +291,15 @@ def test_cli_models_install_shows_path(tmp_path: Path, monkeypatch):
         mock_response = MagicMock()
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=False)
-        mock_response.getheader = lambda name, default=None: "10" if name.lower() == "content-length" else default
+        mock_response.getheader = lambda name, default=None: (
+            "10" if name.lower() == "content-length" else default
+        )
         read_count = [0]
+
         def mock_read(size=-1):
             read_count[0] += 1
             return b"x" * 10 if read_count[0] == 1 else b""
+
         mock_response.read = mock_read
         return mock_response
 
@@ -284,6 +311,7 @@ def test_cli_models_install_shows_path(tmp_path: Path, monkeypatch):
 
 
 # ── List and Remove tests ──
+
 
 def test_model_registry_list(tmp_path: Path):
     """Test listing available models."""
@@ -336,6 +364,7 @@ def test_cli_models_list(tmp_path: Path, monkeypatch):
 
     config = _config_with_model_root(tmp_path)
     import subtap.schemas.config as cfg_mod
+
     monkeypatch.setattr(cfg_mod, "load_config", lambda p: config)
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "fakehome")
 
@@ -355,6 +384,7 @@ def test_cli_models_remove(tmp_path: Path, monkeypatch):
 
     config = _config_with_model_root(tmp_path)
     import subtap.schemas.config as cfg_mod
+
     monkeypatch.setattr(cfg_mod, "load_config", lambda p: config)
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "fakehome")
 
@@ -367,6 +397,7 @@ def test_cli_models_remove(tmp_path: Path, monkeypatch):
 
 
 # ── Downloader URL and connectivity tests ──
+
 
 def test_downloader_builds_hf_file_url(tmp_path):
     from subtap.core.models import ModelDownloader
@@ -422,6 +453,7 @@ def test_downloader_builds_modelscope_file_url(tmp_path):
 
 
 # ── check_connectivity tests ──
+
 
 def test_check_connectivity_returns_true_on_200(tmp_path, monkeypatch):
     """check_connectivity returns True when HEAD request succeeds."""
@@ -508,6 +540,7 @@ def test_download_file_reports_progress(tmp_path, monkeypatch):
 
 
 # ── Development model path tests ──
+
 
 def test_default_model_root_is_project_models():
     """Default model root should be project-level models/ directory."""

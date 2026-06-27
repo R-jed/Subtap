@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from subtap.core.export import (
@@ -11,16 +10,14 @@ from subtap.core.export import (
     TXTExporter,
     _fmt_srt_time,
     _fmt_ass_time,
-    load_aligned,
     run_export,
-    EXPORTERS,
 )
 from subtap.core.workspace import Workspace
 from subtap.schemas.config import SubtapConfig
 from subtap.schemas.models import AlignedSegment
 
-
 # ── Time formatting tests ──
+
 
 def test_fmt_srt_time_basic():
     """SRT time format HH:MM:SS,mmm."""
@@ -39,6 +36,7 @@ def test_fmt_ass_time_basic():
 
 
 # ── SRT export tests ──
+
 
 def test_srt_render_basic():
     """SRT renders numbered blocks with correct timestamps."""
@@ -67,10 +65,10 @@ def test_srt_ordering():
     srt = SRTExporter().render(segs)
     # After sorting: block 1=A, block 2=B, block 3=C
     lines = srt.strip().split("\n")
-    assert lines[0] == "1"       # block 1
-    assert lines[2] == "A"       # first text is A
-    assert lines[4] == "2"       # block 2
-    assert lines[6] == "B"       # second text is B
+    assert lines[0] == "1"  # block 1
+    assert lines[2] == "A"  # first text is A
+    assert lines[4] == "2"  # block 2
+    assert lines[6] == "B"  # second text is B
 
 
 def test_srt_utf8_safe():
@@ -85,6 +83,7 @@ def test_srt_utf8_safe():
 
 
 # ── ASS export tests ──
+
 
 def test_ass_render_basic():
     """ASS renders Dialogue lines with correct format."""
@@ -116,6 +115,7 @@ def test_ass_has_header():
 
 # ── TXT export tests ──
 
+
 def test_txt_render_basic():
     """TXT renders [start → end] text blocks."""
     segs = [
@@ -138,6 +138,7 @@ def test_txt_multiline():
 
 
 # ── Pipeline integration tests ──
+
 
 def _make_aligned_jsonl(ws: Workspace, texts: list[str]) -> None:
     """Write mock AlignedSegments to aligned.jsonl."""
@@ -230,11 +231,16 @@ def test_cli_export_runnable(test_config: SubtapConfig, tmp_path: Path, monkeypa
 
     out_dir = tmp_path / "cli_output"
     runner = CliRunner()
-    result = runner.invoke(app, [
-        "export",
-        str(ws.aligned_jsonl),
-        "-o", str(out_dir),
-        "-f", "srt",
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "export",
+            str(ws.aligned_jsonl),
+            "-o",
+            str(out_dir),
+            "-f",
+            "srt",
+        ],
+    )
     assert result.exit_code == 0
     assert "完成" in result.output

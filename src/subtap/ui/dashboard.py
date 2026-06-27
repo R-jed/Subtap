@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import asyncio
 import time
 
 from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, Static, ProgressBar
+from textual.widgets import Header, Footer, Static
 
 from subtap.metrics.events import EventBus
 from subtap.metrics.profiler import PipelineProfiler
@@ -88,7 +87,7 @@ class PipelineDashboard(App):
         self.event_bus = event_bus
         self.profiler = profiler
         self._update_throttle = 0.05  # 50ms 节流
-        self._last_update = 0
+        self._last_update = 0.0
 
     def _should_update(self) -> bool:
         """检查是否应该更新（节流）。"""

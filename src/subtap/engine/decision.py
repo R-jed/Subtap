@@ -18,9 +18,9 @@ from dataclasses import dataclass
 class PipelineMode(enum.Enum):
     """Pipeline execution modes."""
 
-    FAST = "fast"        # Rule-based only, no LLM, fastest
+    FAST = "fast"  # Rule-based only, no LLM, fastest
     QUALITY = "quality"  # Full pipeline with LLM, highest quality
-    HYBRID = "hybrid"    # Balance speed and quality
+    HYBRID = "hybrid"  # Balance speed and quality
 
 
 @dataclass

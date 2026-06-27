@@ -22,11 +22,14 @@ app = typer.Typer(
 
 # ── 基础命令 ──────────────────────────────────────────────
 
+
 @app.command()
 def version() -> None:
     """显示版本信息"""
     typer.echo(f"subtap v{__version__}")
-    typer.echo(f"Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
+    typer.echo(
+        f"Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    )
     typer.echo(f"系统 {platform.system()} {platform.machine()}")
 
 
@@ -43,7 +46,9 @@ def init() -> None:
     glossary_dir.mkdir(parents=True, exist_ok=True)
 
     if not config_path.exists():
-        default_config = Path(__file__).resolve().parents[2] / "configs" / "default.yaml"
+        default_config = (
+            Path(__file__).resolve().parents[2] / "configs" / "default.yaml"
+        )
         if default_config.exists():
             shutil.copy2(default_config, config_path)
         else:
@@ -64,6 +69,7 @@ def init() -> None:
 
 # ── Doctor 命令 ────────────────────────────────────────────
 
+
 @app.command()
 def doctor(
     release: bool = typer.Option(False, "--release", help="执行发布前完整检查"),
@@ -79,19 +85,53 @@ def doctor(
 
     # 基础依赖
     ffmpeg_ok = shutil.which("ffmpeg") is not None
-    checks.append(("ffmpeg", "音视频处理", ffmpeg_ok, "" if ffmpeg_ok else "未找到，请安装：brew install ffmpeg"))
+    checks.append(
+        (
+            "ffmpeg",
+            "音视频处理",
+            ffmpeg_ok,
+            "" if ffmpeg_ok else "未找到，请安装：brew install ffmpeg",
+        )
+    )
 
     ffprobe_ok = shutil.which("ffprobe") is not None
-    checks.append(("ffprobe", "媒体探测", ffprobe_ok, "" if ffprobe_ok else "未找到，请安装：brew install ffmpeg"))
+    checks.append(
+        (
+            "ffprobe",
+            "媒体探测",
+            ffprobe_ok,
+            "" if ffprobe_ok else "未找到，请安装：brew install ffmpeg",
+        )
+    )
 
-    py_ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    py_ver = (
+        f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    )
     py_ok = sys.version_info >= (3, 10)
-    checks.append(("python", "Python 版本", py_ok, f"v{py_ver}" if py_ok else f"v{py_ver}（需要 >= 3.10）"))
+    checks.append(
+        (
+            "python",
+            "Python 版本",
+            py_ok,
+            f"v{py_ver}" if py_ok else f"v{py_ver}（需要 >= 3.10）",
+        )
+    )
 
     # 工作空间
     subtap_dir = Path.home() / ".subtap"
-    ws_ok = subtap_dir.exists() and os.access(str(subtap_dir), os.W_OK) if subtap_dir.exists() else False
-    checks.append(("workspace", "工作空间", ws_ok, "" if ws_ok else f"不可写或不存在：{subtap_dir}"))
+    ws_ok = (
+        subtap_dir.exists() and os.access(str(subtap_dir), os.W_OK)
+        if subtap_dir.exists()
+        else False
+    )
+    checks.append(
+        (
+            "workspace",
+            "工作空间",
+            ws_ok,
+            "" if ws_ok else f"不可写或不存在：{subtap_dir}",
+        )
+    )
 
     # --release 模式：增加模型和 TUI 检查
     if release:
@@ -99,20 +139,45 @@ def doctor(
 
         # MLX 运行时
         mlx_ok = importlib.util.find_spec("mlx") is not None
-        checks.append(("mlx", "MLX 运行时", mlx_ok, "" if mlx_ok else "未安装，请：pip install mlx"))
+        checks.append(
+            (
+                "mlx",
+                "MLX 运行时",
+                mlx_ok,
+                "" if mlx_ok else "未安装，请：pip install mlx",
+            )
+        )
 
         # mlx-audio
         mla_ok = importlib.util.find_spec("mlx_audio") is not None
-        checks.append(("mlx-audio", "MLX Audio", mla_ok, "" if mla_ok else "未安装，请：pip install mlx-audio"))
+        checks.append(
+            (
+                "mlx-audio",
+                "MLX Audio",
+                mla_ok,
+                "" if mla_ok else "未安装，请：pip install mlx-audio",
+            )
+        )
 
         # rich
         rich_ok = importlib.util.find_spec("rich") is not None
-        checks.append(("rich", "Rich TUI", rich_ok, "" if rich_ok else "未安装，请：pip install rich"))
+        checks.append(
+            (
+                "rich",
+                "Rich TUI",
+                rich_ok,
+                "" if rich_ok else "未安装，请：pip install rich",
+            )
+        )
 
     # 打印结果
     all_ok = True
     for _name, label, ok, detail in checks:
-        icon = typer.style("✓", fg=typer.colors.GREEN) if ok else typer.style("✗", fg=typer.colors.RED)
+        icon = (
+            typer.style("✓", fg=typer.colors.GREEN)
+            if ok
+            else typer.style("✗", fg=typer.colors.RED)
+        )
         msg = f"  {icon} {label}"
         if detail:
             msg += f" — {detail}"
@@ -127,6 +192,7 @@ def doctor(
         typer.echo(f"  ✓ {config_path} 存在")
         try:
             from subtap.schemas.config import load_config
+
             load_config(config_path)
             typer.echo("  ✓ 配置文件有效")
         except Exception as e:
@@ -146,7 +212,11 @@ def doctor(
         registry = ModelRegistry(config)
 
         for ms in registry.status():
-            icon = typer.style("✓", fg=typer.colors.GREEN) if ms.installed else typer.style("✗", fg=typer.colors.RED)
+            icon = (
+                typer.style("✓", fg=typer.colors.GREEN)
+                if ms.installed
+                else typer.style("✗", fg=typer.colors.RED)
+            )
             typer.echo(f"  {icon} {ms.name}")
             if not ms.installed:
                 all_ok = False
@@ -159,7 +229,9 @@ def doctor(
     if all_ok:
         typer.echo(typer.style("\n✓ 所有检查通过！", fg=typer.colors.GREEN))
     else:
-        typer.echo(typer.style("\n✗ 部分检查未通过，请根据提示修复", fg=typer.colors.RED))
+        typer.echo(
+            typer.style("\n✗ 部分检查未通过，请根据提示修复", fg=typer.colors.RED)
+        )
         raise typer.Exit(1)
 
 
@@ -169,13 +241,18 @@ def _doctor_workspace(work_dir: Path = Path("./work")) -> None:
 
     # 1. Git 状态
     from subtap.engine.git_guard import GitGuard
+
     git_guard = GitGuard(work_dir)
     if git_guard.is_git_repo():
         git_status = git_guard.get_git_status()
         typer.echo("▸ Git 状态")
         typer.echo(f"  分支: {git_status['branch']}")
         typer.echo(f"  提交: {git_status['commit_hash']}")
-        dirty_icon = typer.style("✗ 脏", fg=typer.colors.RED) if git_status["is_dirty"] else typer.style("✓ 干净", fg=typer.colors.GREEN)
+        dirty_icon = (
+            typer.style("✗ 脏", fg=typer.colors.RED)
+            if git_status["is_dirty"]
+            else typer.style("✓ 干净", fg=typer.colors.GREEN)
+        )
         typer.echo(f"  状态: {dirty_icon}")
         if git_status["changed_files"]:
             for f in git_status["changed_files"][:5]:
@@ -186,10 +263,15 @@ def _doctor_workspace(work_dir: Path = Path("./work")) -> None:
 
     # 2. 工作环境卫生
     from subtap.engine.cleanroom import Cleanroom
+
     cleanroom = Cleanroom(work_dir)
     cr_result = cleanroom.check_workspace()
     typer.echo("\n▸ 工作环境卫生")
-    clean_icon = typer.style("✓ 干净", fg=typer.colors.GREEN) if cr_result["is_clean"] else typer.style("⚠ 有问题", fg=typer.colors.YELLOW)
+    clean_icon = (
+        typer.style("✓ 干净", fg=typer.colors.GREEN)
+        if cr_result["is_clean"]
+        else typer.style("⚠ 有问题", fg=typer.colors.YELLOW)
+    )
     typer.echo(f"  状态: {clean_icon}")
     if cr_result["issues"]:
         for issue in cr_result["issues"]:
@@ -199,7 +281,11 @@ def _doctor_workspace(work_dir: Path = Path("./work")) -> None:
     model_status = cleanroom.check_model_status()
     typer.echo("\n▸ 模型状态")
     for m in model_status["models"]:
-        icon = typer.style("✓", fg=typer.colors.GREEN) if m["installed"] else typer.style("✗", fg=typer.colors.RED)
+        icon = (
+            typer.style("✓", fg=typer.colors.GREEN)
+            if m["installed"]
+            else typer.style("✗", fg=typer.colors.RED)
+        )
         typer.echo(f"  {icon} {m['name']}")
 
     # 4. Pipeline 状态（检查中间文件）
@@ -212,13 +298,18 @@ def _doctor_workspace(work_dir: Path = Path("./work")) -> None:
         ("aligned.jsonl", "对齐结果"),
     ]:
         p = work_dir / name
-        icon = typer.style("✓", fg=typer.colors.GREEN) if p.exists() else typer.style("○", fg=typer.colors.WHITE)
+        icon = (
+            typer.style("✓", fg=typer.colors.GREEN)
+            if p.exists()
+            else typer.style("○", fg=typer.colors.WHITE)
+        )
         typer.echo(f"  {icon} {label}")
 
     typer.echo("\n═══ 检查完成 ═══")
 
 
 # ── Setup 命令 ─────────────────────────────────────────────
+
 
 @app.command()
 def setup(
@@ -228,8 +319,12 @@ def setup(
         "--download-source",
         help="模型下载方式：ask / hf / hf-mirror / modelscope / manual",
     ),
-    include_optional: bool = typer.Option(False, "--include-optional", help="同时下载可选大模型"),
-    model_endpoint: str | None = typer.Option(None, "--model-endpoint", help="自定义 Hugging Face 镜像地址"),
+    include_optional: bool = typer.Option(
+        False, "--include-optional", help="同时下载可选大模型"
+    ),
+    model_endpoint: str | None = typer.Option(
+        None, "--model-endpoint", help="自定义 Hugging Face 镜像地址"
+    ),
 ) -> None:
     """用户初始化向导"""
     from subtap.core.setup import SetupWizard
@@ -243,12 +338,22 @@ def setup(
     deps = wizard.check_system_deps()
 
     for name, ok in deps.items():
-        icon = typer.style("✓", fg=typer.colors.GREEN) if ok else typer.style("✗", fg=typer.colors.RED)
-        label = {"ffmpeg": "ffmpeg", "ffprobe": "ffprobe", "python": "Python 3.10+"}.get(name, name)
+        icon = (
+            typer.style("✓", fg=typer.colors.GREEN)
+            if ok
+            else typer.style("✗", fg=typer.colors.RED)
+        )
+        label = {
+            "ffmpeg": "ffmpeg",
+            "ffprobe": "ffprobe",
+            "python": "Python 3.10+",
+        }.get(name, name)
         typer.echo(f"  {icon} {label}")
 
     if not all(deps.values()):
-        typer.echo(typer.style("\n✗ 系统检查未通过，请安装缺失依赖", fg=typer.colors.RED))
+        typer.echo(
+            typer.style("\n✗ 系统检查未通过，请安装缺失依赖", fg=typer.colors.RED)
+        )
         raise typer.Exit(1)
 
     # Step 2: Config init
@@ -271,7 +376,10 @@ def setup(
         )
         if ok:
             typer.echo("  ✓ 模型安装完成")
-        elif download_source == "manual" or getattr(wizard, "last_model_source", None) == "manual":
+        elif (
+            download_source == "manual"
+            or getattr(wizard, "last_model_source", None) == "manual"
+        ):
             # manual 模式下用户选择手动安装，正常结束
             typer.echo("  ⚠ 模型安装待手动完成")
         else:
@@ -284,33 +392,60 @@ def setup(
 
 # ── Run 命令 ───────────────────────────────────────────────
 
+
 def _run_pipeline_safely(
-    pipeline, input_path: Path, output_dir: Path,
-    mode: str, fmt: str, skip_clean: bool, skip_align: bool,
+    pipeline,
+    input_path: Path,
+    output_dir: Path,
+    mode: str,
+    fmt: str,
+    skip_clean: bool,
+    skip_align: bool,
 ) -> dict:
     """在线程中安全运行 pipeline，不涉及 UI 操作。"""
     from subtap.ui.tui import TUIRunner
+
     runner = TUIRunner(use_tui=False, mode=mode)
     return runner.run_pipeline(
-        pipeline, input_path, output_dir, fmt=fmt,
-        skip_clean=skip_clean, skip_align=skip_align,
+        pipeline,
+        input_path,
+        output_dir,
+        fmt=fmt,
+        skip_clean=skip_clean,
+        skip_align=skip_align,
     )
 
 
 @app.command()
 def run(
-    input_path: Path = typer.Argument(..., help="输入媒体文件路径（支持 mp3/mp4/wav/mkv 等）"),
+    input_path: Path = typer.Argument(
+        ..., help="输入媒体文件路径（支持 mp3/mp4/wav/mkv 等）"
+    ),
     work_dir: Path = typer.Option(Path("./work"), "-w", "--work-dir", help="工作目录"),
-    output_dir: Path = typer.Option(Path("./output"), "-o", "--output-dir", help="输出目录"),
+    output_dir: Path = typer.Option(
+        Path("./output"), "-o", "--output-dir", help="输出目录"
+    ),
     fmt: str = typer.Option("srt", "--format", "-f", help="导出格式：srt / ass / txt"),
-    mode: str = typer.Option("hybrid", "--mode", "-m", help="执行模式：fast / quality / hybrid"),
+    mode: str = typer.Option(
+        "hybrid", "--mode", "-m", help="执行模式：fast / quality / hybrid"
+    ),
     skip_clean: bool = typer.Option(False, "--skip-clean", help="跳过文本清洗阶段"),
     skip_align: bool = typer.Option(False, "--skip-align", help="跳过时间轴对齐阶段"),
-    use_tui: bool = typer.Option(True, "--tui/--no-tui", help="启用 TUI 界面（默认开启）"),
-    policy: str = typer.Option("local", "--policy", "-p", help="执行策略：local / hybrid / fast"),
-    no_git_check: bool = typer.Option(False, "--no-git-check", help="跳过 Git 状态检查"),
-    no_cleanroom: bool = typer.Option(False, "--no-cleanroom", help="跳过工作环境卫生检查"),
-    timestamp: bool = typer.Option(True, "--timestamp/--no-timestamp", help="输出目录是否带时间戳"),
+    use_tui: bool = typer.Option(
+        True, "--tui/--no-tui", help="启用 TUI 界面（默认开启）"
+    ),
+    policy: str = typer.Option(
+        "local", "--policy", "-p", help="执行策略：local / hybrid / fast"
+    ),
+    no_git_check: bool = typer.Option(
+        False, "--no-git-check", help="跳过 Git 状态检查"
+    ),
+    no_cleanroom: bool = typer.Option(
+        False, "--no-cleanroom", help="跳过工作环境卫生检查"
+    ),
+    timestamp: bool = typer.Option(
+        True, "--timestamp/--no-timestamp", help="输出目录是否带时间戳"
+    ),
 ) -> None:
     """运行完整字幕生成流程
 
@@ -344,6 +479,7 @@ def run(
     # Cleanroom check
     if not no_cleanroom:
         from subtap.engine.cleanroom import Cleanroom
+
         cleanroom = Cleanroom(work_dir)
         cr_result = cleanroom.check_workspace()
         if not cr_result["is_clean"]:
@@ -356,6 +492,7 @@ def run(
     # Git guard check
     if not no_git_check:
         from subtap.engine.git_guard import GitGuard
+
         git_guard = GitGuard(work_dir)
         if git_guard.is_git_repo():
             gg_result = git_guard.pre_task_check()
@@ -401,8 +538,14 @@ def run(
 
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(
-                _run_pipeline_safely, pipeline, input_path, output_dir,
-                mode, fmt, skip_clean, skip_align,
+                _run_pipeline_safely,
+                pipeline,
+                input_path,
+                output_dir,
+                mode,
+                fmt,
+                skip_clean,
+                skip_align,
             )
 
             # 运行 dashboard（它会启动 async loop 处理事件）
@@ -420,13 +563,18 @@ def run(
             raise typer.Exit(1)
     else:
         from subtap.ui.tui import PlainRunner
+
         runner = PlainRunner()
 
         timings = {}
         try:
             result = runner.run_pipeline(
-                pipeline, input_path, output_dir, fmt=fmt,
-                skip_clean=skip_clean, skip_align=skip_align,
+                pipeline,
+                input_path,
+                output_dir,
+                fmt=fmt,
+                skip_clean=skip_clean,
+                skip_align=skip_align,
             )
             timings = result.get("timings", {})
         except SystemExit:
@@ -486,6 +634,7 @@ def run(
 
 # ── 单阶段命令 ─────────────────────────────────────────────
 
+
 @app.command()
 def prepare(
     input_path: Path = typer.Argument(..., help="输入媒体文件路径"),
@@ -504,7 +653,9 @@ def prepare(
 
     typer.echo("▸ 音频标准化...")
     result = pipeline.run_stage("prepare", input_path=input_path)
-    typer.echo(f"  ✓ {result['media_info']['duration']:.1f}s, {result['media_info']['sample_rate']}Hz")
+    typer.echo(
+        f"  ✓ {result['media_info']['duration']:.1f}s, {result['media_info']['sample_rate']}Hz"
+    )
 
     typer.echo("▸ 音频切段...")
     result = pipeline.run_stage("chunk")
@@ -546,9 +697,13 @@ def transcribe(
 def clean(
     asr_path: Path = typer.Argument(..., help="asr.jsonl 路径"),
     work_dir: Path = typer.Option(Path("./work"), "-w", "--work-dir", help="工作目录"),
-    llm: str | None = typer.Option(None, "--llm", help="LLM 后端（如 ollama:qwen3-coder）"),
+    llm: str | None = typer.Option(
+        None, "--llm", help="LLM 后端（如 ollama:qwen3-coder）"
+    ),
     glossary: Path | None = typer.Option(None, "--glossary", help="术语表 YAML 路径"),
-    output: Path | None = typer.Option(None, "-o", "--output", help="输出 cleaned.jsonl 路径"),
+    output: Path | None = typer.Option(
+        None, "-o", "--output", help="输出 cleaned.jsonl 路径"
+    ),
 ) -> None:
     """文本清洗：术语替换 + LLM 纠错（单阶段执行）"""
     from subtap.schemas.config import load_config
@@ -562,17 +717,26 @@ def clean(
     pipeline = Pipeline(config, work_dir=work_dir)
     pipeline.workspace.ensure_dirs()
 
-    if output:
-        pipeline.workspace.cleaned_jsonl = output
+    if asr_path.resolve() != pipeline.workspace.asr_jsonl.resolve():
+        shutil.copy2(asr_path, pipeline.workspace.asr_jsonl)
 
     typer.echo(f"▸ 文本清洗（{llm or config.clean.backend}）...")
     try:
-        result = pipeline.run_stage("clean", llm_backend=llm, glossary_path=str(glossary) if glossary else None)
+        result = pipeline.run_stage(
+            "clean", llm_backend=llm, glossary_path=str(glossary) if glossary else None
+        )
     except ValueError as e:
         typer.echo(f"✗ 错误：{e}", err=True)
         raise typer.Exit(1)
 
-    typer.echo(f"  ✓ {result['segment_count']} 条 → {result['cleaned_jsonl']}")
+    cleaned_path = Path(result["cleaned_jsonl"])
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        if cleaned_path.resolve() != output.resolve():
+            shutil.copy2(cleaned_path, output)
+        cleaned_path = output
+
+    typer.echo(f"  ✓ {result['segment_count']} 条 → {cleaned_path}")
     typer.echo(typer.style("\n✓ 完成", fg=typer.colors.GREEN))
 
 
@@ -580,7 +744,9 @@ def clean(
 def segment(
     cleaned_path: Path = typer.Argument(..., help="cleaned.jsonl 路径"),
     work_dir: Path = typer.Option(Path("./work"), "-w", "--work-dir", help="工作目录"),
-    output: Path | None = typer.Option(None, "-o", "--output", help="输出 sentences.jsonl 路径"),
+    output: Path | None = typer.Option(
+        None, "-o", "--output", help="输出 sentences.jsonl 路径"
+    ),
 ) -> None:
     """智能断句（单阶段执行）"""
     from subtap.schemas.config import load_config
@@ -594,8 +760,8 @@ def segment(
     pipeline = Pipeline(config, work_dir=work_dir)
     pipeline.workspace.ensure_dirs()
 
-    if output:
-        pipeline.workspace.sentences_jsonl = output
+    if cleaned_path.resolve() != pipeline.workspace.cleaned_jsonl.resolve():
+        shutil.copy2(cleaned_path, pipeline.workspace.cleaned_jsonl)
 
     typer.echo("▸ 智能断句...")
     try:
@@ -604,7 +770,14 @@ def segment(
         typer.echo(f"✗ 错误：{e}", err=True)
         raise typer.Exit(1)
 
-    typer.echo(f"  ✓ {result['sentence_count']} 句 → {result['sentences_jsonl']}")
+    sentences_path = Path(result["sentences_jsonl"])
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        if sentences_path.resolve() != output.resolve():
+            shutil.copy2(sentences_path, output)
+        sentences_path = output
+
+    typer.echo(f"  ✓ {result['sentence_count']} 句 → {sentences_path}")
     typer.echo(typer.style("\n✓ 完成", fg=typer.colors.GREEN))
 
 
@@ -613,7 +786,9 @@ def align(
     sentences_path: Path = typer.Argument(..., help="sentences.jsonl 路径"),
     work_dir: Path = typer.Option(Path("./work"), "-w", "--work-dir", help="工作目录"),
     backend: str | None = typer.Option(None, "-b", "--backend", help="对齐后端覆盖"),
-    output: Path | None = typer.Option(None, "-o", "--output", help="输出 aligned.jsonl 路径"),
+    output: Path | None = typer.Option(
+        None, "-o", "--output", help="输出 aligned.jsonl 路径"
+    ),
 ) -> None:
     """时间轴对齐（单阶段执行）"""
     from subtap.schemas.config import load_config
@@ -627,8 +802,8 @@ def align(
     pipeline = Pipeline(config, work_dir=work_dir)
     pipeline.workspace.ensure_dirs()
 
-    if output:
-        pipeline.workspace.aligned_jsonl = output
+    if sentences_path.resolve() != pipeline.workspace.sentences_jsonl.resolve():
+        shutil.copy2(sentences_path, pipeline.workspace.sentences_jsonl)
 
     typer.echo(f"▸ 时间轴对齐（{backend or config.align.backend}）...")
     try:
@@ -637,14 +812,23 @@ def align(
         typer.echo(f"✗ 错误：{e}", err=True)
         raise typer.Exit(1)
 
-    typer.echo(f"  ✓ {result['aligned_count']} 条 → {result['aligned_jsonl']}")
+    aligned_path = Path(result["aligned_jsonl"])
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        if aligned_path.resolve() != output.resolve():
+            shutil.copy2(aligned_path, output)
+        aligned_path = output
+
+    typer.echo(f"  ✓ {result['aligned_count']} 条 → {aligned_path}")
     typer.echo(typer.style("\n✓ 完成", fg=typer.colors.GREEN))
 
 
 @app.command()
 def export(
     aligned_path: Path = typer.Argument(..., help="aligned.jsonl 路径"),
-    output_dir: Path = typer.Option(Path("./output"), "-o", "--output-dir", help="输出目录"),
+    output_dir: Path = typer.Option(
+        Path("./output"), "-o", "--output-dir", help="输出目录"
+    ),
     fmt: str = typer.Option("srt", "--format", "-f", help="导出格式：srt / ass / txt"),
     stem: str = typer.Option("output", "--stem", help="输出文件名前缀"),
 ) -> None:
@@ -668,11 +852,14 @@ def export(
 
 # ── Resume / Retry 命令 ────────────────────────────────────
 
+
 @app.command()
 def resume(
     work_dir: Path = typer.Option(Path("./work"), "-w", "--work-dir", help="工作目录"),
     input_path: Path = typer.Argument(..., help="输入媒体文件路径"),
-    output_dir: Path = typer.Option(Path("./output"), "-o", "--output-dir", help="输出目录"),
+    output_dir: Path = typer.Option(
+        Path("./output"), "-o", "--output-dir", help="输出目录"
+    ),
     fmt: str = typer.Option("srt", "--format", "-f", help="导出格式"),
 ) -> None:
     """从中断点恢复执行（跳过已完成的阶段）"""
@@ -694,7 +881,9 @@ def resume(
 
 @app.command()
 def retry(
-    stage_name: str = typer.Argument(..., help="要重试的阶段名称（asr/align/export 等）"),
+    stage_name: str = typer.Argument(
+        ..., help="要重试的阶段名称（asr/align/export 等）"
+    ),
     work_dir: Path = typer.Option(Path("./work"), "-w", "--work-dir", help="工作目录"),
 ) -> None:
     """重试失败的阶段"""
@@ -718,9 +907,12 @@ def retry(
 
 # ── Demo 命令 ──────────────────────────────────────────────
 
+
 @app.command()
 def demo(
-    output_dir: Path = typer.Option(Path("./demo_output"), "-o", "--output-dir", help="输出目录"),
+    output_dir: Path = typer.Option(
+        Path("./demo_output"), "-o", "--output-dir", help="输出目录"
+    ),
     skip_tui: bool = typer.Option(False, "--skip-tui", help="跳过 TUI 展示"),
 ) -> None:
     """运行演示：使用内置测试音频展示完整流程
@@ -748,17 +940,22 @@ def demo(
     pipeline = Pipeline(config, work_dir=Path("./demo_work"))
     pipeline.workspace.ensure_dirs()
 
+    from subtap.ui.tui import PlainRunner, TUIRunner
+
+    runner: PlainRunner | TUIRunner
     if skip_tui:
-        from subtap.ui.tui import PlainRunner
         runner = PlainRunner()
     else:
-        from subtap.ui.tui import TUIRunner
         runner = TUIRunner(use_tui=True)
 
     try:
         runner.run_pipeline(
-            pipeline, input_file, output_dir, fmt="srt",
-            skip_clean=True, skip_align=True,
+            pipeline,
+            input_file,
+            output_dir,
+            fmt="srt",
+            skip_clean=True,
+            skip_align=True,
         )
     except SystemExit:
         raise
@@ -779,6 +976,7 @@ def demo(
 
 
 # ── Quality 命令 ────────────────────────────────────────────
+
 
 @app.command()
 def quality(
@@ -825,7 +1023,9 @@ def quality(
             "warning": typer.style("⚠", fg=typer.colors.YELLOW),
             "info": typer.style("ℹ", fg=typer.colors.BLUE),
         }.get(error.severity, "•")
-        typer.echo(f"  {severity_icon} #{error.segment_id} {error.message} → {error.suggestion}")
+        typer.echo(
+            f"  {severity_icon} #{error.segment_id} {error.message} → {error.suggestion}"
+        )
 
     # Fix if requested
     if fix and not report_only:
@@ -846,6 +1046,7 @@ def quality(
     if log_path.parent.exists():
         import json
         import time
+
         event = {
             "stage": "quality_check",
             "quality_score": report.total_score,
@@ -858,6 +1059,7 @@ def quality(
 
 
 # ── Analyze 命令 ────────────────────────────────────────────
+
 
 @app.command()
 def analyze(
@@ -885,7 +1087,10 @@ def analyze(
     # Create temporary aligned.jsonl for analysis
     import tempfile
     import json
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, encoding="utf-8") as f:
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".jsonl", delete=False, encoding="utf-8"
+    ) as f:
         for seg in segments:
             f.write(json.dumps(seg, ensure_ascii=False) + "\n")
         temp_path = Path(f.name)
@@ -947,6 +1152,7 @@ def _parse_srt_to_aligned(srt_path: Path) -> list[dict]:
         List of aligned segment dicts.
     """
     import re
+
     content = srt_path.read_text(encoding="utf-8")
     segments = []
 
@@ -960,12 +1166,14 @@ def _parse_srt_to_aligned(srt_path: Path) -> list[dict]:
         end_sec = _srt_time_to_seconds(end)
         text = text.strip().replace("\n", " ")
 
-        segments.append({
-            "sentence_id": int(seq) - 1,
-            "start_sec": start_sec,
-            "end_sec": end_sec,
-            "text": text,
-        })
+        segments.append(
+            {
+                "sentence_id": int(seq) - 1,
+                "start_sec": start_sec,
+                "end_sec": end_sec,
+                "text": text,
+            }
+        )
 
     return segments
 
@@ -1009,14 +1217,27 @@ def models_status() -> None:
 
 @models_app.command("install")
 def models_install(
-    model_name: str = typer.Argument(..., help="要安装的模型（asr_0.6b / asr_1.7b / aligner / all）"),
-    download_source: str = typer.Option("hf", "--source", "-s", help="下载源：hf / hf-mirror / modelscope"),
-    model_endpoint: str | None = typer.Option(None, "--endpoint", "-e", help="自定义 Hugging Face 镜像地址"),
+    model_name: str = typer.Argument(
+        ..., help="要安装的模型（asr_0.6b / asr_1.7b / aligner / all）"
+    ),
+    download_source: str = typer.Option(
+        "hf", "--source", "-s", help="下载源：hf / hf-mirror / modelscope"
+    ),
+    model_endpoint: str | None = typer.Option(
+        None, "--endpoint", "-e", help="自定义 Hugging Face 镜像地址"
+    ),
 ) -> None:
     """安装模型文件到本地"""
     from subtap.schemas.config import load_config
     from subtap.core.models import ModelDownloader, MODEL_REGISTRY
-    from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, DownloadColumn, TransferSpeedColumn
+    from rich.progress import (
+        Progress,
+        SpinnerColumn,
+        BarColumn,
+        TextColumn,
+        DownloadColumn,
+        TransferSpeedColumn,
+    )
 
     config = load_config(Path.home() / ".subtap" / "config.yaml")
     if model_endpoint:
@@ -1039,17 +1260,26 @@ def models_install(
 
                 def update_progress(filename: str, downloaded: int, total: int) -> None:
                     if downloaded == 0:
-                        progress.reset(task_id, total=total, description=f"{name}/{filename}")
+                        progress.reset(
+                            task_id, total=total, description=f"{name}/{filename}"
+                        )
                     progress.update(task_id, completed=downloaded)
 
-                path = downloader.download(name, source=download_source, progress=update_progress)
+                path = downloader.download(
+                    name, source=download_source, progress=update_progress
+                )
             typer.echo(f"  ✓ {path}")
         except ValueError as e:
             typer.echo(f"  ✗ 错误：{e}", err=True)
             raise typer.Exit(1)
         except NotImplementedError as e:
             typer.echo(f"  {e}")
-            typer.echo(typer.style(f"  → 请将模型文件放入：{downloader.root / MODEL_REGISTRY[name]['subdir']}", fg=typer.colors.YELLOW))
+            typer.echo(
+                typer.style(
+                    f"  → 请将模型文件放入：{downloader.root / MODEL_REGISTRY[name]['subdir']}",
+                    fg=typer.colors.YELLOW,
+                )
+            )
 
 
 @models_app.command("verify")
@@ -1069,7 +1299,9 @@ def models_verify() -> None:
         if result["status"] == "ok":
             typer.echo(typer.style(f"  ✓ {name}: 正常", fg=typer.colors.GREEN))
         else:
-            typer.echo(typer.style(f"  ✗ {name}: {result['status']}", fg=typer.colors.RED))
+            typer.echo(
+                typer.style(f"  ✗ {name}: {result['status']}", fg=typer.colors.RED)
+            )
             all_ok = False
 
     if all_ok:

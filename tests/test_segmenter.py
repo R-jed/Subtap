@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from subtap.ai.segmenter import SentenceEngine
-from subtap.schemas.models import CleanSegment, SentenceSegment
+from subtap.schemas.models import SentenceSegment
 
 
 @pytest.fixture
@@ -93,7 +93,9 @@ class TestLengthBalance:
         result = segmenter._balance_length(segments)
         assert len(result) >= 1
 
-    def test_preserves_time_order(self, segmenter: SentenceEngine, long_texts, long_timings):
+    def test_preserves_time_order(
+        self, segmenter: SentenceEngine, long_texts, long_timings
+    ):
         sentences = segmenter._rule_based_split(long_texts, long_timings, [0])
         result = segmenter._balance_length(sentences)
         for i in range(len(result) - 1):
@@ -135,18 +137,23 @@ class TestCPSControl:
         result = segmenter._limit_cps(segments)
         assert result[0].end_sec == 2.0
 
-
-    def test_segment_returns_sentence_segments(self, segmenter: SentenceEngine, normal_texts, normal_timings):
+    def test_segment_returns_sentence_segments(
+        self, segmenter: SentenceEngine, normal_texts, normal_timings
+    ):
         result = segmenter.segment(normal_texts, normal_timings)
         assert all(isinstance(s, SentenceSegment) for s in result)
 
-    def test_segment_preserves_content(self, segmenter: SentenceEngine, normal_texts, normal_timings):
+    def test_segment_preserves_content(
+        self, segmenter: SentenceEngine, normal_texts, normal_timings
+    ):
         result = segmenter.segment(normal_texts, normal_timings)
         combined = "".join(s.text for s in result)
         assert "今天天气" in combined
         assert "公园" in combined
 
-    def test_segment_respects_length_limit(self, segmenter: SentenceEngine, long_texts, long_timings):
+    def test_segment_respects_length_limit(
+        self, segmenter: SentenceEngine, long_texts, long_timings
+    ):
         result = segmenter.segment(long_texts, long_timings)
         for seg in result:
             assert len(seg.text) <= 42
@@ -158,17 +165,23 @@ class TestCPSControl:
 class TestSegmenterPipeline:
     """Test full segmentation pipeline."""
 
-    def test_segment_returns_sentence_segments(self, segmenter: SentenceEngine, normal_texts, normal_timings):
+    def test_segment_returns_sentence_segments(
+        self, segmenter: SentenceEngine, normal_texts, normal_timings
+    ):
         result = segmenter.segment(normal_texts, normal_timings)
         assert all(isinstance(s, SentenceSegment) for s in result)
 
-    def test_segment_preserves_content(self, segmenter: SentenceEngine, normal_texts, normal_timings):
+    def test_segment_preserves_content(
+        self, segmenter: SentenceEngine, normal_texts, normal_timings
+    ):
         result = segmenter.segment(normal_texts, normal_timings)
         combined = "".join(s.text for s in result)
         assert "今天天气" in combined
         assert "公园" in combined
 
-    def test_segment_respects_length_limit(self, segmenter: SentenceEngine, long_texts, long_timings):
+    def test_segment_respects_length_limit(
+        self, segmenter: SentenceEngine, long_texts, long_timings
+    ):
         result = segmenter.segment(long_texts, long_timings)
         for seg in result:
             assert len(seg.text) <= 42

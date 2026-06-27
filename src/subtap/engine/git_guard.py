@@ -22,7 +22,9 @@ class GitGuard:
         try:
             result = subprocess.run(
                 ["git", "rev-parse", "--is-inside-work-tree"],
-                cwd=self.root, capture_output=True, text=True,
+                cwd=self.root,
+                capture_output=True,
+                text=True,
             )
             return result.returncode == 0
         except FileNotFoundError:
@@ -40,26 +42,37 @@ class GitGuard:
             }
         """
         if not self.is_git_repo():
-            return {"commit_hash": "", "branch": "", "is_dirty": False, "changed_files": []}
+            return {
+                "commit_hash": "",
+                "branch": "",
+                "is_dirty": False,
+                "changed_files": [],
+            }
 
         # Get short commit hash
         hash_result = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
-            cwd=self.root, capture_output=True, text=True,
+            cwd=self.root,
+            capture_output=True,
+            text=True,
         )
         commit_hash = hash_result.stdout.strip()
 
         # Get branch name
         branch_result = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=self.root, capture_output=True, text=True,
+            cwd=self.root,
+            capture_output=True,
+            text=True,
         )
         branch = branch_result.stdout.strip()
 
         # Get changed files
         status_result = subprocess.run(
             ["git", "status", "--porcelain"],
-            cwd=self.root, capture_output=True, text=True,
+            cwd=self.root,
+            capture_output=True,
+            text=True,
         )
         changed_files = []
         for line in status_result.stdout.strip().splitlines():
@@ -119,7 +132,9 @@ class GitGuard:
         # Commit with checkpoint message
         result = subprocess.run(
             ["git", "commit", "-m", "auto: checkpoint before pipeline execution"],
-            cwd=self.root, capture_output=True, text=True,
+            cwd=self.root,
+            capture_output=True,
+            text=True,
         )
 
         if result.returncode != 0:
@@ -128,7 +143,9 @@ class GitGuard:
         # Get new commit hash
         hash_result = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
-            cwd=self.root, capture_output=True, text=True,
+            cwd=self.root,
+            capture_output=True,
+            text=True,
         )
 
         return {

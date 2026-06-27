@@ -16,7 +16,6 @@ from __future__ import annotations
 import re
 from subtap.schemas.models import SentenceSegment
 
-
 # Maximum characters per line (Chinese)
 MAX_CHARS_PER_LINE = 42
 
@@ -49,6 +48,7 @@ class SentenceEngine:
         """Initialize spaCy with fallback."""
         try:
             import spacy
+
             # Try Chinese model
             try:
                 self._spacy_nlp = spacy.load("zh_core_web_sm")
@@ -132,14 +132,17 @@ class SentenceEngine:
         Returns:
             Sentence segments from spaCy.
         """
-        result = []
+        result: list[SentenceSegment] = []
         sentence_id = 0
+        nlp = self._spacy_nlp
+        if nlp is None:
+            return result
 
         for text, (start, end), chunk_id in zip(texts, timings, chunk_ids):
             if not text:
                 continue
 
-            doc = self._spacy_nlp(text)
+            doc = nlp(text)
             sentences = [sent.text for sent in doc.sents]
 
             # Distribute time proportionally
@@ -156,14 +159,16 @@ class SentenceEngine:
                 else:
                     duration = (end - start) / len(sentences)
 
-                result.append(SentenceSegment(
-                    sentence_id=sentence_id,
-                    chunk_id=chunk_id,
-                    start_sec=current_time,
-                    end_sec=current_time + duration,
-                    text=sent_text.strip(),
-                    source_text=sent_text.strip(),
-                ))
+                result.append(
+                    SentenceSegment(
+                        sentence_id=sentence_id,
+                        chunk_id=chunk_id,
+                        start_sec=current_time,
+                        end_sec=current_time + duration,
+                        text=sent_text.strip(),
+                        source_text=sent_text.strip(),
+                    )
+                )
                 sentence_id += 1
                 current_time += duration
 
@@ -200,14 +205,16 @@ class SentenceEngine:
                 if part in SENTENCE_ENDINGS:
                     current_text += part
                     if current_text.strip():
-                        result.append(SentenceSegment(
-                            sentence_id=sentence_id,
-                            chunk_id=chunk_id,
-                            start_sec=start,
-                            end_sec=end,
-                            text=current_text.strip(),
-                            source_text=current_text.strip(),
-                        ))
+                        result.append(
+                            SentenceSegment(
+                                sentence_id=sentence_id,
+                                chunk_id=chunk_id,
+                                start_sec=start,
+                                end_sec=end,
+                                text=current_text.strip(),
+                                source_text=current_text.strip(),
+                            )
+                        )
                         sentence_id += 1
                     current_text = ""
                 else:
@@ -215,14 +222,16 @@ class SentenceEngine:
 
             # Handle remaining text
             if current_text.strip():
-                result.append(SentenceSegment(
-                    sentence_id=sentence_id,
-                    chunk_id=chunk_id,
-                    start_sec=start,
-                    end_sec=end,
-                    text=current_text.strip(),
-                    source_text=current_text.strip(),
-                ))
+                result.append(
+                    SentenceSegment(
+                        sentence_id=sentence_id,
+                        chunk_id=chunk_id,
+                        start_sec=start,
+                        end_sec=end,
+                        text=current_text.strip(),
+                        source_text=current_text.strip(),
+                    )
+                )
                 sentence_id += 1
 
         return result
@@ -243,14 +252,16 @@ class SentenceEngine:
             text = seg.text
 
             if len(text) <= MAX_CHARS_PER_LINE:
-                result.append(SentenceSegment(
-                    sentence_id=sentence_id,
-                    chunk_id=seg.chunk_id,
-                    start_sec=seg.start_sec,
-                    end_sec=seg.end_sec,
-                    text=text,
-                    source_text=text,
-                ))
+                result.append(
+                    SentenceSegment(
+                        sentence_id=sentence_id,
+                        chunk_id=seg.chunk_id,
+                        start_sec=seg.start_sec,
+                        end_sec=seg.end_sec,
+                        text=text,
+                        source_text=text,
+                    )
+                )
                 sentence_id += 1
             else:
                 # Split long text at natural boundaries
@@ -262,15 +273,21 @@ class SentenceEngine:
                 current_time = seg.start_sec
                 for i, part in enumerate(parts):
                     # Distribute time proportionally
-                    part_duration = (chars_per_part[i] / total_chars) * total_duration if total_chars > 0 else 0
-                    result.append(SentenceSegment(
-                        sentence_id=sentence_id,
-                        chunk_id=seg.chunk_id,
-                        start_sec=current_time,
-                        end_sec=current_time + part_duration,
-                        text=part.strip(),
-                        source_text=part.strip(),
-                    ))
+                    part_duration = (
+                        (chars_per_part[i] / total_chars) * total_duration
+                        if total_chars > 0
+                        else 0
+                    )
+                    result.append(
+                        SentenceSegment(
+                            sentence_id=sentence_id,
+                            chunk_id=seg.chunk_id,
+                            start_sec=current_time,
+                            end_sec=current_time + part_duration,
+                            text=part.strip(),
+                            source_text=part.strip(),
+                        )
+                    )
                     sentence_id += 1
                     current_time += part_duration
 
@@ -296,14 +313,16 @@ class SentenceEngine:
             if cps > MAX_CPS:
                 # Extend duration to meet CPS constraint
                 new_duration = len(seg.text) / MAX_CPS
-                result.append(SentenceSegment(
-                    sentence_id=seg.sentence_id,
-                    chunk_id=seg.chunk_id,
-                    start_sec=seg.start_sec,
-                    end_sec=seg.start_sec + new_duration,
-                    text=seg.text,
-                    source_text=seg.source_text,
-                ))
+                result.append(
+                    SentenceSegment(
+                        sentence_id=seg.sentence_id,
+                        chunk_id=seg.chunk_id,
+                        start_sec=seg.start_sec,
+                        end_sec=seg.start_sec + new_duration,
+                        text=seg.text,
+                        source_text=seg.source_text,
+                    )
+                )
             else:
                 result.append(seg)
 

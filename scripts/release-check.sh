@@ -14,7 +14,11 @@ fi
 
 # 检查项
 CHECKS=(
-    "pip install -e .|$PYTHON -m pip install -e ."
+    "pip install -e .[dev]|$PYTHON -m pip install -e '.[dev]'"
+    "ruff check|$PYTHON -m ruff check src tests"
+    "black --check|$PYTHON -m black --check src tests"
+    "mypy|$PYTHON -m mypy src/subtap"
+    "pytest|$PYTHON -m pytest -q -p no:cacheprovider"
     "subtap setup --skip-models|$PYTHON -m subtap.cli setup --skip-models"
     "subtap --help|$PYTHON -m subtap.cli --help"
     "subtap run --help|$PYTHON -m subtap.cli run --help"
@@ -38,6 +42,42 @@ for check in "${CHECKS[@]}"; do
         FAILED=$((FAILED + 1))
     fi
 done
+
+echo "▸ 检查: subtap run smoke"
+if [ -f "models/asr_0.6b/config.json" ]; then
+    SMOKE_DIR="$(mktemp -d)"
+    "$PYTHON" - "$SMOKE_DIR/input.wav" <<'PY' > /dev/null
+import math
+import struct
+import sys
+import wave
+
+path = sys.argv[1]
+with wave.open(path, "w") as wav:
+    wav.setnchannels(1)
+    wav.setsampwidth(2)
+    wav.setframerate(16000)
+    frames = bytearray()
+    for i in range(16000):
+        sample = int(12000 * math.sin(2 * math.pi * 440 * i / 16000))
+        frames += struct.pack("<h", sample)
+    wav.writeframes(frames)
+PY
+    if "$PYTHON" -m subtap.cli run "$SMOKE_DIR/input.wav" \
+        --no-tui --no-git-check --no-cleanroom \
+        --mode fast --skip-clean --skip-align --no-timestamp \
+        -w "$SMOKE_DIR/work" -o "$SMOKE_DIR/output" > /dev/null 2>&1 \
+        && [ -s "$SMOKE_DIR/output/output.srt" ]; then
+        echo "  ✓ 通过"
+        PASSED=$((PASSED + 1))
+    else
+        echo "  ✗ 失败"
+        FAILED=$((FAILED + 1))
+    fi
+    rm -rf "$SMOKE_DIR"
+else
+    echo "  - 跳过：models/asr_0.6b 未安装"
+fi
 
 echo ""
 echo "═══ 检查结果 ═══"

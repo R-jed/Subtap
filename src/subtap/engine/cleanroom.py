@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-
 # Files that are safe to clean (temp/cache)
 _CLEANABLE_NAMES = {
     ".DS_Store",
@@ -90,6 +89,7 @@ class Cleanroom:
         for d in self.root.rglob("__pycache__"):
             if d.is_dir():
                 import shutil
+
                 shutil.rmtree(d)
                 cleaned += 1
 
@@ -106,7 +106,11 @@ class Cleanroom:
                 cleaned += 1
                 issues.append("已清理损坏的 event.log.jsonl")
 
-        return {"cleaned_count": cleaned, "issues": issues, "is_clean": len(issues) == 0}
+        return {
+            "cleaned_count": cleaned,
+            "issues": issues,
+            "is_clean": len(issues) == 0,
+        }
 
     def check_model_status(self) -> dict[str, Any]:
         """Report model availability.
@@ -121,11 +125,17 @@ class Cleanroom:
         models = []
         for name in model_names:
             model_path = models_dir / name
-            installed = model_path.exists() and any(model_path.iterdir()) if model_path.exists() else False
-            models.append({
-                "name": name,
-                "installed": installed,
-                "path": str(model_path),
-            })
+            installed = (
+                model_path.exists() and any(model_path.iterdir())
+                if model_path.exists()
+                else False
+            )
+            models.append(
+                {
+                    "name": name,
+                    "installed": installed,
+                    "path": str(model_path),
+                }
+            )
 
         return {"models": models}

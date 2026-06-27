@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-import tempfile
 from pathlib import Path
 
 from subtap.schemas.config import AlignConfig
@@ -38,6 +37,7 @@ class MLXQwenAligner:
             return
         try:
             from mlx_audio.stt.generate import load_model
+
             logger.info("Loading aligner model: %s", self._model_path)
             self._model = load_model(self._model_path)
             logger.info("Aligner model loaded successfully")
@@ -100,13 +100,17 @@ class MLXQwenAligner:
             chunk_audio = self._get_chunk_audio_path(sent.chunk_id, work_dir)
 
             if chunk_audio is None:
-                logger.warning("Chunk %d audio not found, using fallback", sent.chunk_id)
-                results.append(AlignedSegment(
-                    sentence_id=sent.sentence_id,
-                    start_sec=sent.start_sec,
-                    end_sec=sent.end_sec,
-                    text=sent.text,
-                ))
+                logger.warning(
+                    "Chunk %d audio not found, using fallback", sent.chunk_id
+                )
+                results.append(
+                    AlignedSegment(
+                        sentence_id=sent.sentence_id,
+                        start_sec=sent.start_sec,
+                        end_sec=sent.end_sec,
+                        text=sent.text,
+                    )
+                )
                 continue
 
             try:
@@ -135,30 +139,39 @@ class MLXQwenAligner:
                     start = max(chunk_offset, min(start, chunk_end))
                     end = max(start + 0.01, min(end, chunk_end))
 
-                    results.append(AlignedSegment(
-                        sentence_id=sent.sentence_id,
-                        start_sec=round(start, 3),
-                        end_sec=round(end, 3),
-                        text=sent.text,
-                    ))
+                    results.append(
+                        AlignedSegment(
+                            sentence_id=sent.sentence_id,
+                            start_sec=round(start, 3),
+                            end_sec=round(end, 3),
+                            text=sent.text,
+                        )
+                    )
                     logger.info(
                         "Aligned sentence %d: %.3f - %.3f (chunk %d, offset=%.2f)",
-                        sent.sentence_id, start, end, sent.chunk_id, chunk_offset,
+                        sent.sentence_id,
+                        start,
+                        end,
+                        sent.chunk_id,
+                        chunk_offset,
                     )
                     continue
 
             except Exception as e:
                 logger.warning(
                     "Alignment failed for sentence %d: %s, using fallback",
-                    sent.sentence_id, e,
+                    sent.sentence_id,
+                    e,
                 )
 
             # Fallback: use sentence timing
-            results.append(AlignedSegment(
-                sentence_id=sent.sentence_id,
-                start_sec=sent.start_sec,
-                end_sec=sent.end_sec,
-                text=sent.text,
-            ))
+            results.append(
+                AlignedSegment(
+                    sentence_id=sent.sentence_id,
+                    start_sec=sent.start_sec,
+                    end_sec=sent.end_sec,
+                    text=sent.text,
+                )
+            )
 
         return results
