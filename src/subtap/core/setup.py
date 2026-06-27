@@ -68,7 +68,10 @@ class SetupWizard:
         typer.echo("  3. ModelScope")
         typer.echo("  4. 手动放入 models/")
         choice = typer.prompt("输入序号", default="1")
-        return {"1": "hf", "2": "hf-mirror", "3": "modelscope", "4": "manual"}.get(choice, "hf")
+        mapping = {"1": "hf", "2": "hf-mirror", "3": "modelscope", "4": "manual"}
+        if choice not in mapping:
+            typer.echo(f"  无效选项 '{choice}'，默认使用 Hugging Face 直连")
+        return mapping.get(choice, "hf")
 
     def setup_models(self, source: str = "ask", include_optional: bool = False, endpoint: str | None = None) -> bool:
         """Setup models with download source selection.

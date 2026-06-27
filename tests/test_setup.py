@@ -69,6 +69,22 @@ def test_run_init_success():
         mock_init.assert_called_once()
 
 
+def test_choose_download_source_valid():
+    """Test choose_download_source with valid source names."""
+    wizard = SetupWizard()
+    assert wizard.choose_download_source("hf") == "hf"
+    assert wizard.choose_download_source("hf-mirror") == "hf-mirror"
+    assert wizard.choose_download_source("modelscope") == "modelscope"
+    assert wizard.choose_download_source("manual") == "manual"
+
+
+def test_choose_download_source_invalid():
+    """Test choose_download_source raises ValueError for unknown source."""
+    wizard = SetupWizard()
+    with pytest.raises(ValueError, match="未知下载方式"):
+        wizard.choose_download_source("invalid_source")
+
+
 def test_run_init_failure():
     """Test failed init."""
     wizard = SetupWizard()
