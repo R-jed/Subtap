@@ -30,8 +30,6 @@ class TUIRunner:
         input_path: Path,
         output_dir: Path,
         fmt: str = "srt",
-        skip_clean: bool = False,
-        skip_align: bool = False,
     ) -> dict:
         """Execute full pipeline with TUI feedback."""
         self.total_start = time.time()
@@ -90,40 +88,19 @@ class TUIRunner:
             if self.use_tui:
                 self.progress.print_stage_result(self.state, result)
 
-            # Stage 4: clean (optional)
-            if not skip_clean:
-                self.state.update(
-                    stage="clean", status="processing", progress=0, current_task=""
-                )
-                if self.use_tui:
-                    self.progress.print_stage_start(self.state)
+            # Stage 4: clean
+            self.state.update(
+                stage="clean", status="processing", progress=0, current_task=""
+            )
+            if self.use_tui:
+                self.progress.print_stage_start(self.state)
 
-                stage_start = time.time()
-                result = pipeline.run_stage("clean")
-                self.timings["clean"] = time.time() - stage_start
-                self.state.update(progress=100, status="completed")
-                if self.use_tui:
-                    self.progress.print_stage_result(self.state, result)
-            else:
-                if self.use_tui:
-                    self.progress.print_skip("文本清洗", "--skip-clean")
-                # Convert ASR → CleanSegment format
-                from subtap.core.clean import load_asr_segments, write_clean_segments
-                from subtap.schemas.models import CleanSegment
-
-                asr_segs = load_asr_segments(pipeline.workspace.asr_jsonl)
-                write_clean_segments(
-                    [
-                        CleanSegment(
-                            segment_id=s.segment_id,
-                            original_text=s.text,
-                            cleaned_text=s.text,
-                            glossary_applied=[],
-                        )
-                        for s in asr_segs
-                    ],
-                    pipeline.workspace.cleaned_jsonl,
-                )
+            stage_start = time.time()
+            result = pipeline.run_stage("clean")
+            self.timings["clean"] = time.time() - stage_start
+            self.state.update(progress=100, status="completed")
+            if self.use_tui:
+                self.progress.print_stage_result(self.state, result)
 
             # Stage 5: segment
             self.state.update(stage="segment", status="processing", progress=0)
@@ -137,32 +114,23 @@ class TUIRunner:
             if self.use_tui:
                 self.progress.print_stage_result(self.state, result)
 
-            # Stage 6: align (optional)
-            if not skip_align:
-                self.state.update(
-                    stage="align",
-                    status="loading_model",
-                    progress=0,
-                    model_used="Qwen3-ForcedAligner-0.6B",
-                    current_task="加载对齐模型",
-                )
-                if self.use_tui:
-                    self.progress.print_stage_start(self.state)
+            # Stage 6: align
+            self.state.update(
+                stage="align",
+                status="loading_model",
+                progress=0,
+                model_used="Qwen3-ForcedAligner-0.6B",
+                current_task="加载对齐模型",
+            )
+            if self.use_tui:
+                self.progress.print_stage_start(self.state)
 
-                stage_start = time.time()
-                result = pipeline.run_stage("align")
-                self.timings["align"] = time.time() - stage_start
-                self.state.update(progress=100, status="completed", current_task="")
-                if self.use_tui:
-                    self.progress.print_stage_result(self.state, result)
-            else:
-                if self.use_tui:
-                    self.progress.print_skip("时间轴对齐", "--skip-align")
-                import shutil
-
-                shutil.copy2(
-                    pipeline.workspace.sentences_jsonl, pipeline.workspace.aligned_jsonl
-                )
+            stage_start = time.time()
+            result = pipeline.run_stage("align")
+            self.timings["align"] = time.time() - stage_start
+            self.state.update(progress=100, status="completed", current_task="")
+            if self.use_tui:
+                self.progress.print_stage_result(self.state, result)
 
             # Stage 7: export
             self.state.update(stage="export", status="processing", progress=0)
@@ -239,8 +207,6 @@ class PlainRunner:
         input_path,
         output_dir,
         fmt="srt",
-        skip_clean=False,
-        skip_align=False,
     ) -> dict:
         """Execute pipeline with plain text output."""
         import typer
@@ -271,30 +237,11 @@ class PlainRunner:
             self.timings["asr"] = time.time() - t
             _echo(f"  ✓ {r['segment_count']} 条")
 
-            if not skip_clean:
-                _echo("▸ [4/7] 文本清洗...")
-                t = time.time()
-                r = pipeline.run_stage("clean")
-                self.timings["clean"] = time.time() - t
-                _echo(f"  ✓ {r['segment_count']} 条")
-            else:
-                _echo("▸ [4/7] 跳过文本清洗 (--skip-clean)")
-                from subtap.core.clean import load_asr_segments, write_clean_segments
-                from subtap.schemas.models import CleanSegment
-
-                asr_segs = load_asr_segments(pipeline.workspace.asr_jsonl)
-                write_clean_segments(
-                    [
-                        CleanSegment(
-                            segment_id=s.segment_id,
-                            original_text=s.text,
-                            cleaned_text=s.text,
-                            glossary_applied=[],
-                        )
-                        for s in asr_segs
-                    ],
-                    pipeline.workspace.cleaned_jsonl,
-                )
+            _echo("▸ [4/7] 文本清洗...")
+            t = time.time()
+            r = pipeline.run_stage("clean")
+            self.timings["clean"] = time.time() - t
+            _echo(f"  ✓ {r['segment_count']} 条")
 
             _echo("▸ [5/7] 智能断句...")
             t = time.time()
@@ -302,19 +249,11 @@ class PlainRunner:
             self.timings["segment"] = time.time() - t
             _echo(f"  ✓ {r['sentence_count']} 句")
 
-            if not skip_align:
-                _echo("▸ [6/7] 时间轴对齐...")
-                t = time.time()
-                r = pipeline.run_stage("align")
-                self.timings["align"] = time.time() - t
-                _echo(f"  ✓ {r['aligned_count']} 条")
-            else:
-                _echo("▸ [6/7] 跳过时间轴对齐 (--skip-align)")
-                import shutil
-
-                shutil.copy2(
-                    pipeline.workspace.sentences_jsonl, pipeline.workspace.aligned_jsonl
-                )
+            _echo("▸ [6/7] 时间轴对齐...")
+            t = time.time()
+            r = pipeline.run_stage("align")
+            self.timings["align"] = time.time() - t
+            _echo(f"  ✓ {r['aligned_count']} 条")
 
             _echo(f"▸ [7/7] 字幕导出 ({fmt.upper()})...")
             t = time.time()

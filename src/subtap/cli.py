@@ -550,14 +550,6 @@ def run(
                 if commit_result["committed"]:
                     typer.echo(f"  ✓ 已自动提交: {commit_result['commit_hash']}")
 
-    # ── Mode-based skip flags ────────────────────────────────
-    if mode == "fast":
-        skip_clean = True
-        skip_align = True
-    else:  # quality mode
-        skip_clean = False
-        skip_align = False
-
     # ── Pipeline execution ──────────────────────────────────
     from subtap.metrics.events import EventBus
     from subtap.metrics.profiler import PipelineProfiler
