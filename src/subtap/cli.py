@@ -446,8 +446,6 @@ def _run_pipeline_safely(
     output_dir: Path,
     mode: str,
     fmt: str,
-    skip_clean: bool,
-    skip_align: bool,
 ) -> dict:
     """在线程中安全运行 pipeline，不涉及 UI 操作。"""
     from subtap.ui.tui import TUIRunner
@@ -458,8 +456,6 @@ def _run_pipeline_safely(
         input_path,
         output_dir,
         fmt=fmt,
-        skip_clean=skip_clean,
-        skip_align=skip_align,
     )
 
 
@@ -474,15 +470,13 @@ def run(
     ),
     fmt: str = typer.Option("srt", "--format", "-f", help="导出格式：srt / ass / txt"),
     mode: str = typer.Option(
-        "hybrid", "--mode", "-m", help="执行模式：fast / quality / hybrid"
+        "fast", "--mode", "-m", help="执行模式：fast / quality"
     ),
-    skip_clean: bool = typer.Option(False, "--skip-clean", help="跳过文本清洗阶段"),
-    skip_align: bool = typer.Option(False, "--skip-align", help="跳过时间轴对齐阶段"),
     use_tui: bool = typer.Option(
         True, "--tui/--no-tui", help="启用 TUI 界面（默认开启）"
     ),
     policy: str = typer.Option(
-        "local", "--policy", "-p", help="执行策略：local / hybrid / fast"
+        "local", "--policy", "-p", help="执行策略：local / remote"
     ),
     no_git_check: bool = typer.Option(
         False, "--no-git-check", help="跳过 Git 状态检查"
@@ -500,9 +494,8 @@ def run(
     [bold]流程：[/bold] 音频标准化 → 切段 → 语音识别 → 文本清洗 → 智能断句 → 时间轴对齐 → 字幕导出
 
     [bold]模式：[/bold]
-      fast     — 最快速度，跳过清洗和对齐
+      fast     — 最快速度，跳过清洗和对齐（默认）
       quality  — 完整流程，使用大模型，质量最高
-      hybrid   — 平衡速度和质量（默认）
 
     [bold]示例：[/bold]
       subtap run video.mp3
@@ -561,10 +554,9 @@ def run(
     if mode == "fast":
         skip_clean = True
         skip_align = True
-    elif mode == "quality":
+    else:  # quality mode
         skip_clean = False
         skip_align = False
-    # hybrid mode uses defaults
 
     # ── Pipeline execution ──────────────────────────────────
     from subtap.metrics.events import EventBus
@@ -596,8 +588,6 @@ def run(
                 output_dir,
                 mode,
                 fmt,
-                skip_clean,
-                skip_align,
             )
 
             # 运行 dashboard（它会启动 async loop 处理事件）
@@ -627,8 +617,6 @@ def run(
                         input_path,
                         output_dir,
                         fmt=fmt,
-                        skip_clean=skip_clean,
-                        skip_align=skip_align,
                     )
             else:
                 result = runner.run_pipeline(
@@ -636,8 +624,6 @@ def run(
                     input_path,
                     output_dir,
                     fmt=fmt,
-                    skip_clean=skip_clean,
-                    skip_align=skip_align,
                 )
             timings = result.get("timings", {})
         except SystemExit:
@@ -726,7 +712,7 @@ def batch_transcribe(
         Path("./output"), "--output-dir", "-o", help="输出目录"
     ),
     mode: str = typer.Option(
-        "offline", "--mode", "-m", help="offline / hybrid / remote-asr"
+        "fast", "--mode", "-m", help="fast / quality"
     ),
     json_output: bool = typer.Option(False, "--json", help="输出机器可读 JSON"),
 ) -> None:
@@ -1078,8 +1064,6 @@ def demo(
             input_file,
             output_dir,
             fmt="srt",
-            skip_clean=True,
-            skip_align=True,
         )
     except SystemExit:
         raise

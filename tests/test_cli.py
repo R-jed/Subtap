@@ -229,13 +229,6 @@ def test_run_mode_quality():
     assert "quality" in result.output
 
 
-def test_run_mode_hybrid():
-    """subtap run should accept --mode hybrid."""
-    result = runner.invoke(app, ["run", "--help"])
-    assert result.exit_code == 0
-    assert "hybrid" in result.output
-
-
 def test_analyze_command_exists():
     """subtap analyze command should exist."""
     result = runner.invoke(app, ["analyze", "--help"])
