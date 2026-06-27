@@ -223,3 +223,56 @@ def test_demo_command_exists():
     assert "演示" in result.output
     assert "--output-dir" in result.output
     assert "--skip-tui" in result.output
+
+
+def test_setup_help_has_download_source_option():
+    """Test setup --help shows --download-source option."""
+    result = runner.invoke(app, ["setup", "--help"])
+
+    assert result.exit_code == 0
+    assert "--download-source" in result.output
+    assert "hf-mirror" in result.output
+
+
+def test_doctor_release_fails_when_models_missing(tmp_path, monkeypatch):
+    """doctor --release 应在模型未安装时返回 exit_code=1."""
+    from unittest.mock import patch, MagicMock
+    from pathlib import Path
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    subtap_dir = tmp_path / ".subtap"
+    subtap_dir.mkdir()
+    (subtap_dir / "config.yaml").write_text("models:\n  root: models\n", encoding="utf-8")
+
+    # 模拟 registry.status() 返回缺失模型
+    missing_status = [
+        MagicMock(name="asr_0.6b", installed=False,
+                  path=tmp_path / "models" / "asr_0.6b",
+                  missing_files=["config.json", "model.safetensors"]),
+        MagicMock(name="aligner", installed=True,
+                  path=tmp_path / "models" / "aligner",
+                  missing_files=[]),
+    ]
+
+    with patch("subtap.core.models.ModelRegistry") as MockRegistry:
+        MockRegistry.return_value.status.return_value = missing_status
+        result = runner.invoke(app, ["doctor", "--release"])
+
+    assert result.exit_code == 1
+    assert "部分检查未通过" in result.output
+    assert "缺失" in result.output
+
+
+def test_python_module_entrypoint_outputs_help():
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-m", "subtap.cli", "--help"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "Subtap" in result.stdout
+    assert "run" in result.stdout
