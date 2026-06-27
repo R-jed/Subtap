@@ -7,6 +7,8 @@ import os
 import platform
 import shutil
 import sys
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -489,6 +491,7 @@ def run(
     timestamp: bool = typer.Option(
         True, "--timestamp/--no-timestamp", help="输出目录是否带时间戳"
     ),
+    json_output: bool = typer.Option(False, "--json", help="输出机器可读 JSON"),
 ) -> None:
     """运行完整字幕生成流程
 
@@ -507,6 +510,10 @@ def run(
     """
     from subtap.schemas.config import load_config
     from subtap.core.pipeline import Pipeline
+
+    if json_output and use_tui:
+        typer.echo("✗ --json 需要同时使用 --no-tui", err=True)
+        raise typer.Exit(1)
 
     if not input_path.exists():
         typer.echo(f"✗ 错误：文件未找到 {input_path}", err=True)
@@ -611,14 +618,25 @@ def run(
 
         timings = {}
         try:
-            result = runner.run_pipeline(
-                pipeline,
-                input_path,
-                output_dir,
-                fmt=fmt,
-                skip_clean=skip_clean,
-                skip_align=skip_align,
-            )
+            if json_output:
+                with redirect_stdout(StringIO()):
+                    result = runner.run_pipeline(
+                        pipeline,
+                        input_path,
+                        output_dir,
+                        fmt=fmt,
+                        skip_clean=skip_clean,
+                        skip_align=skip_align,
+                    )
+            else:
+                result = runner.run_pipeline(
+                    pipeline,
+                    input_path,
+                    output_dir,
+                    fmt=fmt,
+                    skip_clean=skip_clean,
+                    skip_align=skip_align,
+                )
             timings = result.get("timings", {})
         except SystemExit:
             raise
@@ -654,7 +672,8 @@ def run(
             output_dir.mkdir(parents=True, exist_ok=True)
             report_path = output_dir / "report.md"
             report_path.write_text(report_content, encoding="utf-8")
-            typer.echo(f"\n▸ 质量报告：{report_path}")
+            if not json_output:
+                typer.echo(f"\n▸ 质量报告：{report_path}")
 
             # Write debug.json
             debug_data = {
@@ -672,7 +691,27 @@ def run(
             )
     except Exception as e:
         # Report generation is optional - don't fail the whole run
-        typer.echo(f"\n⚠ 报告生成失败：{e}", err=True)
+        if not json_output:
+            typer.echo(f"\n⚠ 报告生成失败：{e}", err=True)
+
+    if json_output:
+        output_path = output_dir / f"output.{fmt}"
+        typer.echo(
+            json.dumps(
+                {
+                    "ok": True,
+                    "input_path": str(input_path),
+                    "work_dir": str(work_dir),
+                    "output_dir": str(output_dir),
+                    "output_path": str(output_path),
+                    "report_path": str(output_dir / "report.md"),
+                    "debug_path": str(output_dir / "debug.json"),
+                    "timings": timings,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
 
 
 # ── 单阶段命令 ─────────────────────────────────────────────
