@@ -6,6 +6,7 @@ work/
 /output/
 demo_work/
 demo_output/
+.worktrees/
 
 # Claude 个人配置
 .claude/
