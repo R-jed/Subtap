@@ -6,7 +6,7 @@
 
 **本地优先的 AI 字幕生成引擎** — 基于 MLX Qwen3 的端到端字幕工具，完全离线运行。
 
-> 当前版本面向 macOS 开发版源码安装，已在 Apple Silicon 环境验证。当前不提供 Homebrew、Developer ID 签名、公证或正式二进制分发。
+> 当前版本面向 macOS 开发版源码安装，已在 Apple Silicon 环境验证。当前不提供 Developer ID 签名、公证或正式二进制分发。
 
 ## 特性
 
@@ -58,8 +58,7 @@ subtap doctor
 
 1. Hugging Face 直连
 2. Hugging Face 国内镜像：`https://hf-mirror.com`
-3. ModelScope
-4. 手动下载后放入 `models/`
+3. 手动下载后放入 `models/`
 
 ### 基本用法
 
