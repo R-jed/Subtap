@@ -1,7 +1,6 @@
 """Tests for setup business logic."""
 
 import pytest
-from pathlib import Path
 from unittest.mock import patch
 
 from subtap.core.setup import SetupWizard

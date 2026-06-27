@@ -103,7 +103,6 @@ def test_registry_is_available_true(tmp_path: Path):
 def test_downloader_download_calls_urlopen(tmp_path: Path, monkeypatch):
     """Downloader calls urlopen for each file."""
     from unittest.mock import MagicMock
-    from io import BytesIO
 
     config = _config_with_model_root(tmp_path)
     downloader = ModelDownloader(config)
@@ -446,7 +445,6 @@ def test_check_connectivity_returns_false_on_timeout(tmp_path, monkeypatch):
 def test_check_connectivity_returns_false_on_http_error(tmp_path, monkeypatch):
     """check_connectivity returns False when server returns HTTP error."""
     import urllib.error
-    import http.client
 
     cfg = _config_with_model_root(tmp_path)
     downloader = ModelDownloader(cfg)

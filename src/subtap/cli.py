@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import platform
 import shutil
@@ -94,28 +95,18 @@ def doctor(
 
     # --release 模式：增加模型和 TUI 检查
     if release:
+        import importlib.util
+
         # MLX 运行时
-        try:
-            import mlx
-            mlx_ok = True
-        except ImportError:
-            mlx_ok = False
+        mlx_ok = importlib.util.find_spec("mlx") is not None
         checks.append(("mlx", "MLX 运行时", mlx_ok, "" if mlx_ok else "未安装，请：pip install mlx"))
 
         # mlx-audio
-        try:
-            import mlx_audio
-            mla_ok = True
-        except ImportError:
-            mla_ok = False
+        mla_ok = importlib.util.find_spec("mlx_audio") is not None
         checks.append(("mlx-audio", "MLX Audio", mla_ok, "" if mla_ok else "未安装，请：pip install mlx-audio"))
 
         # rich
-        try:
-            import rich
-            rich_ok = True
-        except ImportError:
-            rich_ok = False
+        rich_ok = importlib.util.find_spec("rich") is not None
         checks.append(("rich", "Rich TUI", rich_ok, "" if rich_ok else "未安装，请：pip install rich"))
 
     # 打印结果
@@ -339,7 +330,6 @@ def run(
     """
     from subtap.schemas.config import load_config
     from subtap.core.pipeline import Pipeline
-    from subtap.output.engine import OutputEngine
 
     if not input_path.exists():
         typer.echo(f"✗ 错误：文件未找到 {input_path}", err=True)
@@ -347,9 +337,6 @@ def run(
 
     config = load_config(Path.home() / ".subtap" / "config.yaml")
     config.output.timestamp = timestamp  # CLI overrides config
-
-    # Create OutputEngine
-    engine = OutputEngine(output_dir, input_path.stem, config.output)
 
     pipeline = Pipeline(config, work_dir=work_dir)
     pipeline.workspace.ensure_dirs()
@@ -401,7 +388,7 @@ def run(
     profiler.wrap_pipeline(pipeline)
 
     if use_tui:
-        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from concurrent.futures import ThreadPoolExecutor
         from subtap.ui.dashboard import PipelineDashboard
         from subtap.ui.event_bridge import EventBridge
 
@@ -720,7 +707,7 @@ def retry(
 
     typer.echo(f"▸ 重试 {stage_name}...")
     try:
-        result = ctrl.retry_stage(stage_name)
+        ctrl.retry_stage(stage_name)
         typer.echo(f"  ✓ {stage_name} 重试成功")
     except ValueError as e:
         typer.echo(f"✗ {e}", err=True)
@@ -770,7 +757,7 @@ def demo(
         runner = TUIRunner(use_tui=True)
 
     try:
-        result = runner.run_pipeline(
+        runner.run_pipeline(
             pipeline, input_file, output_dir, fmt="srt",
             skip_clean=True, skip_align=True,
         )
@@ -858,7 +845,8 @@ def quality(
     # Write quality event to log
     log_path = aligned_path.parent / "logs" / "event.log.jsonl"
     if log_path.parent.exists():
-        import json, time
+        import json
+        import time
         event = {
             "stage": "quality_check",
             "quality_score": report.total_score,
@@ -896,7 +884,8 @@ def analyze(
         raise typer.Exit(1)
 
     # Create temporary aligned.jsonl for analysis
-    import tempfile, json
+    import tempfile
+    import json
     with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, encoding="utf-8") as f:
         for seg in segments:
             f.write(json.dumps(seg, ensure_ascii=False) + "\n")
