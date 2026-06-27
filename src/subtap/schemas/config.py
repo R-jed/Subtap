@@ -71,6 +71,14 @@ class OutputConfig(BaseModel):
     timestamp: bool = True
 
 
+class MetricsConfig(BaseModel):
+    """性能指标配置。"""
+
+    enabled: bool = True
+    slow_threshold: float = 1.5
+    output_path: str = "performance.json"
+
+
 class SubtapConfig(BaseModel):
     """Root configuration for Subtap."""
 
@@ -81,6 +89,7 @@ class SubtapConfig(BaseModel):
     models: ModelConfig = Field(default_factory=ModelConfig)
     workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
+    metrics: MetricsConfig = Field(default_factory=MetricsConfig)
 
 
 _DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[3] / "configs" / "default.yaml"

@@ -278,3 +278,22 @@ def test_slow_detector_get_slow_chunks():
 
     slow_chunks = detector.get_slow_chunks()
     assert len(slow_chunks) == 2
+
+
+def test_metrics_config_defaults():
+    """Test MetricsConfig default values."""
+    from subtap.schemas.config import MetricsConfig
+
+    config = MetricsConfig()
+    assert config.enabled is True
+    assert config.slow_threshold == 1.5
+    assert config.output_path == "performance.json"
+
+
+def test_metrics_config_custom():
+    """Test MetricsConfig custom values."""
+    from subtap.schemas.config import MetricsConfig
+
+    config = MetricsConfig(enabled=False, slow_threshold=2.0)
+    assert config.enabled is False
+    assert config.slow_threshold == 2.0
