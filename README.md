@@ -174,6 +174,9 @@ pytest tests/test_cli.py -v
 
 # 环境检查
 subtap doctor --release
+
+# 机器可读环境检查
+subtap doctor --json
 ```
 
 ## 贡献

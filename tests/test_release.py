@@ -98,3 +98,12 @@ def test_release_check_does_not_require_model_download():
 
     assert "subtap setup --skip-models" in text
     assert "--download-source hf" not in text
+
+
+def test_ci_runs_release_check():
+    """Test GitHub Actions CI delegates to release-check."""
+    ci_path = PROJECT_ROOT / ".github" / "workflows" / "ci.yml"
+    text = ci_path.read_text(encoding="utf-8")
+
+    assert "macos" in text
+    assert "scripts/release-check.sh" in text
