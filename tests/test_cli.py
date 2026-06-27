@@ -223,3 +223,12 @@ def test_demo_command_exists():
     assert "演示" in result.output
     assert "--output-dir" in result.output
     assert "--skip-tui" in result.output
+
+
+def test_setup_help_has_download_source_option():
+    """Test setup --help shows --download-source option."""
+    result = runner.invoke(app, ["setup", "--help"])
+
+    assert result.exit_code == 0
+    assert "--download-source" in result.output
+    assert "hf-mirror" in result.output

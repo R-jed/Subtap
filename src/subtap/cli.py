@@ -236,9 +236,13 @@ def _doctor_workspace(work_dir: Path = Path("./work")) -> None:
 @app.command()
 def setup(
     skip_models: bool = typer.Option(False, "--skip-models", help="跳过模型下载"),
-    quick: bool = typer.Option(False, "--quick", help="快速模式（只下载 0.6B）[待实现]"),
-    full: bool = typer.Option(False, "--full", help="完整模式（下载所有模型）[待实现]"),
-    mode: str = typer.Option("hybrid", "--mode", help="执行模式：fast / quality / hybrid [待实现]"),
+    download_source: str = typer.Option(
+        "ask",
+        "--download-source",
+        help="模型下载方式：ask / hf / hf-mirror / modelscope / manual",
+    ),
+    include_optional: bool = typer.Option(False, "--include-optional", help="同时下载可选大模型"),
+    model_endpoint: str | None = typer.Option(None, "--model-endpoint", help="自定义 Hugging Face 镜像地址"),
 ) -> None:
     """用户初始化向导"""
     from subtap.core.setup import SetupWizard
@@ -273,8 +277,15 @@ def setup(
         typer.echo("\n▸ Step 3: 模型安装（已跳过）")
     else:
         typer.echo("\n▸ Step 3: 模型安装")
-        wizard.setup_models(mode=mode, quick=quick, full=full)
-        typer.echo("  ✓ 模型安装完成")
+        ok = wizard.setup_models(
+            source=download_source,
+            include_optional=include_optional,
+            endpoint=model_endpoint,
+        )
+        if ok:
+            typer.echo("  ✓ 模型安装完成")
+        else:
+            typer.echo("  ⚠ 模型安装未完成")
 
     # Step 4: Doctor check
     typer.echo("\n▸ Step 4: 环境验证")
