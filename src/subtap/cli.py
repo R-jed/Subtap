@@ -287,6 +287,19 @@ def setup(
 
 # ── Run 命令 ───────────────────────────────────────────────
 
+def _run_pipeline_safely(
+    pipeline, input_path: Path, output_dir: Path,
+    mode: str, fmt: str, skip_clean: bool, skip_align: bool,
+) -> dict:
+    """在线程中安全运行 pipeline，不涉及 UI 操作。"""
+    from subtap.ui.tui import TUIRunner
+    runner = TUIRunner(use_tui=False, mode=mode)
+    return runner.run_pipeline(
+        pipeline, input_path, output_dir, fmt=fmt,
+        skip_clean=skip_clean, skip_align=skip_align,
+    )
+
+
 @app.command()
 def run(
     input_path: Path = typer.Argument(..., help="输入媒体文件路径（支持 mp3/mp4/wav/mkv 等）"),
@@ -381,6 +394,7 @@ def run(
     profiler.wrap_pipeline(pipeline)
 
     if use_tui:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         from subtap.ui.dashboard import PipelineDashboard
         from subtap.ui.event_bridge import EventBridge
 
@@ -388,39 +402,25 @@ def run(
         bridge = EventBridge(event_bus, dashboard)
         bridge.connect()
 
-        # 运行 dashboard（它会启动 async loop 处理事件）
-        # 同时在后台运行 pipeline
-        import asyncio
-        import threading
-
+        # 使用 ThreadPoolExecutor 管理线程生命周期
         timings = {}
         pipeline_error = None
 
-        def run_pipeline_thread():
-            nonlocal timings, pipeline_error
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                _run_pipeline_safely, pipeline, input_path, output_dir,
+                mode, fmt, skip_clean, skip_align,
+            )
+
+            # 运行 dashboard（它会启动 async loop 处理事件）
+            dashboard.run()
+
+            # 获取结果（future.result() 会阻塞直到完成）
             try:
-                from subtap.ui.tui import TUIRunner
-                runner = TUIRunner(use_tui=False, mode=mode)
-                result = runner.run_pipeline(
-                    pipeline, input_path, output_dir, fmt=fmt,
-                    skip_clean=skip_clean, skip_align=skip_align,
-                )
+                result = future.result(timeout=300)
                 timings = result.get("timings", {})
             except Exception as e:
                 pipeline_error = e
-            finally:
-                # 停止 dashboard
-                dashboard.exit()
-
-        # 在后台线程运行 pipeline
-        pipeline_thread = threading.Thread(target=run_pipeline_thread, daemon=True)
-        pipeline_thread.start()
-
-        # 运行 dashboard（阻塞直到 pipeline 完成）
-        dashboard.run()
-
-        # 等待 pipeline 线程完成
-        pipeline_thread.join(timeout=5)
 
         if pipeline_error:
             typer.echo(f"\n✗ 处理失败：{pipeline_error}", err=True)
