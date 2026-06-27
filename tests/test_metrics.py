@@ -55,8 +55,16 @@ async def test_event_bus_publish():
         timestamp=1234567890.0
     )
 
+    # 启动事件循环
+    task = asyncio.create_task(bus.start())
+
+    # 发布事件
     await bus.publish(event)
-    await bus._dispatch(event)
+
+    # 等待处理
+    await asyncio.sleep(0.1)
+    bus.stop()
+    await task
 
     assert len(received) == 1
     assert received[0].data == {"stage": "asr"}

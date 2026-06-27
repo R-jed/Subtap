@@ -47,7 +47,7 @@ class EventBus:
         try:
             self._queue.put_nowait(event)
         except asyncio.QueueFull:
-            pass  # Drop oldest event to prevent blocking
+            pass  # 丢弃新事件以防止阻塞
 
     async def start(self) -> None:
         """Start event processing loop."""
@@ -64,11 +64,15 @@ class EventBus:
 
     async def _dispatch(self, event: PipelineEvent) -> None:
         """Dispatch event to subscribers."""
+        import logging
         for callback in self._subscribers.get(event.event_type, []):
-            if inspect.iscoroutinefunction(callback):
-                await callback(event)
-            else:
-                callback(event)
+            try:
+                if inspect.iscoroutinefunction(callback):
+                    await callback(event)
+                else:
+                    callback(event)
+            except Exception as e:
+                logging.getLogger(__name__).error(f"Event callback error: {e}")
 
     def stop(self) -> None:
         """Stop event processing loop."""
