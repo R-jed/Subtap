@@ -182,9 +182,10 @@ class SetupWizard:
                 task_id = progress.add_task(model_name, total=None)
 
                 def update_progress(filename: str, downloaded: int, total: int) -> None:
-                    if total > 0 and progress.tasks[task_id].total is None:
-                        progress.update(task_id, total=total)
-                    progress.update(task_id, completed=downloaded, description=f"{model_name}/{filename}")
+                    # 每个文件开始时重置 task
+                    if downloaded == 0:
+                        progress.reset(task_id, total=total, description=f"{model_name}/{filename}")
+                    progress.update(task_id, completed=downloaded)
 
                 downloader.download(model_name, source=source, progress=update_progress)
             typer.echo(f"  ✓ {model_name} 下载完成")
