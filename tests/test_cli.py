@@ -206,6 +206,15 @@ def test_run_json_flag_is_available():
     assert "--json" in result.output
 
 
+def test_batch_transcribe_command_exists():
+    """subtap batch-transcribe should expose batch input and JSON output."""
+    result = runner.invoke(app, ["batch-transcribe", "--help"])
+
+    assert result.exit_code == 0
+    assert "--files" in result.output
+    assert "--json" in result.output
+
+
 def test_run_mode_fast():
     """subtap run should accept --mode fast."""
     result = runner.invoke(app, ["run", "--help"])
