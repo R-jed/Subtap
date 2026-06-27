@@ -7,7 +7,7 @@
 
 **本地优先的 AI 字幕生成引擎** — 基于 MLX Qwen3 的端到端字幕工具，完全离线运行。
 
-> 当前版本为开发版源码安装，仅支持 macOS 13.5+ Apple Silicon。Intel x86_64 暂未验证，不在当前支持范围内。不提供 Developer ID 签名、公证或正式二进制分发。
+> 当前版本面向 macOS 开发版源码安装，支持策略为 macOS 13.5+ Apple Silicon。Intel x86_64 暂未验证，不作为当前开发版支持范围。当前不提供 Developer ID 签名、公证或正式二进制分发。
 
 ## 特性
 
@@ -57,16 +57,14 @@ subtap doctor
 
 模型统一放在项目根目录 `models/`：
 
-| 模型 | 大小 | 用途 | 必需 |
-|------|------|------|------|
-| Qwen3-ASR-0.6B | 约 960 MB | 快速语音识别 | ✓ |
-| Qwen3-ASR-1.7B | 约 2.3 GB | 高质量语音识别 | 可选 |
-| Qwen3-ForcedAligner-0.6B | 约 1.2 GB | 时间轴对齐 | ✓ |
+- `models/asr_0.6b` — 快速语音识别（约 960 MB，必需）
+- `models/asr_1.7b` — 高质量语音识别（约 2.3 GB，可选）
+- `models/aligner` — 时间轴对齐（约 1.2 GB，必需）
 
 `subtap setup` 支持四种下载方式：
 
 1. Hugging Face 直连
-2. Hugging Face 国内镜像（`hf-mirror.com`）
+2. Hugging Face 国内镜像（`https://hf-mirror.com`）
 3. ModelScope（`modelscope.cn`）
 4. 手动下载后放入 `models/`
 
