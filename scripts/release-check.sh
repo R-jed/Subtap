@@ -13,6 +13,7 @@ CHECKS=(
     "subtap setup --skip-models"
     "subtap --help"
     "subtap run --help"
+    "subtap doctor"
     "subtap models list"
     "python -m subtap.cli --help"
 )
