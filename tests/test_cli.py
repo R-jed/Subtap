@@ -344,3 +344,57 @@ def test_setup_non_interactive_fails_on_connectivity_error(tmp_path, monkeypatch
         # 非交互模式，指定 --download-source hf
         result = runner.invoke(app, ["setup", "--skip-models"])
         assert result.exit_code == 0
+
+
+def test_setup_model_download_failure_exits(tmp_path, monkeypatch):
+    """非 manual 模式下模型下载失败应返回 exit_code=1."""
+    from unittest.mock import patch
+
+    fake_home = tmp_path / "fakehome"
+    fake_home.mkdir()
+    monkeypatch.setattr("pathlib.Path.home", lambda: fake_home)
+
+    # 创建配置文件
+    config_dir = fake_home / ".subtap"
+    config_dir.mkdir()
+    (config_dir / "config.yaml").write_text("")
+
+    with patch("subtap.core.setup.SetupWizard.check_system_deps") as mock_deps, \
+         patch("subtap.core.setup.SetupWizard.check_config_exists") as mock_config, \
+         patch("subtap.core.setup.SetupWizard.setup_models") as mock_models:
+
+        mock_deps.return_value = {"ffmpeg": True, "ffprobe": True, "python": True}
+        mock_config.return_value = True
+        # 模拟模型下载失败（非 manual 模式）
+        mock_models.return_value = False
+
+        result = runner.invoke(app, ["setup", "--download-source", "hf"])
+        assert result.exit_code == 1
+        assert "模型安装失败" in result.output
+
+
+def test_setup_manual_model_failure_continues(tmp_path, monkeypatch):
+    """manual 模式下模型安装待完成应正常结束."""
+    from unittest.mock import patch
+
+    fake_home = tmp_path / "fakehome"
+    fake_home.mkdir()
+    monkeypatch.setattr("pathlib.Path.home", lambda: fake_home)
+
+    # 创建配置文件
+    config_dir = fake_home / ".subtap"
+    config_dir.mkdir()
+    (config_dir / "config.yaml").write_text("")
+
+    with patch("subtap.core.setup.SetupWizard.check_system_deps") as mock_deps, \
+         patch("subtap.core.setup.SetupWizard.check_config_exists") as mock_config, \
+         patch("subtap.core.setup.SetupWizard.setup_models") as mock_models:
+
+        mock_deps.return_value = {"ffmpeg": True, "ffprobe": True, "python": True}
+        mock_config.return_value = True
+        # manual 模式下 setup_models 返回 False（预期行为）
+        mock_models.return_value = False
+
+        result = runner.invoke(app, ["setup", "--download-source", "manual"])
+        assert result.exit_code == 0
+        assert "模型安装待手动完成" in result.output
