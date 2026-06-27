@@ -77,7 +77,7 @@ class SetupWizard:
         """Setup models with download source selection.
 
         Args:
-            source: Download source (hf / hf-mirror / manual / ask)
+            source: Download source (hf / hf-mirror / modelscope / manual / ask)
             include_optional: Also download optional larger models
             endpoint: Custom Hugging Face mirror endpoint
 
@@ -92,6 +92,7 @@ class SetupWizard:
             config.models.hf_mirror_endpoint = endpoint
         downloader = ModelDownloader(config)
         selected = self.choose_download_source(source)
+        self.last_model_source = selected
         if selected == "manual":
             self.print_manual_model_instructions()
             return False
@@ -99,9 +100,13 @@ class SetupWizard:
         # 检测网络连通性
         import typer
         first_model = "asr_0.6b"
-        repo = MODEL_REGISTRY[first_model]["hf_repo"]
+
+        def repo_for(download_source: str) -> str:
+            repo_key = "modelscope_repo" if download_source == "modelscope" else "hf_repo"
+            return MODEL_REGISTRY[first_model][repo_key]
+
         typer.echo(f"▸ 检测 {selected} 连通性...")
-        if not downloader.check_connectivity(selected, repo):
+        if not downloader.check_connectivity(selected, repo_for(selected)):
             typer.echo(f"  ✗ 无法连接到 {selected}")
 
             if source != "ask":
@@ -124,12 +129,14 @@ class SetupWizard:
                     return False
 
                 if fallback == "manual":
+                    self.last_model_source = "manual"
                     self.print_manual_model_instructions()
                     return False
 
                 selected = fallback
+                self.last_model_source = selected
                 typer.echo(f"▸ 检测 {selected} 连通性...")
-                if downloader.check_connectivity(selected, repo):
+                if downloader.check_connectivity(selected, repo_for(selected)):
                     typer.echo(f"  ✓ {selected} 连通正常")
                     break
 

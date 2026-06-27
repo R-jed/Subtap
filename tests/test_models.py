@@ -399,14 +399,26 @@ def test_downloader_builds_hf_mirror_file_url(tmp_path):
     assert url == "https://hf-mirror.com/owner/model/resolve/main/model.safetensors"
 
 
-def test_downloader_rejects_modelscope_without_repo(tmp_path):
+def test_registry_has_modelscope_repos():
+    """Development registry should include ModelScope repos for all installable models."""
+    from subtap.core.models import MODEL_REGISTRY
+
+    assert all(info["modelscope_repo"] for info in MODEL_REGISTRY.values())
+
+
+def test_downloader_builds_modelscope_file_url(tmp_path):
     from subtap.core.models import ModelDownloader
 
     cfg = _config_with_model_root(tmp_path)
     downloader = ModelDownloader(cfg)
 
-    with pytest.raises(ValueError, match="ModelScope"):
-        downloader.download("asr_0.6b", source="modelscope")
+    url = downloader.build_file_url(
+        source="modelscope",
+        repo="owner/model",
+        filename="config.json",
+    )
+
+    assert url == "https://modelscope.cn/models/owner/model/resolve/master/config.json"
 
 
 # ── check_connectivity tests ──
@@ -491,6 +503,7 @@ def test_download_file_reports_progress(tmp_path, monkeypatch):
     )
 
     assert (tmp_path / "file").read_bytes() == b"abc"
+    assert seen[0] == (0, 3)
     assert seen[-1] == (3, 3)
 
 

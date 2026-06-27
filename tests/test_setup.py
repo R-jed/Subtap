@@ -96,7 +96,8 @@ def test_run_init_failure():
 def test_setup_model_selection_default():
     """Test default downloads asr_0.6b and aligner."""
     wizard = SetupWizard()
-    with patch.object(wizard, '_download_model') as mock_download:
+    with patch.object(wizard, '_download_model') as mock_download, \
+         patch("subtap.core.models.ModelDownloader.check_connectivity", return_value=True):
         mock_download.return_value = True
         wizard.setup_models(source="hf")
         # Should download asr_0.6b and aligner
@@ -109,7 +110,8 @@ def test_setup_model_selection_default():
 def test_setup_model_selection_include_optional():
     """Test include_optional downloads all models."""
     wizard = SetupWizard()
-    with patch.object(wizard, '_download_model') as mock_download:
+    with patch.object(wizard, '_download_model') as mock_download, \
+         patch("subtap.core.models.ModelDownloader.check_connectivity", return_value=True):
         mock_download.return_value = True
         wizard.setup_models(source="hf", include_optional=True)
         # Should download asr_0.6b, asr_1.7b, and aligner
@@ -131,7 +133,8 @@ def test_setup_model_download_partial_failure():
         # aligner succeeds, asr fails
         return model_name == "aligner"
 
-    with patch.object(wizard, '_download_model', side_effect=mock_download):
+    with patch.object(wizard, '_download_model', side_effect=mock_download), \
+         patch("subtap.core.models.ModelDownloader.check_connectivity", return_value=True):
         result = wizard.setup_models(source="hf")
         assert result is False
         assert call_count == 2  # aligner + asr_0.6b
@@ -141,7 +144,8 @@ def test_setup_model_download_all_fail():
     """Test setup_models returns False when all downloads fail."""
     wizard = SetupWizard()
 
-    with patch.object(wizard, '_download_model', return_value=False):
+    with patch.object(wizard, '_download_model', return_value=False), \
+         patch("subtap.core.models.ModelDownloader.check_connectivity", return_value=True):
         result = wizard.setup_models(source="hf")
         assert result is False
 
