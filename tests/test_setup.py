@@ -73,6 +73,7 @@ def test_choose_download_source_valid():
     wizard = SetupWizard()
     assert wizard.choose_download_source("hf") == "hf"
     assert wizard.choose_download_source("hf-mirror") == "hf-mirror"
+    assert wizard.choose_download_source("modelscope") == "modelscope"
     assert wizard.choose_download_source("manual") == "manual"
 
 
@@ -206,8 +207,38 @@ def test_setup_models_fallback_hf_to_mirror(monkeypatch, tmp_path):
     assert all(source == "hf-mirror" for _, source in calls)
 
 
-def test_setup_models_fallback_hf_mirror_to_manual(monkeypatch, tmp_path):
-    """Test full fallback chain: hf -> hf-mirror -> manual."""
+def test_setup_models_fallback_hf_mirror_to_modelscope(monkeypatch, tmp_path):
+    """Test fallback chain: hf -> hf-mirror -> modelscope."""
+    from subtap.core.setup import SetupWizard
+
+    calls = []
+
+    class FakeDownloader:
+        def __init__(self, config):
+            pass
+
+        def check_connectivity(self, source, repo):
+            return source == "modelscope"
+
+        def download(self, model_name, source="hf", progress=None):
+            calls.append((model_name, source))
+            return tmp_path / "models" / model_name
+
+    monkeypatch.setattr("subtap.core.models.ModelDownloader", FakeDownloader)
+    monkeypatch.setattr(
+        "subtap.schemas.config.load_config",
+        lambda path: __import__("subtap.schemas.config").schemas.config.SubtapConfig(),
+    )
+    monkeypatch.setattr("typer.prompt", lambda *a, **kw: "y")
+
+    ok = SetupWizard().setup_models(source="ask", include_optional=False)
+
+    assert ok is True
+    assert all(source == "modelscope" for _, source in calls)
+
+
+def test_setup_models_fallback_all_to_manual(monkeypatch, tmp_path):
+    """Test full fallback chain: hf -> hf-mirror -> modelscope -> manual."""
     from subtap.core.setup import SetupWizard
 
     class FakeDownloader:

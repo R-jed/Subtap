@@ -9,7 +9,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-DOWNLOAD_SOURCES = ("hf", "hf-mirror", "manual")
+DOWNLOAD_SOURCES = ("hf", "hf-mirror", "modelscope", "manual")
 
 
 class SetupWizard:
@@ -65,9 +65,10 @@ class SetupWizard:
         typer.echo("请选择模型安装方式：")
         typer.echo("  1. Hugging Face 直连")
         typer.echo("  2. Hugging Face 国内镜像（https://hf-mirror.com）")
-        typer.echo("  3. 手动放入 models/")
+        typer.echo("  3. ModelScope（https://modelscope.cn）")
+        typer.echo("  4. 手动放入 models/")
         choice = typer.prompt("输入序号", default="1")
-        mapping = {"1": "hf", "2": "hf-mirror", "3": "manual"}
+        mapping = {"1": "hf", "2": "hf-mirror", "3": "modelscope", "4": "manual"}
         if choice not in mapping:
             typer.echo(f"  无效选项 '{choice}'，默认使用 Hugging Face 直连")
         return mapping.get(choice, "hf")
@@ -108,10 +109,11 @@ class SetupWizard:
                 typer.echo(f"  提示：请使用 --download-source 参数选择其他下载方式")
                 return False
 
-            # 降级顺序：hf -> hf-mirror -> manual
+            # 降级顺序：hf -> hf-mirror -> modelscope -> manual
             fallback_order = {
                 "hf": "hf-mirror",
-                "hf-mirror": "manual",
+                "hf-mirror": "modelscope",
+                "modelscope": "manual",
             }
 
             while selected in fallback_order:

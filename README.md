@@ -58,7 +58,8 @@ subtap doctor
 
 1. Hugging Face 直连
 2. Hugging Face 国内镜像：`https://hf-mirror.com`
-3. 手动下载后放入 `models/`
+3. ModelScope：`https://modelscope.cn`
+4. 手动下载后放入 `models/`
 
 ### 基本用法
 
