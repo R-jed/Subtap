@@ -103,39 +103,37 @@ class SetupWizard:
         if not downloader.check_connectivity(selected, repo):
             typer.echo(f"  ✗ 无法连接到 {selected}")
 
-            # 交互降级逻辑
-            if source == "ask":
-                # 交互模式：提示用户选择其他方式
-                typer.echo("  请选择其他下载方式或手动安装")
-                # 降级顺序：hf -> hf-mirror -> manual
-                fallback_order = {
-                    "hf": "hf-mirror",
-                    "hf-mirror": "manual",
-                }
-                fallback = fallback_order.get(selected)
-                if fallback:
-                    typer.echo(f"  建议降级到: {fallback}")
-                    choice = typer.prompt("是否降级？(y/n)", default="y")
-                    if choice.lower() == "y":
-                        if fallback == "manual":
-                            self.print_manual_model_instructions()
-                            return False
-                        # 重新选择降级方式
-                        selected = fallback
-                        typer.echo(f"▸ 检测 {selected} 连通性...")
-                        if not downloader.check_connectivity(selected, repo):
-                            typer.echo(f"  ✗ 无法连接到 {selected}")
-                            typer.echo("  请选择其他下载方式或手动安装")
-                            return False
-                        typer.echo(f"  ✓ {selected} 连通正常")
-                    else:
-                        return False
-                else:
-                    # 已经是 manual 或其他未知状态
-                    return False
-            else:
+            if source != "ask":
                 # 非交互模式：直接返回失败
                 typer.echo(f"  提示：请使用 --download-source 参数选择其他下载方式")
+                return False
+
+            # 降级顺序：hf -> hf-mirror -> manual
+            fallback_order = {
+                "hf": "hf-mirror",
+                "hf-mirror": "manual",
+            }
+
+            while selected in fallback_order:
+                fallback = fallback_order[selected]
+                typer.echo(f"  建议降级到: {fallback}")
+                choice = typer.prompt("是否降级？(y/n)", default="y")
+                if choice.lower() != "y":
+                    return False
+
+                if fallback == "manual":
+                    self.print_manual_model_instructions()
+                    return False
+
+                selected = fallback
+                typer.echo(f"▸ 检测 {selected} 连通性...")
+                if downloader.check_connectivity(selected, repo):
+                    typer.echo(f"  ✓ {selected} 连通正常")
+                    break
+
+                typer.echo(f"  ✗ 无法连接到 {selected}")
+            else:
+                # 所有降级源均不可达
                 return False
 
         typer.echo(f"  ✓ {selected} 连通正常")

@@ -174,3 +174,87 @@ def test_setup_models_uses_selected_source(monkeypatch, tmp_path):
     assert ("asr_0.6b", "hf-mirror") in calls
     assert ("aligner", "hf-mirror") in calls
     assert all(name != "asr_1.7b" for name, _source in calls)
+
+
+def test_setup_models_fallback_hf_to_mirror(monkeypatch, tmp_path):
+    """Test fallback from hf to hf-mirror when hf is unreachable."""
+    from subtap.core.setup import SetupWizard
+
+    calls = []
+
+    class FakeDownloader:
+        def __init__(self, config):
+            pass
+
+        def check_connectivity(self, source, repo):
+            return source == "hf-mirror"
+
+        def download(self, model_name, source="hf", progress=None):
+            calls.append((model_name, source))
+            return tmp_path / "models" / model_name
+
+    monkeypatch.setattr("subtap.core.models.ModelDownloader", FakeDownloader)
+    monkeypatch.setattr(
+        "subtap.schemas.config.load_config",
+        lambda path: __import__("subtap.schemas.config").schemas.config.SubtapConfig(),
+    )
+    monkeypatch.setattr("typer.prompt", lambda *a, **kw: "y")
+
+    ok = SetupWizard().setup_models(source="ask", include_optional=False)
+
+    assert ok is True
+    assert all(source == "hf-mirror" for _, source in calls)
+
+
+def test_setup_models_fallback_hf_mirror_to_manual(monkeypatch, tmp_path):
+    """Test full fallback chain: hf -> hf-mirror -> manual."""
+    from subtap.core.setup import SetupWizard
+
+    class FakeDownloader:
+        def __init__(self, config):
+            pass
+
+        def check_connectivity(self, source, repo):
+            return False  # all sources unreachable
+
+        def download(self, model_name, source="hf", progress=None):
+            return tmp_path / "models" / model_name
+
+    monkeypatch.setattr("subtap.core.models.ModelDownloader", FakeDownloader)
+    monkeypatch.setattr(
+        "subtap.schemas.config.load_config",
+        lambda path: __import__("subtap.schemas.config").schemas.config.SubtapConfig(),
+    )
+    monkeypatch.setattr("typer.prompt", lambda *a, **kw: "y")
+
+    wizard = SetupWizard()
+    ok = wizard.setup_models(source="ask", include_optional=False)
+
+    # manual prints instructions and returns False
+    assert ok is False
+
+
+def test_setup_models_fallback_user_declines(monkeypatch, tmp_path):
+    """Test user declining fallback returns False."""
+    from subtap.core.setup import SetupWizard
+
+    class FakeDownloader:
+        def __init__(self, config):
+            pass
+
+        def check_connectivity(self, source, repo):
+            return source != "hf"
+
+        def download(self, model_name, source="hf", progress=None):
+            return tmp_path / "models" / model_name
+
+    monkeypatch.setattr("subtap.core.models.ModelDownloader", FakeDownloader)
+    monkeypatch.setattr(
+        "subtap.schemas.config.load_config",
+        lambda path: __import__("subtap.schemas.config").schemas.config.SubtapConfig(),
+    )
+    monkeypatch.setattr("typer.prompt", lambda *a, **kw: "n")
+
+    ok = SetupWizard().setup_models(source="ask", include_optional=False)
+
+    assert ok is False
