@@ -103,28 +103,35 @@ def test_registry_is_available_true(tmp_path: Path):
 
 # ── Downloader tests ──
 
-def test_downloader_download_exists(tmp_path: Path):
-    """Downloader returns path when model already present."""
-    config = _config_with_model_root(tmp_path)
-    asr_dir = Path(config.models.root).expanduser() / "asr_0.6b"
-    asr_dir.mkdir(parents=True)
-    (asr_dir / "config.json").write_text("{}")
-    (asr_dir / "model.safetensors").write_bytes(b"\x00" * 100)
+def test_downloader_download_calls_urlopen(tmp_path: Path, monkeypatch):
+    """Downloader calls urlopen for each file."""
+    from unittest.mock import MagicMock
+    from io import BytesIO
 
+    config = _config_with_model_root(tmp_path)
     downloader = ModelDownloader(config)
+
+    call_count = 0
+
+    def mock_urlopen(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        mock_response = MagicMock()
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.getheader = lambda name, default=None: "10" if name.lower() == "content-length" else default
+        # 第一次 read 返回数据，第二次返回空字节结束循环
+        read_count = [0]
+        def mock_read(size=-1):
+            read_count[0] += 1
+            return b"x" * 10 if read_count[0] == 1 else b""
+        mock_response.read = mock_read
+        return mock_response
+
+    monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
     result = downloader.download("asr_0.6b")
-    assert result == asr_dir
-
-
-def test_downloader_download_not_implemented(tmp_path: Path):
-    """Downloader raises NotImplementedError for missing models."""
-    config = _config_with_model_root(tmp_path)
-    downloader = ModelDownloader(config)
-    try:
-        downloader.download("asr_0.6b")
-        assert False
-    except NotImplementedError as e:
-        assert "place model files" in str(e)
+    assert result.name == "asr_0.6b"
+    assert call_count == 2  # config.json + model.safetensors
 
 
 def test_downloader_unknown_model(tmp_path: Path):
@@ -220,12 +227,26 @@ def test_cli_models_install_shows_path(tmp_path: Path, monkeypatch):
     """CLI models install shows expected file location."""
     from typer.testing import CliRunner
     from subtap.cli import app
+    from unittest.mock import MagicMock
 
     config = _config_with_model_root(tmp_path)
     import subtap.schemas.config as cfg_mod
     monkeypatch.setattr(cfg_mod, "load_config", lambda p: config)
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "fakehome")
 
+    def mock_urlopen(*args, **kwargs):
+        mock_response = MagicMock()
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.getheader = lambda name, default=None: "10" if name.lower() == "content-length" else default
+        read_count = [0]
+        def mock_read(size=-1):
+            read_count[0] += 1
+            return b"x" * 10 if read_count[0] == 1 else b""
+        mock_response.read = mock_read
+        return mock_response
+
+    monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
     runner = CliRunner()
     result = runner.invoke(app, ["models", "install", "asr_0.6b"])
     assert result.exit_code == 0
@@ -313,6 +334,90 @@ def test_cli_models_remove(tmp_path: Path, monkeypatch):
         result = runner.invoke(app, ["models", "remove", "asr_0.6b"])
         assert result.exit_code == 0
         assert "已移除" in result.output
+
+
+# ── Downloader URL and connectivity tests ──
+
+def test_downloader_builds_hf_file_url(tmp_path):
+    from subtap.core.models import ModelDownloader
+
+    cfg = _config_with_model_root(tmp_path)
+    downloader = ModelDownloader(cfg)
+
+    url = downloader.build_file_url(
+        source="hf",
+        repo="owner/model",
+        filename="config.json",
+    )
+
+    assert url == "https://huggingface.co/owner/model/resolve/main/config.json"
+
+
+def test_downloader_builds_hf_mirror_file_url(tmp_path):
+    from subtap.core.models import ModelDownloader
+
+    cfg = _config_with_model_root(tmp_path)
+    cfg.models.hf_mirror_endpoint = "https://hf-mirror.com"
+    downloader = ModelDownloader(cfg)
+
+    url = downloader.build_file_url(
+        source="hf-mirror",
+        repo="owner/model",
+        filename="model.safetensors",
+    )
+
+    assert url == "https://hf-mirror.com/owner/model/resolve/main/model.safetensors"
+
+
+def test_downloader_rejects_modelscope_without_repo(tmp_path):
+    from subtap.core.models import ModelDownloader
+
+    cfg = _config_with_model_root(tmp_path)
+    downloader = ModelDownloader(cfg)
+
+    try:
+        downloader.download("asr_0.6b", source="modelscope")
+    except ValueError as exc:
+        assert "ModelScope" in str(exc)
+    else:
+        raise AssertionError("ModelScope repo 缺失时必须失败")
+
+
+def test_download_file_reports_progress(tmp_path, monkeypatch):
+    from io import BytesIO
+    from subtap.core.models import ModelDownloader
+
+    class FakeResponse:
+        status = 200
+
+        def __init__(self):
+            self.fp = BytesIO(b"abc")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def getheader(self, name, default=None):
+            return "3" if name.lower() == "content-length" else default
+
+        def read(self, size=-1):
+            return self.fp.read(size)
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: FakeResponse())
+    cfg = _config_with_model_root(tmp_path)
+    downloader = ModelDownloader(cfg)
+    seen = []
+
+    downloader._download_file(
+        "https://example.test/file",
+        tmp_path / "file",
+        progress=lambda name, done, total: seen.append((done, total)),
+    )
+
+    assert (tmp_path / "file").read_bytes() == b"abc"
+    assert seen[-1] == (3, 3)
 
 
 # ── Development model path tests ──
