@@ -23,6 +23,7 @@ CHECKS=(
     "subtap --help|$PYTHON -m subtap.cli --help"
     "subtap run --help|$PYTHON -m subtap.cli run --help"
     "subtap doctor|$PYTHON -m subtap.cli doctor"
+    "subtap doctor --json|$PYTHON -m subtap.cli doctor --json"
     "subtap models list|$PYTHON -m subtap.cli models list"
     "python -m subtap.cli --help|$PYTHON -m subtap.cli --help"
 )

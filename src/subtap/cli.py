@@ -8,6 +8,7 @@ import platform
 import shutil
 import sys
 from pathlib import Path
+from typing import Any
 
 import typer
 
@@ -74,6 +75,7 @@ def init() -> None:
 def doctor(
     release: bool = typer.Option(False, "--release", help="执行发布前完整检查"),
     workspace: bool = typer.Option(False, "--workspace", "-ws", help="检查工作区状态"),
+    json_output: bool = typer.Option(False, "--json", help="输出机器可读 JSON"),
 ) -> None:
     """检查系统依赖和运行环境"""
     # ── Workspace mode ──────────────────────────────────────
@@ -172,7 +174,17 @@ def doctor(
 
     # 打印结果
     all_ok = True
+    report: dict[str, Any] = {
+        "ok": True,
+        "release": release,
+        "checks": [],
+        "config": {},
+        "models": [],
+    }
     for _name, label, ok, detail in checks:
+        report["checks"].append(
+            {"name": _name, "label": label, "ok": ok, "detail": detail}
+        )
         icon = (
             typer.style("✓", fg=typer.colors.GREEN)
             if ok
@@ -181,29 +193,40 @@ def doctor(
         msg = f"  {icon} {label}"
         if detail:
             msg += f" — {detail}"
-        typer.echo(msg)
+        if not json_output:
+            typer.echo(msg)
         if not ok:
             all_ok = False
 
     # ── 配置状态 ───────────────────────────────────────────
-    typer.echo("\n▸ 配置状态")
+    if not json_output:
+        typer.echo("\n▸ 配置状态")
     config_path = subtap_dir / "config.yaml"
     if config_path.exists():
-        typer.echo(f"  ✓ {config_path} 存在")
+        report["config"] = {"path": str(config_path), "exists": True, "valid": False}
+        if not json_output:
+            typer.echo(f"  ✓ {config_path} 存在")
         try:
             from subtap.schemas.config import load_config
 
             load_config(config_path)
-            typer.echo("  ✓ 配置文件有效")
+            report["config"]["valid"] = True
+            if not json_output:
+                typer.echo("  ✓ 配置文件有效")
         except Exception as e:
-            typer.echo(f"  ✗ 配置文件无效：{e}")
+            report["config"]["error"] = str(e)
+            if not json_output:
+                typer.echo(f"  ✗ 配置文件无效：{e}")
             all_ok = False
     else:
-        typer.echo(f"  ✗ {config_path} 不存在")
+        report["config"] = {"path": str(config_path), "exists": False, "valid": False}
+        if not json_output:
+            typer.echo(f"  ✗ {config_path} 不存在")
         all_ok = False
 
     # ── 模型状态 ───────────────────────────────────────────
-    typer.echo("\n▸ 模型状态")
+    if not json_output:
+        typer.echo("\n▸ 模型状态")
     try:
         from subtap.schemas.config import load_config
         from subtap.core.models import ModelRegistry
@@ -217,14 +240,34 @@ def doctor(
                 if ms.installed
                 else typer.style("✗", fg=typer.colors.RED)
             )
-            typer.echo(f"  {icon} {ms.name}")
+            report["models"].append(
+                {
+                    "name": ms.name,
+                    "installed": ms.installed,
+                    "path": str(ms.path),
+                    "missing_files": ms.missing_files,
+                }
+            )
+            if not json_output:
+                typer.echo(f"  {icon} {ms.name}")
             if not ms.installed:
                 all_ok = False
-                typer.echo(f"    路径：{ms.path}")
+                if not json_output:
+                    typer.echo(f"    路径：{ms.path}")
                 if ms.missing_files:
-                    typer.echo(f"    缺失：{', '.join(ms.missing_files)}")
+                    if not json_output:
+                        typer.echo(f"    缺失：{', '.join(ms.missing_files)}")
     except Exception as e:
-        typer.echo(f"  ⚠ 无法检查模型状态：{e}")
+        report["models_error"] = str(e)
+        if not json_output:
+            typer.echo(f"  ⚠ 无法检查模型状态：{e}")
+
+    report["ok"] = all_ok
+    if json_output:
+        typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
+        if not all_ok:
+            raise typer.Exit(1)
+        return
 
     if all_ok:
         typer.echo(typer.style("\n✓ 所有检查通过！", fg=typer.colors.GREEN))

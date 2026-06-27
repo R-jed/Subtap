@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 from typer.testing import CliRunner
@@ -133,6 +134,37 @@ def test_doctor_workspace(tmp_path, monkeypatch):
     result = runner.invoke(app, ["doctor", "--workspace"])
     assert result.exit_code == 0
     assert "工作区" in result.output or "workspace" in result.output.lower()
+
+
+def test_doctor_json_outputs_machine_readable_status(tmp_path, monkeypatch):
+    """doctor --json 应输出可被 CI 读取的状态结构。"""
+    fake_home = tmp_path / "fakehome"
+    config_dir = fake_home / ".subtap"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.yaml").write_text("audio:\n  sample_rate: 16000\n")
+    monkeypatch.setattr("pathlib.Path.home", lambda: fake_home)
+    monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/tool")
+
+    model_status = [
+        SimpleNamespace(
+            name="asr_0.6b",
+            installed=True,
+            path=tmp_path / "models" / "asr",
+            missing_files=[],
+        )
+    ]
+    monkeypatch.setattr(
+        "subtap.core.models.ModelRegistry.status", lambda _self: model_status
+    )
+
+    result = runner.invoke(app, ["doctor", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["config"]["valid"] is True
+    assert payload["checks"][0]["name"] == "ffmpeg"
+    assert payload["models"][0]["name"] == "asr_0.6b"
 
 
 def test_run_has_no_git_check_flag():
