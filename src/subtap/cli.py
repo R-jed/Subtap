@@ -15,6 +15,7 @@ from typing import Any
 import typer
 
 from subtap import __version__
+from subtap.glossary.cli import app as glossary_app
 
 app = typer.Typer(
     name="subtap",
@@ -22,6 +23,7 @@ app = typer.Typer(
     no_args_is_help=True,
     rich_markup_mode="rich",
 )
+app.add_typer(glossary_app, name="glossary")
 
 # ── 基础命令 ──────────────────────────────────────────────
 
