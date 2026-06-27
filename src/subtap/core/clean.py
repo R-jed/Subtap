@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from pathlib import Path
 
 from subtap.backends.llm import get_llm_backend
@@ -31,6 +33,32 @@ def write_clean_segments(segments: list[CleanSegment], output_path: Path) -> Non
             f.write(seg.model_dump_json() + "\n")
 
 
+def local_clean_text(text: str, glossary: dict | None = None) -> str:
+    """Local rule-based text cleaning. No LLM dependency.
+
+    Steps:
+    1. Normalize unicode (NFKC)
+    2. Normalize full-width digits to half-width
+    3. Remove extra whitespace
+    4. Apply glossary replacements
+    """
+    # 1. Unicode normalization
+    text = unicodedata.normalize("NFKC", text)
+
+    # 2. Full-width digit normalization (１２３ → 123)
+    text = re.sub(r"[０-９]", lambda m: chr(ord(m.group()) - 0xFEE0), text)
+
+    # 3. Remove extra spaces
+    text = re.sub(r"\s+", " ", text).strip()
+
+    # 4. Glossary replacement
+    if glossary:
+        for wrong, correct in glossary.items():
+            text = text.replace(wrong, correct)
+
+    return text
+
+
 def run_clean(
     workspace: Workspace,
     config: SubtapConfig,
@@ -38,13 +66,14 @@ def run_clean(
     glossary_path: str | None = None,
     style_rules: list[str] | None = None,
 ) -> dict:
-    """Run clean stage: load ASR → replacement → LLM → cleaned.jsonl.
+    """Run clean stage: load ASR → local clean → replacement → LLM → cleaned.jsonl.
 
     Steps:
     1. Load ASR segments from workspace.asr_jsonl
-    2. Apply deterministic glossary replacements
-    3. Pass through LLM backend for ASR error correction
-    4. Write cleaned.jsonl to workspace
+    2. Apply local rule-based cleaning (unicode, full-width digits, whitespace)
+    3. Apply deterministic glossary replacements
+    4. Pass through LLM backend for ASR error correction (optional)
+    5. Write cleaned.jsonl to workspace
 
     Args:
         workspace: Workspace instance with paths.
@@ -68,7 +97,11 @@ def run_clean(
     # Step 1: Deterministic replacement (no LLM)
     replaced = apply_replacements(segments, glossary)
 
-    # Step 2: LLM cleaning (if backend available)
+    # Step 2: Local cleaning (always runs, no LLM dependency)
+    for seg in replaced:
+        seg.cleaned_text = local_clean_text(seg.cleaned_text)
+
+    # Step 3: LLM cleaning (optional, never blocks)
     clean_config = config.clean.model_copy()
     if llm_backend_name:
         clean_config.backend = llm_backend_name
@@ -83,8 +116,8 @@ def run_clean(
             )
         else:
             cleaned = replaced
-    except ValueError:
-        # Unknown backend — skip LLM, use replaced-only
+    except (ValueError, Exception):
+        # LLM failed, use local-cleaned result
         cleaned = replaced
 
     # Write cleaned.jsonl
