@@ -271,13 +271,12 @@ def setup(
         )
         if ok:
             typer.echo("  ✓ 模型安装完成")
+        elif download_source == "manual":
+            # manual 模式下用户选择手动安装，正常结束
+            typer.echo("  ⚠ 模型安装待手动完成")
         else:
-            typer.echo("  ⚠ 模型安装未完成")
-
-    # Step 4: Doctor check
-    typer.echo("\n▸ Step 4: 环境验证")
-    # TODO: 调用 doctor 检查
-    typer.echo("  ⚠ 环境验证功能待实现")
+            typer.echo("  ✗ 模型安装失败")
+            raise typer.Exit(1)
 
     typer.echo(typer.style("\n═══ 初始化完成 ═══", fg=typer.colors.GREEN))
     typer.echo("下一步：subtap run <音频文件>")
