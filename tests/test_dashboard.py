@@ -5,6 +5,29 @@ from subtap.metrics.events import EventBus, EventType, PipelineEvent
 from subtap.ui.event_bridge import EventBridge
 
 
+def test_dashboard_init():
+    """Test PipelineDashboard initialization."""
+    from subtap.ui.dashboard import PipelineDashboard
+    from subtap.metrics.profiler import PipelineProfiler
+
+    bus = EventBus()
+    profiler = PipelineProfiler(bus)
+    dashboard = PipelineDashboard(bus, profiler)
+
+    assert dashboard.event_bus == bus
+    assert dashboard.profiler == profiler
+    assert dashboard._update_throttle == 0.05
+
+
+def test_dashboard_stage_cn_mapping():
+    """Test Chinese stage name mapping."""
+    from subtap.ui.dashboard import STAGE_CN
+
+    assert STAGE_CN["asr"] == "语音识别"
+    assert STAGE_CN["clean"] == "文本优化"
+    assert STAGE_CN["align"] == "字幕对齐"
+
+
 def test_event_bridge_init():
     """Test EventBridge initialization."""
     bus = EventBus()
