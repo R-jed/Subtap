@@ -16,6 +16,19 @@ from subtap.core.models import (
 from subtap.schemas.config import SubtapConfig
 
 
+def test_remote_api_config_defaults():
+    """Remote API config defaults support optional API backends."""
+    from subtap.schemas.config import RemoteAPIConfig
+
+    config = SubtapConfig()
+
+    assert config.mode == "offline"
+    assert isinstance(config.remote_api, RemoteAPIConfig)
+    assert config.remote_api.provider == "openai-compatible"
+    assert config.remote_api.base_url == ""
+    assert config.remote_api.api_key_env == "SUBTAP_API_KEY"
+
+
 def _config_with_model_root(tmp_path: Path) -> SubtapConfig:
     """Config with model root pointing to tmp."""
     from subtap.schemas.config import (

@@ -107,3 +107,12 @@ def test_ci_runs_release_check():
 
     assert "macos" in text
     assert "scripts/release-check.sh" in text
+
+
+def test_release_check_covers_open_cli_parity():
+    """Test release-check covers the open CLI parity commands."""
+    text = (PROJECT_ROOT / "scripts" / "release-check.sh").read_text(encoding="utf-8")
+
+    assert "subtap doctor --json" in text
+    assert "batch-transcribe" in text
+    assert "glossary" in text

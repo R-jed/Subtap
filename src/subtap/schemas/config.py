@@ -48,6 +48,16 @@ class AlignConfig(BaseModel):
     backend: str = "mlx-qwen-aligner"
 
 
+class RemoteAPIConfig(BaseModel):
+    """Optional remote API backend configuration."""
+
+    provider: str = "openai-compatible"
+    base_url: str = ""
+    api_key_env: str = "SUBTAP_API_KEY"
+    model: str = ""
+    timeout_sec: int = 60
+
+
 class ModelConfig(BaseModel):
     """Model management configuration."""
 
@@ -84,10 +94,12 @@ class MetricsConfig(BaseModel):
 class SubtapConfig(BaseModel):
     """Root configuration for Subtap."""
 
+    mode: str = "offline"
     audio: AudioConfig = Field(default_factory=AudioConfig)
     asr: ASRConfig = Field(default_factory=ASRConfig)
     clean: CleanConfig = Field(default_factory=CleanConfig)
     align: AlignConfig = Field(default_factory=AlignConfig)
+    remote_api: RemoteAPIConfig = Field(default_factory=RemoteAPIConfig)
     models: ModelConfig = Field(default_factory=ModelConfig)
     workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)

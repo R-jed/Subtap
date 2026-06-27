@@ -22,6 +22,8 @@ CHECKS=(
     "subtap setup --skip-models|$PYTHON -m subtap.cli setup --skip-models"
     "subtap --help|$PYTHON -m subtap.cli --help"
     "subtap run --help|$PYTHON -m subtap.cli run --help"
+    "subtap batch-transcribe --help|$PYTHON -m subtap.cli batch-transcribe --help"
+    "subtap glossary --help|$PYTHON -m subtap.cli glossary --help"
     "subtap doctor|$PYTHON -m subtap.cli doctor"
     "subtap doctor --json|$PYTHON -m subtap.cli doctor --json"
     "subtap models list|$PYTHON -m subtap.cli models list"
