@@ -37,7 +37,7 @@ class TestTaskInit:
 
     def test_task_default_mode(self, sample_audio: Path):
         task = Task(input_file=sample_audio)
-        assert task.mode == "hybrid"
+        assert task.mode == "fast"
 
     def test_task_default_format(self, sample_audio: Path):
         task = Task(input_file=sample_audio)
@@ -62,18 +62,17 @@ class TestTaskInit:
 class TestTaskMode:
     """Test mode to policy mapping."""
 
-    def test_fast_mode_skips_llm(self, sample_audio: Path):
+    def test_fast_mode_policy(self, sample_audio: Path):
         task = Task(input_file=sample_audio, mode="fast")
-        assert task.should_skip_clean is True
+        assert task.to_policy_mode() == "fast"
 
-    def test_quality_mode_full_pipeline(self, sample_audio: Path):
+    def test_quality_mode_policy(self, sample_audio: Path):
         task = Task(input_file=sample_audio, mode="quality")
-        assert task.should_skip_clean is False
-        assert task.should_skip_align is False
+        assert task.to_policy_mode() == "hybrid"
 
-    def test_hybrid_mode_enables_clean(self, sample_audio: Path):
-        task = Task(input_file=sample_audio, mode="hybrid")
-        assert task.should_skip_clean is False
+    def test_default_mode_policy(self, sample_audio: Path):
+        task = Task(input_file=sample_audio)
+        assert task.to_policy_mode() == "fast"
 
 
 # ── Task Output Structure ───────────────────────────────────

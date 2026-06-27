@@ -23,30 +23,20 @@ class Task:
 
     Encapsulates a complete subtitle generation workflow:
     - Input file
-    - Execution mode (fast/quality/hybrid)
+    - Execution mode (fast/quality)
     - Output format (srt/vtt/json)
     - Language and glossary settings
 
     Usage:
-        task = Task(input_file=Path("video.mp3"), mode="hybrid")
+        task = Task(input_file=Path("video.mp3"), mode="quality")
         result = task.run(output_dir=Path("./output"))
     """
 
     input_file: Path
-    mode: str = "hybrid"  # fast / quality / hybrid
+    mode: str = "fast"  # fast / quality
     output_format: str = "srt"  # srt / vtt / json
     language: str = "zh"  # zh / en
     glossary_profile: str = ""  # 术语表路径
-
-    @property
-    def should_skip_clean(self) -> bool:
-        """Whether to skip LLM cleaning based on mode."""
-        return self.mode == "fast"
-
-    @property
-    def should_skip_align(self) -> bool:
-        """Whether to skip alignment based on mode."""
-        return self.mode == "fast"
 
     @property
     def asr_model_size(self) -> str:
@@ -87,6 +77,5 @@ class Task:
         mapping = {
             "fast": "fast",
             "quality": "hybrid",  # quality uses hybrid policy with larger model
-            "hybrid": "hybrid",
         }
-        return mapping.get(self.mode, "hybrid")
+        return mapping.get(self.mode, "fast")
