@@ -243,6 +243,57 @@ def test_clean_stage_in_pipeline(test_config: SubtapConfig, tmp_path: Path):
     assert Path(result["cleaned_jsonl"]).exists()
 
 
+# ── Local text cleaning tests ──
+
+
+def test_local_clean_normalizes_unicode():
+    """Local clean should normalize unicode."""
+    from subtap.core.clean import local_clean_text
+
+    result = local_clean_text("你好世界")
+    assert result == "你好世界"
+
+
+def test_local_clean_normalizes_fullwidth_digits():
+    """Local clean should normalize full-width digits."""
+    from subtap.core.clean import local_clean_text
+
+    result = local_clean_text("第１２３章")
+    assert result == "第123章"
+
+
+def test_local_clean_removes_extra_spaces():
+    """Local clean should remove extra spaces."""
+    from subtap.core.clean import local_clean_text
+
+    result = local_clean_text("你好  世界")
+    assert result == "你好 世界"
+
+
+def test_local_clean_applies_glossary():
+    """Local clean should apply glossary replacements."""
+    from subtap.core.clean import local_clean_text
+
+    result = local_clean_text("测试", glossary={"测试": "测试"})
+    assert result == "测试"
+
+
+def test_local_clean_empty_text():
+    """Local clean should handle empty text."""
+    from subtap.core.clean import local_clean_text
+
+    result = local_clean_text("")
+    assert result == ""
+
+
+def test_local_clean_no_glossary():
+    """Local clean should work without glossary."""
+    from subtap.core.clean import local_clean_text
+
+    result = local_clean_text("正常文本")
+    assert result == "正常文本"
+
+
 def test_cli_clean_runnable(test_config: SubtapConfig, tmp_path: Path, monkeypatch):
     """CLI clean command runs without crash."""
     from typer.testing import CliRunner
