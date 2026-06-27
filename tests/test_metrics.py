@@ -172,3 +172,63 @@ def test_profiler_get_report():
     report = profiler.get_report()
     assert report["total_time"] == pytest.approx(6.3)
     assert report["stages"]["asr"] == 5.2
+
+
+def test_chunk_tracer_init():
+    """Test ChunkTracer initialization."""
+    from subtap.metrics.chunk_trace import ChunkTracer
+
+    bus = EventBus()
+    tracer = ChunkTracer(bus, window_size=5)
+    assert tracer._window_size == 5
+    assert len(tracer._latency_window) == 0
+
+
+def test_chunk_tracer_on_chunk_end():
+    """Test ChunkTracer on_chunk_end."""
+    from subtap.metrics.chunk_trace import ChunkTracer
+
+    bus = EventBus()
+    tracer = ChunkTracer(bus, window_size=5)
+
+    event = PipelineEvent(
+        event_type=EventType.CHUNK_END,
+        data={"chunk_id": 0, "start_time": 100.0, "end_time": 100.3, "model": "asr"},
+        timestamp=100.3
+    )
+
+    tracer.on_chunk_end(event)
+
+    assert len(tracer._chunks) == 1
+    assert tracer._chunks[0]["id"] == 0
+    assert tracer._chunks[0]["time"] == pytest.approx(0.3)
+    assert len(tracer._latency_window) == 1
+
+
+def test_chunk_tracer_get_slow_chunks():
+    """Test ChunkTracer get_slow_chunks."""
+    from subtap.metrics.chunk_trace import ChunkTracer
+
+    bus = EventBus()
+    tracer = ChunkTracer(bus, window_size=5)
+
+    # Add normal chunks
+    for i in range(3):
+        event = PipelineEvent(
+            event_type=EventType.CHUNK_END,
+            data={"chunk_id": i, "start_time": 100.0, "end_time": 100.2, "model": "asr"},
+            timestamp=100.2
+        )
+        tracer.on_chunk_end(event)
+
+    # Add slow chunk
+    event = PipelineEvent(
+        event_type=EventType.CHUNK_END,
+        data={"chunk_id": 3, "start_time": 100.0, "end_time": 100.5, "model": "asr"},
+        timestamp=100.5
+    )
+    tracer.on_chunk_end(event)
+
+    slow_chunks = tracer.get_slow_chunks(threshold=1.5)
+    assert len(slow_chunks) == 1
+    assert slow_chunks[0]["id"] == 3
