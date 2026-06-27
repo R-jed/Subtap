@@ -5,15 +5,15 @@
 ## 特性
 
 - **完整 Pipeline**：音频标准化 → 切段 → 语音识别 → 文本清洗 → 智能断句 → 时间轴对齐 → 字幕导出
-- **真实模型推理**：Qwen3-ASR (0.6B/1.7B) + Qwen3-ForcedAligner，基于 Apple MLX 优化
+- **真实模型推理**：Qwen3-ASR（0.6B/1.7B）+ Qwen3-ForcedAligner，基于 Apple MLX 优化
 - **中文优先**：全部界面和状态提示均为中文
-- **TUI 可视化**：实时阶段进度、模型状态、执行摘要
+- **TUI 可视化**：实时阶段进度、模型状态、执行摘要（TUI，Terminal User Interface，终端用户界面）
 - **插拔式架构**：ASR / LLM / Aligner 后端可替换
 - **中间产物落盘**：所有阶段输出 JSONL，支持断点续跑
 
 ## 支持范围
 
-当前版本面向 macOS 开发版源码安装，已在 Apple Silicon 环境验证。当前不提供 Developer ID 签名、公证或正式二进制分发。
+当前版本面向 macOS 开发版源码安装，已在 Apple Silicon 环境验证。当前不提供 Homebrew、Developer ID 签名、公证或正式二进制分发。
 
 ## 安装
 
@@ -73,10 +73,6 @@ graph LR
     F --> G[字幕导出]
 ```
 
-## TUI 示例
-
-![TUI 示例](docs/tui-screenshot.png)
-
 ## 模型说明
 
 | 模型 | 大小 | 用途 |
@@ -99,7 +95,7 @@ subtap doctor
 
 # 管理模型
 subtap models list
-subtap models install asr
+subtap models install asr_0.6b
 subtap models verify
 
 # 初始化
@@ -111,9 +107,6 @@ subtap setup
 配置文件位置：`~/.subtap/config.yaml`
 
 ```yaml
-# 模式配置
-mode: hybrid  # fast / quality / hybrid
-
 # ASR 配置
 asr:
   backend: mlx-qwen-asr
