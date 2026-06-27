@@ -79,3 +79,25 @@ def test_subtap_models_list():
         text=True
     )
     assert result.returncode == 0
+
+
+def test_readme_documents_development_model_sources():
+    """Test README documents development model sources."""
+    from pathlib import Path
+
+    text = Path("README.md").read_text(encoding="utf-8")
+
+    assert "macOS 开发版" in text
+    assert "models/asr_0.6b" in text
+    assert "https://hf-mirror.com" in text
+    assert "Homebrew" not in text
+
+
+def test_release_check_does_not_require_model_download():
+    """Test release-check does not require model download."""
+    from pathlib import Path
+
+    text = Path("scripts/release-check.sh").read_text(encoding="utf-8")
+
+    assert "subtap setup --skip-models" in text
+    assert "--download-source hf" not in text
