@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
-from typing import Any, Callable
+from typing import Any
 
 from subtap.metrics.events import EventBus, EventType, PipelineEvent
 
@@ -14,8 +15,6 @@ class PipelineProfiler:
     def __init__(self, event_bus: EventBus):
         self.event_bus = event_bus
         self._stage_times: dict[str, float] = {}
-        self._chunk_times: list[dict] = []
-        self._start_time: float = 0
 
     def wrap_pipeline(self, pipeline: Any) -> None:
         """Wrap pipeline.run_stage with profiling."""
@@ -23,11 +22,11 @@ class PipelineProfiler:
 
         def wrapped_run_stage(stage_name: str, **kwargs) -> Any:
             # Publish stage start event
-            self.event_bus._dispatch(PipelineEvent(
+            asyncio.create_task(self.event_bus.publish(PipelineEvent(
                 event_type=EventType.STAGE_START,
                 data={"stage": stage_name},
                 timestamp=time.time()
-            ))
+            )))
 
             stage_start = time.time()
             result = original_run_stage(stage_name, **kwargs)
@@ -37,11 +36,11 @@ class PipelineProfiler:
             self._stage_times[stage_name] = stage_end - stage_start
 
             # Publish stage end event
-            self.event_bus._dispatch(PipelineEvent(
+            asyncio.create_task(self.event_bus.publish(PipelineEvent(
                 event_type=EventType.STAGE_END,
                 data={"stage": stage_name, "duration": stage_end - stage_start},
                 timestamp=time.time()
-            ))
+            )))
 
             return result
 
@@ -54,5 +53,4 @@ class PipelineProfiler:
         return {
             "total_time": sum(self._stage_times.values()),
             "stages": self._stage_times,
-            "chunks": self._chunk_times,
         }
