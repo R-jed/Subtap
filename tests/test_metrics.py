@@ -297,3 +297,37 @@ def test_metrics_config_custom():
     config = MetricsConfig(enabled=False, slow_threshold=2.0)
     assert config.enabled is False
     assert config.slow_threshold == 2.0
+
+
+def test_full_metrics_flow():
+    """Test complete metrics flow."""
+    from subtap.metrics.events import EventBus, EventType, PipelineEvent
+    from subtap.metrics.profiler import PipelineProfiler
+    from subtap.metrics.chunk_trace import ChunkTracer
+    from subtap.metrics.slow_detector import SlowChunkDetector
+
+    # Create components
+    bus = EventBus()
+    profiler = PipelineProfiler(bus)
+    tracer = ChunkTracer(bus, window_size=5)
+    detector = SlowChunkDetector(threshold=1.5)
+
+    # Simulate chunk events
+    for i in range(5):
+        latency = 0.2 if i < 4 else 0.5  # Last chunk is slow
+        event = PipelineEvent(
+            event_type=EventType.CHUNK_END,
+            data={"chunk_id": i, "start_time": 100.0, "end_time": 100.0 + latency, "model": "asr"},
+            timestamp=100.0 + latency
+        )
+        tracer.on_chunk_end(event)
+
+    # Check slow chunks
+    slow_chunks = tracer.get_slow_chunks(threshold=1.5)
+    assert len(slow_chunks) == 1
+    assert slow_chunks[0]["id"] == 4
+
+    # Generate report
+    profiler._stage_times = {"asr": 5.2, "clean": 1.1}
+    report = profiler.get_report()
+    assert report["total_time"] == pytest.approx(6.3)
