@@ -123,3 +123,14 @@ def test_event_bridge_on_progress():
     bridge._on_progress(event)
 
     assert dashboard.progress["percent"] == 50
+
+
+def test_cli_run_has_tui_flag():
+    """Test CLI run command has --tui flag."""
+    from typer.testing import CliRunner
+    from subtap.cli import app
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["run", "--help"])
+    assert result.exit_code == 0
+    assert "--tui" in result.output

@@ -372,25 +372,75 @@ def run(
     # hybrid mode uses defaults
 
     # ── Pipeline execution ──────────────────────────────────
+    from subtap.metrics.events import EventBus
+    from subtap.metrics.profiler import PipelineProfiler
+
+    # 创建 Event Bus 和 Profiler
+    event_bus = EventBus()
+    profiler = PipelineProfiler(event_bus)
+    profiler.wrap_pipeline(pipeline)
+
     if use_tui:
-        from subtap.ui.tui import TUIRunner
-        runner = TUIRunner(use_tui=True, mode=mode)
+        from subtap.ui.dashboard import PipelineDashboard
+        from subtap.ui.event_bridge import EventBridge
+
+        dashboard = PipelineDashboard(event_bus, profiler)
+        bridge = EventBridge(event_bus, dashboard)
+        bridge.connect()
+
+        # 运行 dashboard（它会启动 async loop 处理事件）
+        # 同时在后台运行 pipeline
+        import asyncio
+        import threading
+
+        timings = {}
+        pipeline_error = None
+
+        def run_pipeline_thread():
+            nonlocal timings, pipeline_error
+            try:
+                from subtap.ui.tui import TUIRunner
+                runner = TUIRunner(use_tui=False, mode=mode)
+                result = runner.run_pipeline(
+                    pipeline, input_path, output_dir, fmt=fmt,
+                    skip_clean=skip_clean, skip_align=skip_align,
+                )
+                timings = result.get("timings", {})
+            except Exception as e:
+                pipeline_error = e
+            finally:
+                # 停止 dashboard
+                dashboard.exit()
+
+        # 在后台线程运行 pipeline
+        pipeline_thread = threading.Thread(target=run_pipeline_thread, daemon=True)
+        pipeline_thread.start()
+
+        # 运行 dashboard（阻塞直到 pipeline 完成）
+        dashboard.run()
+
+        # 等待 pipeline 线程完成
+        pipeline_thread.join(timeout=5)
+
+        if pipeline_error:
+            typer.echo(f"\n✗ 处理失败：{pipeline_error}", err=True)
+            raise typer.Exit(1)
     else:
         from subtap.ui.tui import PlainRunner
         runner = PlainRunner()
 
-    timings = {}
-    try:
-        result = runner.run_pipeline(
-            pipeline, input_path, output_dir, fmt=fmt,
-            skip_clean=skip_clean, skip_align=skip_align,
-        )
-        timings = result.get("timings", {})
-    except SystemExit:
-        raise
-    except Exception as e:
-        typer.echo(f"\n✗ 处理失败：{e}", err=True)
-        raise typer.Exit(1)
+        timings = {}
+        try:
+            result = runner.run_pipeline(
+                pipeline, input_path, output_dir, fmt=fmt,
+                skip_clean=skip_clean, skip_align=skip_align,
+            )
+            timings = result.get("timings", {})
+        except SystemExit:
+            raise
+        except Exception as e:
+            typer.echo(f"\n✗ 处理失败：{e}", err=True)
+            raise typer.Exit(1)
 
     # ── Generate report and debug output ────────────────────
     try:
