@@ -725,7 +725,9 @@ def batch_transcribe(
     output_dir: Path = typer.Option(
         Path("./output"), "--output-dir", "-o", help="输出目录"
     ),
-    mode: str = typer.Option("offline", "--mode", "-m", help="offline / hybrid / remote-asr"),
+    mode: str = typer.Option(
+        "offline", "--mode", "-m", help="offline / hybrid / remote-asr"
+    ),
     json_output: bool = typer.Option(False, "--json", help="输出机器可读 JSON"),
 ) -> None:
     """批量转录多个媒体文件。"""
@@ -734,20 +736,25 @@ def batch_transcribe(
         typer.echo("✗ 未提供输入文件", err=True)
         raise typer.Exit(1)
 
-    result = {
+    items = [
+        {
+            "input_path": str(path),
+            "ok": path.exists(),
+            "error": "" if path.exists() else "文件不存在",
+        }
+        for path in paths
+    ]
+    result: dict[str, Any] = {
         "ok": all(path.exists() for path in paths),
         "output_dir": str(output_dir),
         "mode": mode,
-        "items": [
-            {"input_path": str(path), "ok": path.exists(), "error": "" if path.exists() else "文件不存在"}
-            for path in paths
-        ],
+        "items": items,
     }
     if json_output:
         typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
         return
 
-    for item in result["items"]:
+    for item in items:
         icon = "✓" if item["ok"] else "✗"
         typer.echo(f"  {icon} {item['input_path']}")
 
