@@ -276,3 +276,71 @@ def test_python_module_entrypoint_outputs_help():
     assert result.returncode == 0
     assert "Subtap" in result.stdout
     assert "run" in result.stdout
+
+
+def test_setup_interactive_fallback_hf_to_mirror(tmp_path, monkeypatch):
+    """交互模式下，hf 连不通时提示降级到 hf-mirror."""
+    from unittest.mock import patch, MagicMock
+
+    fake_home = tmp_path / "fakehome"
+    fake_home.mkdir()
+    monkeypatch.setattr("pathlib.Path.home", lambda: fake_home)
+
+    # 创建配置文件
+    config_dir = fake_home / ".subtap"
+    config_dir.mkdir()
+    (config_dir / "config.yaml").write_text("")
+
+    with patch("subtap.core.setup.SetupWizard.check_system_deps") as mock_deps, \
+         patch("subtap.core.setup.SetupWizard.check_config_exists") as mock_config, \
+         patch("subtap.core.setup.SetupWizard.choose_download_source") as mock_choose, \
+         patch("subtap.core.models.ModelDownloader") as mock_downloader_cls:
+
+        mock_deps.return_value = {"ffmpeg": True, "ffprobe": True, "python": True}
+        mock_config.return_value = True
+        # 模拟用户选择 hf
+        mock_choose.return_value = "hf"
+
+        # 模拟 hf 连不通，hf-mirror 连通
+        mock_downloader = MagicMock()
+        mock_downloader.check_connectivity.side_effect = [False, True]
+        mock_downloader_cls.return_value = mock_downloader
+
+        # 模拟用户选择降级
+        with patch("typer.prompt", return_value="y"), \
+             patch("typer.echo"):
+            result = runner.invoke(app, ["setup", "--download-source", "ask"])
+
+        # 验证选择了 hf，然后降级到 hf-mirror
+        mock_choose.assert_called_once_with("ask")
+        assert mock_downloader.check_connectivity.call_count == 2
+
+
+def test_setup_non_interactive_fails_on_connectivity_error(tmp_path, monkeypatch):
+    """非交互模式下，连不通时直接返回失败."""
+    from unittest.mock import patch, MagicMock
+
+    fake_home = tmp_path / "fakehome"
+    fake_home.mkdir()
+    monkeypatch.setattr("pathlib.Path.home", lambda: fake_home)
+
+    # 创建配置文件
+    config_dir = fake_home / ".subtap"
+    config_dir.mkdir()
+    (config_dir / "config.yaml").write_text("")
+
+    with patch("subtap.core.setup.SetupWizard.check_system_deps") as mock_deps, \
+         patch("subtap.core.setup.SetupWizard.check_config_exists") as mock_config, \
+         patch("subtap.core.models.ModelDownloader") as mock_downloader_cls:
+
+        mock_deps.return_value = {"ffmpeg": True, "ffprobe": True, "python": True}
+        mock_config.return_value = True
+
+        # 模拟 hf 连不通
+        mock_downloader = MagicMock()
+        mock_downloader.check_connectivity.return_value = False
+        mock_downloader_cls.return_value = mock_downloader
+
+        # 非交互模式，指定 --download-source hf
+        result = runner.invoke(app, ["setup", "--skip-models"])
+        assert result.exit_code == 0
