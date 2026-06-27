@@ -47,3 +47,4 @@ venv/
 *.tmp
 *.bak
 graphify-out/
+docs/
