@@ -226,7 +226,7 @@ def setup(
     download_source: str = typer.Option(
         "ask",
         "--download-source",
-        help="模型下载方式：ask / hf / hf-mirror / manual",
+        help="模型下载方式：ask / hf / hf-mirror / modelscope / manual",
     ),
     include_optional: bool = typer.Option(False, "--include-optional", help="同时下载可选大模型"),
     model_endpoint: str | None = typer.Option(None, "--model-endpoint", help="自定义 Hugging Face 镜像地址"),
@@ -271,7 +271,7 @@ def setup(
         )
         if ok:
             typer.echo("  ✓ 模型安装完成")
-        elif download_source == "manual":
+        elif download_source == "manual" or getattr(wizard, "last_model_source", None) == "manual":
             # manual 模式下用户选择手动安装，正常结束
             typer.echo("  ⚠ 模型安装待手动完成")
         else:
@@ -1010,7 +1010,7 @@ def models_status() -> None:
 @models_app.command("install")
 def models_install(
     model_name: str = typer.Argument(..., help="要安装的模型（asr_0.6b / asr_1.7b / aligner / all）"),
-    download_source: str = typer.Option("hf", "--source", "-s", help="下载源：hf / hf-mirror"),
+    download_source: str = typer.Option("hf", "--source", "-s", help="下载源：hf / hf-mirror / modelscope"),
     model_endpoint: str | None = typer.Option(None, "--endpoint", "-e", help="自定义 Hugging Face 镜像地址"),
 ) -> None:
     """安装模型文件到本地"""
@@ -1038,9 +1038,9 @@ def models_install(
                 task_id = progress.add_task(name, total=None)
 
                 def update_progress(filename: str, downloaded: int, total: int) -> None:
-                    if total > 0 and progress.tasks[task_id].total is None:
-                        progress.update(task_id, total=total)
-                    progress.update(task_id, completed=downloaded, description=f"{name}/{filename}")
+                    if downloaded == 0:
+                        progress.reset(task_id, total=total, description=f"{name}/{filename}")
+                    progress.update(task_id, completed=downloaded)
 
                 path = downloader.download(name, source=download_source, progress=update_progress)
             typer.echo(f"  ✓ {path}")

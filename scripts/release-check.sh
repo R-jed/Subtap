@@ -7,23 +7,30 @@ set -e
 echo "═══ Release 质量检查 ═══"
 echo ""
 
+PYTHON="${PYTHON:-python3}"
+if [ -x ".venv/bin/python" ]; then
+    PYTHON=".venv/bin/python"
+fi
+
 # 检查项
 CHECKS=(
-    "pip install -e ."
-    "subtap setup --skip-models"
-    "subtap --help"
-    "subtap run --help"
-    "subtap doctor"
-    "subtap models list"
-    "python -m subtap.cli --help"
+    "pip install -e .|$PYTHON -m pip install -e ."
+    "subtap setup --skip-models|$PYTHON -m subtap.cli setup --skip-models"
+    "subtap --help|$PYTHON -m subtap.cli --help"
+    "subtap run --help|$PYTHON -m subtap.cli run --help"
+    "subtap doctor|$PYTHON -m subtap.cli doctor"
+    "subtap models list|$PYTHON -m subtap.cli models list"
+    "python -m subtap.cli --help|$PYTHON -m subtap.cli --help"
 )
 
 PASSED=0
 FAILED=0
 
 for check in "${CHECKS[@]}"; do
-    echo "▸ 检查: $check"
-    if eval "$check" > /dev/null 2>&1; then
+    label="${check%%|*}"
+    command="${check#*|}"
+    echo "▸ 检查: $label"
+    if eval "$command" > /dev/null 2>&1; then
         echo "  ✓ 通过"
         PASSED=$((PASSED + 1))
     else

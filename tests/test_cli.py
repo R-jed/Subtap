@@ -398,3 +398,27 @@ def test_setup_manual_model_failure_continues(tmp_path, monkeypatch):
         result = runner.invoke(app, ["setup", "--download-source", "manual"])
         assert result.exit_code == 0
         assert "模型安装待手动完成" in result.output
+
+
+def test_setup_interactive_manual_choice_continues(tmp_path, monkeypatch):
+    """交互菜单选择 manual 时也应正常结束."""
+    from unittest.mock import patch
+
+    fake_home = tmp_path / "fakehome"
+    fake_home.mkdir()
+    monkeypatch.setattr("pathlib.Path.home", lambda: fake_home)
+
+    config_dir = fake_home / ".subtap"
+    config_dir.mkdir()
+    (config_dir / "config.yaml").write_text("")
+
+    with patch("subtap.core.setup.SetupWizard.check_system_deps") as mock_deps, \
+         patch("subtap.core.setup.SetupWizard.check_config_exists") as mock_config, \
+         patch("subtap.core.setup.SetupWizard.choose_download_source", return_value="manual"):
+
+        mock_deps.return_value = {"ffmpeg": True, "ffprobe": True, "python": True}
+        mock_config.return_value = True
+
+        result = runner.invoke(app, ["setup"])
+        assert result.exit_code == 0
+        assert "模型安装待手动完成" in result.output

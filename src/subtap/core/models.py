@@ -30,21 +30,21 @@ MODEL_REGISTRY: dict[str, ModelEntry] = {
         "subdir": "asr_0.6b",
         "required_files": ["config.json", "model.safetensors"],
         "hf_repo": "aufklarer/Qwen3-ASR-0.6B-MLX-8bit",
-        "modelscope_repo": "",
+        "modelscope_repo": "aufklarer/Qwen3-ASR-0.6B-MLX-8bit",
     },
     "asr_1.7b": {
         "description": "Qwen3 ASR 1.7B MLX 8bit",
         "subdir": "asr_1.7b",
         "required_files": ["config.json", "model.safetensors"],
         "hf_repo": "aufklarer/Qwen3-ASR-1.7B-MLX-8bit",
-        "modelscope_repo": "",
+        "modelscope_repo": "aufklarer/Qwen3-ASR-1.7B-MLX-8bit",
     },
     "aligner": {
         "description": "Qwen3 ForcedAligner 0.6B MLX 8bit",
         "subdir": "aligner",
         "required_files": ["config.json", "model.safetensors"],
         "hf_repo": "mlx-community/Qwen3-ForcedAligner-0.6B-8bit",
-        "modelscope_repo": "",
+        "modelscope_repo": "mlx-community/Qwen3-ForcedAligner-0.6B-8bit",
     },
 }
 
@@ -197,6 +197,8 @@ class ModelDownloader:
         with urllib.request.urlopen(request, timeout=DEFAULT_TIMEOUT) as response:
             total = int(response.getheader("content-length", "0"))
             downloaded = 0
+            if progress:
+                progress(dest.name, downloaded, total)
             with open(dest, "wb") as f:
                 while True:
                     chunk = response.read(8192)
