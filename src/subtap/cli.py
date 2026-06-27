@@ -1014,7 +1014,7 @@ def models_status() -> None:
 
 @models_app.command("install")
 def models_install(
-    model_name: str = typer.Argument(..., help="要安装的模型（asr / aligner / all）"),
+    model_name: str = typer.Argument(..., help="要安装的模型（asr_0.6b / asr_1.7b / aligner / all）"),
 ) -> None:
     """安装模型文件到本地"""
     from subtap.schemas.config import load_config
@@ -1047,8 +1047,10 @@ def models_verify() -> None:
     config = load_config(Path.home() / ".subtap" / "config.yaml")
     verifier = ModelVerifier(config)
 
+    from subtap.core.models import MODEL_REGISTRY
+
     all_ok = True
-    for name in ["asr", "aligner"]:
+    for name in MODEL_REGISTRY:
         result = verifier.verify(name)
         if result["status"] == "ok":
             typer.echo(typer.style(f"  ✓ {name}: 正常", fg=typer.colors.GREEN))

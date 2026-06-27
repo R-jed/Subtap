@@ -21,8 +21,10 @@ align:
   backend: mlx-qwen-aligner
 
 models:
-  root: ~/models/subtap
+  root: models
   auto_download: false
+  hf_endpoint: https://huggingface.co
+  hf_mirror_endpoint: https://hf-mirror.com
 
 workspace:
   root: ./work

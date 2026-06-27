@@ -12,24 +12,38 @@ from subtap.schemas.config import SubtapConfig
 
 logger = logging.getLogger(__name__)
 
-# Model registry: name → (description, expected_subdir, required_files)
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+# Model registry: name → (description, expected_subdir, required_files, hf_repo, modelscope_repo)
 MODEL_REGISTRY: dict[str, dict] = {
-    "asr": {
-        "description": "MLX Qwen ASR model",
-        "subdir": "asr",
+    "asr_0.6b": {
+        "description": "Qwen3 ASR 0.6B MLX 8bit",
+        "subdir": "asr_0.6b",
         "required_files": ["config.json", "model.safetensors"],
+        "hf_repo": "aufklarer/Qwen3-ASR-0.6B-MLX-8bit",
+        "modelscope_repo": "",
+    },
+    "asr_1.7b": {
+        "description": "Qwen3 ASR 1.7B MLX 8bit",
+        "subdir": "asr_1.7b",
+        "required_files": ["config.json", "model.safetensors"],
+        "hf_repo": "aufklarer/Qwen3-ASR-1.7B-MLX-8bit",
+        "modelscope_repo": "",
     },
     "aligner": {
-        "description": "MLX Qwen ForcedAligner model",
+        "description": "Qwen3 ForcedAligner 0.6B MLX 8bit",
         "subdir": "aligner",
         "required_files": ["config.json", "model.safetensors"],
+        "hf_repo": "mlx-community/Qwen3-ForcedAligner-0.6B-8bit",
+        "modelscope_repo": "",
     },
 }
 
 
 def _get_model_root(config: SubtapConfig) -> Path:
     """Resolve model root path from config."""
-    return Path(config.models.root).expanduser()
+    root = Path(config.models.root).expanduser()
+    return root if root.is_absolute() else PROJECT_ROOT / root
 
 
 class ModelStatus:
