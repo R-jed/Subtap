@@ -51,12 +51,12 @@ def test_registry_status_all_missing(tmp_path: Path):
 def test_registry_status_asr_installed(tmp_path: Path):
     """Status shows asr_0.6b installed when files exist."""
     config = _config_with_model_root(tmp_path)
-    asr_dir = Path(config.models.root).expanduser() / "asr_0.6b"
+    registry = ModelRegistry(config)
+    asr_dir = registry.get_path("asr_0.6b")
     asr_dir.mkdir(parents=True)
     (asr_dir / "config.json").write_text("{}")
     (asr_dir / "model.safetensors").write_bytes(b"\x00" * 100)
 
-    registry = ModelRegistry(config)
     status = registry.status()
     asr_status = next(s for s in status if s.name == "asr_0.6b")
     assert asr_status.installed
@@ -92,12 +92,12 @@ def test_registry_is_available_false(tmp_path: Path):
 def test_registry_is_available_true(tmp_path: Path):
     """is_available returns True when all files present."""
     config = _config_with_model_root(tmp_path)
-    asr_dir = Path(config.models.root).expanduser() / "asr_0.6b"
+    registry = ModelRegistry(config)
+    asr_dir = registry.get_path("asr_0.6b")
     asr_dir.mkdir(parents=True)
     (asr_dir / "config.json").write_text("{}")
     (asr_dir / "model.safetensors").write_bytes(b"\x00" * 100)
 
-    registry = ModelRegistry(config)
     assert registry.is_available("asr_0.6b")
 
 

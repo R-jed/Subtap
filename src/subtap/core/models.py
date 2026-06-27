@@ -6,7 +6,7 @@ import hashlib
 import logging
 import shutil
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TypedDict
 
 from subtap.schemas.config import SubtapConfig
 
@@ -14,8 +14,18 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
-# Model registry: name → (description, expected_subdir, required_files, hf_repo, modelscope_repo)
-MODEL_REGISTRY: dict[str, dict] = {
+
+class ModelEntry(TypedDict):
+    """Schema for a single model registry entry."""
+    description: str
+    subdir: str
+    required_files: list[str]
+    hf_repo: str
+    modelscope_repo: str
+
+
+# Model registry: name → ModelEntry
+MODEL_REGISTRY: dict[str, ModelEntry] = {
     "asr_0.6b": {
         "description": "Qwen3 ASR 0.6B MLX 8bit",
         "subdir": "asr_0.6b",
