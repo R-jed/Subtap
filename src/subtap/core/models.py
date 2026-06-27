@@ -180,9 +180,14 @@ class ModelDownloader:
 
         model_dir = self.root / info["subdir"]
         model_dir.mkdir(parents=True, exist_ok=True)
-        for filename in info["required_files"]:
-            url = self.build_file_url(source, repo, filename)
-            self._download_file(url, model_dir / filename, progress=progress)
+        try:
+            for filename in info["required_files"]:
+                url = self.build_file_url(source, repo, filename)
+                self._download_file(url, model_dir / filename, progress=progress)
+        except Exception:
+            if model_dir.exists():
+                shutil.rmtree(model_dir)
+            raise
         return model_dir
 
     def _download_file(self, url: str, dest: Path, progress=None) -> None:

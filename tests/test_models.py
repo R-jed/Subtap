@@ -75,11 +75,8 @@ def test_registry_get_path_unknown(tmp_path: Path):
     """get_path raises ValueError for unknown model."""
     config = _config_with_model_root(tmp_path)
     registry = ModelRegistry(config)
-    try:
+    with pytest.raises(ValueError, match="Unknown model"):
         registry.get_path("nonexistent")
-        assert False
-    except ValueError:
-        pass
 
 
 def test_registry_is_available_false(tmp_path: Path):
@@ -138,11 +135,45 @@ def test_downloader_unknown_model(tmp_path: Path):
     """Downloader raises ValueError for unknown model."""
     config = _config_with_model_root(tmp_path)
     downloader = ModelDownloader(config)
-    try:
+    with pytest.raises(ValueError, match="未知模型"):
         downloader.download("nonexistent")
-        assert False
-    except ValueError:
-        pass
+
+
+def test_download_cleans_up_on_failure(tmp_path: Path, monkeypatch):
+    """Download removes model dir when a file download fails mid-way."""
+    from unittest.mock import MagicMock
+    import urllib.error
+
+    config = _config_with_model_root(tmp_path)
+    downloader = ModelDownloader(config)
+
+    call_count = 0
+
+    def mock_urlopen(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            # 第一个文件下载成功
+            mock_response = MagicMock()
+            mock_response.__enter__ = MagicMock(return_value=mock_response)
+            mock_response.__exit__ = MagicMock(return_value=False)
+            mock_response.getheader = lambda name, default=None: "10" if name.lower() == "content-length" else default
+            read_count = [0]
+            def mock_read(size=-1):
+                read_count[0] += 1
+                return b"x" * 10 if read_count[0] == 1 else b""
+            mock_response.read = mock_read
+            return mock_response
+        # 第二个文件下载失败
+        raise urllib.error.URLError("connection reset")
+
+    monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
+
+    model_dir = tmp_path / "models" / "asr_0.6b"
+    with pytest.raises(urllib.error.URLError):
+        downloader.download("asr_0.6b")
+
+    assert not model_dir.exists(), "失败后应清理残留的模型目录"
 
 
 # ── Verifier tests ──
@@ -375,12 +406,57 @@ def test_downloader_rejects_modelscope_without_repo(tmp_path):
     cfg = _config_with_model_root(tmp_path)
     downloader = ModelDownloader(cfg)
 
-    try:
+    with pytest.raises(ValueError, match="ModelScope"):
         downloader.download("asr_0.6b", source="modelscope")
-    except ValueError as exc:
-        assert "ModelScope" in str(exc)
-    else:
-        raise AssertionError("ModelScope repo 缺失时必须失败")
+
+
+# ── check_connectivity tests ──
+
+def test_check_connectivity_returns_true_on_200(tmp_path, monkeypatch):
+    """check_connectivity returns True when HEAD request succeeds."""
+    from unittest.mock import MagicMock
+
+    cfg = _config_with_model_root(tmp_path)
+    downloader = ModelDownloader(cfg)
+
+    mock_response = MagicMock()
+    mock_response.status = 200
+    mock_response.__enter__ = MagicMock(return_value=mock_response)
+    mock_response.__exit__ = MagicMock(return_value=False)
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: mock_response)
+
+    assert downloader.check_connectivity("hf", "owner/model") is True
+
+
+def test_check_connectivity_returns_false_on_timeout(tmp_path, monkeypatch):
+    """check_connectivity returns False when request times out."""
+    import urllib.error
+
+    cfg = _config_with_model_root(tmp_path)
+    downloader = ModelDownloader(cfg)
+
+    def raise_timeout(*args, **kwargs):
+        raise urllib.error.URLError("timed out")
+
+    monkeypatch.setattr("urllib.request.urlopen", raise_timeout)
+
+    assert downloader.check_connectivity("hf", "owner/model") is False
+
+
+def test_check_connectivity_returns_false_on_http_error(tmp_path, monkeypatch):
+    """check_connectivity returns False when server returns HTTP error."""
+    import urllib.error
+    import http.client
+
+    cfg = _config_with_model_root(tmp_path)
+    downloader = ModelDownloader(cfg)
+
+    def raise_http_error(*args, **kwargs):
+        raise urllib.error.HTTPError("url", 500, "Internal Server Error", {}, None)
+
+    monkeypatch.setattr("urllib.request.urlopen", raise_http_error)
+
+    assert downloader.check_connectivity("hf", "owner/model") is False
 
 
 def test_download_file_reports_progress(tmp_path, monkeypatch):
