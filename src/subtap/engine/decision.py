@@ -4,7 +4,7 @@ This is the SINGLE decision point for all pipeline behavior.
 No module should make its own strategy decisions.
 
 Rules:
-- All FAST/QUALITY/HYBRID routing decisions here
+- All FAST/QUALITY routing decisions here
 - All LLM enable/disable decisions here
 - All fallback path decisions here
 """
@@ -20,7 +20,6 @@ class PipelineMode(enum.Enum):
 
     FAST = "fast"  # Rule-based only, no LLM, fastest
     QUALITY = "quality"  # Full pipeline with LLM, highest quality
-    HYBRID = "hybrid"  # Balance speed and quality
 
 
 @dataclass
@@ -28,6 +27,7 @@ class PipelineDecision:
     """Centralized decision for pipeline execution."""
 
     mode: PipelineMode
+    asr_model: str
     use_llm: bool
     skip_clean: bool
     skip_align: bool
@@ -39,7 +39,7 @@ class PipelineDecision:
         """Create decision from mode string.
 
         Args:
-            mode: One of "fast", "quality", "hybrid".
+            mode: One of "fast", "quality".
 
         Returns:
             PipelineDecision with all routing decisions.
@@ -47,34 +47,27 @@ class PipelineDecision:
         try:
             pipeline_mode = PipelineMode(mode)
         except ValueError:
-            pipeline_mode = PipelineMode.HYBRID
+            pipeline_mode = PipelineMode.FAST
 
         if pipeline_mode == PipelineMode.FAST:
             return cls(
                 mode=pipeline_mode,
+                asr_model="asr_0.6b",
                 use_llm=False,
-                skip_clean=True,
-                skip_align=True,
-                use_spacy=False,
+                skip_clean=False,
+                skip_align=False,
+                use_spacy=True,
                 use_fuzzy_match=False,
             )
-        elif pipeline_mode == PipelineMode.QUALITY:
+        else:  # QUALITY
             return cls(
                 mode=pipeline_mode,
+                asr_model="asr_1.7b",
                 use_llm=True,
                 skip_clean=False,
                 skip_align=False,
                 use_spacy=True,
                 use_fuzzy_match=True,
-            )
-        else:  # HYBRID
-            return cls(
-                mode=pipeline_mode,
-                use_llm=False,
-                skip_clean=False,
-                skip_align=False,
-                use_spacy=True,
-                use_fuzzy_match=False,
             )
 
     def should_run_clean(self) -> bool:
