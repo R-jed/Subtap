@@ -23,23 +23,22 @@ class EventBridge:
 
     def _on_stage_start(self, event: PipelineEvent) -> None:
         """处理阶段开始事件。"""
-        if self.dashboard and hasattr(self.dashboard, 'update_stage'):
+        if self.dashboard and hasattr(self.dashboard, "update_stage"):
             self.dashboard.update_stage(event.data["stage"])
 
     def _on_stage_end(self, event: PipelineEvent) -> None:
         """处理阶段结束事件。"""
-        if self.dashboard and hasattr(self.dashboard, 'update_stage_complete'):
+        if self.dashboard and hasattr(self.dashboard, "update_stage_complete"):
             self.dashboard.update_stage_complete(
-                event.data["stage"],
-                event.data["duration"]
+                event.data["stage"], event.data["duration"]
             )
 
     def _on_chunk_end(self, event: PipelineEvent) -> None:
         """处理 chunk 结束事件。"""
-        if self.dashboard and hasattr(self.dashboard, 'update_chunk'):
+        if self.dashboard and hasattr(self.dashboard, "update_chunk"):
             self.dashboard.update_chunk(event.data)
 
     def _on_progress(self, event: PipelineEvent) -> None:
         """处理进度事件。"""
-        if self.dashboard and hasattr(self.dashboard, 'update_progress'):
+        if self.dashboard and hasattr(self.dashboard, "update_progress"):
             self.dashboard.update_progress(event.data)

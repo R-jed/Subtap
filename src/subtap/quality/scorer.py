@@ -13,10 +13,10 @@ from subtap.quality.error_detector import ErrorDetector
 class QualityReport:
     """Quality assessment report for subtitle data."""
 
-    total_score: float          # 0-100 总分
-    alignment_error: float      # 对齐误差得分
-    segmentation_quality: float # 断句质量得分
-    readability: float          # 可读性得分
+    total_score: float  # 0-100 总分
+    alignment_error: float  # 对齐误差得分
+    segmentation_quality: float  # 断句质量得分
+    readability: float  # 可读性得分
     error_count: int
     fixable_count: int
 
@@ -58,7 +58,9 @@ class Scorer:
         detector = ErrorDetector(self.aligned_path)
         errors = detector.detect()
         error_count = len(errors)
-        fixable_count = sum(1 for e in errors if e.error_type in ("overlap", "too_long"))
+        fixable_count = sum(
+            1 for e in errors if e.error_type in ("overlap", "too_long")
+        )
 
         # Calculate dimension scores
         alignment_score = self._score_alignment(segments, errors)
@@ -66,7 +68,9 @@ class Scorer:
         readability_score = self._score_readability(segments, errors)
 
         # Weighted total: alignment 40%, segmentation 30%, readability 30%
-        total = alignment_score * 0.4 + segmentation_score * 0.3 + readability_score * 0.3
+        total = (
+            alignment_score * 0.4 + segmentation_score * 0.3 + readability_score * 0.3
+        )
 
         return QualityReport(
             total_score=round(total, 1),
@@ -96,7 +100,7 @@ class Scorer:
             if error.error_type == "overlap":
                 score -= 30.0  # Critical: overlaps
             elif error.error_type == "timeline_jump":
-                score -= 5.0   # Warning: gaps
+                score -= 5.0  # Warning: gaps
 
         return max(0.0, score)
 
@@ -110,7 +114,7 @@ class Scorer:
             if error.error_type == "bad_segmentation":
                 score -= 15.0  # Info: no punctuation
             elif error.error_type == "too_long":
-                score -= 8.0   # Warning: too long
+                score -= 8.0  # Warning: too long
 
         return max(0.0, score)
 

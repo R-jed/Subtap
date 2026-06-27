@@ -61,26 +61,32 @@ class Fixer:
             elif error.error_type == "too_long":
                 # Too long fixes require splitting, which changes segment count
                 # For now, just log it as a suggestion
-                actions.append(FixAction(
-                    segment_id=error.segment_id,
-                    fix_type="split",
-                    description=f"字幕过长，建议手动拆分: {error.message}",
-                    applied=False,
-                ))
+                actions.append(
+                    FixAction(
+                        segment_id=error.segment_id,
+                        fix_type="split",
+                        description=f"字幕过长，建议手动拆分: {error.message}",
+                        applied=False,
+                    )
+                )
             elif error.error_type == "bad_segmentation":
-                actions.append(FixAction(
-                    segment_id=error.segment_id,
-                    fix_type="add_punct",
-                    description=f"缺少标点，建议重跑 segment: {error.message}",
-                    applied=False,
-                ))
+                actions.append(
+                    FixAction(
+                        segment_id=error.segment_id,
+                        fix_type="add_punct",
+                        description=f"缺少标点，建议重跑 segment: {error.message}",
+                        applied=False,
+                    )
+                )
             elif error.error_type == "timeline_jump":
-                actions.append(FixAction(
-                    segment_id=error.segment_id,
-                    fix_type="adjust_time",
-                    description=f"时间轴跳跃: {error.message}",
-                    applied=False,
-                ))
+                actions.append(
+                    FixAction(
+                        segment_id=error.segment_id,
+                        fix_type="adjust_time",
+                        description=f"时间轴跳跃: {error.message}",
+                        applied=False,
+                    )
+                )
 
         # Write fixed segments
         self._write_segments(segments, output_path)
@@ -102,7 +108,9 @@ class Fixer:
             for seg in segments:
                 f.write(json.dumps(seg, ensure_ascii=False) + "\n")
 
-    def _fix_overlap(self, segments: list[dict], error: ErrorReport) -> FixAction | None:
+    def _fix_overlap(
+        self, segments: list[dict], error: ErrorReport
+    ) -> FixAction | None:
         """Fix overlapping time ranges by adjusting end_sec."""
         seg_id = error.segment_id
         # Find the segment

@@ -1,6 +1,5 @@
 """Tests for dashboard system."""
 
-import pytest
 from subtap.metrics.events import EventBus, EventType, PipelineEvent
 from subtap.ui.event_bridge import EventBridge
 
@@ -57,6 +56,7 @@ def test_event_bridge_on_stage_start():
     class MockDashboard:
         def __init__(self):
             self.stage = None
+
         def update_stage(self, stage):
             self.stage = stage
 
@@ -66,9 +66,7 @@ def test_event_bridge_on_stage_start():
 
     # 模拟 STAGE_START 事件
     event = PipelineEvent(
-        event_type=EventType.STAGE_START,
-        data={"stage": "asr"},
-        timestamp=100.0
+        event_type=EventType.STAGE_START, data={"stage": "asr"}, timestamp=100.0
     )
     bridge._on_stage_start(event)
 
@@ -82,6 +80,7 @@ def test_event_bridge_on_chunk_end():
     class MockDashboard:
         def __init__(self):
             self.chunk_data = None
+
         def update_chunk(self, data):
             self.chunk_data = data
 
@@ -93,7 +92,7 @@ def test_event_bridge_on_chunk_end():
     event = PipelineEvent(
         event_type=EventType.CHUNK_END,
         data={"chunk_id": 1, "start_time": 100.0, "end_time": 100.3},
-        timestamp=100.3
+        timestamp=100.3,
     )
     bridge._on_chunk_end(event)
 
@@ -107,6 +106,7 @@ def test_event_bridge_on_progress():
     class MockDashboard:
         def __init__(self):
             self.progress = None
+
         def update_progress(self, data):
             self.progress = data
 
@@ -116,9 +116,7 @@ def test_event_bridge_on_progress():
 
     # 模拟 PROGRESS 事件
     event = PipelineEvent(
-        event_type=EventType.PROGRESS,
-        data={"percent": 50},
-        timestamp=100.0
+        event_type=EventType.PROGRESS, data={"percent": 50}, timestamp=100.0
     )
     bridge._on_progress(event)
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Optional
 
@@ -31,11 +30,18 @@ class OllamaLLM:
 
     name = "ollama"
 
-    def __init__(self, model: str = "qwen3-coder", base_url: str = "http://localhost:11434"):
+    def __init__(
+        self, model: str = "qwen3-coder", base_url: str = "http://localhost:11434"
+    ):
         self.model = model
         self.base_url = base_url.rstrip("/")
 
-    def _build_prompt(self, segments: list[CleanSegment], glossary: Optional[Glossary], style_rules: Optional[list[str]]) -> str:
+    def _build_prompt(
+        self,
+        segments: list[CleanSegment],
+        glossary: Optional[Glossary],
+        style_rules: Optional[list[str]],
+    ) -> str:
         """Build a single prompt for batch cleaning."""
         lines = []
         for seg in segments:
@@ -43,7 +49,10 @@ class OllamaLLM:
 
         text_block = "\n".join(lines)
 
-        instructions = ["Fix ASR errors in the following numbered lines.", "Return one cleaned line per input, preserving the [id] prefix."]
+        instructions = [
+            "Fix ASR errors in the following numbered lines.",
+            "Return one cleaned line per input, preserving the [id] prefix.",
+        ]
         if glossary and glossary.style:
             instructions.append("Style rules: " + "; ".join(glossary.style))
         if style_rules:
@@ -51,10 +60,15 @@ class OllamaLLM:
 
         return text_block + "\n\n" + "\n".join(instructions)
 
-    def _parse_response(self, response_text: str, segments: list[CleanSegment]) -> list[CleanSegment]:
+    def _parse_response(
+        self, response_text: str, segments: list[CleanSegment]
+    ) -> list[CleanSegment]:
         """Parse LLM response and map back to segments."""
         import re
-        lines = [l.strip() for l in response_text.strip().split("\n") if l.strip()]
+
+        lines = [
+            line.strip() for line in response_text.strip().split("\n") if line.strip()
+        ]
         id_map = {seg.segment_id: seg for seg in segments}
 
         for line in lines:

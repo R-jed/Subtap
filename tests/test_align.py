@@ -2,20 +2,18 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from typing import Optional
 
 from subtap.backends.align.base import AlignerBackend
 from subtap.backends.align import get_aligner_backend
 from subtap.backends.align.mock import MockAligner
-from subtap.core.align import load_sentences, write_aligned, run_align
+from subtap.core.align import run_align
 from subtap.core.workspace import Workspace
 from subtap.schemas.config import SubtapConfig, AlignConfig
 from subtap.schemas.models import SentenceSegment, AlignedSegment
 
-
 # ── Backend protocol tests ──
+
 
 def test_aligner_backend_protocol():
     """MockAligner satisfies the AlignerBackend protocol."""
@@ -42,11 +40,18 @@ def test_get_aligner_unknown():
 
 # ── Mock aligner correctness ──
 
+
 def test_mock_aligner_preserves_text():
     """MockAligner returns text unchanged."""
     sentences = [
-        SentenceSegment(sentence_id=0, chunk_id=0, start_sec=0.0, end_sec=1.0,
-                        text="Hello world", source_text="Hello world"),
+        SentenceSegment(
+            sentence_id=0,
+            chunk_id=0,
+            start_sec=0.0,
+            end_sec=1.0,
+            text="Hello world",
+            source_text="Hello world",
+        ),
     ]
     backend = MockAligner(AlignConfig(backend="mock-aligner"))
     result = backend.align(sentences, Path("/tmp/fake.wav"))
@@ -57,10 +62,22 @@ def test_mock_aligner_preserves_text():
 def test_mock_aligner_preserves_timing():
     """MockAligner returns original timing."""
     sentences = [
-        SentenceSegment(sentence_id=0, chunk_id=0, start_sec=0.5, end_sec=2.5,
-                        text="Test", source_text="Test"),
-        SentenceSegment(sentence_id=1, chunk_id=0, start_sec=2.5, end_sec=4.0,
-                        text="Test 2", source_text="Test 2"),
+        SentenceSegment(
+            sentence_id=0,
+            chunk_id=0,
+            start_sec=0.5,
+            end_sec=2.5,
+            text="Test",
+            source_text="Test",
+        ),
+        SentenceSegment(
+            sentence_id=1,
+            chunk_id=0,
+            start_sec=2.5,
+            end_sec=4.0,
+            text="Test 2",
+            source_text="Test 2",
+        ),
     ]
     backend = MockAligner(AlignConfig(backend="mock-aligner"))
     result = backend.align(sentences, Path("/tmp/fake.wav"))
@@ -72,15 +89,19 @@ def test_mock_aligner_preserves_timing():
 
 # ── Pipeline tests ──
 
+
 def _make_sentences_jsonl(ws: Workspace, texts: list[str]) -> None:
     """Write mock SentenceSegments to sentences.jsonl."""
     ws.ensure_dirs()
     with open(ws.sentences_jsonl, "w") as f:
         for i, text in enumerate(texts):
             seg = SentenceSegment(
-                sentence_id=i, chunk_id=i,
-                start_sec=float(i), end_sec=float(i + 1),
-                text=text, source_text=text,
+                sentence_id=i,
+                chunk_id=i,
+                start_sec=float(i),
+                end_sec=float(i + 1),
+                text=text,
+                source_text=text,
             )
             f.write(seg.model_dump_json() + "\n")
 
@@ -91,6 +112,7 @@ def test_align_produces_jsonl(test_config: SubtapConfig, tmp_path: Path):
     _make_sentences_jsonl(ws, ["Hello", "World"])
 
     import subtap.backends.align as align_reg
+
     original = align_reg.get_aligner_backend
     align_reg.get_aligner_backend = lambda cfg: MockAligner(cfg)
     try:
@@ -114,6 +136,7 @@ def test_aligned_time_monotonic(test_config: SubtapConfig, tmp_path: Path):
     _make_sentences_jsonl(ws, ["First", "Second", "Third"])
 
     import subtap.backends.align as align_reg
+
     align_reg.get_aligner_backend = lambda cfg: MockAligner(cfg)
     try:
         run_align(ws, test_config, backend_name="mock-aligner")
@@ -136,6 +159,7 @@ def test_aligned_text_unchanged(test_config: SubtapConfig, tmp_path: Path):
     _make_sentences_jsonl(ws, texts)
 
     import subtap.backends.align as align_reg
+
     align_reg.get_aligner_backend = lambda cfg: MockAligner(cfg)
     try:
         run_align(ws, test_config, backend_name="mock-aligner")
@@ -143,7 +167,7 @@ def test_aligned_text_unchanged(test_config: SubtapConfig, tmp_path: Path):
         align_reg.get_aligner_backend = lambda cfg: MockAligner(cfg)
 
     with open(ws.aligned_jsonl) as f:
-        lines = [AlignedSegment.model_validate_json(l.strip()) for l in f]
+        lines = [AlignedSegment.model_validate_json(line.strip()) for line in f]
 
     for seg, orig in zip(lines, texts):
         assert seg.text == orig
@@ -158,17 +182,24 @@ def test_cli_align_runnable(test_config: SubtapConfig, tmp_path: Path, monkeypat
     _make_sentences_jsonl(ws, ["CLI sentence"])
 
     import subtap.backends.align as align_reg
+
     monkeypatch.setattr(align_reg, "get_aligner_backend", lambda cfg: MockAligner(cfg))
     import subtap.schemas.config as cfg_mod
+
     monkeypatch.setattr(cfg_mod, "load_config", lambda p: test_config)
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "fakehome")
 
     runner = CliRunner()
-    result = runner.invoke(app, [
-        "align",
-        str(ws.sentences_jsonl),
-        "-w", str(ws.root),
-        "-b", "mock-aligner",
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "align",
+            str(ws.sentences_jsonl),
+            "-w",
+            str(ws.root),
+            "-b",
+            "mock-aligner",
+        ],
+    )
     assert result.exit_code == 0
     assert "完成" in result.output

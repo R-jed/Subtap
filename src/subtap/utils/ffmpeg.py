@@ -26,8 +26,10 @@ def probe_media(file_path: Path) -> MediaInfo:
     ffprobe = _find_binary("ffprobe")
     cmd = [
         ffprobe,
-        "-v", "quiet",
-        "-print_format", "json",
+        "-v",
+        "quiet",
+        "-print_format",
+        "json",
         "-show_format",
         "-show_streams",
         str(file_path),
@@ -82,11 +84,15 @@ def extract_audio(
     cmd = [
         ffmpeg,
         "-y",
-        "-i", str(input_path),
+        "-i",
+        str(input_path),
         "-vn",
-        "-acodec", "pcm_s16le",
-        "-ar", str(sample_rate),
-        "-ac", str(channels),
+        "-acodec",
+        "pcm_s16le",
+        "-ar",
+        str(sample_rate),
+        "-ac",
+        str(channels),
         str(output_path),
     ]
     subprocess.run(cmd, capture_output=True, check=True)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import shutil
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict, cast
 
 from subtap.schemas.config import SubtapConfig
 
@@ -16,6 +16,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 class ModelEntry(TypedDict):
     """Schema for a single model registry entry."""
+
     description: str
     subdir: str
     required_files: list[str]
@@ -58,7 +59,13 @@ def _get_model_root(config: SubtapConfig) -> Path:
 class ModelStatus:
     """Status of a single model."""
 
-    def __init__(self, name: str, installed: bool, path: Path, missing_files: list[str] | None = None):
+    def __init__(
+        self,
+        name: str,
+        installed: bool,
+        path: Path,
+        missing_files: list[str] | None = None,
+    ):
         self.name = name
         self.installed = installed
         self.path = path
@@ -93,12 +100,14 @@ class ModelRegistry:
             for f in info["required_files"]:
                 if not (model_dir / f).exists():
                     missing.append(f)
-            results.append(ModelStatus(
-                name=name,
-                installed=len(missing) == 0,
-                path=model_dir,
-                missing_files=missing,
-            ))
+            results.append(
+                ModelStatus(
+                    name=name,
+                    installed=len(missing) == 0,
+                    path=model_dir,
+                    missing_files=missing,
+                )
+            )
         return results
 
     def get_path(self, model_name: str) -> Path:
@@ -173,9 +182,11 @@ class ModelDownloader:
 
         info = MODEL_REGISTRY[model_name]
         repo_key = "modelscope_repo" if source == "modelscope" else "hf_repo"
-        repo = info.get(repo_key) or ""
+        repo = cast(str, info.get(repo_key) or "")
         if not repo:
-            raise ValueError(f"{model_name} 未配置 {source} / ModelScope 下载仓库，请手动放入 models/")
+            raise ValueError(
+                f"{model_name} 未配置 {source} / ModelScope 下载仓库，请手动放入 models/"
+            )
 
         model_dir = self.root / info["subdir"]
         model_dir.mkdir(parents=True, exist_ok=True)
@@ -224,10 +235,14 @@ class ModelVerifier:
         """
         info = MODEL_REGISTRY.get(model_name)
         if info is None:
-            return {"name": model_name, "status": "unknown", "error": "Model not in registry"}
+            return {
+                "name": model_name,
+                "status": "unknown",
+                "error": "Model not in registry",
+            }
 
         model_dir = self.root / info["subdir"]
-        results = {"name": model_name, "status": "ok", "files": {}}
+        results: dict[str, Any] = {"name": model_name, "status": "ok", "files": {}}
 
         for f in info["required_files"]:
             fpath = model_dir / f

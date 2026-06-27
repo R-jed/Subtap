@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Optional
 
-from subtap.ui.state import PipelineState, STAGE_ORDER, STAGE_CN, get_state, reset_state
-from subtap.ui.progress import PipelineProgress, console
+from subtap.ui.state import STAGE_CN, reset_state
+from subtap.ui.progress import PipelineProgress
 
 
 class TUIRunner:
@@ -17,7 +16,7 @@ class TUIRunner:
         self.use_tui = use_tui
         self.mode = mode
         self.output_engine = output_engine
-        self.progress = PipelineProgress() if use_tui else None
+        self.progress = PipelineProgress()
         self.state = reset_state()
         self.timings: dict[str, float] = {}
         self.total_start: float = 0.0
@@ -62,13 +61,17 @@ class TUIRunner:
             result = pipeline.run_stage("chunk")
             self.timings["chunk"] = time.time() - stage_start
             total_chunks = result["chunk_count"]
-            self.state.update(progress=100, status="completed", total_chunks=total_chunks)
+            self.state.update(
+                progress=100, status="completed", total_chunks=total_chunks
+            )
             if self.use_tui:
                 self.progress.print_stage_result(self.state, result)
 
             # Stage 3: asr
             self.state.update(
-                stage="asr", status="loading_model", progress=0,
+                stage="asr",
+                status="loading_model",
+                progress=0,
                 model_used="Qwen3-ASR-0.6B",
                 current_task=f"共 {total_chunks} 个音频片段",
             )
@@ -79,7 +82,8 @@ class TUIRunner:
             result = pipeline.run_stage("asr")
             self.timings["asr"] = time.time() - stage_start
             self.state.update(
-                progress=100, status="completed",
+                progress=100,
+                status="completed",
                 segment_count=result["segment_count"],
                 current_task="",
             )
@@ -88,7 +92,9 @@ class TUIRunner:
 
             # Stage 4: clean (optional)
             if not skip_clean:
-                self.state.update(stage="clean", status="processing", progress=0, current_task="")
+                self.state.update(
+                    stage="clean", status="processing", progress=0, current_task=""
+                )
                 if self.use_tui:
                     self.progress.print_stage_start(self.state)
 
@@ -104,11 +110,18 @@ class TUIRunner:
                 # Convert ASR → CleanSegment format
                 from subtap.core.clean import load_asr_segments, write_clean_segments
                 from subtap.schemas.models import CleanSegment
+
                 asr_segs = load_asr_segments(pipeline.workspace.asr_jsonl)
                 write_clean_segments(
-                    [CleanSegment(segment_id=s.segment_id, original_text=s.text,
-                                  cleaned_text=s.text, glossary_applied=[])
-                     for s in asr_segs],
+                    [
+                        CleanSegment(
+                            segment_id=s.segment_id,
+                            original_text=s.text,
+                            cleaned_text=s.text,
+                            glossary_applied=[],
+                        )
+                        for s in asr_segs
+                    ],
                     pipeline.workspace.cleaned_jsonl,
                 )
 
@@ -127,7 +140,9 @@ class TUIRunner:
             # Stage 6: align (optional)
             if not skip_align:
                 self.state.update(
-                    stage="align", status="loading_model", progress=0,
+                    stage="align",
+                    status="loading_model",
+                    progress=0,
                     model_used="Qwen3-ForcedAligner-0.6B",
                     current_task="加载对齐模型",
                 )
@@ -144,7 +159,10 @@ class TUIRunner:
                 if self.use_tui:
                     self.progress.print_skip("时间轴对齐", "--skip-align")
                 import shutil
-                shutil.copy2(pipeline.workspace.sentences_jsonl, pipeline.workspace.aligned_jsonl)
+
+                shutil.copy2(
+                    pipeline.workspace.sentences_jsonl, pipeline.workspace.aligned_jsonl
+                )
 
             # Stage 7: export
             self.state.update(stage="export", status="processing", progress=0)
@@ -153,6 +171,7 @@ class TUIRunner:
 
             stage_start = time.time()
             from subtap.core.export import run_export
+
             result = run_export(pipeline.workspace.aligned_jsonl, output_dir, fmt=fmt)
             self.timings["export"] = time.time() - stage_start
             self.state.update(progress=100, status="completed")
@@ -177,6 +196,7 @@ class TUIRunner:
 
         # Save run metadata
         import json
+
         meta = {
             "input": str(input_path),
             "work_dir": str(pipeline.workspace.root),
@@ -186,7 +206,9 @@ class TUIRunner:
             "timings": {k: round(v, 2) for k, v in self.timings.items()},
             "segments": self.state.segment_count,
         }
-        (pipeline.workspace.root / "run_meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False))
+        (pipeline.workspace.root / "run_meta.json").write_text(
+            json.dumps(meta, indent=2, ensure_ascii=False)
+        )
 
         return meta
 
@@ -211,10 +233,18 @@ class PlainRunner:
         self.timings: dict[str, float] = {}
         self.total_start: float = 0.0
 
-    def run_pipeline(self, pipeline, input_path, output_dir, fmt="srt",
-                     skip_clean=False, skip_align=False) -> dict:
+    def run_pipeline(
+        self,
+        pipeline,
+        input_path,
+        output_dir,
+        fmt="srt",
+        skip_clean=False,
+        skip_align=False,
+    ) -> dict:
         """Execute pipeline with plain text output."""
         import typer
+
         self.total_start = time.time()
 
         def _echo(msg: str):
@@ -225,7 +255,9 @@ class PlainRunner:
             t = time.time()
             r = pipeline.run_stage("prepare", input_path=input_path)
             self.timings["prepare"] = time.time() - t
-            _echo(f"  ✓ {r['media_info']['duration']:.1f}s, {r['media_info']['sample_rate']}Hz")
+            _echo(
+                f"  ✓ {r['media_info']['duration']:.1f}s, {r['media_info']['sample_rate']}Hz"
+            )
 
             _echo("▸ [2/7] 音频切段...")
             t = time.time()
@@ -249,11 +281,18 @@ class PlainRunner:
                 _echo("▸ [4/7] 跳过文本清洗 (--skip-clean)")
                 from subtap.core.clean import load_asr_segments, write_clean_segments
                 from subtap.schemas.models import CleanSegment
+
                 asr_segs = load_asr_segments(pipeline.workspace.asr_jsonl)
                 write_clean_segments(
-                    [CleanSegment(segment_id=s.segment_id, original_text=s.text,
-                                  cleaned_text=s.text, glossary_applied=[])
-                     for s in asr_segs],
+                    [
+                        CleanSegment(
+                            segment_id=s.segment_id,
+                            original_text=s.text,
+                            cleaned_text=s.text,
+                            glossary_applied=[],
+                        )
+                        for s in asr_segs
+                    ],
                     pipeline.workspace.cleaned_jsonl,
                 )
 
@@ -272,11 +311,15 @@ class PlainRunner:
             else:
                 _echo("▸ [6/7] 跳过时间轴对齐 (--skip-align)")
                 import shutil
-                shutil.copy2(pipeline.workspace.sentences_jsonl, pipeline.workspace.aligned_jsonl)
+
+                shutil.copy2(
+                    pipeline.workspace.sentences_jsonl, pipeline.workspace.aligned_jsonl
+                )
 
             _echo(f"▸ [7/7] 字幕导出 ({fmt.upper()})...")
             t = time.time()
             from subtap.core.export import run_export
+
             r = run_export(pipeline.workspace.aligned_jsonl, output_dir, fmt=fmt)
             self.timings["export"] = time.time() - t
             _echo(f"  ✓ {r['output_path']}")
@@ -294,6 +337,7 @@ class PlainRunner:
         _echo(f"  输出目录：{output_dir}")
 
         import json
+
         meta = {
             "input": str(input_path),
             "work_dir": str(pipeline.workspace.root),
@@ -302,5 +346,7 @@ class PlainRunner:
             "total_time_sec": round(total_time, 2),
             "timings": {k: round(v, 2) for k, v in self.timings.items()},
         }
-        (pipeline.workspace.root / "run_meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False))
+        (pipeline.workspace.root / "run_meta.json").write_text(
+            json.dumps(meta, indent=2, ensure_ascii=False)
+        )
         return meta

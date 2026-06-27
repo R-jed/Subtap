@@ -4,18 +4,13 @@ from __future__ import annotations
 
 from rich.console import Console
 from rich.progress import (
-    BarColumn,
     Progress,
-    SpinnerColumn,
-    TextColumn,
-    TimeElapsedColumn,
 )
 from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
 
 from subtap.ui.state import PipelineState, STAGE_ORDER, STAGE_CN
-
 
 console = Console()
 
@@ -67,7 +62,6 @@ class PipelineProgress:
     def print_stage_start(self, state: PipelineState) -> None:
         """Print stage start with Chinese name."""
         idx = STAGE_ORDER.index(state.stage) + 1 if state.stage in STAGE_ORDER else 0
-        total = len([s for s in STAGE_ORDER if s not in ("clean",)])  # approximate
         self.console.print(f"\n[bold cyan]▸ [{idx}/7] {state.stage_cn}[/bold cyan]")
         if state.current_task:
             self.console.print(f"  [dim]{state.current_task}[/dim]")

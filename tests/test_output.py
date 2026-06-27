@@ -1,6 +1,5 @@
 """Tests for output system."""
 
-import pytest
 from pathlib import Path
 from subtap.output.exceptions import OutputError
 
@@ -52,6 +51,7 @@ def test_lifecycle_init(tmp_path):
     version_dir = tmp_path / "v1"
     lifecycle = OutputLifecycle(version_dir)
 
+    assert lifecycle.version_dir == version_dir
     assert version_dir.exists()
     assert (version_dir / "artifacts").exists()
 
@@ -92,6 +92,7 @@ def test_lifecycle_write_metrics(tmp_path):
     assert output_path.exists()
 
     import json
+
     data = json.loads(output_path.read_text())
     assert data["total_duration"] == 24.8
 
@@ -103,10 +104,7 @@ def test_lifecycle_write_artifacts(tmp_path):
     version_dir = tmp_path / "v1"
     lifecycle = OutputLifecycle(version_dir)
 
-    artifacts = {
-        "asr": {"segments": [1, 2, 3]},
-        "segments": {"sentences": [1, 2]}
-    }
+    artifacts = {"asr": {"segments": [1, 2, 3]}, "segments": {"sentences": [1, 2]}}
     lifecycle.write_artifacts(artifacts)
 
     assert (version_dir / "artifacts" / "asr.json").exists()
@@ -271,10 +269,7 @@ def test_tui_runner_with_output_engine(tmp_path):
 
 def test_tui_colors_defined():
     """Test TUI color styles are defined."""
-    from subtap.ui.colors import (
-        STAGE_TITLE, PROGRESS_BAR, PROGRESS_ACTIVE,
-        ERROR, FILE_PATH, TIMING, SUCCESS, HEADER
-    )
+    from subtap.ui.colors import STAGE_TITLE, PROGRESS_BAR, ERROR
 
     from rich.style import Style
 
@@ -302,7 +297,7 @@ def test_output_config_has_timestamp():
     from subtap.schemas.config import OutputConfig
 
     config = OutputConfig()
-    assert hasattr(config, 'timestamp')
+    assert hasattr(config, "timestamp")
     assert config.timestamp is True
 
 
@@ -334,10 +329,9 @@ def test_full_output_flow(tmp_path):
     engine.write_metrics({"total_duration": 24.8})
 
     # Write artifacts
-    engine.write_artifacts({
-        "asr": {"segments": [1, 2, 3]},
-        "segments": {"sentences": [1, 2]}
-    })
+    engine.write_artifacts(
+        {"asr": {"segments": [1, 2, 3]}, "segments": {"sentences": [1, 2]}}
+    )
 
     # Finalize
     result = engine.finalize_output()

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -14,7 +13,9 @@ class MediaInfo(BaseModel):
     duration: float = Field(description="Duration in seconds")
     sample_rate: int = Field(default=16000, description="Audio sample rate in Hz")
     channels: int = Field(default=1, description="Number of audio channels")
-    fps: Optional[float] = Field(default=None, description="Video frames per second if available")
+    fps: Optional[float] = Field(
+        default=None, description="Video frames per second if available"
+    )
 
 
 class Chunk(BaseModel):
@@ -34,7 +35,9 @@ class ASRSegment(BaseModel):
     start_sec: float = Field(description="Start time in seconds (chunk-level fallback)")
     end_sec: float = Field(description="End time in seconds")
     text: str = Field(description="Transcribed text")
-    confidence: Optional[float] = Field(default=None, description="Confidence score if available")
+    confidence: Optional[float] = Field(
+        default=None, description="Confidence score if available"
+    )
 
 
 class CleanSegment(BaseModel):
@@ -43,7 +46,9 @@ class CleanSegment(BaseModel):
     segment_id: int = Field(description="Segment index (maps to ASR segment)")
     original_text: str = Field(description="Original ASR text before cleaning")
     cleaned_text: str = Field(description="Text after cleaning")
-    glossary_applied: list[str] = Field(default_factory=list, description="Glossary terms applied")
+    glossary_applied: list[str] = Field(
+        default_factory=list, description="Glossary terms applied"
+    )
 
 
 class SentenceSegment(BaseModel):

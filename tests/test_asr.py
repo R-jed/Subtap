@@ -8,7 +8,7 @@ from typing import Optional
 
 from subtap.backends.asr.base import ASRBackend
 from subtap.backends.asr import get_backend
-from subtap.core.asr import load_chunks, write_asr_segments, run_asr
+from subtap.core.asr import load_chunks, run_asr
 from subtap.core.media import prepare_media
 from subtap.core.vad import split_chunks
 from subtap.core.workspace import Workspace
@@ -29,14 +29,16 @@ class MockASRBackend:
     ) -> list[ASRSegment]:
         segments = []
         for chunk in chunks:
-            segments.append(ASRSegment(
-                chunk_id=chunk.chunk_id,
-                segment_id=0,
-                start_sec=chunk.start_sec,
-                end_sec=chunk.end_sec,
-                text=f"mock transcription {chunk.chunk_id}",
-                confidence=0.95,
-            ))
+            segments.append(
+                ASRSegment(
+                    chunk_id=chunk.chunk_id,
+                    segment_id=0,
+                    start_sec=chunk.start_sec,
+                    end_sec=chunk.end_sec,
+                    text=f"mock transcription {chunk.chunk_id}",
+                    confidence=0.95,
+                )
+            )
         return segments
 
 
@@ -56,7 +58,9 @@ def test_get_backend_mock_fails():
         assert "nonexistent" in str(e)
 
 
-def test_chunks_to_asr_jsonl(sample_wav: Path, test_config: SubtapConfig, tmp_path: Path):
+def test_chunks_to_asr_jsonl(
+    sample_wav: Path, test_config: SubtapConfig, tmp_path: Path
+):
     """Full pipeline: prepare → chunk → mock ASR → asr.jsonl."""
     ws = Workspace(test_config, base_dir=tmp_path / "work")
 
@@ -69,6 +73,7 @@ def test_chunks_to_asr_jsonl(sample_wav: Path, test_config: SubtapConfig, tmp_pa
     test_config.asr.backend = "mock-asr"
     # Patch the get_backend reference that asr.py imported
     import subtap.core.asr as asr_module
+
     original = asr_module.get_backend
     asr_module.get_backend = lambda cfg: MockASRBackend()
     try:
@@ -89,14 +94,17 @@ def test_chunks_to_asr_jsonl(sample_wav: Path, test_config: SubtapConfig, tmp_pa
         assert seg.chunk_id >= 0
 
 
-def test_asr_chunk_id_alignment(sample_wav: Path, test_config: SubtapConfig, tmp_path: Path):
+def test_asr_chunk_id_alignment(
+    sample_wav: Path, test_config: SubtapConfig, tmp_path: Path
+):
     """ASR segment chunk_ids must align with chunk chunk_ids."""
     ws = Workspace(test_config, base_dir=tmp_path / "work")
     prepare_media(sample_wav, ws, test_config)
-    chunks = split_chunks(ws, test_config)
+    split_chunks(ws, test_config)
 
     test_config.asr.backend = "mock-asr"
     import subtap.core.asr as asr_module
+
     original = asr_module.get_backend
     asr_module.get_backend = lambda cfg: MockASRBackend()
     try:
@@ -107,7 +115,7 @@ def test_asr_chunk_id_alignment(sample_wav: Path, test_config: SubtapConfig, tmp
     # Load both and verify alignment
     chunksLoaded = load_chunks(ws.chunks_jsonl)
     lines = ws.asr_jsonl.read_text().strip().split("\n")
-    segments = [ASRSegment.model_validate_json(l) for l in lines]
+    segments = [ASRSegment.model_validate_json(line) for line in lines]
 
     chunk_ids = {c.chunk_id for c in chunksLoaded}
     seg_ids = {s.chunk_id for s in segments}
@@ -117,6 +125,7 @@ def test_asr_chunk_id_alignment(sample_wav: Path, test_config: SubtapConfig, tmp
 def test_http_asr_raises():
     """HttpASRBackend transcribe raises NotImplementedError."""
     from subtap.backends.asr.http_asr import HttpASRBackend
+
     config = ASRConfig(backend="http-asr")
     backend = HttpASRBackend(config)
     try:
@@ -126,7 +135,9 @@ def test_http_asr_raises():
         pass
 
 
-def test_cli_transcribe_runnable(sample_wav: Path, test_config: SubtapConfig, tmp_path: Path, monkeypatch):
+def test_cli_transcribe_runnable(
+    sample_wav: Path, test_config: SubtapConfig, tmp_path: Path, monkeypatch
+):
     """CLI transcribe command runs without crash (mock backend)."""
     from typer.testing import CliRunner
     from subtap.cli import app
@@ -138,18 +149,24 @@ def test_cli_transcribe_runnable(sample_wav: Path, test_config: SubtapConfig, tm
 
     # Patch get_backend to return mock (asr.py holds a local ref)
     import subtap.core.asr as asr_module
+
     monkeypatch.setattr(asr_module, "get_backend", lambda cfg: MockASRBackend())
 
     # Patch load_config (imported locally inside CLI functions)
     import subtap.schemas.config as cfg_mod
+
     monkeypatch.setattr(cfg_mod, "load_config", lambda p: test_config)
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "fakehome")
 
     runner = CliRunner()
-    result = runner.invoke(app, [
-        "transcribe",
-        str(ws.source_audio),
-        "-w", str(ws.root),
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "transcribe",
+            str(ws.source_audio),
+            "-w",
+            str(ws.root),
+        ],
+    )
     assert result.exit_code == 0
     assert "完成" in result.output

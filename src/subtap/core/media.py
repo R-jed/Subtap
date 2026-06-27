@@ -11,7 +11,9 @@ from subtap.utils.ffmpeg import extract_audio, probe_media
 from subtap.core.workspace import Workspace
 
 
-def prepare_media(input_path: Path, workspace: Workspace, config: SubtapConfig) -> MediaInfo:
+def prepare_media(
+    input_path: Path, workspace: Workspace, config: SubtapConfig
+) -> MediaInfo:
     """Probe media info and extract audio to workspace.
 
     Steps:

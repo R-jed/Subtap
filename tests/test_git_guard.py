@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -17,18 +16,21 @@ def git_workspace(tmp_path: Path) -> Path:
     subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
     subprocess.run(
         ["git", "config", "user.email", "test@test.com"],
-        cwd=tmp_path, capture_output=True,
+        cwd=tmp_path,
+        capture_output=True,
     )
     subprocess.run(
         ["git", "config", "user.name", "Test"],
-        cwd=tmp_path, capture_output=True,
+        cwd=tmp_path,
+        capture_output=True,
     )
     # Create initial commit so HEAD exists
     (tmp_path / "README.md").write_text("init")
     subprocess.run(["git", "add", "."], cwd=tmp_path, capture_output=True)
     subprocess.run(
         ["git", "commit", "-m", "init"],
-        cwd=tmp_path, capture_output=True,
+        cwd=tmp_path,
+        capture_output=True,
     )
     return tmp_path
 
@@ -55,15 +57,22 @@ class TestPreTaskCheck:
         assert result["ok"] is True
         assert result["issues"] == []
 
-    def test_detects_uncommitted_changes(self, git_guard: GitGuard, git_workspace: Path):
+    def test_detects_uncommitted_changes(
+        self, git_guard: GitGuard, git_workspace: Path
+    ):
         # Create uncommitted file
         (git_workspace / "dirty.txt").write_text("uncommitted")
 
         result = git_guard.pre_task_check()
         assert result["ok"] is False
-        assert any("uncommitted" in issue.lower() or "未提交" in issue for issue in result["issues"])
+        assert any(
+            "uncommitted" in issue.lower() or "未提交" in issue
+            for issue in result["issues"]
+        )
 
-    def test_detects_modified_tracked_file(self, git_guard: GitGuard, git_workspace: Path):
+    def test_detects_modified_tracked_file(
+        self, git_guard: GitGuard, git_workspace: Path
+    ):
         # Modify existing tracked file
         (git_workspace / "README.md").write_text("modified")
 
@@ -131,7 +140,9 @@ class TestAutoCommitIfNeeded:
         # Verify the commit exists
         log = subprocess.run(
             ["git", "log", "--oneline", "-1"],
-            cwd=git_workspace, capture_output=True, text=True,
+            cwd=git_workspace,
+            capture_output=True,
+            text=True,
         )
         assert "auto: checkpoint" in log.stdout
 
@@ -142,7 +153,9 @@ class TestAutoCommitIfNeeded:
 
         log = subprocess.run(
             ["git", "log", "--oneline", "-1"],
-            cwd=git_workspace, capture_output=True, text=True,
+            cwd=git_workspace,
+            capture_output=True,
+            text=True,
         )
         assert "checkpoint before pipeline execution" in log.stdout
 

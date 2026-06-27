@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 
 from pydub import AudioSegment
 from pydub.silence import detect_nonsilent
@@ -74,12 +72,14 @@ def split_chunks(workspace: Workspace, config: SubtapConfig) -> list[Chunk]:
         segment = audio[start_ms:end_ms]
         chunk_path = workspace.chunk_path(i)
         segment.export(str(chunk_path), format="wav")
-        chunks.append(Chunk(
-            chunk_id=i,
-            start_sec=round(start, 3),
-            end_sec=round(end, 3),
-            path=str(chunk_path.relative_to(workspace.root)),
-        ))
+        chunks.append(
+            Chunk(
+                chunk_id=i,
+                start_sec=round(start, 3),
+                end_sec=round(end, 3),
+                path=str(chunk_path.relative_to(workspace.root)),
+            )
+        )
 
     # Write chunks.jsonl
     with open(workspace.chunks_jsonl, "w") as f:

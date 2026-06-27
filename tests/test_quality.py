@@ -7,10 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from subtap.quality.scorer import Scorer, QualityReport
-from subtap.quality.error_detector import ErrorDetector, ErrorReport
+from subtap.quality.scorer import Scorer
+from subtap.quality.error_detector import ErrorDetector
 from subtap.quality.fixer import Fixer, FixAction
-
 
 # ── Fixtures ─────────────────────────────────────────────────
 
@@ -19,11 +18,36 @@ from subtap.quality.fixer import Fixer, FixAction
 def good_aligned_jsonl(tmp_path: Path) -> Path:
     """Well-formed aligned segments."""
     segments = [
-        {"sentence_id": 0, "start_sec": 0.0, "end_sec": 2.5, "text": "你好，欢迎收看今天的节目。"},
-        {"sentence_id": 1, "start_sec": 2.5, "end_sec": 5.0, "text": "我们将讨论人工智能的发展。"},
-        {"sentence_id": 2, "start_sec": 5.0, "end_sec": 8.0, "text": "首先，让我们回顾一下历史。"},
-        {"sentence_id": 3, "start_sec": 8.0, "end_sec": 11.0, "text": "从图灵测试到深度学习。"},
-        {"sentence_id": 4, "start_sec": 11.0, "end_sec": 14.0, "text": "这是一个漫长而精彩的旅程。"},
+        {
+            "sentence_id": 0,
+            "start_sec": 0.0,
+            "end_sec": 2.5,
+            "text": "你好，欢迎收看今天的节目。",
+        },
+        {
+            "sentence_id": 1,
+            "start_sec": 2.5,
+            "end_sec": 5.0,
+            "text": "我们将讨论人工智能的发展。",
+        },
+        {
+            "sentence_id": 2,
+            "start_sec": 5.0,
+            "end_sec": 8.0,
+            "text": "首先，让我们回顾一下历史。",
+        },
+        {
+            "sentence_id": 3,
+            "start_sec": 8.0,
+            "end_sec": 11.0,
+            "text": "从图灵测试到深度学习。",
+        },
+        {
+            "sentence_id": 4,
+            "start_sec": 11.0,
+            "end_sec": 14.0,
+            "text": "这是一个漫长而精彩的旅程。",
+        },
     ]
     path = tmp_path / "aligned.jsonl"
     path.write_text("\n".join(json.dumps(s, ensure_ascii=False) for s in segments))
@@ -35,9 +59,24 @@ def bad_aligned_jsonl(tmp_path: Path) -> Path:
     """Aligned segments with various errors."""
     segments = [
         {"sentence_id": 0, "start_sec": 0.0, "end_sec": 2.5, "text": "正常字幕。"},
-        {"sentence_id": 1, "start_sec": 5.0, "end_sec": 7.0, "text": "这条字幕非常非常非常非常非常非常非常非常非常非常非常非常非常非常非常非常非常非常非常非常非常长，超过了四十二个字符的限制。"},  # too_long
-        {"sentence_id": 2, "start_sec": 6.5, "end_sec": 9.0, "text": "与上一条重叠的字幕。"},  # overlap
-        {"sentence_id": 3, "start_sec": 9.0, "end_sec": 12.0, "text": "这是一段没有标点的字幕文本内容很多很多字"},  # bad_segmentation
+        {
+            "sentence_id": 1,
+            "start_sec": 5.0,
+            "end_sec": 7.0,
+            "text": "这条字幕非常非常非常非常非常非常非常非常非常非常非常非常非常非常非常非常非常非常非常非常非常长，超过了四十二个字符的限制。",
+        },  # too_long
+        {
+            "sentence_id": 2,
+            "start_sec": 6.5,
+            "end_sec": 9.0,
+            "text": "与上一条重叠的字幕。",
+        },  # overlap
+        {
+            "sentence_id": 3,
+            "start_sec": 9.0,
+            "end_sec": 12.0,
+            "text": "这是一段没有标点的字幕文本内容很多很多字",
+        },  # bad_segmentation
         {"sentence_id": 4, "start_sec": 12.0, "end_sec": 15.0, "text": "正常结束。"},
     ]
     path = tmp_path / "aligned.jsonl"
@@ -156,8 +195,11 @@ class TestFixer:
         output_path = tmp_path / "fixed.jsonl"
         actions = fixer.fix(overlap_errors, output_path)
 
+        assert actions
         assert output_path.exists()
-        fixed_segments = [json.loads(line) for line in output_path.read_text().strip().splitlines()]
+        fixed_segments = [
+            json.loads(line) for line in output_path.read_text().strip().splitlines()
+        ]
         # After fix, no overlapping times
         for i in range(len(fixed_segments) - 1):
             assert fixed_segments[i]["end_sec"] <= fixed_segments[i + 1]["start_sec"]
@@ -179,8 +221,13 @@ class TestFixer:
         output_path = tmp_path / "fixed.jsonl"
         fixer.fix(errors, output_path)
 
-        original = [json.loads(line) for line in bad_aligned_jsonl.read_text().strip().splitlines()]
-        fixed = [json.loads(line) for line in output_path.read_text().strip().splitlines()]
+        original = [
+            json.loads(line)
+            for line in bad_aligned_jsonl.read_text().strip().splitlines()
+        ]
+        fixed = [
+            json.loads(line) for line in output_path.read_text().strip().splitlines()
+        ]
         # Fix should not remove segments (only adjust times)
         assert len(fixed) == len(original)
 

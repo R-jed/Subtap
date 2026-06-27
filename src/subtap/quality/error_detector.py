@@ -14,7 +14,7 @@ class ErrorReport:
 
     segment_id: int
     error_type: str  # "timeline_jump" | "too_long" | "overlap" | "bad_segmentation"
-    severity: str    # "critical" | "warning" | "info"
+    severity: str  # "critical" | "warning" | "info"
     message: str
     stage_source: str  # "asr" | "align" | "segment"
     suggestion: str
@@ -62,24 +62,28 @@ class ErrorDetector:
             text = seg.get("text", "")
             # Check character count (>42 chars is warning)
             if len(text) > 42:
-                errors.append(ErrorReport(
-                    segment_id=seg["sentence_id"],
-                    error_type="too_long",
-                    severity="warning",
-                    message=f"字幕过长（{len(text)}字）",
-                    stage_source="segment",
-                    suggestion="建议拆分为多条短字幕",
-                ))
+                errors.append(
+                    ErrorReport(
+                        segment_id=seg["sentence_id"],
+                        error_type="too_long",
+                        severity="warning",
+                        message=f"字幕过长（{len(text)}字）",
+                        stage_source="segment",
+                        suggestion="建议拆分为多条短字幕",
+                    )
+                )
             # Check line count (>2 lines is warning)
             if text.count("\n") >= 2:
-                errors.append(ErrorReport(
-                    segment_id=seg["sentence_id"],
-                    error_type="too_long",
-                    severity="warning",
-                    message=f"字幕行数过多（{text.count(chr(10)) + 1}行）",
-                    stage_source="segment",
-                    suggestion="建议拆分为多条短字幕",
-                ))
+                errors.append(
+                    ErrorReport(
+                        segment_id=seg["sentence_id"],
+                        error_type="too_long",
+                        severity="warning",
+                        message=f"字幕行数过多（{text.count(chr(10)) + 1}行）",
+                        stage_source="segment",
+                        suggestion="建议拆分为多条短字幕",
+                    )
+                )
         return errors
 
     def _check_overlap(self, segments: list[dict]) -> List[ErrorReport]:
@@ -90,33 +94,37 @@ class ErrorDetector:
             next_seg = segments[i + 1]
             if current["end_sec"] > next_seg["start_sec"]:
                 overlap = current["end_sec"] - next_seg["start_sec"]
-                errors.append(ErrorReport(
-                    segment_id=current["sentence_id"],
-                    error_type="overlap",
-                    severity="critical",
-                    message=f"与下一条字幕重叠 {overlap:.2f}s",
-                    stage_source="align",
-                    suggestion="自动调整结束时间",
-                ))
+                errors.append(
+                    ErrorReport(
+                        segment_id=current["sentence_id"],
+                        error_type="overlap",
+                        severity="critical",
+                        message=f"与下一条字幕重叠 {overlap:.2f}s",
+                        stage_source="align",
+                        suggestion="自动调整结束时间",
+                    )
+                )
         return errors
 
     def _check_bad_segmentation(self, segments: list[dict]) -> List[ErrorReport]:
         """Check for segments without punctuation (bad segmentation)."""
         errors = []
         # Chinese punctuation characters
-        punct_chars = set("，。！？、；：""''（）【】…—·")
+        punct_chars = set("，。！？、；：" "''（）【】…—·")
         for seg in segments:
             text = seg.get("text", "")
             # Check if text has no punctuation and is long enough
             if len(text) >= 20 and not any(c in punct_chars for c in text):
-                errors.append(ErrorReport(
-                    segment_id=seg["sentence_id"],
-                    error_type="bad_segmentation",
-                    severity="info",
-                    message="字幕无标点符号",
-                    stage_source="segment",
-                    suggestion="建议重跑 segment 阶段",
-                ))
+                errors.append(
+                    ErrorReport(
+                        segment_id=seg["sentence_id"],
+                        error_type="bad_segmentation",
+                        severity="info",
+                        message="字幕无标点符号",
+                        stage_source="segment",
+                        suggestion="建议重跑 segment 阶段",
+                    )
+                )
         return errors
 
     def _check_timeline_jump(self, segments: list[dict]) -> List[ErrorReport]:
@@ -127,12 +135,14 @@ class ErrorDetector:
             next_seg = segments[i + 1]
             gap = next_seg["start_sec"] - current["end_sec"]
             if gap > 2.0:
-                errors.append(ErrorReport(
-                    segment_id=current["sentence_id"],
-                    error_type="timeline_jump",
-                    severity="warning",
-                    message=f"时间轴跳跃 {gap:.2f}s",
-                    stage_source="align",
-                    suggestion="检查是否需要插入空字幕",
-                ))
+                errors.append(
+                    ErrorReport(
+                        segment_id=current["sentence_id"],
+                        error_type="timeline_jump",
+                        severity="warning",
+                        message=f"时间轴跳跃 {gap:.2f}s",
+                        stage_source="align",
+                        suggestion="检查是否需要插入空字幕",
+                    )
+                )
         return errors

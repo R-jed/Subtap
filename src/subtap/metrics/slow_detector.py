@@ -27,12 +27,14 @@ class SlowChunkDetector:
 
     def add_slow_chunk(self, chunk_id: int, latency: float, avg: float) -> None:
         """记录一个慢速 chunk。"""
-        self._slow_chunks.append({
-            "id": chunk_id,
-            "time": latency,
-            "avg": avg,
-            "threshold": self.threshold,
-        })
+        self._slow_chunks.append(
+            {
+                "id": chunk_id,
+                "time": latency,
+                "avg": avg,
+                "threshold": self.threshold,
+            }
+        )
 
     def get_slow_chunks(self) -> list[SlowChunkInfo]:
         """获取所有已记录的慢速 chunk。"""

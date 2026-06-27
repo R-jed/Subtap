@@ -98,14 +98,16 @@ def segment_clean_segments(
         times = _allocate_time(parts, seg_start, seg_end)
 
         for text, (t_start, t_end) in zip(parts, times):
-            sentences.append(SentenceSegment(
-                sentence_id=sid,
-                chunk_id=seg.segment_id,
-                start_sec=t_start,
-                end_sec=t_end,
-                text=text,
-                source_text=seg.cleaned_text,
-            ))
+            sentences.append(
+                SentenceSegment(
+                    sentence_id=sid,
+                    chunk_id=seg.segment_id,
+                    start_sec=t_start,
+                    end_sec=t_end,
+                    text=text,
+                    source_text=seg.cleaned_text,
+                )
+            )
             sid += 1
 
     return sentences

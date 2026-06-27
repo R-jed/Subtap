@@ -20,7 +20,9 @@ class LMStudioLLM:
 
     name = "lmstudio"
 
-    def __init__(self, model: str = "default", base_url: str = "http://localhost:1234/v1"):
+    def __init__(
+        self, model: str = "default", base_url: str = "http://localhost:1234/v1"
+    ):
         self.model = model
         self.base_url = base_url
 
@@ -35,6 +37,7 @@ class LMStudioLLM:
         LMStudio serves at localhost:1234 with OpenAI-compatible format.
         """
         from subtap.backends.llm.openai_compat import OpenAICompatibleLLM
+
         delegate = OpenAICompatibleLLM(
             model=self.model,
             base_url=self.base_url,

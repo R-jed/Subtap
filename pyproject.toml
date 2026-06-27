@@ -28,6 +28,10 @@ ai = [
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
+    "ruff>=0.8.0",
+    "black>=24.0",
+    "mypy>=1.13",
+    "build>=1.2",
 ]
 
 [project.scripts]
@@ -39,3 +43,7 @@ packages = ["src/subtap"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[[tool.mypy.overrides]]
+module = ["mlx_audio.*", "pydub", "pydub.*", "yaml"]
+ignore_missing_imports = true

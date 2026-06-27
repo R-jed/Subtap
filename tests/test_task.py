@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 
-from subtap.task.task import Task, TaskResult
+from subtap.task.task import Task
 
 
 @pytest.fixture
@@ -86,6 +85,7 @@ class TestTaskOutput:
     def test_creates_output_dir(self, sample_audio: Path, output_dir: Path):
         task = Task(input_file=sample_audio)
         result = task.create_output_structure(output_dir)
+        assert result.final_path.parent == output_dir
         assert output_dir.exists()
 
     def test_creates_final_srt_path(self, sample_audio: Path, output_dir: Path):

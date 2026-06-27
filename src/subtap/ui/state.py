@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass, field
 from typing import Callable, Optional
-
 
 # Chinese stage name mapping
 STAGE_CN: dict[str, str] = {
@@ -49,7 +47,9 @@ class PipelineState:
     elapsed_sec: float = 0.0
     error_msg: str = ""
     suggestion: str = ""
-    _listeners: list[Callable[["PipelineState"], None]] = field(default_factory=list, repr=False)
+    _listeners: list[Callable[["PipelineState"], None]] = field(
+        default_factory=list, repr=False
+    )
 
     def update(self, **kwargs) -> None:
         """Update state fields and notify listeners."""

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -112,9 +111,7 @@ class ASSExporter(BaseExporter):
             end = _fmt_ass_time(seg.end_sec)
             # Escape newlines for ASS
             text = seg.text.replace("\n", "\\N")
-            lines.append(
-                f"Dialogue: 0,{start},{end},Default,,0,0,0,,{text}"
-            )
+            lines.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{text}")
         return "\n".join(lines)
 
 
@@ -162,7 +159,9 @@ def run_export(
     """
     exporter_cls = EXPORTERS.get(fmt)
     if exporter_cls is None:
-        raise ValueError(f"Unknown export format: {fmt}. Supported: {list(EXPORTERS.keys())}")
+        raise ValueError(
+            f"Unknown export format: {fmt}. Supported: {list(EXPORTERS.keys())}"
+        )
 
     segments = load_aligned(aligned_jsonl)
     if not segments:
@@ -172,4 +171,8 @@ def run_export(
     output_path = output_dir / f"{stem}.{exporter.extension}"
     exporter.export(segments, output_path)
 
-    return {"output_path": str(output_path), "format": fmt, "segment_count": len(segments)}
+    return {
+        "output_path": str(output_path),
+        "format": fmt,
+        "segment_count": len(segments),
+    }

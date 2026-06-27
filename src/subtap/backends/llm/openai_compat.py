@@ -32,18 +32,33 @@ class OpenAICompatibleLLM:
 
     name = "openai"
 
-    def __init__(self, model: str = "gpt-4o-mini", base_url: str | None = None, api_key: str | None = None):
+    def __init__(
+        self,
+        model: str = "gpt-4o-mini",
+        base_url: str | None = None,
+        api_key: str | None = None,
+    ):
         self.model = model
-        self.base_url = (base_url or os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")).rstrip("/")
+        self.base_url = (
+            base_url or os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+        ).rstrip("/")
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
 
-    def _build_prompt(self, segments: list[CleanSegment], glossary: Optional[Glossary], style_rules: Optional[list[str]]) -> str:
+    def _build_prompt(
+        self,
+        segments: list[CleanSegment],
+        glossary: Optional[Glossary],
+        style_rules: Optional[list[str]],
+    ) -> str:
         lines = []
         for seg in segments:
             lines.append(f"[{seg.segment_id}] {seg.cleaned_text}")
 
         text_block = "\n".join(lines)
-        instructions = ["Fix ASR errors in the following numbered lines.", "Return one cleaned line per input, preserving the [id] prefix."]
+        instructions = [
+            "Fix ASR errors in the following numbered lines.",
+            "Return one cleaned line per input, preserving the [id] prefix.",
+        ]
         if glossary and glossary.style:
             instructions.append("Style rules: " + "; ".join(glossary.style))
         if style_rules:
@@ -51,8 +66,12 @@ class OpenAICompatibleLLM:
 
         return text_block + "\n\n" + "\n".join(instructions)
 
-    def _parse_response(self, response_text: str, segments: list[CleanSegment]) -> list[CleanSegment]:
-        lines = [l.strip() for l in response_text.strip().split("\n") if l.strip()]
+    def _parse_response(
+        self, response_text: str, segments: list[CleanSegment]
+    ) -> list[CleanSegment]:
+        lines = [
+            line.strip() for line in response_text.strip().split("\n") if line.strip()
+        ]
         id_map = {seg.segment_id: seg for seg in segments}
 
         for line in lines:

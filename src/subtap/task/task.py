@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 
 @dataclass
@@ -34,10 +33,10 @@ class Task:
     """
 
     input_file: Path
-    mode: str = "hybrid"          # fast / quality / hybrid
-    output_format: str = "srt"    # srt / vtt / json
-    language: str = "zh"          # zh / en
-    glossary_profile: str = ""    # 术语表路径
+    mode: str = "hybrid"  # fast / quality / hybrid
+    output_format: str = "srt"  # srt / vtt / json
+    language: str = "zh"  # zh / en
+    glossary_profile: str = ""  # 术语表路径
 
     @property
     def should_skip_clean(self) -> bool:

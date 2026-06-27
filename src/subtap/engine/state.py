@@ -107,9 +107,7 @@ class PipelineState:
 
     @property
     def summary(self) -> dict:
-        return {
-            name: s.to_dict() for name, s in self.stages.items()
-        }
+        return {name: s.to_dict() for name, s in self.stages.items()}
 
     def on_change(self, callback) -> None:
         self._listeners.append(callback)

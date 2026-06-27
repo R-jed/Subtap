@@ -53,7 +53,12 @@ class EventLogger:
         self.log(stage, "start")
 
     def log_stage_success(self, stage: str, duration: float, result: dict) -> None:
-        self.log(stage, "success", duration=duration, extra={"result_keys": list(result.keys())})
+        self.log(
+            stage,
+            "success",
+            duration=duration,
+            extra={"result_keys": list(result.keys())},
+        )
 
     def log_stage_failed(self, stage: str, error: str, retry_count: int = 0) -> None:
         self.log(stage, "failed", error=error, retry_count=retry_count)

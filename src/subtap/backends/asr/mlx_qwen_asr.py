@@ -36,6 +36,7 @@ class MLXQwenASR:
             return
         try:
             from mlx_audio.stt.generate import load_model
+
             logger.info("Loading ASR model from: %s", self._model_path)
             self._model = load_model(self._model_path)
             logger.info("ASR model loaded successfully")
@@ -68,6 +69,7 @@ class MLXQwenASR:
 
             try:
                 from mlx_audio.stt.generate import generate_transcription
+
                 result = generate_transcription(
                     model=self._model,
                     audio=str(audio_path),
@@ -90,13 +92,15 @@ class MLXQwenASR:
                 text = result.text
 
             logger.info("Chunk %d result: %s", chunk.chunk_id, text[:100])
-            segments.append(ASRSegment(
-                chunk_id=chunk.chunk_id,
-                segment_id=0,
-                start_sec=chunk.start_sec,
-                end_sec=chunk.end_sec,
-                text=text.strip(),
-                confidence=None,
-            ))
+            segments.append(
+                ASRSegment(
+                    chunk_id=chunk.chunk_id,
+                    segment_id=0,
+                    start_sec=chunk.start_sec,
+                    end_sec=chunk.end_sec,
+                    text=text.strip(),
+                    confidence=None,
+                )
+            )
 
         return segments

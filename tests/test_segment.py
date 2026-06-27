@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-from subtap.core.segment import load_clean_segments, write_sentences, run_segment
+from subtap.core.segment import run_segment
 from subtap.core.segmentation import (
     _split_sentences,
     _allocate_time,
@@ -15,8 +14,8 @@ from subtap.core.workspace import Workspace
 from subtap.schemas.config import SubtapConfig
 from subtap.schemas.models import CleanSegment, SentenceSegment
 
-
 # ── Sentence splitting tests ──
+
 
 def test_split_on_cjk_punctuation():
     """CJK punctuation splits into separate sentences."""
@@ -45,6 +44,7 @@ def test_split_empty_text():
 
 
 # ── Time allocation tests ──
+
 
 def test_allocate_time_basic():
     """Time allocated proportionally by character count."""
@@ -76,6 +76,7 @@ def test_allocate_time_empty():
 
 # ── Segment pipeline tests ──
 
+
 def _make_cleaned_jsonl(ws: Workspace, texts: list[str]) -> None:
     """Write mock CleanSegments to cleaned.jsonl."""
     ws.ensure_dirs()
@@ -93,8 +94,18 @@ def _make_cleaned_jsonl(ws: Workspace, texts: list[str]) -> None:
 def test_segment_clean_segments_basic(test_config: SubtapConfig, tmp_path: Path):
     """segment_clean_segments splits and assigns time."""
     segments = [
-        CleanSegment(segment_id=0, original_text="a", cleaned_text="First sentence。Second sentence。", glossary_applied=[]),
-        CleanSegment(segment_id=1, original_text="b", cleaned_text="Third sentence.", glossary_applied=[]),
+        CleanSegment(
+            segment_id=0,
+            original_text="a",
+            cleaned_text="First sentence。Second sentence。",
+            glossary_applied=[],
+        ),
+        CleanSegment(
+            segment_id=1,
+            original_text="b",
+            cleaned_text="Third sentence.",
+            glossary_applied=[],
+        ),
     ]
     result = segment_clean_segments(segments, chunk_start=0.0, chunk_end=10.0)
 
@@ -107,7 +118,12 @@ def test_segment_clean_segments_basic(test_config: SubtapConfig, tmp_path: Path)
 def test_time_monotonic_in_segment(test_config: SubtapConfig, tmp_path: Path):
     """Sentence times are monotonic within a chunk."""
     segments = [
-        CleanSegment(segment_id=0, original_text="a", cleaned_text="Aa。Bb。Cc。", glossary_applied=[]),
+        CleanSegment(
+            segment_id=0,
+            original_text="a",
+            cleaned_text="Aa。Bb。Cc。",
+            glossary_applied=[],
+        ),
     ]
     result = segment_clean_segments(segments, chunk_start=0.0, chunk_end=6.0)
 
@@ -118,7 +134,12 @@ def test_time_monotonic_in_segment(test_config: SubtapConfig, tmp_path: Path):
 def test_chunk_id_integrity(test_config: SubtapConfig, tmp_path: Path):
     """chunk_id in SentenceSegment matches source segment_id."""
     segments = [
-        CleanSegment(segment_id=5, original_text="a", cleaned_text="Test sentence.", glossary_applied=[]),
+        CleanSegment(
+            segment_id=5,
+            original_text="a",
+            cleaned_text="Test sentence.",
+            glossary_applied=[],
+        ),
     ]
     result = segment_clean_segments(segments, chunk_start=0.0, chunk_end=1.0)
     assert result[0].chunk_id == 5
@@ -142,8 +163,15 @@ def test_jsonl_valid_schema(test_config: SubtapConfig, tmp_path: Path):
 def test_sentence_ids_sequential(test_config: SubtapConfig, tmp_path: Path):
     """sentence_ids are 0-based sequential across all segments."""
     segments = [
-        CleanSegment(segment_id=0, original_text="a", cleaned_text="One。Two。", glossary_applied=[]),
-        CleanSegment(segment_id=1, original_text="b", cleaned_text="Three。", glossary_applied=[]),
+        CleanSegment(
+            segment_id=0,
+            original_text="a",
+            cleaned_text="One。Two。",
+            glossary_applied=[],
+        ),
+        CleanSegment(
+            segment_id=1, original_text="b", cleaned_text="Three。", glossary_applied=[]
+        ),
     ]
     result = segment_clean_segments(segments, chunk_start=0.0, chunk_end=6.0)
 
@@ -160,14 +188,19 @@ def test_cli_segment_runnable(test_config: SubtapConfig, tmp_path: Path, monkeyp
     _make_cleaned_jsonl(ws, ["Test sentence one。Test sentence two。"])
 
     import subtap.schemas.config as cfg_mod
+
     monkeypatch.setattr(cfg_mod, "load_config", lambda p: test_config)
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "fakehome")
 
     runner = CliRunner()
-    result = runner.invoke(app, [
-        "segment",
-        str(ws.cleaned_jsonl),
-        "-w", str(ws.root),
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "segment",
+            str(ws.cleaned_jsonl),
+            "-w",
+            str(ws.root),
+        ],
+    )
     assert result.exit_code == 0
     assert "完成" in result.output

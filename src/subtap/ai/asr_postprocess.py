@@ -18,7 +18,6 @@ from typing import Optional
 
 from subtap.schemas.models import ASRSegment
 
-
 # Filler words to remove (English + Chinese)
 FILLER_WORDS_EN = {"um", "uh", "ah", "er", "like", "you know"}
 FILLER_WORDS_ZH = {"这个", "那个", "嗯", "啊", "呃", "就是说"}
@@ -51,6 +50,7 @@ class CleanEngine:
         """Initialize spaCy for punctuation restore."""
         try:
             import spacy
+
             try:
                 self._spacy_nlp = spacy.load("zh_core_web_sm")
             except OSError:
@@ -63,11 +63,9 @@ class CleanEngine:
 
     def _init_rapidfuzz(self):
         """Initialize rapidfuzz for fuzzy matching."""
-        try:
-            import rapidfuzz
-            self._rapidfuzz_available = True
-        except ImportError:
-            self._rapidfuzz_available = False
+        import importlib.util
+
+        self._rapidfuzz_available = importlib.util.find_spec("rapidfuzz") is not None
 
     def process(
         self,
@@ -113,14 +111,16 @@ class CleanEngine:
                 text = text.replace(filler, "")
             # Clean up extra spaces
             text = re.sub(r"\s+", " ", text).strip()
-            result.append(ASRSegment(
-                chunk_id=seg.chunk_id,
-                segment_id=seg.segment_id,
-                text=text,
-                start_sec=seg.start_sec,
-                end_sec=seg.end_sec,
-                confidence=seg.confidence,
-            ))
+            result.append(
+                ASRSegment(
+                    chunk_id=seg.chunk_id,
+                    segment_id=seg.segment_id,
+                    text=text,
+                    start_sec=seg.start_sec,
+                    end_sec=seg.end_sec,
+                    confidence=seg.confidence,
+                )
+            )
         return result
 
     def _restore_punctuation(self, segments: list[ASRSegment]) -> list[ASRSegment]:
@@ -153,17 +153,19 @@ class CleanEngine:
                     pass  # Fall through to rule-based
 
             # PRIMARY: rule-based fallback
-            if text and not text[-1] in "。！？.!?，,；;：:）)】」』" "）)]}":
+            if text and text[-1] not in "。！？.!?，,；;：:）)】」』" "）)]}":
                 text = text + "。"
 
-            result.append(ASRSegment(
-                chunk_id=seg.chunk_id,
-                segment_id=seg.segment_id,
-                text=text,
-                start_sec=seg.start_sec,
-                end_sec=seg.end_sec,
-                confidence=seg.confidence,
-            ))
+            result.append(
+                ASRSegment(
+                    chunk_id=seg.chunk_id,
+                    segment_id=seg.segment_id,
+                    text=text,
+                    start_sec=seg.start_sec,
+                    end_sec=seg.end_sec,
+                    confidence=seg.confidence,
+                )
+            )
         return result
 
     def _normalize_entities(
@@ -195,6 +197,7 @@ class CleanEngine:
             if self._use_fuzzy and self._rapidfuzz_available:
                 try:
                     from rapidfuzz import fuzz, process
+
                     for original, normalized in glossary_terms.items():
                         # Find best match in text
                         matches = process.extract(
@@ -215,12 +218,14 @@ class CleanEngine:
                 for original, normalized in glossary_terms.items():
                     text = text.replace(original, normalized)
 
-            result.append(ASRSegment(
-                chunk_id=seg.chunk_id,
-                segment_id=seg.segment_id,
-                text=text,
-                start_sec=seg.start_sec,
-                end_sec=seg.end_sec,
-                confidence=seg.confidence,
-            ))
+            result.append(
+                ASRSegment(
+                    chunk_id=seg.chunk_id,
+                    segment_id=seg.segment_id,
+                    text=text,
+                    start_sec=seg.start_sec,
+                    end_sec=seg.end_sec,
+                    confidence=seg.confidence,
+                )
+            )
         return result

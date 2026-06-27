@@ -39,6 +39,7 @@ class SetupWizard:
             True if init succeeded, False otherwise.
         """
         from subtap.cli import init
+
         try:
             init()
             return True
@@ -73,7 +74,12 @@ class SetupWizard:
             typer.echo(f"  无效选项 '{choice}'，默认使用 Hugging Face 直连")
         return mapping.get(choice, "hf")
 
-    def setup_models(self, source: str = "ask", include_optional: bool = False, endpoint: str | None = None) -> bool:
+    def setup_models(
+        self,
+        source: str = "ask",
+        include_optional: bool = False,
+        endpoint: str | None = None,
+    ) -> bool:
         """Setup models with download source selection.
 
         Args:
@@ -99,11 +105,13 @@ class SetupWizard:
 
         # 检测网络连通性
         import typer
+
         first_model = "asr_0.6b"
 
         def repo_for(download_source: str) -> str:
-            repo_key = "modelscope_repo" if download_source == "modelscope" else "hf_repo"
-            return MODEL_REGISTRY[first_model][repo_key]
+            if download_source == "modelscope":
+                return MODEL_REGISTRY[first_model]["modelscope_repo"]
+            return MODEL_REGISTRY[first_model]["hf_repo"]
 
         typer.echo(f"▸ 检测 {selected} 连通性...")
         if not downloader.check_connectivity(selected, repo_for(selected)):
@@ -111,7 +119,7 @@ class SetupWizard:
 
             if source != "ask":
                 # 非交互模式：直接返回失败
-                typer.echo(f"  提示：请使用 --download-source 参数选择其他下载方式")
+                typer.echo("  提示：请使用 --download-source 参数选择其他下载方式")
                 return False
 
             # 降级顺序：hf -> hf-mirror -> modelscope -> manual
@@ -156,6 +164,7 @@ class SetupWizard:
     def print_manual_model_instructions(self) -> None:
         """Print instructions for manual model placement."""
         import typer
+
         typer.echo("请手动下载模型并放入项目根目录的 models/ 目录：")
         typer.echo("  - models/asr_0.6b/（必需）")
         typer.echo("  - models/aligner/（必需）")
@@ -175,7 +184,14 @@ class SetupWizard:
             True if download succeeded.
         """
         import typer
-        from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, DownloadColumn, TransferSpeedColumn
+        from rich.progress import (
+            Progress,
+            SpinnerColumn,
+            BarColumn,
+            TextColumn,
+            DownloadColumn,
+            TransferSpeedColumn,
+        )
 
         typer.echo(f"▸ 下载 {model_name}...")
         try:
@@ -191,7 +207,9 @@ class SetupWizard:
                 def update_progress(filename: str, downloaded: int, total: int) -> None:
                     # 每个文件开始时重置 task
                     if downloaded == 0:
-                        progress.reset(task_id, total=total, description=f"{model_name}/{filename}")
+                        progress.reset(
+                            task_id, total=total, description=f"{model_name}/{filename}"
+                        )
                     progress.update(task_id, completed=downloaded)
 
                 downloader.download(model_name, source=source, progress=update_progress)

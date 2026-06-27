@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from subtap.core.segmentation import segment_clean_segments
@@ -29,7 +28,9 @@ def write_sentences(sentences: list[SentenceSegment], output_path: Path) -> None
             f.write(seg.model_dump_json() + "\n")
 
 
-def run_segment(workspace: Workspace, chunk_start: float = 0.0, chunk_end: float = 1.0) -> dict:
+def run_segment(
+    workspace: Workspace, chunk_start: float = 0.0, chunk_end: float = 1.0
+) -> dict:
     """Run segment stage: load cleaned → split → sentences.jsonl.
 
     Args:

@@ -5,14 +5,18 @@ from __future__ import annotations
 from pathlib import Path
 
 from subtap.engine.state import (
-    PipelineState, StageState, StageStatus, STATUS_CN, STAGE_ORDER,
+    PipelineState,
+    StageState,
+    StageStatus,
+    STATUS_CN,
+    STAGE_ORDER,
 )
 from subtap.engine.policy import ExecutionPolicy, PolicyMode
 from subtap.engine.events import EventLogger
 from subtap.schemas.config import SubtapConfig
 
-
 # ── StageStatus tests ──
+
 
 def test_stage_status_values():
     """All expected statuses exist."""
@@ -27,6 +31,7 @@ def test_status_cn_covers_all():
 
 
 # ── StageState tests ──
+
 
 def test_stage_state_initial():
     """New StageState is PENDING."""
@@ -64,6 +69,7 @@ def test_stage_state_to_dict():
 
 
 # ── PipelineState tests ──
+
 
 def test_pipeline_state_all_stages():
     """PipelineState has all 7 stages."""
@@ -121,6 +127,7 @@ def test_pipeline_state_reset():
 
 # ── ExecutionPolicy tests ──
 
+
 def test_policy_local():
     """LOCAL_ONLY policy: no LLM, align enabled."""
     p = ExecutionPolicy("local")
@@ -160,6 +167,7 @@ def test_policy_to_dict():
 
 
 # ── EventLogger tests ──
+
 
 def test_event_logger_write_and_read(tmp_path: Path):
     """Events are written to JSONL and can be read back."""
@@ -211,6 +219,7 @@ def test_event_logger_clear(tmp_path: Path):
 
 
 # ── PipelineController integration tests ──
+
 
 def test_controller_state_machine(tmp_path: Path):
     """Controller transitions stages through states correctly."""
@@ -294,12 +303,14 @@ def test_controller_event_log(tmp_path: Path):
 
 # ── CLI integration tests ──
 
+
 def test_cli_run_with_policy_flag(tmp_path: Path, monkeypatch):
     """CLI run command accepts --policy flag."""
     from typer.testing import CliRunner
     from subtap.cli import app
 
     import subtap.schemas.config as cfg_mod
+
     monkeypatch.setattr(cfg_mod, "load_config", lambda p: SubtapConfig())
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "fakehome")
 
@@ -307,12 +318,18 @@ def test_cli_run_with_policy_flag(tmp_path: Path, monkeypatch):
     fake_input.touch()
 
     runner = CliRunner()
-    result = runner.invoke(app, [
-        "run", str(fake_input),
-        "-w", str(tmp_path / "work"),
-        "--no-tui",
-        "--policy", "fast",
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            str(fake_input),
+            "-w",
+            str(tmp_path / "work"),
+            "--no-tui",
+            "--policy",
+            "fast",
+        ],
+    )
     # Should accept --policy without error (may fail on actual audio processing)
     assert "--policy" not in result.output or result.exit_code in (0, 1)
 

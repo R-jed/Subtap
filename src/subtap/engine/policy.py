@@ -8,9 +8,9 @@ import enum
 class PolicyMode(enum.Enum):
     """Execution policy modes."""
 
-    LOCAL_ONLY = "local"       # 本地模型，无 LLM，快速对齐
-    HYBRID = "hybrid"          # 本地模型 + LLM 清洗，标准对齐
-    FAST_MODE = "fast"         # 最小模型，跳过可选阶段
+    LOCAL_ONLY = "local"  # 本地模型，无 LLM，快速对齐
+    HYBRID = "hybrid"  # 本地模型 + LLM 清洗，标准对齐
+    FAST_MODE = "fast"  # 最小模型，跳过可选阶段
 
 
 # Policy configuration

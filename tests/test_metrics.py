@@ -16,9 +16,7 @@ def test_event_type_enum():
 def test_pipeline_event_creation():
     """Test PipelineEvent creation."""
     event = PipelineEvent(
-        event_type=EventType.STAGE_START,
-        data={"stage": "asr"},
-        timestamp=1234567890.0
+        event_type=EventType.STAGE_START, data={"stage": "asr"}, timestamp=1234567890.0
     )
     assert event.event_type == EventType.STAGE_START
     assert event.data == {"stage": "asr"}
@@ -38,6 +36,25 @@ def test_event_bus_subscribe():
     assert handler in bus._subscribers[EventType.STAGE_START]
 
 
+def test_profiler_wrap_pipeline_without_running_event_loop():
+    """Profiler should work when CLI runs the pipeline synchronously."""
+    from subtap.metrics.profiler import PipelineProfiler
+
+    class FakePipeline:
+        def run_stage(self, stage_name: str, **kwargs):
+            return {"stage": stage_name, "kwargs": kwargs}
+
+    bus = EventBus()
+    pipeline = FakePipeline()
+    profiler = PipelineProfiler(bus)
+    profiler.wrap_pipeline(pipeline)
+
+    result = pipeline.run_stage("prepare", input_path="input.wav")
+
+    assert result["stage"] == "prepare"
+    assert bus._queue.qsize() == 2
+
+
 @pytest.mark.asyncio
 async def test_event_bus_publish():
     """Test EventBus publish."""
@@ -50,9 +67,7 @@ async def test_event_bus_publish():
     bus.subscribe(EventType.STAGE_START, handler)
 
     event = PipelineEvent(
-        event_type=EventType.STAGE_START,
-        data={"stage": "asr"},
-        timestamp=1234567890.0
+        event_type=EventType.STAGE_START, data={"stage": "asr"}, timestamp=1234567890.0
     )
 
     # 启动事件循环
@@ -158,7 +173,7 @@ def test_profiler_wrap_pipeline():
     profiler.wrap_pipeline(pipeline)
 
     # Verify wrap was applied
-    assert hasattr(pipeline.run_stage, '__wrapped__')
+    assert hasattr(pipeline.run_stage, "__wrapped__")
 
 
 def test_profiler_get_report():
@@ -194,7 +209,7 @@ def test_chunk_tracer_on_chunk_end():
     event = PipelineEvent(
         event_type=EventType.CHUNK_END,
         data={"chunk_id": 0, "start_time": 100.0, "end_time": 100.3, "model": "asr"},
-        timestamp=100.3
+        timestamp=100.3,
     )
 
     tracer.on_chunk_end(event)
@@ -216,8 +231,13 @@ def test_chunk_tracer_get_slow_chunks():
     for i in range(3):
         event = PipelineEvent(
             event_type=EventType.CHUNK_END,
-            data={"chunk_id": i, "start_time": 100.0, "end_time": 100.2, "model": "asr"},
-            timestamp=100.2
+            data={
+                "chunk_id": i,
+                "start_time": 100.0,
+                "end_time": 100.2,
+                "model": "asr",
+            },
+            timestamp=100.2,
         )
         tracer.on_chunk_end(event)
 
@@ -225,7 +245,7 @@ def test_chunk_tracer_get_slow_chunks():
     event = PipelineEvent(
         event_type=EventType.CHUNK_END,
         data={"chunk_id": 3, "start_time": 100.0, "end_time": 100.5, "model": "asr"},
-        timestamp=100.5
+        timestamp=100.5,
     )
     tracer.on_chunk_end(event)
 
@@ -310,15 +330,20 @@ def test_full_metrics_flow():
     bus = EventBus()
     profiler = PipelineProfiler(bus)
     tracer = ChunkTracer(bus, window_size=5)
-    detector = SlowChunkDetector(threshold=1.5)
+    assert SlowChunkDetector(threshold=1.5) is not None
 
     # Simulate chunk events
     for i in range(5):
         latency = 0.2 if i < 4 else 0.5  # Last chunk is slow
         event = PipelineEvent(
             event_type=EventType.CHUNK_END,
-            data={"chunk_id": i, "start_time": 100.0, "end_time": 100.0 + latency, "model": "asr"},
-            timestamp=100.0 + latency
+            data={
+                "chunk_id": i,
+                "start_time": 100.0,
+                "end_time": 100.0 + latency,
+                "model": "asr",
+            },
+            timestamp=100.0 + latency,
         )
         tracer.on_chunk_end(event)
 

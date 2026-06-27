@@ -17,9 +17,30 @@ def learner() -> GlossaryLearner:
 def error_segments() -> list[ASRSegment]:
     """Segments with repeated ASR errors."""
     return [
-        ASRSegment(chunk_id=0, segment_id=0, text="机器学习很有趣", start_sec=0.0, end_sec=2.0, confidence=0.9),
-        ASRSegment(chunk_id=1, segment_id=0, text="机器学习是AI的核心", start_sec=2.0, end_sec=4.0, confidence=0.85),
-        ASRSegment(chunk_id=2, segment_id=0, text="深度学习是机器学习的子集", start_sec=4.0, end_sec=6.0, confidence=0.8),
+        ASRSegment(
+            chunk_id=0,
+            segment_id=0,
+            text="机器学习很有趣",
+            start_sec=0.0,
+            end_sec=2.0,
+            confidence=0.9,
+        ),
+        ASRSegment(
+            chunk_id=1,
+            segment_id=0,
+            text="机器学习是AI的核心",
+            start_sec=2.0,
+            end_sec=4.0,
+            confidence=0.85,
+        ),
+        ASRSegment(
+            chunk_id=2,
+            segment_id=0,
+            text="深度学习是机器学习的子集",
+            start_sec=4.0,
+            end_sec=6.0,
+            confidence=0.8,
+        ),
     ]
 
 
@@ -38,14 +59,23 @@ def corrections() -> list[dict]:
 class TestDetectRepeatedErrors:
     """Test repeated error detection."""
 
-    def test_detects_repeated_terms(self, learner: GlossaryLearner, error_segments: list):
+    def test_detects_repeated_terms(
+        self, learner: GlossaryLearner, error_segments: list
+    ):
         result = learner.detect_repeated_errors(error_segments, min_occurrences=2)
         # The implementation splits on spaces, so "机器学习" appears as whole words
         assert isinstance(result, dict)
 
     def test_ignores_single_occurrence(self, learner: GlossaryLearner):
         segments = [
-            ASRSegment(chunk_id=0, segment_id=0, text="唯一出现的词", start_sec=0.0, end_sec=2.0, confidence=0.9),
+            ASRSegment(
+                chunk_id=0,
+                segment_id=0,
+                text="唯一出现的词",
+                start_sec=0.0,
+                end_sec=2.0,
+                confidence=0.9,
+            ),
         ]
         result = learner.detect_repeated_errors(segments, min_occurrences=2)
         assert len(result) == 0
@@ -61,7 +91,9 @@ class TestDetectRepeatedErrors:
 class TestExtractDomainTerms:
     """Test domain term extraction."""
 
-    def test_extracts_technical_terms(self, learner: GlossaryLearner, error_segments: list):
+    def test_extracts_technical_terms(
+        self, learner: GlossaryLearner, error_segments: list
+    ):
         result = learner.extract_domain_terms(error_segments)
         assert isinstance(result, list)
 
@@ -108,10 +140,14 @@ class TestGlossaryUpdate:
 class TestLearnerPipeline:
     """Test full learning pipeline."""
 
-    def test_learn_returns_update(self, learner: GlossaryLearner, error_segments: list, corrections: list):
+    def test_learn_returns_update(
+        self, learner: GlossaryLearner, error_segments: list, corrections: list
+    ):
         result = learner.learn(error_segments, corrections)
         assert isinstance(result, GlossaryUpdate)
 
-    def test_learn_with_no_corrections(self, learner: GlossaryLearner, error_segments: list):
+    def test_learn_with_no_corrections(
+        self, learner: GlossaryLearner, error_segments: list
+    ):
         result = learner.learn(error_segments, [])
         assert isinstance(result, GlossaryUpdate)

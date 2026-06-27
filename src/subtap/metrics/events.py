@@ -11,6 +11,7 @@ from typing import Any, Callable
 
 class EventType(Enum):
     """Pipeline event types."""
+
     STAGE_START = "stage_start"
     STAGE_END = "stage_end"
     CHUNK_START = "chunk_start"
@@ -22,6 +23,7 @@ class EventType(Enum):
 @dataclass
 class PipelineEvent:
     """Pipeline event data."""
+
     event_type: EventType
     data: dict[str, Any] = field(default_factory=dict)
     timestamp: float = 0.0
@@ -44,6 +46,10 @@ class EventBus:
 
     async def publish(self, event: PipelineEvent) -> None:
         """Non-blocking publish to queue."""
+        self.publish_nowait(event)
+
+    def publish_nowait(self, event: PipelineEvent) -> None:
+        """Publish from synchronous code without requiring a running loop."""
         try:
             self._queue.put_nowait(event)
         except asyncio.QueueFull:
@@ -65,6 +71,7 @@ class EventBus:
     async def _dispatch(self, event: PipelineEvent) -> None:
         """Dispatch event to subscribers."""
         import logging
+
         for callback in self._subscribers.get(event.event_type, []):
             try:
                 if inspect.iscoroutinefunction(callback):

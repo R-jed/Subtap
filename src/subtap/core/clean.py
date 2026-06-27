@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from typing import Optional
 
 from subtap.backends.llm import get_llm_backend
 from subtap.core.replacement import apply_replacements
 from subtap.schemas.config import SubtapConfig
-from subtap.schemas.glossary import Glossary, load_glossary
+from subtap.schemas.glossary import load_glossary
 from subtap.schemas.models import ASRSegment, CleanSegment
 from subtap.core.workspace import Workspace
 

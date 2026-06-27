@@ -38,11 +38,13 @@ def apply_replacements(
                 text = pattern.sub(replace_str, text)
                 applied.append(f"{find_str}→{replace_str}")
 
-        results.append(CleanSegment(
-            segment_id=seg.segment_id,
-            original_text=seg.text,
-            cleaned_text=text,
-            glossary_applied=applied,
-        ))
+        results.append(
+            CleanSegment(
+                segment_id=seg.segment_id,
+                original_text=seg.text,
+                cleaned_text=text,
+                glossary_applied=applied,
+            )
+        )
 
     return results
