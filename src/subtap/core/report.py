@@ -53,7 +53,6 @@ def generate_report(
     mode_desc = {
         "fast": "快速模式（跳过清洗和对齐）",
         "quality": "质量模式（完整流程 + 大模型）",
-        "hybrid": "混合模式（平衡速度和质量）",
     }.get(mode, mode)
 
     report = f"""# Subtap 字幕生成报告
@@ -111,7 +110,7 @@ def generate_report(
         report += f"- 有 {error_count - fixed_count} 个错误未能自动修复，建议手动检查\n"
 
     if mode == "fast":
-        report += "- 当前使用快速模式，切换到 `--mode hybrid` 可提升质量\n"
+        report += "- 当前使用快速模式，切换到 `--mode quality` 可提升质量\n"
 
     if quality_score >= 90:
         report += "- 质量优秀，可直接用于剪辑软件\n"
