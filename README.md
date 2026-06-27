@@ -2,20 +2,21 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://www.apple.com/macos/)
+[![Platform: macOS](https://img.shields.io/badge/platform-macOS%2013.5+-lightgrey.svg)](https://www.apple.com/macos/)
+[![Tests](https://img.shields.io/badge/tests-337%20passed-brightgreen.svg)]()
 
 **本地优先的 AI 字幕生成引擎** — 基于 MLX Qwen3 的端到端字幕工具，完全离线运行。
 
-> 当前版本面向 macOS 开发版源码安装，支持策略为 macOS 13.5+ Apple Silicon。Intel x86_64 暂未验证，不作为当前开发版支持范围。当前不提供 Developer ID 签名、公证或正式二进制分发。
+> 当前版本为开发版源码安装，仅支持 macOS 13.5+ Apple Silicon。Intel x86_64 暂未验证，不在当前支持范围内。不提供 Developer ID 签名、公证或正式二进制分发。
 
 ## 特性
 
-- **完整 Pipeline**：音频标准化 → 切段 → 语音识别 → 文本清洗 → 智能断句 → 时间轴对齐 → 字幕导出
-- **真实模型推理**：Qwen3-ASR（0.6B/1.7B）+ Qwen3-ForcedAligner，基于 Apple MLX 优化
-- **中文优先**：全部界面和状态提示均为中文
-- **TUI 可视化**：实时阶段进度、模型状态、执行摘要（TUI，Terminal User Interface，终端用户界面）
-- **插拔式架构**：ASR / LLM / Aligner 后端可替换
-- **中间产物落盘**：所有阶段输出 JSONL，支持断点续跑
+- **完整 Pipeline** — 音频标准化 → 切段 → 语音识别 → 文本清洗 → 智能断句 → 时间轴对齐 → 字幕导出
+- **真实模型推理** — Qwen3-ASR（0.6B/1.7B）+ Qwen3-ForcedAligner，基于 Apple MLX 优化
+- **中文优先** — 全部界面和状态提示均为中文
+- **TUI 可视化** — 实时阶段进度、模型状态、执行摘要
+- **插拔式架构** — ASR / LLM / Aligner 后端可替换
+- **中间产物落盘** — 所有阶段输出 JSONL，支持断点续跑
 
 ## 开源对标能力
 
@@ -29,7 +30,6 @@
 
 - Python 3.10+
 - macOS 13.5+（Apple Silicon）
-- Intel x86_64 暂未验证，不作为当前开发版支持范围
 - 约 4 GB 磁盘空间（用于模型）
 
 ### 安装
@@ -46,7 +46,7 @@ source .venv/bin/activate
 # 安装
 pip install -e .
 
-# 初始化
+# 初始化（交互式模型下载）
 subtap setup
 
 # 检查环境
@@ -57,15 +57,17 @@ subtap doctor
 
 模型统一放在项目根目录 `models/`：
 
-- `models/asr_0.6b` — 快速语音识别
-- `models/asr_1.7b`（可选）— 高质量语音识别
-- `models/aligner` — 时间轴对齐
+| 模型 | 大小 | 用途 | 必需 |
+|------|------|------|------|
+| Qwen3-ASR-0.6B | 约 960 MB | 快速语音识别 | ✓ |
+| Qwen3-ASR-1.7B | 约 2.3 GB | 高质量语音识别 | 可选 |
+| Qwen3-ForcedAligner-0.6B | 约 1.2 GB | 时间轴对齐 | ✓ |
 
-运行 `subtap setup` 后选择模型安装方式：
+`subtap setup` 支持四种下载方式：
 
 1. Hugging Face 直连
-2. Hugging Face 国内镜像：`https://hf-mirror.com`
-3. ModelScope：`https://modelscope.cn`
+2. Hugging Face 国内镜像（`hf-mirror.com`）
+3. ModelScope（`modelscope.cn`）
 4. 手动下载后放入 `models/`
 
 ### 基本用法
@@ -90,15 +92,7 @@ graph LR
     F --> G[字幕导出]
 ```
 
-每个阶段输出 JSONL 中间产物，支持断点续跑。
-
-## 模型说明
-
-| 模型 | 大小 | 用途 | 必需 |
-|------|------|------|------|
-| Qwen3-ASR-0.6B | 约 960 MB | 快速语音识别 | ✓ |
-| Qwen3-ASR-1.7B | 约 2.3 GB | 高质量语音识别 | 可选 |
-| Qwen3-ForcedAligner-0.6B | 约 1.2 GB | 时间轴对齐 | ✓ |
+每个阶段输出 JSONL 中间产物到 `work/` 目录，支持断点续跑。
 
 ## CLI 命令
 
@@ -111,13 +105,15 @@ subtap demo
 
 # 检查环境
 subtap doctor
+subtap doctor --release    # 发布验收检查
+subtap doctor --json       # 机器可读输出
 
 # 管理模型
 subtap models list
 subtap models install asr_0.6b
 subtap models verify
 
-# 初始化
+# 初始化向导
 subtap setup
 ```
 
@@ -172,17 +168,15 @@ pip install -e ".[dev]"
 # 运行测试
 pytest -v
 
-# 运行开发版验收检查
-bash scripts/release-check.sh
-
 # 运行单个测试
 pytest tests/test_cli.py -v
 
-# 环境检查
-subtap doctor --release
+# 代码检查
+ruff check src/
+mypy src/
 
-# 机器可读环境检查
-subtap doctor --json
+# 发布验收
+bash scripts/release-check.sh
 ```
 
 ## 贡献
@@ -194,6 +188,11 @@ subtap doctor --json
 3. 提交更改（`git commit -m 'feat: 添加某功能'`）
 4. 推送到分支（`git push origin feature/amazing-feature`）
 5. 创建 Pull Request
+
+请确保：
+- 所有测试通过（`pytest -v`）
+- 代码通过 lint 检查（`ruff check`）
+- 提交信息遵循 [Conventional Commits](https://www.conventionalcommits.org/) 规范
 
 ## 许可证
 
