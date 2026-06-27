@@ -131,3 +131,44 @@ async def test_async_callback():
     await task
 
     assert len(received) == 1
+
+
+def test_profiler_init():
+    """Test PipelineProfiler initialization."""
+    from subtap.metrics.profiler import PipelineProfiler
+
+    bus = EventBus()
+    profiler = PipelineProfiler(bus)
+    assert profiler.event_bus == bus
+    assert profiler._stage_times == {}
+
+
+def test_profiler_wrap_pipeline():
+    """Test PipelineProfiler wrap_pipeline."""
+    from subtap.metrics.profiler import PipelineProfiler
+
+    bus = EventBus()
+    profiler = PipelineProfiler(bus)
+
+    class MockPipeline:
+        def run_stage(self, stage_name, **kwargs):
+            return {"result": "ok"}
+
+    pipeline = MockPipeline()
+    profiler.wrap_pipeline(pipeline)
+
+    # Verify wrap was applied
+    assert hasattr(pipeline.run_stage, '__wrapped__')
+
+
+def test_profiler_get_report():
+    """Test PipelineProfiler get_report."""
+    from subtap.metrics.profiler import PipelineProfiler
+
+    bus = EventBus()
+    profiler = PipelineProfiler(bus)
+    profiler._stage_times = {"asr": 5.2, "clean": 1.1}
+
+    report = profiler.get_report()
+    assert report["total_time"] == pytest.approx(6.3)
+    assert report["stages"]["asr"] == 5.2
