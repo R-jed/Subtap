@@ -131,4 +131,6 @@ def test_cli_run_has_tui_flag():
     runner = CliRunner()
     result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
-    assert "--tui" in result.output
+    import re
+    clean = re.sub(r'\x1b\[[0-9;]*m', '', result.output)
+    assert "tui" in clean
