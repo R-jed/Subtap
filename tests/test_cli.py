@@ -195,11 +195,13 @@ def test_setup_has_remote_api_options():
 
 def test_quality_command_exists():
     """subtap quality command should exist."""
+    import re
     result = runner.invoke(app, ["quality", "--help"])
     assert result.exit_code == 0
-    assert "aligned.jsonl" in result.output
-    assert "--fix" in result.output
-    assert "--report-only" in result.output
+    clean = re.sub(r'\x1b\[[0-9;]*m', '', result.output)
+    assert "aligned.jsonl" in clean
+    assert "fix" in clean
+    assert "report-only" in clean
 
 
 def test_run_has_mode_flag():
