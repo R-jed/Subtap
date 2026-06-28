@@ -395,6 +395,7 @@ class SRTExporter(BaseExporter):
             sub_lines = _split_subtitle_lines(
                 seg.text, seg.words, seg.start_sec, seg.end_sec, max_chars=20
             )
+            sub_lines = _merge_fragments(sub_lines)
             for sub in sub_lines:
                 index += 1
                 start = _fmt_srt_time(sub["start_sec"])
@@ -562,6 +563,7 @@ def run_final_exports(
         sub_lines = _split_subtitle_lines(
             seg.text, seg.words, seg.start_sec, seg.end_sec, max_chars=20
         )
+        sub_lines = _merge_fragments(sub_lines)
         for sub in sub_lines:
             vtt_index += 1
             text = chinese_to_num(sub["text"])
