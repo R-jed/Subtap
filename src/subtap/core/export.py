@@ -90,10 +90,49 @@ def load_asr_draft(asr_jsonl: Path) -> list[ASRSegment]:
     return segments
 
 
+_PUNCT_CHARS = set("，。？！、；：""''（）《》,.?!;:\"'()[]{}\-—…·")
+
+
+def _inject_punct(words: list[dict], text: str) -> list[dict]:
+    """Inject punctuation from original text into word list.
+
+    The forced aligner strips punctuation from word-level output.
+    This function restores punctuation as pseudo-words with interpolated timestamps,
+    so _smart_split can use them for sentence/comma breaks.
+    """
+    if not words or not text:
+        return words
+
+    result: list[dict] = []
+    word_idx = 0
+    text_idx = 0
+
+    while text_idx < len(text) and word_idx < len(words):
+        ch = text[text_idx]
+        if ch in _PUNCT_CHARS:
+            # Interpolate timestamp between previous and next word
+            prev_end = result[-1]["end_sec"] if result else words[0]["start_sec"]
+            next_start = words[word_idx]["start_sec"] if word_idx < len(words) else prev_end
+            t = (prev_end + next_start) / 2
+            result.append({"word": ch, "start_sec": round(t, 3), "end_sec": round(t, 3)})
+            text_idx += 1
+        elif word_idx < len(words):
+            # Consume the next word from the word list
+            result.append(words[word_idx])
+            text_idx += len(words[word_idx]["word"])
+            word_idx += 1
+        else:
+            text_idx += 1
+
+    # Append remaining words
+    result.extend(words[word_idx:])
+    return result
+
+
 def _smart_split(
     words: list[dict],
     text: str,
-    max_chars: int = 20,
+    max_chars: int = 25,
     min_chars: int = 3,
     pause_threshold: float = 0.3,
     start_sec: float = 0.0,
@@ -182,16 +221,49 @@ def _smart_split(
             merged[-1]["text"] += text
             merged[-1]["end_sec"] = line["end_sec"]
             continue
-        if len(text) <= 2 and merged:
+        if len(text) <= 1 and merged:
             merged[-1]["text"] += text
             merged[-1]["end_sec"] = line["end_sec"]
             continue
         merged.append(line)
 
+    # Force-split lines exceeding max_chars at char boundaries
+    final: list[dict] = []
     for line in merged:
+        if len(line["text"]) <= max_chars:
+            final.append(line)
+            continue
+        remaining = line["text"]
+        elapsed = line["start_sec"]
+        duration = line["end_sec"] - line["start_sec"]
+        total_chars = len(remaining)
+        while len(remaining) > max_chars:
+            cut = max_chars
+            # Don't cut in the middle of a number sequence
+            if cut < len(remaining) and remaining[cut - 1] in _NUM_CHARS and remaining[cut] in _NUM_CHARS:
+                while cut < len(remaining) and remaining[cut] in _NUM_CHARS:
+                    cut += 1
+            part = remaining[:cut]
+            part_dur = duration * len(part) / total_chars if total_chars > 0 else 0
+            final.append({"text": part, "start_sec": round(elapsed, 3), "end_sec": round(elapsed + part_dur, 3)})
+            elapsed += part_dur
+            remaining = remaining[cut:]
+        if remaining:
+            final.append({"text": remaining, "start_sec": round(elapsed, 3), "end_sec": line["end_sec"]})
+
+    # Merge fragments created by force-split
+    merged_final: list[dict] = []
+    for line in final:
+        if len(line["text"]) <= 1 and merged_final:
+            merged_final[-1]["text"] += line["text"]
+            merged_final[-1]["end_sec"] = line["end_sec"]
+            continue
+        merged_final.append(line)
+
+    for line in merged_final:
         line.pop("break_type", None)
 
-    return merged if merged else [{"text": text, "start_sec": words[0]["start_sec"], "end_sec": words[-1]["end_sec"]}]
+    return merged_final if merged_final else [{"text": text, "start_sec": words[0]["start_sec"], "end_sec": words[-1]["end_sec"]}]
 
 
 class BaseExporter(ABC):
@@ -230,7 +302,8 @@ class SRTExporter(BaseExporter):
         lines: list[str] = []
         index = 0
         for seg in sorted_segs:
-            sub_lines = _smart_split(seg.words, seg.text, max_chars=20, start_sec=seg.start_sec, end_sec=seg.end_sec)
+            words_with_punct = _inject_punct(seg.words, seg.text)
+            sub_lines = _smart_split(words_with_punct, seg.text, max_chars=25, start_sec=seg.start_sec, end_sec=seg.end_sec)
             for sub in sub_lines:
                 if not sub["text"].strip():
                     continue
@@ -397,7 +470,7 @@ def run_final_exports(
     vtt_lines = ["WEBVTT", ""]
     vtt_index = 0
     for seg in sorted(segments, key=lambda s: s.start_sec):
-        sub_lines = _smart_split(seg.words, seg.text, max_chars=20, start_sec=seg.start_sec, end_sec=seg.end_sec)
+        sub_lines = _smart_split(seg.words, seg.text, max_chars=25, start_sec=seg.start_sec, end_sec=seg.end_sec)
         for sub in sub_lines:
             if not sub["text"].strip():
                 continue
