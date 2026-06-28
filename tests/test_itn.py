@@ -42,3 +42,13 @@ def test_already_numeric():
 def test_empty_string():
     """空字符串。"""
     assert chinese_to_num("") == ""
+
+
+def test_large_number_combo():
+    """亿+万组合：一亿两千万。"""
+    assert chinese_to_num("一亿两千万") == "120000000"
+
+
+def test_large_number_wan():
+    """万级：十二万。"""
+    assert chinese_to_num("十二万") == "120000"

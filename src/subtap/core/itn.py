@@ -36,21 +36,26 @@ def _convert_number_str(s: str) -> str:
     # Compound number with units
     total = 0
     current = 0
+    current_group = 0
+
     for ch in s:
         if ch in _NUM_MAP:
             current = _NUM_MAP[ch]
         elif ch in _UNIT_MAP:
             unit = _UNIT_MAP[ch]
             if unit >= 10000:
-                # 万/亿: multiply accumulated value
-                total = (total + current) * unit
+                current_group += current
+                total += current_group * unit
+                current_group = 0
                 current = 0
             else:
                 if current == 0 and unit == 10:
-                    current = 1  # 十 alone means 10
-                total += current * unit
+                    current = 1
+                current_group += current * unit
                 current = 0
-    total += current
+
+    current_group += current
+    total += current_group
     return str(total) if total > 0 else s
 
 
