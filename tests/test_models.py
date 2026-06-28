@@ -50,6 +50,16 @@ def _config_with_model_root(tmp_path: Path) -> SubtapConfig:
     )
 
 
+def _create_model_files(model_dir: Path) -> None:
+    """Create all required model files for testing."""
+    model_dir.mkdir(parents=True, exist_ok=True)
+    (model_dir / "config.json").write_text("{}")
+    (model_dir / "model.safetensors").write_bytes(b"\x00" * 100)
+    (model_dir / "tokenizer_config.json").write_text("{}")
+    (model_dir / "vocab.json").write_text("{}")
+    (model_dir / "merges.txt").write_text("a b")
+
+
 # ── Registry tests ──
 
 
@@ -75,9 +85,7 @@ def test_registry_status_asr_installed(tmp_path: Path):
     config = _config_with_model_root(tmp_path)
     registry = ModelRegistry(config)
     asr_dir = registry.get_path("asr_0.6b")
-    asr_dir.mkdir(parents=True)
-    (asr_dir / "config.json").write_text("{}")
-    (asr_dir / "model.safetensors").write_bytes(b"\x00" * 100)
+    _create_model_files(asr_dir)
 
     status = registry.status()
     asr_status = next(s for s in status if s.name == "asr_0.6b")
@@ -113,9 +121,7 @@ def test_registry_is_available_true(tmp_path: Path):
     config = _config_with_model_root(tmp_path)
     registry = ModelRegistry(config)
     asr_dir = registry.get_path("asr_0.6b")
-    asr_dir.mkdir(parents=True)
-    (asr_dir / "config.json").write_text("{}")
-    (asr_dir / "model.safetensors").write_bytes(b"\x00" * 100)
+    _create_model_files(asr_dir)
 
     assert registry.is_available("asr_0.6b")
 
@@ -154,7 +160,7 @@ def test_downloader_download_calls_urlopen(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
     result = downloader.download("asr_0.6b")
     assert result.name == "asr_0.6b"
-    assert call_count == 2  # config.json + model.safetensors
+    assert call_count == 5  # config.json + model.safetensors + tokenizer files
 
 
 def test_downloader_unknown_model(tmp_path: Path):
@@ -221,9 +227,7 @@ def test_verifier_ok(tmp_path: Path):
     """Verifier reports ok when files present."""
     config = _config_with_model_root(tmp_path)
     asr_dir = Path(config.models.root).expanduser() / "asr_0.6b"
-    asr_dir.mkdir(parents=True)
-    (asr_dir / "config.json").write_text("{}")
-    (asr_dir / "model.safetensors").write_bytes(b"\x00" * 100)
+    _create_model_files(asr_dir)
 
     verifier = ModelVerifier(config)
     result = verifier.verify("asr_0.6b")
@@ -234,9 +238,8 @@ def test_verifier_corrupt(tmp_path: Path):
     """Verifier reports corrupt when file is empty."""
     config = _config_with_model_root(tmp_path)
     asr_dir = Path(config.models.root).expanduser() / "asr_0.6b"
-    asr_dir.mkdir(parents=True)
-    (asr_dir / "config.json").write_text("{}")
-    (asr_dir / "model.safetensors").write_bytes(b"")  # empty
+    _create_model_files(asr_dir)
+    (asr_dir / "model.safetensors").write_bytes(b"")  # overwrite with empty
 
     verifier = ModelVerifier(config)
     result = verifier.verify("asr_0.6b")

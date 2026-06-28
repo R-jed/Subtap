@@ -28,7 +28,7 @@ def generate_report(
         fixed_count: Errors actually fixed.
         segment_count: Total subtitle segments.
         timings: Stage execution times.
-        mode: Execution mode (fast/quality/hybrid).
+        mode: Execution mode (fast/quality).
         input_file: Input media file path.
         output_format: Output format (srt/vtt/json).
         glossary_terms: Number of glossary terms used.

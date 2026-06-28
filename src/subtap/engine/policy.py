@@ -9,7 +9,6 @@ class PolicyMode(enum.Enum):
     """Execution policy modes."""
 
     LOCAL_ONLY = "local"  # 本地模型，无 LLM，快速对齐
-    HYBRID = "hybrid"  # 本地模型 + LLM 清洗，标准对齐
     FAST_MODE = "fast"  # 最小模型，跳过可选阶段
 
 
@@ -23,15 +22,6 @@ _POLICIES: dict[PolicyMode, dict] = {
         "align_backend": "mlx-qwen-aligner",
         "skip_stages": [],
         "description": "纯本地执行，不依赖外部服务",
-    },
-    PolicyMode.HYBRID: {
-        "asr_backend": "mlx-qwen-asr",
-        "asr_model": "asr_1.7b",
-        "use_llm": True,
-        "align_enabled": True,
-        "align_backend": "mlx-qwen-aligner",
-        "skip_stages": [],
-        "description": "本地 ASR + LLM 清洗，完整流程",
     },
     PolicyMode.FAST_MODE: {
         "asr_backend": "mlx-qwen-asr",

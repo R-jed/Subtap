@@ -18,10 +18,11 @@
 - **插拔式架构** — ASR / LLM / Aligner 后端可替换
 - **中间产物落盘** — 所有阶段输出 JSONL，支持断点续跑
 
-## 开源对标能力
+## 隐私与本地优先
 
-- 本地离线是默认主路径，不接入第三方 API 也能生成可交付字幕。
-- OpenAI 兼容、Anthropic Messages、自定义 URL 是可选 ASR / LLM API 后端格式。
+- **默认本地运行**：ASR 转录和时间轴对齐均在本地完成，音频不会发送到外部。
+- **LLM 增强可选**：字幕文本增强支持本地规则或 LLM API，用户可自由选择。
+- **`--local-only` 模式**：一键禁止所有外部 API 调用，确保完全离线。
 - 项目管理只使用本地文件系统，不做账号、云同步、商业激活或权限系统。
 
 ## 快速开始
@@ -95,8 +96,23 @@ graph LR
 ## CLI 命令
 
 ```bash
-# 运行完整流程
+# 运行完整流程（默认本地模式）
 subtap run video.mp3
+
+# 完全离线模式（禁止所有外部 API）
+subtap run video.mp3 --local-only
+
+# 关闭字幕增强
+subtap run video.mp3 --enhance off
+
+# 使用 LLM API 增强字幕
+subtap run video.mp3 --enhance api
+
+# 翻译字幕
+subtap run video.mp3 --translate-to en
+
+# 高质量模式（使用 1.7B 模型）
+subtap run video.mp3 --mode quality
 
 # 运行演示
 subtap demo

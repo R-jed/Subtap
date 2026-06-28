@@ -136,13 +136,6 @@ def test_policy_local():
     assert p.should_skip("clean") is False
 
 
-def test_policy_hybrid():
-    """HYBRID policy: LLM enabled, 1.7B model."""
-    p = ExecutionPolicy("hybrid")
-    assert p.use_llm is True
-    assert p.asr_model == "asr_1.7b"
-
-
 def test_policy_fast():
     """FAST_MODE policy: skips clean and align."""
     p = ExecutionPolicy("fast")
@@ -304,8 +297,8 @@ def test_controller_event_log(tmp_path: Path):
 # ── CLI integration tests ──
 
 
-def test_cli_run_with_policy_flag(tmp_path: Path, monkeypatch):
-    """CLI run command accepts --policy flag."""
+def test_cli_run_with_enhance_flag(tmp_path: Path, monkeypatch):
+    """CLI run command accepts --enhance flag."""
     from typer.testing import CliRunner
     from subtap.cli import app
 
@@ -326,12 +319,12 @@ def test_cli_run_with_policy_flag(tmp_path: Path, monkeypatch):
             "-w",
             str(tmp_path / "work"),
             "--no-tui",
-            "--policy",
-            "fast",
+            "--enhance",
+            "local",
         ],
     )
-    # Should accept --policy without error (may fail on actual audio processing)
-    assert "--policy" not in result.output or result.exit_code in (0, 1)
+    # Should accept --enhance without error (may fail on actual audio processing)
+    assert result.exit_code in (0, 1)
 
 
 def test_cli_retry_command_exists():

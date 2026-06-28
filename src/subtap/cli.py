@@ -493,13 +493,19 @@ def run(
     output_dir: Path = typer.Option(
         Path("./output"), "-o", "--output-dir", help="输出目录"
     ),
-    fmt: str = typer.Option("srt", "--format", "-f", help="导出格式：srt / ass / txt"),
+    fmt: str = typer.Option("srt", "--format", "-f", help="导出格式：srt / vtt / json / tsv"),
     mode: str = typer.Option("fast", "--mode", "-m", help="执行模式：fast / quality"),
+    enhance: str = typer.Option(
+        "local", "--enhance", "-e", help="字幕增强模式：off / local / api"
+    ),
+    local_only: bool = typer.Option(
+        False, "--local-only", help="仅本地运行，禁止所有外部 API 调用"
+    ),
+    translate_to: str | None = typer.Option(
+        None, "--translate-to", help="翻译目标语言：en / ja / zh"
+    ),
     use_tui: bool = typer.Option(
         True, "--tui/--no-tui", help="启用 TUI 界面（默认开启）"
-    ),
-    policy: str = typer.Option(
-        "local", "--policy", "-p", help="执行策略：local / remote"
     ),
     no_git_check: bool = typer.Option(
         False, "--no-git-check", help="跳过 Git 状态检查"
@@ -517,14 +523,21 @@ def run(
     [bold]流程：[/bold] 音频标准化 → 切段 → 语音识别 → 文本清洗 → 智能断句 → 时间轴对齐 → 字幕导出
 
     [bold]模式：[/bold]
-      fast     — 最快速度，跳过清洗和对齐（默认）
-      quality  — 完整流程，使用大模型，质量最高
+      fast     — 快速模式，使用 0.6B 模型（默认）
+      quality  — 高质量模式，使用 1.7B 模型
+
+    [bold]增强：[/bold]
+      off      — 关闭字幕增强
+      local    — 本地规则增强（默认）
+      api      — LLM API 增强（需配置 API Key）
 
     [bold]示例：[/bold]
       subtap run video.mp3
-      subtap run audio.mp3 --mode fast
+      subtap run video.mp3 --local-only
+      subtap run video.mp3 --enhance off
+      subtap run video.mp3 --enhance api
+      subtap run video.mp3 --translate-to en
       subtap run input.mp3 --mode quality -o ./subtitles
-      subtap run input.mp3 --no-git-check --no-cleanroom
     """
     from subtap.schemas.config import load_config
     from subtap.core.pipeline import Pipeline
@@ -536,6 +549,18 @@ def run(
     if not input_path.exists():
         typer.echo(f"✗ 错误：文件未找到 {input_path}", err=True)
         raise typer.Exit(1)
+
+    # ── 参数验证 ──────────────────────────────────────────────
+    if enhance not in ("off", "local", "api"):
+        typer.echo(f"✗ 错误：--enhance 必须是 off/local/api，收到：{enhance}", err=True)
+        raise typer.Exit(1)
+
+    if local_only and enhance == "api":
+        typer.echo("✗ 错误：--local-only 模式下不能使用 --enhance api", err=True)
+        raise typer.Exit(1)
+
+    if enhance == "api":
+        typer.echo("⚠ 增强模式为 api，字幕文本将发送到外部 LLM API（音频不会发送）")
 
     config = load_config(Path.home() / ".subtap" / "config.yaml")
     config.output.timestamp = timestamp  # CLI overrides config

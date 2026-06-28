@@ -69,13 +69,9 @@ class Task:
         )
 
     def to_policy_mode(self) -> str:
-        """Convert task mode to ExecutionPolicy mode string.
+        """Convert task mode to pipeline mode string.
 
         Returns:
-            Policy mode string for ExecutionPolicy.
+            Mode string for pipeline decision.
         """
-        mapping = {
-            "fast": "fast",
-            "quality": "hybrid",  # quality uses hybrid policy with larger model
-        }
-        return mapping.get(self.mode, "fast")
+        return self.mode if self.mode in ("fast", "quality") else "fast"

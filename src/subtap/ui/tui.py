@@ -12,7 +12,7 @@ from subtap.ui.progress import PipelineProgress
 class TUIRunner:
     """TUI-wrapped pipeline execution with Chinese status display."""
 
-    def __init__(self, use_tui: bool = True, mode: str = "hybrid", output_engine=None):
+    def __init__(self, use_tui: bool = True, mode: str = "fast", output_engine=None):
         self.use_tui = use_tui
         self.mode = mode
         self.output_engine = output_engine
