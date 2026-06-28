@@ -53,7 +53,7 @@ def test_mlx_aligner_aligns_chunk_once_and_splits_sentence_times(tmp_path):
         encoding="utf-8",
     )
 
-    aligner = MLXQwenAligner(AlignConfig())
+    aligner = MLXQwenAligner(AlignConfig(time_offset_sec=0))
     fake_model = FakeModel()
     aligner._model = fake_model
     sentences = [
