@@ -33,9 +33,10 @@ _UNIT_MAP = {
 # Match meaningful number sequences only:
 # 1. 2+ pure digits: 二零一五、一二三
 # 2. Any sequence containing at least one unit (十百千万亿): 一万两千三百四十五、十万、三百
+# Negative lookahead: skip when followed by 概数后缀 (多/余/左右/上下)
 _NUM_RE = re.compile(
     r"[零一二两三四五六七八九]{2,}"  # 2+ pure digits
-    r"|[零一二两三四五六七八九十百千万亿]*[十百千万亿][零一二两三四五六七八九十百千万亿]*"  # contains unit
+    r"|[零一二两三四五六七八九十百千万亿]*[十百千万亿][零一二两三四五六七八九十百千万亿]*(?![多余])"  # contains unit, not followed by 多/余
 )
 
 
