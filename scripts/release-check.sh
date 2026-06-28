@@ -68,7 +68,7 @@ with wave.open(path, "w") as wav:
 PY
     if "$PYTHON" -m subtap.cli run "$SMOKE_DIR/input.wav" \
         --no-tui --no-git-check --no-cleanroom \
-        --mode fast --skip-clean --skip-align --no-timestamp \
+        --mode fast --no-timestamp \
         -w "$SMOKE_DIR/work" -o "$SMOKE_DIR/output" > /dev/null 2>&1 \
         && [ -s "$SMOKE_DIR/output/output.srt" ]; then
         echo "  ✓ 通过"

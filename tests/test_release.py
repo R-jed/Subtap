@@ -116,3 +116,19 @@ def test_release_check_covers_open_cli_parity():
     assert "subtap doctor --json" in text
     assert "batch-transcribe" in text
     assert "glossary" in text
+
+
+def test_release_check_uses_supported_run_flags():
+    """Test release-check smoke only uses currently supported run flags."""
+    release_text = (PROJECT_ROOT / "scripts" / "release-check.sh").read_text(
+        encoding="utf-8"
+    )
+    help_result = subprocess.run(
+        [sys.executable, "-m", "subtap.cli", "run", "--help"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert help_result.returncode == 0
+    for flag in ["--skip-clean", "--skip-align"]:
+        assert flag not in release_text or flag in help_result.stdout
