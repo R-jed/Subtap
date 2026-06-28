@@ -43,7 +43,11 @@ for check in "${CHECKS[@]}"; do
         PASSED=$((PASSED + 1))
     else
         echo "  ✗ 失败"
-        echo "$OUTPUT" | head -10
+        if [ "$label" = "pytest" ]; then
+            echo "$OUTPUT" | tail -30
+        else
+            echo "$OUTPUT" | head -10
+        fi
         FAILED=$((FAILED + 1))
     fi
 done
