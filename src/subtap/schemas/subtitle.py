@@ -44,7 +44,9 @@ class FinalSubtitle(BaseModel):
     )
 
     @classmethod
-    def from_aligned(cls, aligned: AlignedSubtitle, source_trace: dict | None = None) -> "FinalSubtitle":
+    def from_aligned(
+        cls, aligned: AlignedSubtitle, source_trace: dict | None = None
+    ) -> "FinalSubtitle":
         """Create FinalSubtitle from AlignedSubtitle — the ONLY valid creation path.
 
         Args:

@@ -145,7 +145,9 @@ class TUIRunner:
             if align_enabled:
                 from subtap.core.export import run_export
 
-                result = run_export(pipeline.workspace.aligned_jsonl, output_dir, fmt=fmt)
+                result = run_export(
+                    pipeline.workspace.aligned_jsonl, output_dir, fmt=fmt
+                )
             else:
                 from subtap.core.export import run_draft_export
 

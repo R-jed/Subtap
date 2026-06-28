@@ -43,7 +43,5 @@ class SentenceCandidate(BaseModel):
         if self.cps == 0.0:
             duration = self.end_sec - self.start_sec
             if duration > 0:
-                object.__setattr__(
-                    self, "cps", len(self.text) / duration
-                )
+                object.__setattr__(self, "cps", len(self.text) / duration)
         return self
