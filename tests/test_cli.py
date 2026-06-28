@@ -204,6 +204,15 @@ def test_run_has_no_align_flag():
     assert "final.srt" in clean
 
 
+def test_run_help_describes_output_contract_not_single_format():
+    """run help should not imply --format controls the only generated file."""
+    result = runner.invoke(app, ["run", "--help"])
+    assert result.exit_code == 0
+    clean = _strip_ansi(result.output)
+    assert "输出清单标记" in clean
+    assert "精对齐默认生成 final.srt/final.vtt/final.json/final.tsv" in clean
+
+
 def test_setup_has_remote_api_options():
     """subtap setup should expose remote API model discovery options."""
     import re

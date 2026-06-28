@@ -579,7 +579,10 @@ def run(
         Path("./output"), "-o", "--output-dir", help="输出目录"
     ),
     fmt: str = typer.Option(
-        "srt", "--format", "-f", help="导出格式：srt / vtt / json / tsv"
+        "srt",
+        "--format",
+        "-f",
+        help="输出清单标记：srt / vtt / json / tsv；精对齐默认生成 final.srt/final.vtt/final.json/final.tsv",
     ),
     mode: str = typer.Option("fast", "--mode", "-m", help="执行模式：fast / quality"),
     enhance: str = typer.Option(
@@ -628,6 +631,8 @@ def run(
       off      — 关闭字幕增强
       local    — 本地规则增强（默认）
       api      — LLM API 增强（需配置 API Key）
+
+    [bold]输出：[/bold] 精对齐默认生成 final.srt/final.vtt/final.json/final.tsv；--no-align 只生成 draft.srt/draft.json
 
     [bold]示例：[/bold]
       subtap run video.mp3

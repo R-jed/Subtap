@@ -79,6 +79,28 @@ class ModelPanel(Static):
         self.update(f"当前模型：{self._model}\n延迟：{latency:.2f}s / chunk")
 
 
+class StatsPanel(Static):
+    """字幕和性能摘要。"""
+
+    def update_stats(
+        self, streaming: dict[str, object], performance: dict[str, object]
+    ) -> None:
+        preview = str(streaming.get("preview") or "")
+        if len(preview) > 28:
+            preview = preview[:28] + "..."
+        self.update(
+            "候选字幕：{candidate}  已对齐：{aligned}\n"
+            "RTF：{rtf:.2f}  慢速片段：{slow}\n"
+            "预览：{preview}".format(
+                candidate=int(streaming.get("candidate_count") or 0),
+                aligned=int(streaming.get("aligned_count") or 0),
+                rtf=float(performance.get("rtf") or 0.0),
+                slow=int(performance.get("slow_chunks_total") or 0),
+                preview=preview or "暂无",
+            )
+        )
+
+
 class PipelineDashboard(App):
     """Textual 仪表板，用于管道执行监控。"""
 
@@ -121,6 +143,7 @@ class PipelineDashboard(App):
         yield ProgressPanel()
         yield ChunkPanel()
         yield ModelPanel()
+        yield StatsPanel()
         yield Footer()
 
     async def on_mount(self) -> None:
@@ -156,6 +179,23 @@ class PipelineDashboard(App):
         model_panel = self.query_one(ModelPanel)
         model_panel.update_model(model, latency)
 
+    def update_stage_complete(self, stage: str, duration: float) -> None:
+        """更新阶段完成状态。"""
+        if stage == "export":
+            self.query_one(StagePanel).update("当前阶段：全流程完成")
+            self.query_one(ProgressPanel).update_progress(100)
+            self._refresh_stats()
+            self.exit()
+
+    def _refresh_stats(self) -> None:
+        """刷新字幕和性能摘要。"""
+        try:
+            self.query_one(StatsPanel).update_stats(
+                self.streaming_state, self.performance_state
+            )
+        except Exception:
+            return
+
     def update_streaming_event(self, data: dict) -> None:
         """消费字幕生产事件，更新阶段、进度、模型和计数状态。"""
 
@@ -178,11 +218,14 @@ class PipelineDashboard(App):
         if not self._should_update():
             return
         if "stage" in data:
-            self.update_stage(str(data["stage"]))
+            self.query_one(StagePanel).update_stage(str(data["stage"]))
         if "progress" in data:
-            self.update_progress(int(data["progress"]))
+            self.query_one(ProgressPanel).update_progress(int(data["progress"]))
         if "model" in data:
-            self.update_model(str(data["model"]), float(data.get("duration_sec", 0.0)))
+            self.query_one(ModelPanel).update_model(
+                str(data["model"]), float(data.get("duration_sec", 0.0))
+            )
+        self._refresh_stats()
 
     def update_performance_metrics(self, metrics: dict) -> None:
         """更新 TUI 性能状态，供性能面板显示。"""
@@ -198,3 +241,4 @@ class PipelineDashboard(App):
                 "quantization": metrics.get("quantization", "未知"),
             }
         )
+        self._refresh_stats()
