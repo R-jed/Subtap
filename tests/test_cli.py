@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from types import SimpleNamespace
 
 from typer.testing import CliRunner
@@ -10,6 +11,10 @@ from typer.testing import CliRunner
 from subtap.cli import app
 
 runner = CliRunner()
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI escape codes from text for reliable string matching."""
+    return re.sub(r'\x1b\[[0-9;]*m', '', text)
 
 
 def _patch_stage_pipeline(monkeypatch, stage_name: str):
@@ -80,8 +85,8 @@ def test_version():
     """subtap version should print version string."""
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
-    assert "subtap" in result.output
-    assert "0.1.0" in result.output
+    assert "subtap" in _strip_ansi(result.output)
+    assert "0.1.0" in _strip_ansi(result.output)
 
 
 def test_init(tmp_path, monkeypatch):
@@ -114,7 +119,7 @@ def test_doctor(tmp_path, monkeypatch):
     result = runner.invoke(app, ["doctor"])
     # Should either pass (exit 0) or fail due to missing ffmpeg (exit 1)
     assert result.exit_code in (0, 1)
-    assert "ffmpeg" in result.output.lower() or "python" in result.output.lower()
+    assert "ffmpeg" in _strip_ansi(result.output).lower() or "python" in _strip_ansi(result.output).lower()
 
 
 def test_doctor_workspace(tmp_path, monkeypatch):
@@ -133,7 +138,7 @@ def test_doctor_workspace(tmp_path, monkeypatch):
 
     result = runner.invoke(app, ["doctor", "--workspace"])
     assert result.exit_code == 0
-    assert "工作区" in result.output or "workspace" in result.output.lower()
+    assert "工作区" in _strip_ansi(result.output) or "workspace" in _strip_ansi(result.output).lower()
 
 
 def test_doctor_json_outputs_machine_readable_status(tmp_path, monkeypatch):
@@ -160,7 +165,7 @@ def test_doctor_json_outputs_machine_readable_status(tmp_path, monkeypatch):
     result = runner.invoke(app, ["doctor", "--json"])
 
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = json.loads(_strip_ansi(result.output))
     assert payload["ok"] is True
     assert payload["config"]["valid"] is True
     assert payload["checks"][0]["name"] == "ffmpeg"
@@ -172,14 +177,14 @@ def test_run_has_no_git_check_flag():
     # Just verify the flag is accepted (will fail on missing input file, that's ok)
     result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
-    assert "git-check" in result.output
+    assert "git-check" in _strip_ansi(result.output)
 
 
 def test_run_has_no_cleanroom_flag():
     """subtap run should accept --no-cleanroom flag."""
     result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
-    assert "cleanroom" in result.output
+    assert "cleanroom" in _strip_ansi(result.output)
 
 
 def test_setup_has_remote_api_options():
@@ -187,7 +192,7 @@ def test_setup_has_remote_api_options():
     import re
     result = runner.invoke(app, ["setup", "--help"])
     assert result.exit_code == 0
-    clean = re.sub(r'\x1b\[[0-9;]*m', '', result.output)
+    clean = re.sub(r'\x1b\[[0-9;]*m', '', _strip_ansi(result.output))
     assert "remote-api" in clean
     assert "remote-base-url" in clean
     assert "remote-api-key-env" in clean
@@ -198,7 +203,7 @@ def test_quality_command_exists():
     import re
     result = runner.invoke(app, ["quality", "--help"])
     assert result.exit_code == 0
-    clean = re.sub(r'\x1b\[[0-9;]*m', '', result.output)
+    clean = re.sub(r'\x1b\[[0-9;]*m', '', _strip_ansi(result.output))
     assert "aligned.jsonl" in clean
     assert "fix" in clean
     assert "report-only" in clean
@@ -209,7 +214,7 @@ def test_run_has_mode_flag():
     import re
     result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
-    clean = re.sub(r'\x1b\[[0-9;]*m', '', result.output)
+    clean = re.sub(r'\x1b\[[0-9;]*m', '', _strip_ansi(result.output))
     assert "mode" in clean
 
 
@@ -218,7 +223,7 @@ def test_run_json_flag_is_available():
     result = runner.invoke(app, ["run", "--help"])
 
     assert result.exit_code == 0
-    assert "--json" in result.output
+    assert "--json" in _strip_ansi(result.output)
 
 
 def test_batch_transcribe_command_exists():
@@ -226,8 +231,8 @@ def test_batch_transcribe_command_exists():
     result = runner.invoke(app, ["batch-transcribe", "--help"])
 
     assert result.exit_code == 0
-    assert "--files" in result.output
-    assert "--json" in result.output
+    assert "--files" in _strip_ansi(result.output)
+    assert "--json" in _strip_ansi(result.output)
 
 
 def test_batch_transcribe_runs_each_file(tmp_path, monkeypatch):
@@ -272,7 +277,7 @@ def test_batch_transcribe_runs_each_file(tmp_path, monkeypatch):
     )
 
     assert result.exit_code == 0
-    data = json.loads(result.output)
+    data = json.loads(_strip_ansi(result.output))
     assert data["ok"] is True
     assert len(data["items"]) == 2
     assert len(calls) == 2
@@ -285,28 +290,28 @@ def test_run_mode_fast():
     """subtap run should accept --mode fast."""
     result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
-    assert "fast" in result.output
+    assert "fast" in _strip_ansi(result.output)
 
 
 def test_run_mode_quality():
     """subtap run should accept --mode quality."""
     result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
-    assert "quality" in result.output
+    assert "quality" in _strip_ansi(result.output)
 
 
 def test_analyze_command_exists():
     """subtap analyze command should exist."""
     result = runner.invoke(app, ["analyze", "--help"])
     assert result.exit_code == 0
-    assert "SRT" in result.output or "srt" in result.output
+    assert "SRT" in _strip_ansi(result.output) or "srt" in _strip_ansi(result.output)
 
 
 def test_setup_command_exists():
     """Test that setup command exists."""
     result = runner.invoke(app, ["setup", "--help"])
     assert result.exit_code == 0
-    assert "初始化向导" in result.output
+    assert "初始化向导" in _strip_ansi(result.output)
 
 
 def test_setup_system_check():
@@ -316,7 +321,7 @@ def test_setup_system_check():
     with patch("subtap.core.setup.SetupWizard.check_system_deps") as mock_check:
         mock_check.return_value = {"ffmpeg": True, "ffprobe": True, "python": True}
         result = runner.invoke(app, ["setup", "--skip-models"])
-        assert "系统检查" in result.output
+        assert "系统检查" in _strip_ansi(result.output)
 
 
 def test_setup_system_check_failure():
@@ -327,7 +332,7 @@ def test_setup_system_check_failure():
         mock_check.return_value = {"ffmpeg": False, "ffprobe": True, "python": True}
         result = runner.invoke(app, ["setup", "--skip-models"])
         assert result.exit_code == 1
-        assert "系统检查未通过" in result.output
+        assert "系统检查未通过" in _strip_ansi(result.output)
 
 
 def test_setup_skip_models():
@@ -342,7 +347,7 @@ def test_setup_skip_models():
         mock_config.return_value = True
         result = runner.invoke(app, ["setup", "--skip-models"])
         assert result.exit_code == 0
-        assert "模型安装（已跳过）" in result.output
+        assert "模型安装（已跳过）" in _strip_ansi(result.output)
 
 
 def test_doctor_enhanced_checks(monkeypatch, tmp_path):
@@ -366,10 +371,10 @@ def test_doctor_enhanced_checks(monkeypatch, tmp_path):
             MagicMock(name="asr", installed=True, path=tmp_path / "models" / "asr"),
         ]
         result = runner.invoke(app, ["doctor"])
-        assert "配置状态" in result.output
-        assert "模型状态" in result.output
-        assert "asr" in result.output
-        assert "aligner" in result.output
+        assert "配置状态" in _strip_ansi(result.output)
+        assert "模型状态" in _strip_ansi(result.output)
+        assert "asr" in _strip_ansi(result.output)
+        assert "aligner" in _strip_ansi(result.output)
 
 
 def test_setup_full_flow():
@@ -389,9 +394,9 @@ def test_setup_full_flow():
         result = runner.invoke(app, ["setup"])
 
         assert result.exit_code == 0
-        assert "系统检查" in result.output
-        assert "初始化配置" in result.output
-        assert "初始化完成" in result.output
+        assert "系统检查" in _strip_ansi(result.output)
+        assert "初始化配置" in _strip_ansi(result.output)
+        assert "初始化完成" in _strip_ansi(result.output)
         # Verify setup_models was called
         mock_models.assert_called_once()
 
@@ -400,9 +405,9 @@ def test_demo_command_exists():
     """Test demo command exists with expected options."""
     result = runner.invoke(app, ["demo", "--help"])
     assert result.exit_code == 0
-    assert "演示" in result.output
-    assert "--output-dir" in result.output
-    assert "--skip-tui" in result.output
+    assert "演示" in _strip_ansi(result.output)
+    assert "--output-dir" in _strip_ansi(result.output)
+    assert "--skip-tui" in _strip_ansi(result.output)
 
 
 def test_setup_help_has_download_source_option():
@@ -410,8 +415,8 @@ def test_setup_help_has_download_source_option():
     result = runner.invoke(app, ["setup", "--help"])
 
     assert result.exit_code == 0
-    assert "--download-source" in result.output
-    assert "hf-mirror" in result.output
+    assert "--download-source" in _strip_ansi(result.output)
+    assert "hf-mirror" in _strip_ansi(result.output)
 
 
 def test_clean_stage_copies_external_input_and_output(tmp_path, monkeypatch):
@@ -516,8 +521,8 @@ def test_doctor_release_fails_when_models_missing(tmp_path, monkeypatch):
         result = runner.invoke(app, ["doctor", "--release"])
 
     assert result.exit_code == 1
-    assert "部分检查未通过" in result.output
-    assert "缺失" in result.output
+    assert "部分检查未通过" in _strip_ansi(result.output)
+    assert "缺失" in _strip_ansi(result.output)
 
 
 def test_python_module_entrypoint_outputs_help():
@@ -632,7 +637,7 @@ def test_setup_model_download_failure_exits(tmp_path, monkeypatch):
 
         result = runner.invoke(app, ["setup", "--download-source", "hf"])
         assert result.exit_code == 1
-        assert "模型安装失败" in result.output
+        assert "模型安装失败" in _strip_ansi(result.output)
 
 
 def test_setup_manual_model_failure_continues(tmp_path, monkeypatch):
@@ -661,7 +666,7 @@ def test_setup_manual_model_failure_continues(tmp_path, monkeypatch):
 
         result = runner.invoke(app, ["setup", "--download-source", "manual"])
         assert result.exit_code == 0
-        assert "模型安装待手动完成" in result.output
+        assert "模型安装待手动完成" in _strip_ansi(result.output)
 
 
 def test_setup_interactive_manual_choice_continues(tmp_path, monkeypatch):
@@ -690,4 +695,4 @@ def test_setup_interactive_manual_choice_continues(tmp_path, monkeypatch):
 
         result = runner.invoke(app, ["setup"])
         assert result.exit_code == 0
-        assert "模型安装待手动完成" in result.output
+        assert "模型安装待手动完成" in _strip_ansi(result.output)
