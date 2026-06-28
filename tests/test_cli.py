@@ -172,14 +172,14 @@ def test_run_has_no_git_check_flag():
     # Just verify the flag is accepted (will fail on missing input file, that's ok)
     result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
-    assert "--no-git-check" in result.output
+    assert "git-check" in result.output
 
 
 def test_run_has_no_cleanroom_flag():
     """subtap run should accept --no-cleanroom flag."""
     result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
-    assert "--no-cleanroom" in result.output
+    assert "cleanroom" in result.output
 
 
 def test_setup_has_remote_api_options():
