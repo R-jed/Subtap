@@ -90,7 +90,7 @@ def load_asr_draft(asr_jsonl: Path) -> list[ASRSegment]:
     return segments
 
 
-_SPLIT_RE = re.compile(r"(?<=[，。？！、,.?!])")
+_SPLIT_RE = re.compile(r"(?<=[，。？！、,;:：；.!?])")
 
 
 def _smart_split(
@@ -228,6 +228,64 @@ def _split_subtitle_lines(
         return _interpolate_proportional(final_parts, start_sec, end_sec)
 
 
+# --- 断句后处理：碎片合并 ---
+
+_TAIL_PARTICLES = set("的和是在了把被让给对向从到过着地得")
+_FILLERS = {"呃", "嗯", "啊", "哦", "哈", "呀", "嘛", "吧", "呢", "喂", "哎", "唉"}
+_FRAG_THRESHOLD = 2
+
+
+def _merge_fragments(sub_lines: list[dict]) -> list[dict]:
+    """Merge fragment lines back into adjacent lines.
+
+    Rules (applied in priority order):
+    1. Filter empty text lines
+    2. Merge filler-only lines (呃/嗯/啊) into previous line
+    3. Merge fragment lines (≤2 chars) into previous line
+    4. Merge lines ending with tail particles (的/在/了/…) into next line
+    """
+    if not sub_lines:
+        return sub_lines
+
+    non_empty = [s for s in sub_lines if s["text"].strip()]
+    if not non_empty:
+        return []
+
+    merged: list[dict] = []
+
+    for i, cur in enumerate(non_empty):
+        text = cur["text"].strip()
+        char_count = len(text)
+
+        if text in _FILLERS and merged:
+            merged[-1]["text"] += text
+            merged[-1]["end_sec"] = cur["end_sec"]
+            continue
+
+        if char_count <= _FRAG_THRESHOLD and merged:
+            merged[-1]["text"] += text
+            merged[-1]["end_sec"] = cur["end_sec"]
+            continue
+
+        if merged and merged[-1]["text"] and merged[-1]["text"][-1] in _TAIL_PARTICLES:
+            merged[-1]["text"] += text
+            merged[-1]["end_sec"] = cur["end_sec"]
+            continue
+
+        merged.append({
+            "text": text,
+            "start_sec": cur["start_sec"],
+            "end_sec": cur["end_sec"],
+        })
+
+    return merged
+
+
+def _count_visible(text: str) -> int:
+    """Count non-punctuation characters (consistent with _ALL_PUNCT_RE)."""
+    return len(_ALL_PUNCT_RE.sub("", text))
+
+
 def _interpolate_from_words(
     original_text: str,
     parts: list[str],
@@ -236,21 +294,16 @@ def _interpolate_from_words(
     end_sec: float,
 ) -> list[dict]:
     """Interpolate sub-sentence times from word timestamps."""
-    _PUNCT = set("，。？！、,.?! ")
-
     result = []
     word_idx = 0
 
     for part in parts:
         part_start_word = word_idx
-        # Count visible chars in this part (excluding punctuation)
-        visible_chars = [ch for ch in part if ch not in _PUNCT]
+        part_visible = _count_visible(part)
 
         matched = 0
-        while word_idx < len(words) and matched < len(visible_chars):
-            w_text = words[word_idx]["word"]
-            # This word matches some visible chars
-            matched += len([ch for ch in w_text if ch not in _PUNCT])
+        while word_idx < len(words) and matched < part_visible:
+            matched += _count_visible(words[word_idx]["word"])
             word_idx += 1
 
         part_words = words[part_start_word:word_idx]
