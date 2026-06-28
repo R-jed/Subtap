@@ -139,11 +139,12 @@ class MLXQwenAligner:
                     language=self.config.language,
                 )
 
-                # Collect word-level timing with chunk offset
+                # Collect word-level timing with chunk offset + time_offset
+                time_offset = self.config.time_offset_sec
                 chunk_words: list[dict] = []
                 for item in align_result:
-                    start = chunk_offset + item.start_time
-                    end = chunk_offset + item.end_time
+                    start = chunk_offset + item.start_time + time_offset
+                    end = chunk_offset + item.end_time + time_offset
                     # Enforce minimum duration (model may output start==end)
                     if end <= start:
                         end = start + 0.020
