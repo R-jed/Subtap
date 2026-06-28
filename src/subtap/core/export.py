@@ -8,6 +8,17 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 from subtap.core.itn import chinese_to_num
+
+
+_PUNCT_MAP = str.maketrans(
+    ",.?!;:()",
+    "，。？！；：（）",
+)
+
+
+def _normalize_punct(text: str) -> str:
+    """Normalize half-width punctuation to full-width Chinese."""
+    return text.translate(_PUNCT_MAP)
 from subtap.schemas.models import AlignedSegment, ASRSegment
 
 
@@ -214,7 +225,7 @@ class SRTExporter(BaseExporter):
                 index += 1
                 start = _fmt_srt_time(sub["start_sec"])
                 end = _fmt_srt_time(sub["end_sec"])
-                text = chinese_to_num(sub["text"])
+                text = _normalize_punct(chinese_to_num(sub["text"]))
                 lines.append(str(index))
                 lines.append(f"{start} --> {end}")
                 lines.append(text)
@@ -367,7 +378,7 @@ def run_final_exports(aligned_jsonl: Path, output_dir: Path) -> dict:
         )
         for sub in sub_lines:
             vtt_index += 1
-            text = chinese_to_num(sub["text"])
+            text = _normalize_punct(chinese_to_num(sub["text"]))
             vtt_lines.extend(
                 [
                     str(vtt_index),

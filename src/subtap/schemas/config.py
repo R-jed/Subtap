@@ -58,6 +58,10 @@ class AlignConfig(BaseModel):
         default="Chinese",
         description="对齐语言（Chinese/English/Japanese/Korean）",
     )
+    time_offset_sec: float = Field(
+        default=-0.15,
+        description="对齐时间偏移（秒），负值=提前，用于补偿模型系统性延迟",
+    )
 
 
 class RemoteAPIConfig(BaseModel):
