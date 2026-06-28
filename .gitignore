@@ -41,8 +41,10 @@ venv/
 # macOS
 .DS_Store
 
-# pytest
+# 缓存
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # 临时文件
 *.tmp
