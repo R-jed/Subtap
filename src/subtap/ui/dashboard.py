@@ -88,6 +88,24 @@ class PipelineDashboard(App):
         self.profiler = profiler
         self._update_throttle = 0.05  # 50ms 节流
         self._last_update = 0.0
+        self.streaming_state: dict[str, object] = {
+            "stage": "等待中",
+            "chunk_id": None,
+            "candidate_count": 0,
+            "aligned_count": 0,
+            "model": "未知",
+            "preview": "",
+        }
+        self.performance_state: dict[str, object] = {
+            "rtf": 0.0,
+            "total_runtime_sec": 0.0,
+            "asr_runtime_sec": 0.0,
+            "align_runtime_sec": 0.0,
+            "enhancement_runtime_sec": 0.0,
+            "slow_chunks_total": 0,
+            "model": "未知",
+            "quantization": "未知",
+        }
 
     def _should_update(self) -> bool:
         """检查是否应该更新（节流）。"""
@@ -137,3 +155,46 @@ class PipelineDashboard(App):
             return
         model_panel = self.query_one(ModelPanel)
         model_panel.update_model(model, latency)
+
+    def update_streaming_event(self, data: dict) -> None:
+        """消费字幕生产事件，更新阶段、进度、模型和计数状态。"""
+
+        def _counter(name: str) -> int:
+            value = self.streaming_state.get(name, 0)
+            return int(value) if isinstance(value, (int, float, str)) else 0
+
+        self.streaming_state.update(
+            {
+                "stage": data.get("stage", self.streaming_state["stage"]),
+                "chunk_id": data.get("chunk_id", self.streaming_state["chunk_id"]),
+                "model": data.get("model", self.streaming_state["model"]),
+                "preview": data.get("text", self.streaming_state["preview"]),
+            }
+        )
+        if data.get("stage") == "segment":
+            self.streaming_state["candidate_count"] = _counter("candidate_count") + 1
+        if data.get("stage") == "align":
+            self.streaming_state["aligned_count"] = _counter("aligned_count") + 1
+        if not self._should_update():
+            return
+        if "stage" in data:
+            self.update_stage(str(data["stage"]))
+        if "progress" in data:
+            self.update_progress(int(data["progress"]))
+        if "model" in data:
+            self.update_model(str(data["model"]), float(data.get("duration_sec", 0.0)))
+
+    def update_performance_metrics(self, metrics: dict) -> None:
+        """更新 TUI 性能状态，供性能面板显示。"""
+        self.performance_state.update(
+            {
+                "rtf": metrics.get("rtf", 0.0),
+                "total_runtime_sec": metrics.get("total_runtime_sec", 0.0),
+                "asr_runtime_sec": metrics.get("asr_runtime_sec", 0.0),
+                "align_runtime_sec": metrics.get("align_runtime_sec", 0.0),
+                "enhancement_runtime_sec": metrics.get("enhancement_runtime_sec", 0.0),
+                "slow_chunks_total": len(metrics.get("slow_chunks", [])),
+                "model": metrics.get("asr_model", "未知"),
+                "quantization": metrics.get("quantization", "未知"),
+            }
+        )

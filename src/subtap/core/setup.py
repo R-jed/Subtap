@@ -5,10 +5,13 @@ from __future__ import annotations
 import logging
 import shutil
 import sys
+import importlib.util
 from pathlib import Path
 
 import httpx
 import yaml
+
+from subtap.core.fs import os_access_writable
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +31,10 @@ class SetupWizard:
             "ffmpeg": shutil.which("ffmpeg") is not None,
             "ffprobe": shutil.which("ffprobe") is not None,
             "python": sys.version_info >= (3, 10),
+            "venv": sys.prefix != sys.base_prefix,
+            "mlx": importlib.util.find_spec("mlx") is not None,
+            "models": Path("models").exists(),
+            "output": os_access_writable(Path.cwd()),
         }
 
     def check_config_exists(self) -> bool:

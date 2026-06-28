@@ -13,7 +13,7 @@ app = typer.Typer(help="热词/术语管理")
 
 
 def _default_path() -> Path:
-    return Path.home() / ".subtap" / "glossary" / "global.yaml"
+    return Path.home() / ".subtap" / "profile" / "glossary.yaml"
 
 
 def _save_glossary(path: Path, glossary: Glossary) -> None:
@@ -52,6 +52,24 @@ def add_glossary(
     glossary.replacements.append(GlossaryReplacement(find=find, replace=replace))
     _save_glossary(path, glossary)
     typer.echo(f"✓ 已添加：{input_text}")
+
+
+@app.command("remove")
+def remove_glossary(
+    find: str = typer.Argument(..., help="要删除的错词或术语"),
+    path: Path = typer.Option(_default_path(), "--file", "-f", help="术语文件路径"),
+) -> None:
+    """删除一条术语。"""
+    glossary = load_glossary(path)
+    before = len(glossary.replacements)
+    glossary.replacements = [
+        item for item in glossary.replacements if item.find != find
+    ]
+    _save_glossary(path, glossary)
+    if len(glossary.replacements) == before:
+        typer.echo("未找到匹配术语")
+    else:
+        typer.echo(f"✓ 已删除：{find}")
 
 
 @app.command("import")

@@ -6,6 +6,47 @@ from datetime import datetime
 from pathlib import Path
 
 
+def format_performance_summary(performance_metrics: dict) -> str:
+    """Format user-readable performance and privacy summary."""
+    external_text = "是" if performance_metrics["external_text_sent"] else "否"
+    external_audio = "是" if performance_metrics["external_audio_sent"] else "否"
+    return f"""
+## 性能与隐私
+- **RTF**：{performance_metrics["rtf"]:.2f}（RTF = 总处理耗时 / 音频时长，越低越快）
+- **音频时长**：{performance_metrics["audio_duration_sec"]:.1f}s
+- **总处理耗时**：{performance_metrics["total_runtime_sec"]:.1f}s
+- **ASR 耗时**：{performance_metrics["asr_runtime_sec"]:.1f}s
+- **对齐耗时**：{performance_metrics["align_runtime_sec"]:.1f}s
+- **LLM 增强耗时**：{performance_metrics["enhancement_runtime_sec"]:.1f}s
+- **慢速片段数量**：{len(performance_metrics["slow_chunks"])} 个
+- **是否使用外部 LLM**：{external_text}
+- **音频是否发送外部：{external_audio}**
+- **文本是否发送外部：{external_text}**
+- **模型策略**：任务结束后不会常驻模型，也不会默认预热。
+"""
+
+
+def format_output_contract_summary(
+    output_files: list[str],
+    manual_review_samples: list[dict],
+) -> str:
+    """Format output list and manual review suggestions for report.md."""
+    lines = ["## 输出文件列表"]
+    lines.extend(f"- {name}" for name in output_files)
+    lines.append("")
+    lines.append("## 建议人工抽检片段")
+    if not manual_review_samples:
+        lines.append("- 暂无需要优先抽检的片段。")
+    else:
+        for item in manual_review_samples:
+            lines.append(
+                f"- #{item.get('subtitle_id')}：{item.get('reason')}，"
+                f"{item.get('start_sec', '')}-{item.get('end_sec', '')}s，"
+                f"{item.get('text', '')}"
+            )
+    return "\n".join(lines) + "\n"
+
+
 def generate_report(
     quality_score: float,
     error_count: int,
@@ -18,6 +59,7 @@ def generate_report(
     output_format: str,
     glossary_terms: int = 0,
     glossary_replacements: int = 0,
+    performance_metrics: dict | None = None,
 ) -> str:
     """Generate a Markdown report for subtitle quality analysis.
 
@@ -97,6 +139,9 @@ def generate_report(
 - **术语数量**：{glossary_terms} 个
 - **替换次数**：{glossary_replacements} 次
 """
+
+    if performance_metrics:
+        report += format_performance_summary(performance_metrics)
 
     # Optimization suggestions
     report += """

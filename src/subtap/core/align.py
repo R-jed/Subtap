@@ -6,7 +6,7 @@ from pathlib import Path
 
 from subtap.backends.align import get_aligner_backend
 from subtap.metrics.events import EventBus, EventType, make_pipeline_event
-from subtap.schemas.alignment import AlignedSubtitle
+from subtap.schemas.alignment import AlignedSubtitle, AlignedWord
 from subtap.schemas.config import SubtapConfig
 from subtap.schemas.models import SentenceSegment, AlignedSegment
 from subtap.core.workspace import Workspace
@@ -43,11 +43,21 @@ def write_aligned_subtitles(
     total = len(segments) or 1
     with open(output_path, "w") as f:
         for index, seg in enumerate(segments, start=1):
+            # Passthrough word-level timing from aligner
+            words = [
+                AlignedWord(
+                    word=w["word"],
+                    start_sec=w["start_sec"],
+                    end_sec=w["end_sec"],
+                )
+                for w in seg.words
+            ] if seg.words else []
             subtitle = AlignedSubtitle(
                 subtitle_id=seg.sentence_id,
                 start_sec=seg.start_sec,
                 end_sec=seg.end_sec,
                 text=seg.text,
+                words=words,
             )
             f.write(subtitle.model_dump_json() + "\n")
             if event_bus is not None:

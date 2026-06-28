@@ -54,6 +54,10 @@ class AlignConfig(BaseModel):
     quantization: str = "q8"
     keep_model_alive: bool = False
     warmup: bool = False
+    language: str = Field(
+        default="Chinese",
+        description="对齐语言（Chinese/English/Japanese/Korean）",
+    )
 
 
 class RemoteAPIConfig(BaseModel):

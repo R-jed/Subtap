@@ -122,6 +122,15 @@ subtap run video.mp3 --no-align
 # 运行演示
 subtap demo
 
+# 管理术语表
+subtap glossary list
+subtap glossary add --input "错词=正确词"
+subtap glossary remove 错词
+
+# 导入人工修正字幕到本地学习档案（写入前必须确认）
+subtap learn import corrected.srt --yes
+subtap profile export
+
 # 检查环境
 subtap doctor
 subtap doctor --release    # 发布验收检查
@@ -135,6 +144,40 @@ subtap models verify
 # 初始化向导
 subtap setup
 ```
+
+## 输出位置
+
+默认输出到 `output/`。精对齐开启时生成：
+
+- `final.srt`
+- `final.vtt`
+- `final.json`
+- `final.tsv`
+- `report.md`
+- `metrics.json`
+- `artifacts/`
+
+使用 `--no-align` 时只生成 `draft.srt` 和 `draft.json`，报告会标明“未精对齐”。
+
+## Mac 配置建议
+
+- 入门：Apple Silicon，16 GB 内存，使用 `--mode fast`
+- 更稳：Apple Silicon，24 GB 以上内存，使用 `--mode quality`
+- 磁盘：至少预留 4 GB 给本地模型和中间产物
+
+## 常见问题
+
+**音频会上传吗？**  
+不会。默认 ASR 和对齐都在本地执行，`--local-only` 会禁止所有外部 API。
+
+**什么时候会联网？**  
+`subtap setup` 下载模型时会联网；`subtap run --enhance api` 只会发送字幕文本给你配置的 LLM API，不发送音频。
+
+**fast 和 quality 怎么选？**  
+`fast` 使用 0.6B 模型，速度优先；`quality` 使用 1.7B 模型，质量优先但更吃内存。
+
+**为什么有 draft 和 final？**  
+`final.*` 只来自精对齐结果，适合交付；`draft.*` 是关闭精对齐时的粗时间轴预览。
 
 ## 配置
 

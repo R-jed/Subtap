@@ -69,3 +69,7 @@ class AlignedSegment(BaseModel):
     start_sec: float = Field(description="Aligned start time in seconds")
     end_sec: float = Field(description="Aligned end time in seconds")
     text: str = Field(description="Sentence text (unchanged from source)")
+    words: list[dict] = Field(
+        default_factory=list,
+        description="Word-level timing [{word, start_sec, end_sec}]",
+    )

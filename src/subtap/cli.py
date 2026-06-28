@@ -26,6 +26,10 @@ app = typer.Typer(
 app.add_typer(glossary_app, name="glossary")
 script_app = typer.Typer(help="文稿匹配")
 app.add_typer(script_app, name="script")
+learn_app = typer.Typer(help="学习人工修正")
+profile_app = typer.Typer(help="本地学习档案")
+app.add_typer(learn_app, name="learn")
+app.add_typer(profile_app, name="profile")
 
 # ── 基础命令 ──────────────────────────────────────────────
 
@@ -72,6 +76,44 @@ def init() -> None:
     typer.echo(f"  配置文件：{config_path}")
     typer.echo(f"  术语表：  {glossary_dir}")
     typer.echo(f"  数据库：  {db_path}")
+
+
+@learn_app.command("import")
+def learn_import(
+    corrected_srt: Path = typer.Argument(..., help="人工修正后的 SRT 文件"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="确认写入本地学习档案"),
+) -> None:
+    """导入人工修正字幕，写入前必须确认。"""
+    from subtap.learning.importer import import_corrected_srt
+    from subtap.learning.profile_store import ProfileStore
+
+    if not corrected_srt.exists():
+        typer.echo(f"✗ 文件不存在：{corrected_srt}", err=True)
+        raise typer.Exit(1)
+
+    texts = import_corrected_srt(corrected_srt)
+    pairs = [{"from": "", "to": text} for text in texts]
+    store = ProfileStore()
+    if not store.apply_corrections(pairs, confirmed=yes):
+        typer.echo("未写入：请确认后使用 --yes 写入本地学习档案")
+        return
+    typer.echo(f"✓ 已导入 {len(pairs)} 条修正到本地学习档案")
+
+
+@profile_app.command("export")
+def profile_export(
+    output: Path = typer.Option(
+        Path("subtap-profile-export.yaml"),
+        "--output",
+        "-o",
+        help="导出文件路径",
+    ),
+) -> None:
+    """导出本地可编辑学习档案。"""
+    from subtap.learning.profile_store import ProfileStore
+
+    path = ProfileStore().export(output)
+    typer.echo(f"✓ 已导出：{path}")
 
 
 # ── Doctor 命令 ────────────────────────────────────────────
@@ -249,6 +291,23 @@ def doctor(
             "warmup": bool(config.asr.warmup or config.align.warmup),
             "device_backend": "mlx-metal",
         }
+        report["privacy"] = {
+            "external_audio_sent": False,
+            "local_only_available": True,
+            "default_local": True,
+        }
+        report["output"] = {
+            "default_dir": "./output",
+            "final_outputs": ["final.srt", "final.vtt", "final.json", "final.tsv"],
+            "draft_outputs": ["draft.srt", "draft.json"],
+        }
+        remote_api = getattr(config, "remote_api", None)
+        api_key_env = getattr(remote_api, "api_key_env", "SUBTAP_API_KEY")
+        report["llm"] = {
+            "api_configured": bool(os.environ.get(api_key_env)),
+            "api_key_env": api_key_env,
+            "audio_sent": False,
+        }
 
         if not json_output:
             typer.echo(
@@ -256,6 +315,8 @@ def doctor(
                 f"对齐：{config.align.model} / {config.align.quantization}"
             )
             typer.echo("  模型策略：任务阶段加载，阶段结束释放，不默认常驻或预热")
+            typer.echo("  隐私：音频不外发；--local-only 可用")
+            typer.echo("  输出：默认写入 ./output，精对齐生成 final.*")
 
         registry = ModelRegistry(config)
         for ms in registry.status():
@@ -428,6 +489,10 @@ def setup(
             "ffmpeg": "ffmpeg",
             "ffprobe": "ffprobe",
             "python": "Python 3.10+",
+            "venv": "Python 虚拟环境",
+            "mlx": "MLX / Metal",
+            "models": "本地 models/",
+            "output": "输出目录权限",
         }.get(name, name)
         typer.echo(f"  {icon} {label}")
 
@@ -631,6 +696,7 @@ def run(
 
     # 创建 Event Bus 和 Profiler
     event_bus = EventBus()
+    pipeline.event_bus = event_bus
     profiler = PipelineProfiler(event_bus)
     profiler.wrap_pipeline(pipeline)
 
@@ -702,6 +768,42 @@ def run(
             typer.echo(f"\n✗ 处理失败：{e}", err=True)
             raise typer.Exit(1)
 
+    def _count_jsonl(path: Path) -> int:
+        if not path.exists():
+            return 0
+        return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line)
+
+    def _audio_duration_sec(path: Path) -> float:
+        if not path.exists():
+            return 0.0
+        try:
+            return float(
+                json.loads(path.read_text(encoding="utf-8")).get("duration", 0)
+            )
+        except Exception:
+            return 0.0
+
+    from subtap.metrics.performance import build_subtitle_performance_metrics
+
+    asr_config = getattr(config, "asr", None)
+    align_config = getattr(config, "align", None)
+    performance_metrics = build_subtitle_performance_metrics(
+        timings=timings,
+        audio_duration_sec=_audio_duration_sec(work_dir / "media_info.json"),
+        chunks_total=_count_jsonl(work_dir / "chunks" / "chunks.jsonl"),
+        subtitles_total=_count_jsonl(
+            work_dir / "aligned.jsonl"
+            if align_enabled
+            else work_dir / "asr" / "asr.jsonl"
+        ),
+        alignment_enabled=align_enabled,
+        asr_model=getattr(asr_config, "model", "asr_0.6b"),
+        aligner_model=getattr(align_config, "model", "aligner"),
+        quantization=getattr(asr_config, "quantization", "q8"),
+        enhance_mode=enhance,
+    )
+    quality_payload: dict[str, Any] = {}
+
     # ── Generate report and debug output ────────────────────
     try:
         from subtap.quality.scorer import Scorer
@@ -712,6 +814,11 @@ def run(
         if aligned_path.exists():
             scorer = Scorer(aligned_path)
             quality_report = scorer.score()
+            quality_payload = {
+                "quality_score": quality_report.total_score,
+                "error_count": quality_report.error_count,
+                "fixable_count": quality_report.fixable_count,
+            }
 
             # Generate report
             report_content = generate_report(
@@ -724,6 +831,7 @@ def run(
                 mode=mode,
                 input_file=input_path,
                 output_format=fmt,
+                performance_metrics=performance_metrics,
             )
 
             # Write report
@@ -754,12 +862,15 @@ def run(
             typer.echo(f"\n⚠ 报告生成失败：{e}", err=True)
 
     if not align_enabled:
+        from subtap.core.report import format_performance_summary
+
         output_dir.mkdir(parents=True, exist_ok=True)
         report_path = output_dir / "report.md"
         report_path.write_text(
             "# Subtap 运行报告\n\n"
             "## 对齐状态\n\n"
             "未精对齐，仅适合粗剪预览；本次未生成 final.srt。\n\n"
+            f"{format_performance_summary(performance_metrics)}\n"
             "## 输出\n\n"
             "- draft.srt\n"
             "- draft.json\n",
@@ -781,25 +892,62 @@ def run(
             ),
             encoding="utf-8",
         )
-        metrics_path = output_dir / "metrics.json"
-        metrics_path.write_text(
-            json.dumps(
-                {
-                    "alignment_enabled": False,
-                    "align_runtime_sec": 0,
-                    "external_audio_sent": False,
-                    "output_contract": "draft",
-                },
-                indent=2,
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
         if not json_output:
             typer.echo(f"\n▸ 草稿报告：{report_path}")
 
+    output_dir.mkdir(parents=True, exist_ok=True)
+    metrics_payload = performance_metrics | {
+        "output_contract": "final" if align_enabled else "draft"
+    }
+    (output_dir / "metrics.json").write_text(
+        json.dumps(metrics_payload, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    try:
+        from subtap.core.report import format_output_contract_summary
+        from subtap.output.contract import write_contract_artifacts
+        from subtap.quality.sample_picker import pick_manual_review_segments
+
+        write_contract_artifacts(work_dir, output_dir, quality=quality_payload)
+        output_files = [
+            path.name
+            for path in [
+                output_dir / "final.srt",
+                output_dir / "final.vtt",
+                output_dir / "final.json",
+                output_dir / "final.tsv",
+                output_dir / "draft.srt",
+                output_dir / "draft.json",
+                output_dir / "report.md",
+                output_dir / "metrics.json",
+                output_dir / "run.log.jsonl",
+            ]
+            if path.exists()
+        ]
+        final_json = output_dir / "final.json"
+        subtitles = (
+            json.loads(final_json.read_text(encoding="utf-8"))
+            if final_json.exists()
+            else []
+        )
+        manual_samples = pick_manual_review_segments(
+            subtitles, slow_chunks=performance_metrics["slow_chunks"]
+        )
+        report_path = output_dir / "report.md"
+        if report_path.exists():
+            report_path.write_text(
+                report_path.read_text(encoding="utf-8")
+                + "\n"
+                + format_output_contract_summary(output_files, manual_samples),
+                encoding="utf-8",
+            )
+    except Exception as e:
+        if not json_output:
+            typer.echo(f"\n⚠ 输出契约补充失败：{e}", err=True)
+
     if json_output:
-        output_path = output_dir / (f"output.{fmt}" if align_enabled else "draft.srt")
+        output_path = output_dir / ("final.srt" if align_enabled else "draft.srt")
         typer.echo(
             json.dumps(
                 {
@@ -1203,7 +1351,7 @@ def retry(
 # ── Demo 命令 ──────────────────────────────────────────────
 
 
-@app.command()
+@app.command(help="运行演示：默认本地不联网，输出 demo final.srt")
 def demo(
     output_dir: Path = typer.Option(
         Path("./demo_output"), "-o", "--output-dir", help="输出目录"
@@ -1212,7 +1360,7 @@ def demo(
 ) -> None:
     """运行演示：使用内置测试音频展示完整流程
 
-    自动查找项目内置测试音频，执行完整 pipeline 并输出示例 SRT。
+    自动查找项目内置测试音频，默认本地运行，不调用 LLM API，并输出 final.srt。
     """
     from subtap.schemas.config import load_config
     from subtap.core.pipeline import Pipeline
@@ -1257,7 +1405,7 @@ def demo(
         raise typer.Exit(1)
 
     # 显示示例 SRT 内容
-    srt_path = output_dir / "output.srt"
+    srt_path = output_dir / "final.srt"
     if srt_path.exists():
         typer.echo()
         typer.echo("═══ 示例 SRT（前 20 行）═══")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -24,6 +25,11 @@ def _fmt_ass_time(seconds: float) -> str:
     s = int(seconds % 60)
     cs = int(round((seconds - int(seconds)) * 100))
     return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
+
+
+def _fmt_vtt_time(seconds: float) -> str:
+    """Format seconds to VTT timestamp HH:MM:SS.mmm."""
+    return _fmt_srt_time(seconds).replace(",", ".")
 
 
 def load_aligned(aligned_jsonl: Path) -> list[AlignedSegment]:
@@ -190,6 +196,87 @@ def run_export(
     }
 
 
+def _final_json_item(seg: AlignedSegment) -> dict:
+    """Convert aligned segment to final.json schema."""
+    return {
+        "subtitle_id": seg.sentence_id,
+        "start_sec": seg.start_sec,
+        "end_sec": seg.end_sec,
+        "text": seg.text,
+        "words": [
+            {"word": w["word"], "start_sec": w["start_sec"], "end_sec": w["end_sec"]}
+            for w in seg.words
+        ],
+        "chars": [],
+        "source_trace": {
+            "source": "forced_aligner",
+            "aligned_segment_id": seg.sentence_id,
+        },
+        "alignment_confidence": None,
+    }
+
+
+def run_final_exports(aligned_jsonl: Path, output_dir: Path) -> dict:
+    """Export aligned subtitles to the stable final.* output contract."""
+    if not aligned_jsonl.exists():
+        return run_export(aligned_jsonl, output_dir, fmt="srt", stem="final")
+
+    segments = load_aligned(aligned_jsonl)
+    if not segments:
+        raise ValueError(f"No aligned segments found in {aligned_jsonl}")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    srt_path = output_dir / "final.srt"
+    vtt_path = output_dir / "final.vtt"
+    json_path = output_dir / "final.json"
+    tsv_path = output_dir / "final.tsv"
+
+    srt_path.write_text(SRTExporter().render(segments), encoding="utf-8")
+
+    vtt_lines = ["WEBVTT", ""]
+    for index, seg in enumerate(sorted(segments, key=lambda s: s.sentence_id), start=1):
+        vtt_lines.extend(
+            [
+                str(index),
+                f"{_fmt_vtt_time(seg.start_sec)} --> {_fmt_vtt_time(seg.end_sec)}",
+                seg.text,
+                "",
+            ]
+        )
+    vtt_path.write_text("\n".join(vtt_lines), encoding="utf-8")
+
+    final_payload = [_final_json_item(seg) for seg in segments]
+    json_path.write_text(
+        json.dumps(final_payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    tsv_lines = ["subtitle_id\tstart_sec\tend_sec\ttext"]
+    for seg in sorted(segments, key=lambda s: s.sentence_id):
+        text = seg.text.replace("\t", " ").replace("\n", " ")
+        tsv_lines.append(f"{seg.sentence_id}\t{seg.start_sec}\t{seg.end_sec}\t{text}")
+    tsv_path.write_text("\n".join(tsv_lines), encoding="utf-8")
+
+    run_log_path = output_dir / "run.log.jsonl"
+    if not run_log_path.exists():
+        run_log_path.write_text(
+            json.dumps(
+                {"event": "output_contract_written", "contract": "final"},
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    return {
+        "output_path": str(srt_path),
+        "outputs": [str(srt_path), str(vtt_path), str(json_path), str(tsv_path)],
+        "format": "final",
+        "segment_count": len(segments),
+        "output_contract": "final",
+    }
+
+
 def run_draft_export(asr_jsonl: Path, output_dir: Path) -> dict:
     """Export ASR reference timing as draft.srt and draft.json."""
     segments = load_asr_draft(asr_jsonl)
@@ -220,8 +307,6 @@ def run_draft_export(asr_jsonl: Path, output_dir: Path) -> dict:
                 "source": "asr_reference_timing",
             }
         )
-
-    import json
 
     srt_path.write_text("\n".join(lines), encoding="utf-8")
     json_path.write_text(
