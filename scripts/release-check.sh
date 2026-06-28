@@ -14,7 +14,7 @@ fi
 
 # 检查项
 CHECKS=(
-    "pip install -e .[dev]|$PYTHON -m pip install -e '.[dev]'"
+    "pip install -e .[dev,ai]|$PYTHON -m pip install -e '.[dev,ai]'"
     "ruff check|$PYTHON -m ruff check src tests"
     "black --check|$PYTHON -m black --check src tests"
     "mypy|$PYTHON -m mypy src/subtap"

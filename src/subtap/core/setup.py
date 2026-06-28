@@ -7,6 +7,9 @@ import shutil
 import sys
 from pathlib import Path
 
+import httpx
+import yaml
+
 logger = logging.getLogger(__name__)
 
 DOWNLOAD_SOURCES = ("hf", "hf-mirror", "modelscope", "manual")
@@ -223,3 +226,86 @@ class SetupWizard:
             logger.warning("模型 %s 下载失败: %s", model_name, e)
             typer.echo(f"  ✗ {model_name} 下载失败: {e}")
             return False
+
+    def fetch_remote_models(
+        self, base_url: str, api_key: str, timeout_sec: int = 60
+    ) -> list[str]:
+        """Fetch available models from an OpenAI-compatible /models endpoint."""
+        url = f"{base_url.rstrip('/')}/models"
+        headers = {"Authorization": f"Bearer {api_key}"}
+        with httpx.Client(timeout=timeout_sec) as client:
+            response = client.get(url, headers=headers)
+            response.raise_for_status()
+        payload = response.json()
+        candidates = payload.get("data", payload.get("models", []))
+        models: list[str] = []
+        for item in candidates:
+            if isinstance(item, str):
+                models.append(item)
+            elif isinstance(item, dict) and isinstance(item.get("id"), str):
+                models.append(item["id"])
+        return models
+
+    def configure_remote_api(
+        self,
+        provider: str = "openai-compatible",
+        base_url: str | None = None,
+        api_key: str | None = None,
+        api_key_env: str = "SUBTAP_API_KEY",
+        timeout_sec: int = 60,
+    ) -> bool:
+        """Configure remote API endpoint and selected model without saving the key."""
+        import typer
+
+        selected_base_url = base_url or typer.prompt("远程 API Base URL")
+        selected_api_key = api_key or typer.prompt(
+            "API Key（不会写入配置）", hide_input=True
+        )
+
+        typer.echo("▸ 获取远程模型列表...")
+        try:
+            models = self.fetch_remote_models(
+                selected_base_url, selected_api_key, timeout_sec=timeout_sec
+            )
+        except Exception as e:
+            logger.warning("远程模型列表获取失败: %s", e)
+            typer.echo(f"  ✗ 获取模型列表失败：{e}")
+            return False
+
+        if not models:
+            typer.echo("  ✗ 远程 API 未返回可用模型")
+            return False
+
+        typer.echo("请选择远程模型：")
+        for index, model in enumerate(models, start=1):
+            typer.echo(f"  {index}. {model}")
+
+        choice = typer.prompt("输入序号", default="1")
+        try:
+            selected_model = models[int(choice) - 1]
+        except (ValueError, IndexError):
+            typer.echo(f"  无效选项 '{choice}'，默认使用第一个模型")
+            selected_model = models[0]
+
+        config_path = Path.home() / ".subtap" / "config.yaml"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        if config_path.exists():
+            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        else:
+            data = {}
+
+        data["remote_api"] = {
+            "provider": provider,
+            "base_url": selected_base_url,
+            "api_key_env": api_key_env,
+            "model": selected_model,
+            "timeout_sec": timeout_sec,
+        }
+        config_path.write_text(
+            yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
+
+        typer.echo(f"  ✓ 已保存远程 API 配置，模型：{selected_model}")
+        typer.echo(f"  请在运行前设置环境变量：export {api_key_env}='你的 API Key'")
+        return True

@@ -374,6 +374,20 @@ def setup(
     model_endpoint: str | None = typer.Option(
         None, "--model-endpoint", help="自定义 Hugging Face 镜像地址"
     ),
+    remote_api: bool = typer.Option(False, "--remote-api", help="配置远程 API"),
+    remote_provider: str = typer.Option(
+        "openai-compatible",
+        "--remote-provider",
+        help="远程 API 格式：openai-compatible / anthropic",
+    ),
+    remote_base_url: str | None = typer.Option(
+        None, "--remote-base-url", help="远程 API Base URL"
+    ),
+    remote_api_key_env: str = typer.Option(
+        "SUBTAP_API_KEY",
+        "--remote-api-key-env",
+        help="保存到配置的 API Key 环境变量名",
+    ),
 ) -> None:
     """用户初始化向导"""
     from subtap.core.setup import SetupWizard
@@ -433,6 +447,15 @@ def setup(
             typer.echo("  ⚠ 模型安装待手动完成")
         else:
             typer.echo("  ✗ 模型安装失败")
+            raise typer.Exit(1)
+
+    if remote_api:
+        typer.echo("\n▸ Step 4: 远程 API 配置")
+        if not wizard.configure_remote_api(
+            provider=remote_provider,
+            base_url=remote_base_url,
+            api_key_env=remote_api_key_env,
+        ):
             raise typer.Exit(1)
 
     typer.echo(typer.style("\n═══ 初始化完成 ═══", fg=typer.colors.GREEN))

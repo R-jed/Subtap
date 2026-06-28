@@ -182,6 +182,15 @@ def test_run_has_no_cleanroom_flag():
     assert "--no-cleanroom" in result.output
 
 
+def test_setup_has_remote_api_options():
+    """subtap setup should expose remote API model discovery options."""
+    result = runner.invoke(app, ["setup", "--help"])
+    assert result.exit_code == 0
+    assert "--remote-api" in result.output
+    assert "--remote-base-url" in result.output
+    assert "--remote-api-key-env" in result.output
+
+
 def test_quality_command_exists():
     """subtap quality command should exist."""
     result = runner.invoke(app, ["quality", "--help"])
