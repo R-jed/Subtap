@@ -10,6 +10,7 @@ from typing import Any
 _CLEANABLE_NAMES = {
     ".DS_Store",
     "Thumbs.db",
+    "thumbs.db",
     "desktop.ini",
 }
 
