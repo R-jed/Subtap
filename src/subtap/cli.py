@@ -471,6 +471,7 @@ def _run_pipeline_safely(
     output_dir: Path,
     mode: str,
     fmt: str,
+    align_enabled: bool = True,
 ) -> dict:
     """在线程中安全运行 pipeline，不涉及 UI 操作。"""
     from subtap.ui.tui import TUIRunner
@@ -481,6 +482,7 @@ def _run_pipeline_safely(
         input_path,
         output_dir,
         fmt=fmt,
+        align_enabled=align_enabled,
     )
 
 
@@ -503,6 +505,11 @@ def run(
     ),
     translate_to: str | None = typer.Option(
         None, "--translate-to", help="翻译目标语言：en / ja / zh"
+    ),
+    align_enabled: bool = typer.Option(
+        True,
+        "--align/--no-align",
+        help="默认执行精对齐；关闭后不生成 final.srt，只生成 draft 粗剪预览",
     ),
     use_tui: bool = typer.Option(
         True, "--tui/--no-tui", help="启用 TUI 界面（默认开启）"
@@ -628,6 +635,7 @@ def run(
                 output_dir,
                 mode,
                 fmt,
+                align_enabled,
             )
 
             # 运行 dashboard（它会启动 async loop 处理事件）
@@ -657,6 +665,7 @@ def run(
                         input_path,
                         output_dir,
                         fmt=fmt,
+                        align_enabled=align_enabled,
                     )
             else:
                 result = runner.run_pipeline(
@@ -664,6 +673,7 @@ def run(
                     input_path,
                     output_dir,
                     fmt=fmt,
+                    align_enabled=align_enabled,
                 )
             timings = result.get("timings", {})
         except SystemExit:
@@ -708,6 +718,7 @@ def run(
                 "mode": mode,
                 "input_file": str(input_path),
                 "output_format": fmt,
+                "alignment_enabled": align_enabled,
                 "quality_score": quality_report.total_score,
                 "timings": timings,
                 "error_count": quality_report.error_count,
@@ -722,8 +733,53 @@ def run(
         if not json_output:
             typer.echo(f"\n⚠ 报告生成失败：{e}", err=True)
 
+    if not align_enabled:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        report_path = output_dir / "report.md"
+        report_path.write_text(
+            "# Subtap 运行报告\n\n"
+            "## 对齐状态\n\n"
+            "未精对齐，仅适合粗剪预览；本次未生成 final.srt。\n\n"
+            "## 输出\n\n"
+            "- draft.srt\n"
+            "- draft.json\n",
+            encoding="utf-8",
+        )
+        debug_path = output_dir / "debug.json"
+        debug_path.write_text(
+            json.dumps(
+                {
+                    "mode": mode,
+                    "input_file": str(input_path),
+                    "output_format": "draft",
+                    "alignment_enabled": False,
+                    "timings": timings | {"align": 0},
+                    "draft_output": str(output_dir / "draft.srt"),
+                },
+                indent=2,
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        metrics_path = output_dir / "metrics.json"
+        metrics_path.write_text(
+            json.dumps(
+                {
+                    "alignment_enabled": False,
+                    "align_runtime_sec": 0,
+                    "external_audio_sent": False,
+                    "output_contract": "draft",
+                },
+                indent=2,
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        if not json_output:
+            typer.echo(f"\n▸ 草稿报告：{report_path}")
+
     if json_output:
-        output_path = output_dir / f"output.{fmt}"
+        output_path = output_dir / (f"output.{fmt}" if align_enabled else "draft.srt")
         typer.echo(
             json.dumps(
                 {
@@ -732,6 +788,7 @@ def run(
                     "work_dir": str(work_dir),
                     "output_dir": str(output_dir),
                     "output_path": str(output_path),
+                    "alignment_enabled": align_enabled,
                     "report_path": str(output_dir / "report.md"),
                     "debug_path": str(output_dir / "debug.json"),
                     "timings": timings,

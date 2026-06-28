@@ -30,6 +30,7 @@ class TUIRunner:
         input_path: Path,
         output_dir: Path,
         fmt: str = "srt",
+        align_enabled: bool = True,
     ) -> dict:
         """Execute full pipeline with TUI feedback."""
         self.total_start = time.time()
@@ -115,22 +116,25 @@ class TUIRunner:
                 self.progress.print_stage_result(self.state, result)
 
             # Stage 6: align
-            self.state.update(
-                stage="align",
-                status="loading_model",
-                progress=0,
-                model_used="Qwen3-ForcedAligner-0.6B",
-                current_task="加载对齐模型",
-            )
-            if self.use_tui:
-                self.progress.print_stage_start(self.state)
+            if align_enabled:
+                self.state.update(
+                    stage="align",
+                    status="loading_model",
+                    progress=0,
+                    model_used="Qwen3-ForcedAligner-0.6B",
+                    current_task="加载对齐模型",
+                )
+                if self.use_tui:
+                    self.progress.print_stage_start(self.state)
 
-            stage_start = time.time()
-            result = pipeline.run_stage("align")
-            self.timings["align"] = time.time() - stage_start
-            self.state.update(progress=100, status="completed", current_task="")
-            if self.use_tui:
-                self.progress.print_stage_result(self.state, result)
+                stage_start = time.time()
+                result = pipeline.run_stage("align")
+                self.timings["align"] = time.time() - stage_start
+                self.state.update(progress=100, status="completed", current_task="")
+                if self.use_tui:
+                    self.progress.print_stage_result(self.state, result)
+            else:
+                self.timings["align"] = 0.0
 
             # Stage 7: export
             self.state.update(stage="export", status="processing", progress=0)
@@ -138,9 +142,14 @@ class TUIRunner:
                 self.progress.print_stage_start(self.state)
 
             stage_start = time.time()
-            from subtap.core.export import run_export
+            if align_enabled:
+                from subtap.core.export import run_export
 
-            result = run_export(pipeline.workspace.aligned_jsonl, output_dir, fmt=fmt)
+                result = run_export(pipeline.workspace.aligned_jsonl, output_dir, fmt=fmt)
+            else:
+                from subtap.core.export import run_draft_export
+
+                result = run_draft_export(pipeline.workspace.asr_jsonl, output_dir)
             self.timings["export"] = time.time() - stage_start
             self.state.update(progress=100, status="completed")
             if self.use_tui:
@@ -170,6 +179,7 @@ class TUIRunner:
             "work_dir": str(pipeline.workspace.root),
             "output_dir": str(output_dir),
             "format": fmt,
+            "alignment_enabled": align_enabled,
             "total_time_sec": round(total_time, 2),
             "timings": {k: round(v, 2) for k, v in self.timings.items()},
             "segments": self.state.segment_count,
@@ -207,6 +217,7 @@ class PlainRunner:
         input_path,
         output_dir,
         fmt="srt",
+        align_enabled: bool = True,
     ) -> dict:
         """Execute pipeline with plain text output."""
         import typer
@@ -249,17 +260,27 @@ class PlainRunner:
             self.timings["segment"] = time.time() - t
             _echo(f"  ✓ {r['sentence_count']} 句")
 
-            _echo("▸ [6/7] 时间轴对齐...")
-            t = time.time()
-            r = pipeline.run_stage("align")
-            self.timings["align"] = time.time() - t
-            _echo(f"  ✓ {r['aligned_count']} 条")
+            if align_enabled:
+                _echo("▸ [6/7] 时间轴对齐...")
+                t = time.time()
+                r = pipeline.run_stage("align")
+                self.timings["align"] = time.time() - t
+                _echo(f"  ✓ {r['aligned_count']} 条")
+            else:
+                self.timings["align"] = 0.0
+                _echo("▸ [6/7] 时间轴对齐（已关闭）...")
+                _echo("  ⚠ 未精对齐，仅生成 draft 粗剪预览")
 
             _echo(f"▸ [7/7] 字幕导出 ({fmt.upper()})...")
             t = time.time()
-            from subtap.core.export import run_export
+            if align_enabled:
+                from subtap.core.export import run_export
 
-            r = run_export(pipeline.workspace.aligned_jsonl, output_dir, fmt=fmt)
+                r = run_export(pipeline.workspace.aligned_jsonl, output_dir, fmt=fmt)
+            else:
+                from subtap.core.export import run_draft_export
+
+                r = run_draft_export(pipeline.workspace.asr_jsonl, output_dir)
             self.timings["export"] = time.time() - t
             _echo(f"  ✓ {r['output_path']}")
 
@@ -282,6 +303,7 @@ class PlainRunner:
             "work_dir": str(pipeline.workspace.root),
             "output_dir": str(output_dir),
             "format": fmt,
+            "alignment_enabled": align_enabled,
             "total_time_sec": round(total_time, 2),
             "timings": {k: round(v, 2) for k, v in self.timings.items()},
         }
