@@ -5,7 +5,7 @@ on:
   pull_request:
 
 jobs:
-  release-check:
+  test:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -13,4 +13,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: brew install ffmpeg
-      - run: bash scripts/release-check.sh
+      - run: pip install -e ".[dev,ai]"
+      - run: black --check src tests
+      - run: mypy src/subtap
+      - run: pytest -q -p no:cacheprovider
