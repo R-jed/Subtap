@@ -312,3 +312,43 @@ def test_merge_fragments_no_merge_for_normal():
     ]
     result = _merge_fragments(lines)
     assert len(result) == 2
+
+
+def test_srt_render_merges_fragments():
+    """SRT 渲染应自动合并碎片行。"""
+    from subtap.core.export import SRTExporter
+    from subtap.schemas.models import AlignedSegment
+    segs = [
+        AlignedSegment(
+            sentence_id=0, start_sec=1.0, end_sec=3.0,
+            text="核心的点是这个", words=[
+                {"word": "核", "start_sec": 1.0, "end_sec": 1.1},
+                {"word": "心", "start_sec": 1.1, "end_sec": 1.2},
+                {"word": "的", "start_sec": 1.2, "end_sec": 1.3},
+                {"word": "点", "start_sec": 1.5, "end_sec": 1.6},
+                {"word": "是", "start_sec": 1.6, "end_sec": 1.7},
+                {"word": "这", "start_sec": 1.7, "end_sec": 1.8},
+                {"word": "个", "start_sec": 1.8, "end_sec": 1.9},
+            ],
+        ),
+    ]
+    srt = SRTExporter(punctuation=False).render(segs)
+    # "核心的" 以 "的" 结尾，应被合并到下一行
+    # 最终输出不应有 "核心的" 单独一行
+    content_lines = [l for l in srt.split("\n") if l.strip() and "-->" not in l and not l.strip().isdigit()]
+    for line in content_lines:
+        assert line != "核心的", f"'核心的' 不应单独成行: {srt}"
+
+
+def test_srt_render_filters_empty_segments():
+    """SRT 渲染应过滤空文本段。"""
+    from subtap.core.export import SRTExporter
+    from subtap.schemas.models import AlignedSegment
+    segs = [
+        AlignedSegment(sentence_id=0, start_sec=1.0, end_sec=2.0, text="正常内容"),
+        AlignedSegment(sentence_id=1, start_sec=2.0, end_sec=2.5, text=""),
+        AlignedSegment(sentence_id=2, start_sec=2.5, end_sec=3.0, text="更多内容"),
+    ]
+    srt = SRTExporter(punctuation=False).render(segs)
+    time_lines = [l for l in srt.split("\n") if "-->" in l]
+    assert len(time_lines) == 2
