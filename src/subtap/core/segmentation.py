@@ -101,7 +101,7 @@ def segment_clean_segments(
             sentences.append(
                 SentenceSegment(
                     sentence_id=sid,
-                    chunk_id=seg.segment_id,
+                    chunk_id=seg.source_chunk_id,
                     start_sec=t_start,
                     end_sec=t_end,
                     text=text,
