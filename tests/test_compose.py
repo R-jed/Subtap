@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from typer.testing import CliRunner
 
@@ -82,7 +81,9 @@ def test_compose_cli_reports_output(tmp_path, monkeypatch):
     video.write_bytes(b"video")
     subtitle.write_text("1\n00:00:00,000 --> 00:00:01,000\nhi\n", encoding="utf-8")
 
-    monkeypatch.setattr("subtap.compose.run_command", lambda command: output.write_bytes(b"out"))
+    monkeypatch.setattr(
+        "subtap.compose.run_command", lambda command: output.write_bytes(b"out")
+    )
 
     result = runner.invoke(
         app,
