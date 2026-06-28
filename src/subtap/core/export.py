@@ -102,20 +102,28 @@ def _smart_split(
 ) -> list[dict]:
     """Split subtitle text based on word-level timestamps.
 
-    Priority:
-    1. Sentence-ending punctuation (。！？.!?)
-    2. Pause > pause_threshold
-    3. Comma/enum punctuation + line already has enough chars
-    4. Exceeds max_chars
+    Reference: whisperX iterate_subtitles() algorithm.
+    Single-pass over words, deciding at each step: continue / new line / new subtitle.
 
-    Merge rule: fragments < min_chars merge with adjacent line.
+    Priority:
+    1. Sentence-ending punctuation (。！？.!?) → new subtitle
+    2. Pause ≥ pause_threshold → new subtitle
+    3. Comma/enum + line long enough → new line
+    4. Exceeds max_chars → new line (with number protection)
+
+    Post-processing:
+    5. Merge filler words (呃/嗯/啊) into previous line
+    6. Merge fragment lines (≤2 chars) into previous line
     """
     if not words:
         return [{"text": text, "start_sec": 0.0, "end_sec": 0.0}]
 
     _SENT_END = set("。！？.!?")
     _COMMA = set("，、,;")
+    _NUM_CHARS = set("零一二两三四五六七八九十百千万亿")
+    _FILLERS = {"呃", "嗯", "啊", "哦", "哈", "呀", "嘛", "吧", "呢", "喂", "哎", "唉"}
 
+    # --- Phase 1: Single-pass word iteration ---
     lines: list[dict] = []
     current_words: list[dict] = []
     current_text = ""
@@ -124,70 +132,63 @@ def _smart_split(
         nonlocal current_words, current_text
         if not current_words:
             return
-        start = current_words[0]["start_sec"]
-        end = current_words[-1]["end_sec"]
         lines.append({
             "text": current_text.strip(),
-            "start_sec": start,
-            "end_sec": end,
+            "start_sec": current_words[0]["start_sec"],
+            "end_sec": current_words[-1]["end_sec"],
             "break_type": break_type,
         })
         current_words = []
         current_text = ""
 
-    _NUM_CHARS = set("零一二两三四五六七八九十百千万亿")
-
     for i, w in enumerate(words):
         word_text = w["word"]
 
-        # 1. Sentence-ending punctuation - flush and skip (don't add)
+        # 1. Sentence-ending punctuation → flush and skip
         if word_text in _SENT_END:
             _flush("sentence_end")
             continue
 
-        # 2. Pause detection BEFORE adding (check gap with current word)
+        # 2. Pause detection → new subtitle
         if i > 0 and current_text and len(current_text.strip()) >= min_chars:
             gap = w["start_sec"] - words[i - 1]["end_sec"]
             if gap >= pause_threshold:
                 _flush("pause")
 
-        # 3. Max chars exceeded - flush BEFORE adding (to stay under limit)
-        # Skip flush only if current AND previous word are both number chars
+        # 3. Max chars → new line (with number protection)
         if current_text and len(current_text.strip()) + len(word_text) > max_chars:
             prev_is_num = current_words and current_words[-1]["word"] in _NUM_CHARS
             cur_is_num = word_text in _NUM_CHARS
             if not (prev_is_num and cur_is_num):
                 _flush("max_chars")
 
-        # Add word to current line
+        # Add word
         current_words.append(w)
         current_text += word_text
 
-        # 4. Comma + line already substantial - flush AFTER adding comma
+        # 4. Comma + line substantial → new line
         if word_text in _COMMA and len(current_text.strip()) >= 10:
             _flush("comma")
 
-    # Flush remaining
     if current_words:
         _flush()
 
-    # Merge short fragments (only after sentence-ending breaks)
+    # --- Phase 2: Post-processing ---
+    lines = [l for l in lines if l["text"].strip()]
+
     merged: list[dict] = []
     for line in lines:
-        if not line["text"].strip():
+        text = line["text"]
+        if text in _FILLERS and merged:
+            merged[-1]["text"] += text
+            merged[-1]["end_sec"] = line["end_sec"]
             continue
-        # Merge if: previous line exists, current is short, previous line is long enough,
-        # AND previous break was sentence-ending
-        if (merged and len(line["text"]) < min_chars and
-            len(merged[-1]["text"]) >= min_chars and
-            merged[-1].get("break_type") == "sentence_end"):
-            prev = merged[-1]
-            prev["text"] = prev["text"] + line["text"]
-            prev["end_sec"] = line["end_sec"]
-        else:
-            merged.append(line)
+        if len(text) <= 2 and merged:
+            merged[-1]["text"] += text
+            merged[-1]["end_sec"] = line["end_sec"]
+            continue
+        merged.append(line)
 
-    # Remove break_type from output
     for line in merged:
         line.pop("break_type", None)
 
