@@ -121,25 +121,31 @@ class MLXQwenAligner:
                 continue
 
             try:
-                from mlx_audio.stt.generate import generate_transcription
-
-                # Align against chunk audio
-                result = generate_transcription(
-                    model=self._model,
+                # ForcedAlignerModel.generate() returns word-level timestamps
+                align_result = self._model.generate(
                     audio=str(chunk_audio),
                     text=sent.text,
-                    format="json",
+                    language=self.config.language,
                 )
 
-                # Extract character-level alignment
-                if hasattr(result, "segments") and result.segments:
-                    segs = result.segments
-                    raw_start = segs[0].get("start", 0.0)
-                    raw_end = segs[-1].get("end", raw_start + 0.1)
+                # Collect word-level timing with chunk offset
+                words: list[dict] = []
+                for item in align_result:
+                    start = chunk_offset + item.start_time
+                    end = chunk_offset + item.end_time
+                    # Enforce minimum duration (model may output start==end)
+                    if end <= start:
+                        end = start + 0.020
+                    words.append({
+                        "word": item.text,
+                        "start_sec": round(start, 3),
+                        "end_sec": round(end, 3),
+                    })
 
-                    # Offset by chunk start time
-                    start = chunk_offset + raw_start
-                    end = chunk_offset + raw_end
+                if words:
+                    # Use first/last word time as sentence boundaries
+                    start = words[0]["start_sec"]
+                    end = words[-1]["end_sec"]
 
                     # Clamp to chunk boundaries
                     chunk_end = chunk_info.get("end_sec", end + 1.0)
@@ -152,15 +158,16 @@ class MLXQwenAligner:
                             start_sec=round(start, 3),
                             end_sec=round(end, 3),
                             text=sent.text,
+                            words=words,
                         )
                     )
                     logger.info(
-                        "Aligned sentence %d: %.3f - %.3f (chunk %d, offset=%.2f)",
+                        "Aligned sentence %d: %.3f - %.3f (chunk %d, %d words)",
                         sent.sentence_id,
                         start,
                         end,
                         sent.chunk_id,
-                        chunk_offset,
+                        len(words),
                     )
                     continue
 

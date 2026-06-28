@@ -143,11 +143,9 @@ class TUIRunner:
 
             stage_start = time.time()
             if align_enabled:
-                from subtap.core.export import run_export
+                from subtap.core.export import run_final_exports
 
-                result = run_export(
-                    pipeline.workspace.aligned_jsonl, output_dir, fmt=fmt
-                )
+                result = run_final_exports(pipeline.workspace.aligned_jsonl, output_dir)
             else:
                 from subtap.core.export import run_draft_export
 
@@ -276,9 +274,9 @@ class PlainRunner:
             _echo(f"▸ [7/7] 字幕导出 ({fmt.upper()})...")
             t = time.time()
             if align_enabled:
-                from subtap.core.export import run_export
+                from subtap.core.export import run_final_exports
 
-                r = run_export(pipeline.workspace.aligned_jsonl, output_dir, fmt=fmt)
+                r = run_final_exports(pipeline.workspace.aligned_jsonl, output_dir)
             else:
                 from subtap.core.export import run_draft_export
 
