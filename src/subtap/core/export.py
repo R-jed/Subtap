@@ -199,7 +199,7 @@ class SRTExporter(BaseExporter):
         return "srt"
 
     def render(self, segments: list[AlignedSegment]) -> str:
-        sorted_segs = sorted(segments, key=lambda s: s.sentence_id)
+        sorted_segs = sorted(segments, key=lambda s: s.start_sec)
         lines: list[str] = []
         index = 0
         for seg in sorted_segs:
@@ -357,7 +357,7 @@ def run_final_exports(aligned_jsonl: Path, output_dir: Path) -> dict:
 
     vtt_lines = ["WEBVTT", ""]
     vtt_index = 0
-    for seg in sorted(segments, key=lambda s: s.sentence_id):
+    for seg in sorted(segments, key=lambda s: s.start_sec):
         sub_lines = _split_subtitle_lines(
             seg.text, seg.words, seg.start_sec, seg.end_sec, max_chars=20
         )
@@ -379,7 +379,7 @@ def run_final_exports(aligned_jsonl: Path, output_dir: Path) -> dict:
     )
 
     tsv_lines = ["subtitle_id\tstart_sec\tend_sec\ttext"]
-    for seg in sorted(segments, key=lambda s: s.sentence_id):
+    for seg in sorted(segments, key=lambda s: s.start_sec):
         text = seg.text.replace("\t", " ").replace("\n", " ")
         tsv_lines.append(f"{seg.sentence_id}\t{seg.start_sec}\t{seg.end_sec}\t{text}")
     tsv_path.write_text("\n".join(tsv_lines), encoding="utf-8")
