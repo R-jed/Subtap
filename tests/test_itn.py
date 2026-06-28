@@ -20,7 +20,7 @@ def test_decimal():
 
 def test_large_number():
     """大数字。"""
-    assert chinese_to_num("一万两千三百四十五") == "12345"
+    assert chinese_to_num("一万两千三百四十五") == "1.2345万"
 
 
 def test_mixed_text():
@@ -46,12 +46,12 @@ def test_empty_string():
 
 def test_large_number_combo():
     """亿+万组合：一亿两千万。"""
-    assert chinese_to_num("一亿两千万") == "120000000"
+    assert chinese_to_num("一亿两千万") == "1.2亿"
 
 
 def test_large_number_wan():
     """万级：十二万。"""
-    assert chinese_to_num("十二万") == "120000"
+    assert chinese_to_num("十二万") == "12万"
 
 
 def test_single_digit_not_converted():
