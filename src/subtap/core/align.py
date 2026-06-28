@@ -44,14 +44,18 @@ def write_aligned_subtitles(
     with open(output_path, "w") as f:
         for index, seg in enumerate(segments, start=1):
             # Passthrough word-level timing from aligner
-            words = [
-                AlignedWord(
-                    word=w["word"],
-                    start_sec=w["start_sec"],
-                    end_sec=w["end_sec"],
-                )
-                for w in seg.words
-            ] if seg.words else []
+            words = (
+                [
+                    AlignedWord(
+                        word=w["word"],
+                        start_sec=w["start_sec"],
+                        end_sec=w["end_sec"],
+                    )
+                    for w in seg.words
+                ]
+                if seg.words
+                else []
+            )
             subtitle = AlignedSubtitle(
                 subtitle_id=seg.sentence_id,
                 start_sec=seg.start_sec,

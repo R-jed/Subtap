@@ -44,16 +44,22 @@ class MockAlignerWithWords:
         results = []
         for sentence in sentences:
             words = [
-                {"word": w, "start_sec": sentence.start_sec + i * 0.1, "end_sec": sentence.start_sec + (i + 1) * 0.1}
+                {
+                    "word": w,
+                    "start_sec": sentence.start_sec + i * 0.1,
+                    "end_sec": sentence.start_sec + (i + 1) * 0.1,
+                }
                 for i, w in enumerate(sentence.text)
             ]
-            results.append(AlignedSegment(
-                sentence_id=sentence.sentence_id,
-                start_sec=words[0]["start_sec"],
-                end_sec=words[-1]["end_sec"],
-                text=sentence.text,
-                words=words,
-            ))
+            results.append(
+                AlignedSegment(
+                    sentence_id=sentence.sentence_id,
+                    start_sec=words[0]["start_sec"],
+                    end_sec=words[-1]["end_sec"],
+                    text=sentence.text,
+                    words=words,
+                )
+            )
         return results
 
     def release_model(self):

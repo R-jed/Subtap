@@ -9,19 +9,32 @@ from __future__ import annotations
 import re
 
 _NUM_MAP = {
-    "零": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4,
-    "五": 5, "六": 6, "七": 7, "八": 8, "九": 9,
+    "零": 0,
+    "一": 1,
+    "二": 2,
+    "两": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
 }
 
 _UNIT_MAP = {
-    "十": 10, "百": 100, "千": 1000, "万": 10000, "亿": 100000000,
+    "十": 10,
+    "百": 100,
+    "千": 1000,
+    "万": 10000,
+    "亿": 100000000,
 }
 
 # Match meaningful number sequences only:
 # 1. 2+ pure digits: 二零一五、一二三
 # 2. Any sequence containing at least one unit (十百千万亿): 一万两千三百四十五、十万、三百
 _NUM_RE = re.compile(
-    r"[零一二两三四五六七八九]{2,}"                                       # 2+ pure digits
+    r"[零一二两三四五六七八九]{2,}"  # 2+ pure digits
     r"|[零一二两三四五六七八九十百千万亿]*[十百千万亿][零一二两三四五六七八九十百千万亿]*"  # contains unit
 )
 
@@ -78,7 +91,9 @@ def chinese_to_num(text: str) -> str:
     # Handle 小数点: 三点一四 → 3.14
     text = re.sub(
         r"([零一二两三四五六七八九十百千万亿]+)点([零一二两三四五六七八九]+)",
-        lambda m: _convert_number_str(m.group(1)) + "." + _convert_number_str(m.group(2)),
+        lambda m: _convert_number_str(m.group(1))
+        + "."
+        + _convert_number_str(m.group(2)),
         text,
     )
 

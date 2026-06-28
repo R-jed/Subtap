@@ -9,7 +9,9 @@ from subtap.schemas.models import AlignedSegment
 def test_split_by_comma():
     """按逗号断句。"""
     seg = AlignedSegment(
-        sentence_id=0, start_sec=0.0, end_sec=5.0,
+        sentence_id=0,
+        start_sec=0.0,
+        end_sec=5.0,
         text="这台相机从2015年发布，一直是一机难求的状态。",
         words=[
             {"word": "这", "start_sec": 0.0, "end_sec": 0.2},
@@ -33,7 +35,9 @@ def test_split_by_comma():
             {"word": "态", "start_sec": 4.3, "end_sec": 4.5},
         ],
     )
-    lines = _split_subtitle_lines(seg.text, seg.words, seg.start_sec, seg.end_sec, max_chars=20)
+    lines = _split_subtitle_lines(
+        seg.text, seg.words, seg.start_sec, seg.end_sec, max_chars=20
+    )
     assert len(lines) >= 2
     # First line should contain the comma
     assert "，" in lines[0]["text"] or "发布" in lines[0]["text"]
@@ -42,14 +46,20 @@ def test_split_by_comma():
 def test_split_max_chars():
     """超过 max_chars 时强制断句。"""
     seg = AlignedSegment(
-        sentence_id=0, start_sec=0.0, end_sec=10.0,
+        sentence_id=0,
+        start_sec=0.0,
+        end_sec=10.0,
         text="这是一段很长很长很长很长很长很长很长很长很长的文本没有标点符号",
         words=[
             {"word": ch, "start_sec": i * 0.5, "end_sec": (i + 1) * 0.5}
-            for i, ch in enumerate("这是一段很长很长很长很长很长很长很长很长很长的文本没有标点符号")
+            for i, ch in enumerate(
+                "这是一段很长很长很长很长很长很长很长很长很长的文本没有标点符号"
+            )
         ],
     )
-    lines = _split_subtitle_lines(seg.text, seg.words, seg.start_sec, seg.end_sec, max_chars=20)
+    lines = _split_subtitle_lines(
+        seg.text, seg.words, seg.start_sec, seg.end_sec, max_chars=20
+    )
     for line in lines:
         clean = line["text"].replace("，", "").replace("。", "").replace("、", "")
         assert len(clean) <= 20, f"Line too long: '{line['text']}' ({len(clean)} chars)"
@@ -58,11 +68,15 @@ def test_split_max_chars():
 def test_no_words_proportional():
     """无 words 时按字数比例分配时间。"""
     seg = AlignedSegment(
-        sentence_id=0, start_sec=0.0, end_sec=10.0,
+        sentence_id=0,
+        start_sec=0.0,
+        end_sec=10.0,
         text="一二三四五，六七八九十。",
         words=[],
     )
-    lines = _split_subtitle_lines(seg.text, seg.words, seg.start_sec, seg.end_sec, max_chars=20)
+    lines = _split_subtitle_lines(
+        seg.text, seg.words, seg.start_sec, seg.end_sec, max_chars=20
+    )
     assert len(lines) == 2
     assert lines[0]["start_sec"] == 0.0
     assert lines[-1]["end_sec"] == 10.0
@@ -71,7 +85,9 @@ def test_no_words_proportional():
 def test_srt_exporter_uses_split():
     """SRTExporter.render() 应使用断句逻辑。"""
     seg = AlignedSegment(
-        sentence_id=0, start_sec=0.0, end_sec=5.0,
+        sentence_id=0,
+        start_sec=0.0,
+        end_sec=5.0,
         text="你好，世界。",
         words=[
             {"word": "你", "start_sec": 0.0, "end_sec": 0.5},
@@ -82,7 +98,6 @@ def test_srt_exporter_uses_split():
     )
     exporter = SRTExporter()
     srt = exporter.render([seg])
-    lines = srt.strip().split("\n")
     # Should have 2 subtitle blocks (split at comma)
     assert "你好，" in srt
     assert "世界。" in srt
@@ -92,7 +107,9 @@ def test_srt_exporter_uses_split():
 def test_itn_applied_in_srt():
     """SRT 导出应应用 ITN 转换。"""
     seg = AlignedSegment(
-        sentence_id=0, start_sec=0.0, end_sec=5.0,
+        sentence_id=0,
+        start_sec=0.0,
+        end_sec=5.0,
         text="二零一五年发布。",
         words=[
             {"word": "二", "start_sec": 0.0, "end_sec": 0.2},
