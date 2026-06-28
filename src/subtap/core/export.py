@@ -135,6 +135,8 @@ def _smart_split(
         current_words = []
         current_text = ""
 
+    _NUM_CHARS = set("零一二两三四五六七八九十百千万亿")
+
     for i, w in enumerate(words):
         word_text = w["word"]
 
@@ -150,9 +152,12 @@ def _smart_split(
                 _flush("pause")
 
         # 3. Max chars exceeded - flush BEFORE adding (to stay under limit)
-        # Check if adding this word would exceed max_chars
+        # Skip flush only if current AND previous word are both number chars
         if current_text and len(current_text.strip()) + len(word_text) > max_chars:
-            _flush("max_chars")
+            prev_is_num = current_words and current_words[-1]["word"] in _NUM_CHARS
+            cur_is_num = word_text in _NUM_CHARS
+            if not (prev_is_num and cur_is_num):
+                _flush("max_chars")
 
         # Add word to current line
         current_words.append(w)
@@ -438,13 +443,16 @@ class SRTExporter(BaseExporter):
                     seg.text, seg.words, seg.start_sec, seg.end_sec, max_chars=20
                 )
             sub_lines = _merge_fragments(sub_lines)
+            # Apply ITN before force-split so numbers stay intact
+            for sub in sub_lines:
+                sub["text"] = chinese_to_num(sub["text"])
             # Force-split any lines still exceeding max_chars
             sub_lines = _force_split_long(sub_lines, max_chars=20)
             for sub in sub_lines:
                 index += 1
                 start = _fmt_srt_time(sub["start_sec"])
                 end = _fmt_srt_time(sub["end_sec"])
-                text = chinese_to_num(sub["text"])
+                text = sub["text"]
                 if self.punctuation:
                     text = _normalize_punct(text, self.language)
                 else:
@@ -611,10 +619,13 @@ def run_final_exports(
                 seg.text, seg.words, seg.start_sec, seg.end_sec, max_chars=20
             )
         sub_lines = _merge_fragments(sub_lines)
+        # Apply ITN before force-split so numbers stay intact
+        for sub in sub_lines:
+            sub["text"] = chinese_to_num(sub["text"])
         sub_lines = _force_split_long(sub_lines, max_chars=20)
         for sub in sub_lines:
             vtt_index += 1
-            text = chinese_to_num(sub["text"])
+            text = sub["text"]
             if punctuation:
                 text = _normalize_punct(text, language)
             else:
