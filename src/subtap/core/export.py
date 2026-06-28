@@ -93,6 +93,102 @@ def load_asr_draft(asr_jsonl: Path) -> list[ASRSegment]:
 _SPLIT_RE = re.compile(r"(?<=[，。？！、,.?!])")
 
 
+def _smart_split(
+    words: list[dict],
+    text: str,
+    max_chars: int = 20,
+    min_chars: int = 3,
+    pause_threshold: float = 0.3,
+) -> list[dict]:
+    """Split subtitle text based on word-level timestamps.
+
+    Priority:
+    1. Sentence-ending punctuation (。！？.!?)
+    2. Pause > pause_threshold
+    3. Comma/enum punctuation + line already has enough chars
+    4. Exceeds max_chars
+
+    Merge rule: fragments < min_chars merge with adjacent line.
+    """
+    if not words:
+        return [{"text": text, "start_sec": 0.0, "end_sec": 0.0}]
+
+    _SENT_END = set("。！？.!?")
+    _COMMA = set("，、,;")
+
+    lines: list[dict] = []
+    current_words: list[dict] = []
+    current_text = ""
+
+    def _flush(break_type: str = "other"):
+        nonlocal current_words, current_text
+        if not current_words:
+            return
+        start = current_words[0]["start_sec"]
+        end = current_words[-1]["end_sec"]
+        lines.append({
+            "text": current_text.strip(),
+            "start_sec": start,
+            "end_sec": end,
+            "break_type": break_type,
+        })
+        current_words = []
+        current_text = ""
+
+    for i, w in enumerate(words):
+        word_text = w["word"]
+
+        # 1. Sentence-ending punctuation - flush and skip (don't add)
+        if word_text in _SENT_END:
+            _flush("sentence_end")
+            continue
+
+        # 2. Pause detection BEFORE adding (check gap with current word)
+        if i > 0 and current_text and len(current_text.strip()) >= min_chars:
+            gap = w["start_sec"] - words[i - 1]["end_sec"]
+            if gap >= pause_threshold:
+                _flush("pause")
+
+        # 3. Max chars exceeded - flush BEFORE adding (to stay under limit)
+        # Check if adding this word would exceed max_chars
+        if current_text and len(current_text.strip()) + len(word_text) > max_chars:
+            _flush("max_chars")
+
+        # Add word to current line
+        current_words.append(w)
+        current_text += word_text
+
+        # 4. Comma + line already substantial - flush AFTER adding comma
+        if word_text in _COMMA and len(current_text.strip()) >= 10:
+            _flush("comma")
+
+    # Flush remaining
+    if current_words:
+        _flush()
+
+    # Merge short fragments (only after sentence-ending breaks)
+    merged: list[dict] = []
+    for line in lines:
+        if not line["text"].strip():
+            continue
+        # Merge if: previous line exists, current is short, previous line is long enough,
+        # AND previous break was sentence-ending
+        if (merged and len(line["text"]) < min_chars and
+            len(merged[-1]["text"]) >= min_chars and
+            merged[-1].get("break_type") == "sentence_end"):
+            prev = merged[-1]
+            prev["text"] = prev["text"] + line["text"]
+            prev["end_sec"] = line["end_sec"]
+        else:
+            merged.append(line)
+
+    # Remove break_type from output
+    for line in merged:
+        line.pop("break_type", None)
+
+    return merged if merged else [{"text": text, "start_sec": words[0]["start_sec"], "end_sec": words[-1]["end_sec"]}]
+
+
 def _split_subtitle_lines(
     text: str,
     words: list[dict],
