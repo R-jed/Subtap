@@ -83,7 +83,7 @@ def test_no_words_proportional():
 
 
 def test_srt_exporter_uses_split():
-    """SRTExporter.render() 应使用断句逻辑。"""
+    """SRTExporter.render() 在有 words 时使用 _smart_split 断句。"""
     seg = AlignedSegment(
         sentence_id=0,
         start_sec=0.0,
@@ -98,10 +98,40 @@ def test_srt_exporter_uses_split():
     )
     exporter = SRTExporter()
     srt = exporter.render([seg])
-    # Should have 2 subtitle blocks (split at comma, punctuation stripped by default)
+    # _smart_split sees no punctuation in words, no pause (only 2 chars < min_chars=3),
+    # so outputs 1 block. Punctuation stripped: "你好世界"
     assert "你好" in srt
     assert "世界" in srt
-    assert "2\n" in srt  # block number 2 exists
+    assert "1\n" in srt  # block number 1 exists
+
+
+def test_srt_exporter_smart_split_with_pause():
+    """SRTExporter 在有 words 且存在足够长的暂停时应正确断句。"""
+    seg = AlignedSegment(
+        sentence_id=0,
+        start_sec=0.0,
+        end_sec=10.0,
+        text="这是第一句。这是第二句。",
+        words=[
+            {"word": "这", "start_sec": 0.0, "end_sec": 0.2},
+            {"word": "是", "start_sec": 0.2, "end_sec": 0.4},
+            {"word": "第", "start_sec": 0.4, "end_sec": 0.6},
+            {"word": "一", "start_sec": 0.6, "end_sec": 0.8},
+            {"word": "句", "start_sec": 0.8, "end_sec": 1.0},
+            {"word": "这", "start_sec": 2.5, "end_sec": 2.7},
+            {"word": "是", "start_sec": 2.7, "end_sec": 2.9},
+            {"word": "第", "start_sec": 2.9, "end_sec": 3.1},
+            {"word": "二", "start_sec": 3.1, "end_sec": 3.3},
+            {"word": "句", "start_sec": 3.3, "end_sec": 3.5},
+        ],
+    )
+    exporter = SRTExporter()
+    srt = exporter.render([seg])
+    # 1.5s gap between "句"(1.0) and "这"(2.5) >= pause_threshold 0.3s
+    # "这是第一句" = 5 chars >= min_chars=3, should trigger pause split
+    assert "2\n" in srt  # two subtitle blocks
+    assert "第一" in srt
+    assert "第二" in srt
 
 
 def test_itn_applied_in_srt():
