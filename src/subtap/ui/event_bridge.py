@@ -20,6 +20,19 @@ class EventBridge:
         self.event_bus.subscribe(EventType.STAGE_END, self._on_stage_end)
         self.event_bus.subscribe(EventType.CHUNK_END, self._on_chunk_end)
         self.event_bus.subscribe(EventType.PROGRESS, self._on_progress)
+        for event_type in (
+            EventType.AUDIO_CHUNK_READY,
+            EventType.ASR_DRAFT_READY,
+            EventType.ENHANCEMENT_READY,
+            EventType.SENTENCE_CANDIDATE_READY,
+            EventType.ALIGNMENT_READY,
+            EventType.SUBTITLE_PREVIEW_READY,
+            EventType.MODEL_LOAD_START,
+            EventType.MODEL_LOAD_DONE,
+            EventType.MODEL_RELEASE_START,
+            EventType.MODEL_RELEASE_DONE,
+        ):
+            self.event_bus.subscribe(event_type, self._on_streaming_event)
 
     def _on_stage_start(self, event: PipelineEvent) -> None:
         """处理阶段开始事件。"""
@@ -42,3 +55,8 @@ class EventBridge:
         """处理进度事件。"""
         if self.dashboard and hasattr(self.dashboard, "update_progress"):
             self.dashboard.update_progress(event.data)
+
+    def _on_streaming_event(self, event: PipelineEvent) -> None:
+        """处理字幕生产流式事件。"""
+        if self.dashboard and hasattr(self.dashboard, "update_streaming_event"):
+            self.dashboard.update_streaming_event(event.data)
