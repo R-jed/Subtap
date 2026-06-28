@@ -18,7 +18,7 @@ CHECKS=(
     "ruff check|$PYTHON -m ruff check src tests"
     "black --check|$PYTHON -m black --check src tests"
     "mypy|$PYTHON -m mypy src/subtap"
-    "pytest|$PYTHON -m pytest -q -p no:cacheprovider"
+    "pytest|$PYTHON -m pytest -q -p no:cacheprovider -x"
     "subtap setup --skip-models|$PYTHON -m subtap.cli setup --skip-models"
     "subtap --help|$PYTHON -m subtap.cli --help"
     "subtap run --help|$PYTHON -m subtap.cli run --help"
