@@ -9,6 +9,7 @@ from typing import Optional
 
 import httpx
 
+from subtap.schemas.config import RemoteAPIConfig
 from subtap.schemas.glossary import Glossary
 from subtap.schemas.models import CleanSegment
 
@@ -37,12 +38,18 @@ class OpenAICompatibleLLM:
         model: str = "gpt-4o-mini",
         base_url: str | None = None,
         api_key: str | None = None,
+        remote_api: RemoteAPIConfig | None = None,
     ):
-        self.model = model
+        self.model = remote_api.model if remote_api and remote_api.model else model
         self.base_url = (
-            base_url or os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+            (remote_api.base_url if remote_api and remote_api.base_url else None)
+            or base_url
+            or os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
         ).rstrip("/")
-        self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
+        api_key_env = remote_api.api_key_env if remote_api else "OPENAI_API_KEY"
+        self.api_key = api_key or os.environ.get(api_key_env, "")
+        self.timeout_sec = remote_api.timeout_sec if remote_api else 120
+        self.provider = remote_api.provider if remote_api else "openai-compatible"
 
     def _build_prompt(
         self,
@@ -96,21 +103,39 @@ class OpenAICompatibleLLM:
         prompt = self._build_prompt(segments, glossary, style_rules)
 
         try:
-            with httpx.Client(timeout=120) as client:
-                resp = client.post(
-                    f"{self.base_url}/chat/completions",
-                    headers={"Authorization": f"Bearer {self.api_key}"},
-                    json={
-                        "model": self.model,
-                        "messages": [
-                            {"role": "system", "content": _CLEAN_SYSTEM_PROMPT},
-                            {"role": "user", "content": prompt},
-                        ],
-                    },
-                )
+            with httpx.Client(timeout=self.timeout_sec) as client:
+                if self.provider.startswith("anthropic"):
+                    resp = client.post(
+                        f"{self.base_url}/messages",
+                        headers={
+                            "x-api-key": self.api_key,
+                            "anthropic-version": "2023-06-01",
+                        },
+                        json={
+                            "model": self.model,
+                            "max_tokens": 4096,
+                            "system": _CLEAN_SYSTEM_PROMPT,
+                            "messages": [{"role": "user", "content": prompt}],
+                        },
+                    )
+                else:
+                    resp = client.post(
+                        f"{self.base_url}/chat/completions",
+                        headers={"Authorization": f"Bearer {self.api_key}"},
+                        json={
+                            "model": self.model,
+                            "messages": [
+                                {"role": "system", "content": _CLEAN_SYSTEM_PROMPT},
+                                {"role": "user", "content": prompt},
+                            ],
+                        },
+                    )
                 resp.raise_for_status()
                 data = resp.json()
-                content = data["choices"][0]["message"]["content"]
+                if self.provider.startswith("anthropic"):
+                    content = data["content"][0]["text"]
+                else:
+                    content = data["choices"][0]["message"]["content"]
                 return self._parse_response(content, segments)
 
         except Exception as e:

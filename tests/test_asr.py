@@ -122,17 +122,13 @@ def test_asr_chunk_id_alignment(
     assert chunk_ids == seg_ids
 
 
-def test_http_asr_raises():
-    """HttpASRBackend transcribe raises NotImplementedError."""
+def test_http_asr_empty_chunks_returns_empty():
+    """HttpASRBackend returns empty result for empty chunks."""
     from subtap.backends.asr.http_asr import HttpASRBackend
 
     config = ASRConfig(backend="http-asr")
     backend = HttpASRBackend(config)
-    try:
-        backend.transcribe([])
-        assert False, "Should have raised NotImplementedError"
-    except NotImplementedError:
-        pass
+    assert backend.transcribe([]) == []
 
 
 def test_cli_transcribe_runnable(

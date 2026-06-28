@@ -54,7 +54,10 @@ def run_asr(
     if backend_name:
         asr_config.backend = backend_name
 
-    backend = get_backend(asr_config)
+    if asr_config.backend == "http-asr":
+        backend = get_backend(asr_config, config.remote_api)
+    else:
+        backend = get_backend(asr_config)
 
     # Resolve chunk paths to absolute
     abs_chunks: list[Chunk] = []
