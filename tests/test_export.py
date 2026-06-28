@@ -352,3 +352,107 @@ def test_srt_render_filters_empty_segments():
     srt = SRTExporter(punctuation=False).render(segs)
     time_lines = [l for l in srt.split("\n") if "-->" in l]
     assert len(time_lines) == 2
+
+
+# ── _smart_split tests ──
+
+
+def test_smart_split_basic():
+    """基本断句：句末标点 + 停顿 + 宽度限制。"""
+    from subtap.core.export import _smart_split
+    words = [
+        {"word": "这", "start_sec": 1.0, "end_sec": 1.1},
+        {"word": "是", "start_sec": 1.1, "end_sec": 1.2},
+        {"word": "第", "start_sec": 1.2, "end_sec": 1.3},
+        {"word": "一", "start_sec": 1.3, "end_sec": 1.4},
+        {"word": "句", "start_sec": 1.4, "end_sec": 1.5},
+        {"word": "。", "start_sec": 1.5, "end_sec": 1.6},
+        {"word": "这", "start_sec": 2.0, "end_sec": 2.1},
+        {"word": "是", "start_sec": 2.1, "end_sec": 2.2},
+        {"word": "第", "start_sec": 2.2, "end_sec": 2.3},
+        {"word": "二", "start_sec": 2.3, "end_sec": 2.4},
+        {"word": "句", "start_sec": 2.4, "end_sec": 2.5},
+    ]
+    result = _smart_split(words, "这是第一句。这是第二句")
+    assert len(result) == 2
+    assert result[0]["text"] == "这是第一句"
+    assert result[1]["text"] == "这是第二句"
+
+
+def test_smart_split_pause_break():
+    """停顿断句：停顿 > 0.3s 应产生新字幕。"""
+    from subtap.core.export import _smart_split
+    words = [
+        {"word": "前", "start_sec": 1.0, "end_sec": 1.1},
+        {"word": "半", "start_sec": 1.1, "end_sec": 1.2},
+        {"word": "句", "start_sec": 1.2, "end_sec": 1.3},
+        {"word": "后", "start_sec": 2.0, "end_sec": 2.1},
+        {"word": "半", "start_sec": 2.1, "end_sec": 2.2},
+        {"word": "句", "start_sec": 2.2, "end_sec": 2.3},
+    ]
+    result = _smart_split(words, "前半句后半句", min_chars=2)
+    assert len(result) == 2
+
+
+def test_smart_split_max_chars():
+    """宽度限制：超过 max_chars 应换行。"""
+    from subtap.core.export import _smart_split
+    words = [
+        {"word": "这", "start_sec": 1.0, "end_sec": 1.1},
+        {"word": "是", "start_sec": 1.1, "end_sec": 1.2},
+        {"word": "一", "start_sec": 1.2, "end_sec": 1.3},
+        {"word": "个", "start_sec": 1.3, "end_sec": 1.4},
+        {"word": "很", "start_sec": 1.4, "end_sec": 1.5},
+        {"word": "长", "start_sec": 1.5, "end_sec": 1.6},
+        {"word": "的", "start_sec": 1.6, "end_sec": 1.7},
+        {"word": "句", "start_sec": 1.7, "end_sec": 1.8},
+        {"word": "子", "start_sec": 1.8, "end_sec": 1.9},
+        {"word": "需", "start_sec": 1.9, "end_sec": 2.0},
+        {"word": "要", "start_sec": 2.0, "end_sec": 2.1},
+        {"word": "换", "start_sec": 2.1, "end_sec": 2.2},
+        {"word": "行", "start_sec": 2.2, "end_sec": 2.3},
+    ]
+    result = _smart_split(words, "这是一个很长的句子需要换行", max_chars=10)
+    assert len(result) >= 2
+    for line in result:
+        assert len(line["text"]) <= 13
+
+
+def test_smart_split_number_protection():
+    """数字序列保护：不拆分连续数字。"""
+    from subtap.core.export import _smart_split
+    words = [
+        {"word": "价", "start_sec": 1.0, "end_sec": 1.1},
+        {"word": "格", "start_sec": 1.1, "end_sec": 1.2},
+        {"word": "是", "start_sec": 1.2, "end_sec": 1.3},
+        {"word": "一", "start_sec": 1.3, "end_sec": 1.4},
+        {"word": "万", "start_sec": 1.4, "end_sec": 1.5},
+        {"word": "两", "start_sec": 1.5, "end_sec": 1.6},
+        {"word": "千", "start_sec": 1.6, "end_sec": 1.7},
+        {"word": "九", "start_sec": 1.7, "end_sec": 1.8},
+        {"word": "百", "start_sec": 1.8, "end_sec": 1.9},
+        {"word": "九", "start_sec": 1.9, "end_sec": 2.0},
+        {"word": "十", "start_sec": 2.0, "end_sec": 2.1},
+        {"word": "九", "start_sec": 2.1, "end_sec": 2.2},
+    ]
+    result = _smart_split(words, "价格是一万两千九百九十九", max_chars=8)
+    num_line = [l for l in result if "万" in l["text"]]
+    assert len(num_line) == 1
+    assert "一万两千九百九十九" in num_line[0]["text"]
+
+
+def test_smart_split_filler_merge():
+    """语气词应合并到上一行。"""
+    from subtap.core.export import _smart_split
+    words = [
+        {"word": "我", "start_sec": 1.0, "end_sec": 1.1},
+        {"word": "觉", "start_sec": 1.1, "end_sec": 1.2},
+        {"word": "得", "start_sec": 1.2, "end_sec": 1.3},
+        {"word": "呃", "start_sec": 1.5, "end_sec": 1.6},
+        {"word": "应", "start_sec": 2.0, "end_sec": 2.1},
+        {"word": "该", "start_sec": 2.1, "end_sec": 2.2},
+        {"word": "是", "start_sec": 2.2, "end_sec": 2.3},
+    ]
+    result = _smart_split(words, "我觉得呃应该是", min_chars=2)
+    for line in result:
+        assert line["text"] != "呃"
