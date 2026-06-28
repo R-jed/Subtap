@@ -190,7 +190,7 @@ def test_setup_has_remote_api_options():
     clean = re.sub(r'\x1b\[[0-9;]*m', '', result.output)
     assert "remote-api" in clean
     assert "remote-base-url" in clean
-    assert "--remote-api-key-env" in result.output
+    assert "remote-api-key-env" in clean
 
 
 def test_quality_command_exists():
