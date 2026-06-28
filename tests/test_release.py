@@ -47,7 +47,9 @@ def test_subtap_setup_help():
 def test_subtap_doctor():
     """Test subtap doctor works."""
     result = subprocess.run(
-        [sys.executable, "-m", "subtap.cli", "doctor", "--workspace"], capture_output=True, text=True
+        [sys.executable, "-m", "subtap.cli", "doctor", "--workspace"],
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 0
 
