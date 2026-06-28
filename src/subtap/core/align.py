@@ -152,6 +152,17 @@ def run_align(
                     )
                 )
 
+    # Fix word timestamp quality for all aligners
+    for seg in aligned:
+        words = seg.words
+        for k in range(len(words) - 1):
+            # Step 1: fix zero/negative duration
+            if words[k]["end_sec"] <= words[k]["start_sec"]:
+                words[k]["end_sec"] = words[k]["start_sec"] + 0.020
+            # Step 2: fix monotonicity (may cascade)
+            if words[k]["end_sec"] > words[k + 1]["start_sec"]:
+                words[k + 1]["start_sec"] = words[k]["end_sec"]
+
     # Write aligned.jsonl
     write_aligned(aligned, workspace.aligned_jsonl)
     write_aligned_subtitles(
