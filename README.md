@@ -60,7 +60,7 @@ subtap doctor
 
 - `models/asr_0.6b` — 快速语音识别（约 960 MB，必需）
 - `models/asr_1.7b` — 高质量语音识别（约 2.3 GB，可选）
-- `models/aligner` — 时间轴对齐（约 1.2 GB，必需）
+- `models/aligner` — 时间轴精对齐（约 1.2 GB，默认流程必需；`--no-align` 可跳过）
 
 `subtap setup` 支持四种下载方式：
 
@@ -87,11 +87,13 @@ graph LR
     B --> C[语音识别]
     C --> D[文本清洗]
     D --> E[智能断句]
-    E --> F[时间轴对齐]
+    E --> F[时间轴对齐（默认，可关闭）]
     F --> G[字幕导出]
+    E --> H[Draft 导出（--no-align）]
 ```
 
 每个阶段输出 JSONL 中间产物到 `work/` 目录，支持断点续跑。
+默认会执行 ForcedAligner 精对齐并生成 `final.*`；使用 `--no-align` 会跳过精对齐，只生成 `draft.srt` 和 `draft.json`，适合粗剪预览，不作为最终交付字幕。
 
 ## CLI 命令
 
@@ -113,6 +115,9 @@ subtap run video.mp3 --translate-to en
 
 # 高质量模式（使用 1.7B 模型）
 subtap run video.mp3 --mode quality
+
+# 跳过精对齐，只生成 draft.srt / draft.json 粗剪预览
+subtap run video.mp3 --no-align
 
 # 运行演示
 subtap demo

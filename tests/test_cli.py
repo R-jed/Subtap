@@ -194,6 +194,16 @@ def test_run_has_no_cleanroom_flag():
     assert "cleanroom" in _strip_ansi(result.output)
 
 
+def test_run_has_no_align_flag():
+    """subtap run should expose no-align draft mode."""
+    result = runner.invoke(app, ["run", "--help"])
+    assert result.exit_code == 0
+    clean = _strip_ansi(result.output)
+    assert "no-align" in clean
+    assert "draft" in clean
+    assert "final.srt" in clean
+
+
 def test_setup_has_remote_api_options():
     """subtap setup should expose remote API model discovery options."""
     import re
@@ -294,6 +304,78 @@ def test_batch_transcribe_runs_each_file(tmp_path, monkeypatch):
     assert calls[0][0] == tmp_path / "out" / one.stem / "work"
     assert calls[0][2] == tmp_path / "out" / one.stem
     assert calls[1][2] == tmp_path / "out" / two.stem
+
+
+def test_run_no_align_passes_align_disabled_to_runner(tmp_path, monkeypatch):
+    """--no-align should disable align stage in runner."""
+    calls = []
+
+    class FakePipeline:
+        def __init__(self, _config, work_dir):
+            class Workspace:
+                root = work_dir
+                asr_jsonl = work_dir / "asr" / "asr.jsonl"
+                aligned_jsonl = work_dir / "aligned.jsonl"
+
+                def ensure_dirs(self):
+                    self.root.mkdir(parents=True, exist_ok=True)
+
+            self.workspace = Workspace()
+
+        def run_stage(self, stage, **kwargs):
+            calls.append(stage)
+            if stage == "prepare":
+                return {"media_info": {"duration": 1.0, "sample_rate": 16000}}
+            if stage == "chunk":
+                return {"chunk_count": 1}
+            if stage == "asr":
+                self.workspace.asr_jsonl.parent.mkdir(parents=True, exist_ok=True)
+                self.workspace.asr_jsonl.write_text(
+                    '{"chunk_id":0,"segment_id":0,"start_sec":0.0,'
+                    '"end_sec":1.0,"text":"hello","confidence":null}\n',
+                    encoding="utf-8",
+                )
+                return {"segment_count": 1}
+            if stage == "clean":
+                return {"segment_count": 1}
+            if stage == "segment":
+                return {"sentence_count": 1}
+            if stage == "align":
+                raise AssertionError("--no-align must not run align")
+            raise AssertionError(stage)
+
+    config = SimpleNamespace(output=SimpleNamespace(timestamp=True))
+    monkeypatch.setattr("subtap.core.pipeline.Pipeline", FakePipeline)
+    monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
+
+    input_path = tmp_path / "input.wav"
+    output_dir = tmp_path / "out"
+    input_path.write_bytes(b"data")
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            str(input_path),
+            "--no-tui",
+            "--no-git-check",
+            "--no-cleanroom",
+            "--no-align",
+            "--output-dir",
+            str(output_dir),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "align" not in calls
+    assert (output_dir / "draft.srt").exists()
+    assert (output_dir / "draft.json").exists()
+    assert not (output_dir / "final.srt").exists()
+    assert "未精对齐" in (output_dir / "report.md").read_text(encoding="utf-8")
+    metrics = json.loads((output_dir / "metrics.json").read_text(encoding="utf-8"))
+    assert metrics["alignment_enabled"] is False
+    assert metrics["align_runtime_sec"] == 0
+    assert metrics["external_audio_sent"] is False
 
 
 def test_run_mode_fast():

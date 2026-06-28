@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from subtap.schemas.models import AlignedSegment
+from subtap.schemas.models import AlignedSegment, ASRSegment
 
 
 def _fmt_srt_time(seconds: float) -> str:
@@ -35,6 +35,18 @@ def load_aligned(aligned_jsonl: Path) -> list[AlignedSegment]:
             if line:
                 segments.append(AlignedSegment.model_validate_json(line))
     segments.sort(key=lambda s: s.sentence_id)
+    return segments
+
+
+def load_asr_draft(asr_jsonl: Path) -> list[ASRSegment]:
+    """Load ASR reference-timing segments from JSONL."""
+    segments: list[ASRSegment] = []
+    with open(asr_jsonl) as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                segments.append(ASRSegment.model_validate_json(line))
+    segments.sort(key=lambda s: (s.chunk_id, s.segment_id))
     return segments
 
 
@@ -175,4 +187,51 @@ def run_export(
         "output_path": str(output_path),
         "format": fmt,
         "segment_count": len(segments),
+    }
+
+
+def run_draft_export(asr_jsonl: Path, output_dir: Path) -> dict:
+    """Export ASR reference timing as draft.srt and draft.json."""
+    segments = load_asr_draft(asr_jsonl)
+    if not segments:
+        raise ValueError(f"No ASR draft segments found in {asr_jsonl}")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    srt_path = output_dir / "draft.srt"
+    json_path = output_dir / "draft.json"
+
+    lines: list[str] = []
+    payload: list[dict] = []
+    for index, seg in enumerate(segments, start=1):
+        lines.extend(
+            [
+                str(index),
+                f"{_fmt_srt_time(seg.start_sec)} --> {_fmt_srt_time(seg.end_sec)}",
+                seg.text,
+                "",
+            ]
+        )
+        payload.append(
+            {
+                "index": index,
+                "start_sec": seg.start_sec,
+                "end_sec": seg.end_sec,
+                "text": seg.text,
+                "source": "asr_reference_timing",
+            }
+        )
+
+    import json
+
+    srt_path.write_text("\n".join(lines), encoding="utf-8")
+    json_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return {
+        "output_path": str(srt_path),
+        "json_path": str(json_path),
+        "format": "draft",
+        "segment_count": len(segments),
+        "alignment_enabled": False,
     }
