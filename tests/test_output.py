@@ -289,7 +289,9 @@ def test_cli_run_uses_output_engine(tmp_path):
     result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
     # Verify --mode option exists
-    assert "--mode" in result.output
+    import re
+    clean = re.sub(r'\x1b\[[0-9;]*m', '', result.output)
+    assert "mode" in clean
 
 
 def test_output_config_has_timestamp():
