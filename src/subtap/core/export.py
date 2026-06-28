@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import re
 from abc import ABC, abstractmethod
 from pathlib import Path
 
+from subtap.core.itn import chinese_to_num
 from subtap.schemas.models import AlignedSegment, ASRSegment
 
 
@@ -56,6 +58,115 @@ def load_asr_draft(asr_jsonl: Path) -> list[ASRSegment]:
     return segments
 
 
+_SPLIT_RE = re.compile(r"(?<=[，。？！、,.?!])")
+
+
+def _split_subtitle_lines(
+    text: str,
+    words: list[dict],
+    start_sec: float,
+    end_sec: float,
+    max_chars: int = 20,
+) -> list[dict]:
+    """Split subtitle text by punctuation, interpolate time from word timestamps."""
+    parts = _SPLIT_RE.split(text)
+    parts = [p.strip() for p in parts if p.strip()]
+
+    if not parts:
+        return [{"text": text, "start_sec": start_sec, "end_sec": end_sec}]
+
+    # Force-split long parts
+    final_parts: list[str] = []
+    for part in parts:
+        while len(part) > max_chars:
+            cut = max_chars
+            for sep in ["，", "、", " ", "。"]:
+                idx = part.rfind(sep, 0, max_chars)
+                if idx > 0:
+                    cut = idx + 1
+                    break
+            final_parts.append(part[:cut])
+            part = part[cut:]
+        if part:
+            final_parts.append(part)
+
+    if len(final_parts) <= 1:
+        return [{"text": text, "start_sec": start_sec, "end_sec": end_sec}]
+
+    # Time interpolation
+    if words:
+        return _interpolate_from_words(text, final_parts, words, start_sec, end_sec)
+    else:
+        return _interpolate_proportional(final_parts, start_sec, end_sec)
+
+
+def _interpolate_from_words(
+    original_text: str,
+    parts: list[str],
+    words: list[dict],
+    start_sec: float,
+    end_sec: float,
+) -> list[dict]:
+    """Interpolate sub-sentence times from word timestamps."""
+    result = []
+    word_idx = 0
+
+    for part in parts:
+        part_start = word_idx
+        for ch in part:
+            if ch in "，。？！、,.?! ":
+                continue
+            while word_idx < len(words):
+                w = words[word_idx]["word"]
+                if ch in w or w in ch:
+                    word_idx += 1
+                    break
+                word_idx += 1
+
+        part_words = words[part_start:word_idx]
+        if part_words:
+            s = part_words[0]["start_sec"]
+            e = part_words[-1]["end_sec"]
+        else:
+            s = words[part_start - 1]["end_sec"] if part_start > 0 else start_sec
+            e = s + 0.1
+
+        result.append({"text": part, "start_sec": round(s, 3), "end_sec": round(e, 3)})
+
+    if result:
+        result[-1]["end_sec"] = round(end_sec, 3)
+
+    return result
+
+
+def _interpolate_proportional(
+    parts: list[str],
+    start_sec: float,
+    end_sec: float,
+) -> list[dict]:
+    """Interpolate sub-sentence times by visible character ratio."""
+    vis_counts = []
+    for part in parts:
+        count = sum(1 for ch in part if ch not in "，。？！、,.?! ")
+        vis_counts.append(max(count, 1))
+
+    total = sum(vis_counts)
+    duration = end_sec - start_sec
+
+    result = []
+    current = start_sec
+    for i, (part, vc) in enumerate(zip(parts, vis_counts)):
+        if i == len(parts) - 1:
+            s, e = current, end_sec
+        else:
+            s = current
+            e = current + duration * vc / total
+            current = e
+        result.append({"text": part, "start_sec": round(s, 3), "end_sec": round(e, 3)})
+
+    return result
+
+
 class BaseExporter(ABC):
     """Base class for subtitle exporters."""
 
@@ -86,13 +197,20 @@ class SRTExporter(BaseExporter):
     def render(self, segments: list[AlignedSegment]) -> str:
         sorted_segs = sorted(segments, key=lambda s: s.sentence_id)
         lines: list[str] = []
-        for i, seg in enumerate(sorted_segs, 1):
-            start = _fmt_srt_time(seg.start_sec)
-            end = _fmt_srt_time(seg.end_sec)
-            lines.append(str(i))
-            lines.append(f"{start} --> {end}")
-            lines.append(seg.text)
-            lines.append("")
+        index = 0
+        for seg in sorted_segs:
+            sub_lines = _split_subtitle_lines(
+                seg.text, seg.words, seg.start_sec, seg.end_sec, max_chars=20
+            )
+            for sub in sub_lines:
+                index += 1
+                start = _fmt_srt_time(sub["start_sec"])
+                end = _fmt_srt_time(sub["end_sec"])
+                text = chinese_to_num(sub["text"])
+                lines.append(str(index))
+                lines.append(f"{start} --> {end}")
+                lines.append(text)
+                lines.append("")
         return "\n".join(lines)
 
 
