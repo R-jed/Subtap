@@ -241,8 +241,8 @@ def _merge_fragments(sub_lines: list[dict]) -> list[dict]:
     Rules (applied in priority order):
     1. Filter empty text lines
     2. Merge filler-only lines (呃/嗯/啊) into previous line
-    3. Merge fragment lines (≤2 chars) into previous line
-    4. Merge lines ending with tail particles (的/在/了/…) into next line
+    3. Merge lines ending with tail particles (的/在/了/…) into next line
+    4. Merge fragment lines (≤2 chars) into previous line
     """
     if not sub_lines:
         return sub_lines
@@ -262,12 +262,12 @@ def _merge_fragments(sub_lines: list[dict]) -> list[dict]:
             merged[-1]["end_sec"] = cur["end_sec"]
             continue
 
-        if char_count <= _FRAG_THRESHOLD and merged:
+        if merged and merged[-1]["text"] and merged[-1]["text"][-1] in _TAIL_PARTICLES:
             merged[-1]["text"] += text
             merged[-1]["end_sec"] = cur["end_sec"]
             continue
 
-        if merged and merged[-1]["text"] and merged[-1]["text"][-1] in _TAIL_PARTICLES:
+        if char_count <= _FRAG_THRESHOLD and merged:
             merged[-1]["text"] += text
             merged[-1]["end_sec"] = cur["end_sec"]
             continue
