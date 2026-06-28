@@ -28,7 +28,9 @@ class APIEnhancer:
         model: str = "gpt-4.1-mini",
         api_key: str | None = None,
         endpoint: str | None = None,
-        text_client: Callable[[str, str, dict[str, str] | None, str], str] | None = None,
+        text_client: (
+            Callable[[str, str, dict[str, str] | None, str], str] | None
+        ) = None,
     ):
         """Initialize API enhancer.
 

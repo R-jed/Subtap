@@ -8,7 +8,6 @@ import subprocess
 from pathlib import Path
 from typing import Any, Callable
 
-
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".m4v", ".avi", ".webm"}
 
 
@@ -29,7 +28,9 @@ def build_burn_subtitle_command(
     vf = f"subtitles={shlex.quote(str(subtitle))}"
     command = [ffmpeg]
     command.append("-y" if overwrite else "-n")
-    command.extend(["-i", str(video), "-vf", vf, "-c:v", "libx264", "-c:a", "copy", str(output)])
+    command.extend(
+        ["-i", str(video), "-vf", vf, "-c:v", "libx264", "-c:a", "copy", str(output)]
+    )
     return command
 
 
