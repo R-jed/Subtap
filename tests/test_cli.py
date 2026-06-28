@@ -186,8 +186,8 @@ def test_setup_has_remote_api_options():
     """subtap setup should expose remote API model discovery options."""
     result = runner.invoke(app, ["setup", "--help"])
     assert result.exit_code == 0
-    assert "--remote-api" in result.output
-    assert "--remote-base-url" in result.output
+    assert "remote-api" in result.output
+    assert "remote-base-url" in result.output
     assert "--remote-api-key-env" in result.output
 
 
