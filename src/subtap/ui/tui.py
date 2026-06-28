@@ -145,7 +145,12 @@ class TUIRunner:
             if align_enabled:
                 from subtap.core.export import run_final_exports
 
-                result = run_final_exports(pipeline.workspace.aligned_jsonl, output_dir)
+                result = run_final_exports(
+                    pipeline.workspace.aligned_jsonl,
+                    output_dir,
+                    punctuation=pipeline.config.output.subtitle_punctuation,
+                    language=pipeline.config.output.subtitle_language,
+                )
             else:
                 from subtap.core.export import run_draft_export
 
@@ -276,7 +281,12 @@ class PlainRunner:
             if align_enabled:
                 from subtap.core.export import run_final_exports
 
-                r = run_final_exports(pipeline.workspace.aligned_jsonl, output_dir)
+                r = run_final_exports(
+                    pipeline.workspace.aligned_jsonl,
+                    output_dir,
+                    punctuation=pipeline.config.output.subtitle_punctuation,
+                    language=pipeline.config.output.subtitle_language,
+                )
             else:
                 from subtap.core.export import run_draft_export
 
