@@ -288,8 +288,8 @@ def test_cli_run_uses_output_engine(tmp_path):
     # For now, just verify the command exists
     result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
-    # Verify --timestamp option exists
-    assert "--timestamp" in result.output or "--no-timestamp" in result.output
+    # Verify --mode option exists
+    assert "--mode" in result.output
 
 
 def test_output_config_has_timestamp():
