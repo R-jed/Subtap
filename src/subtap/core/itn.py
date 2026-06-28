@@ -40,6 +40,31 @@ _NUM_RE = re.compile(
 )
 
 
+def _parse_total(s: str) -> int:
+    """Parse full Chinese number string to integer value (万/亿 included)."""
+    total = 0
+    current = 0
+    current_group = 0
+    for ch in s:
+        if ch in _NUM_MAP:
+            current = _NUM_MAP[ch]
+        elif ch in _UNIT_MAP:
+            unit = _UNIT_MAP[ch]
+            if unit >= 10000:
+                current_group += current
+                total += current_group * unit
+                current_group = 0
+                current = 0
+            else:
+                if current == 0 and unit == 10:
+                    current = 1
+                current_group += current * unit
+                current = 0
+    current_group += current
+    total += current_group
+    return total
+
+
 def _convert_number_str(s: str) -> str:
     """Convert a Chinese number string to Arabic digits.
 
@@ -63,6 +88,11 @@ def _convert_number_str(s: str) -> str:
     has_yi = "亿" in s
 
     if has_yi or has_wan:
+        # Calculate total value first — if small enough, convert fully
+        total = _parse_total(s)
+        if has_wan and not has_yi and total < 20000:
+            # Small number with 万 (e.g. "一万两千九百九十九" = 12999)
+            return str(total)
         return _convert_keep_unit(s)
 
     # Compound number without 万/亿: convert fully (千/百/十)
