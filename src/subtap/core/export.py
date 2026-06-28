@@ -108,31 +108,35 @@ def _interpolate_from_words(
     end_sec: float,
 ) -> list[dict]:
     """Interpolate sub-sentence times from word timestamps."""
+    _PUNCT = set("，。？！、,.?! ")
+
     result = []
     word_idx = 0
 
     for part in parts:
-        part_start = word_idx
-        for ch in part:
-            if ch in "，。？！、,.?! ":
-                continue
-            while word_idx < len(words):
-                w = words[word_idx]["word"]
-                if ch in w or w in ch:
-                    word_idx += 1
-                    break
-                word_idx += 1
+        part_start_word = word_idx
+        # Count visible chars in this part (excluding punctuation)
+        visible_chars = [ch for ch in part if ch not in _PUNCT]
 
-        part_words = words[part_start:word_idx]
+        matched = 0
+        while word_idx < len(words) and matched < len(visible_chars):
+            w_text = words[word_idx]["word"]
+            # This word matches some visible chars
+            matched += len([ch for ch in w_text if ch not in _PUNCT])
+            word_idx += 1
+
+        part_words = words[part_start_word:word_idx]
         if part_words:
             s = part_words[0]["start_sec"]
             e = part_words[-1]["end_sec"]
         else:
-            s = words[part_start - 1]["end_sec"] if part_start > 0 else start_sec
+            # Fallback: use previous word's end time
+            s = words[part_start_word - 1]["end_sec"] if part_start_word > 0 else start_sec
             e = s + 0.1
 
         result.append({"text": part, "start_sec": round(s, 3), "end_sec": round(e, 3)})
 
+    # Ensure last part ends at end_sec
     if result:
         result[-1]["end_sec"] = round(end_sec, 3)
 

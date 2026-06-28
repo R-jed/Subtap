@@ -17,8 +17,13 @@ _UNIT_MAP = {
     "十": 10, "百": 100, "千": 1000, "万": 10000, "亿": 100000000,
 }
 
-# Match sequences of Chinese number chars (including 十百千万亿)
-_NUM_RE = re.compile(r"[零一二两三四五六七八九十百千万亿]+")
+# Match meaningful number sequences only:
+# 1. 2+ pure digits: 二零一五、一二三
+# 2. Any sequence containing at least one unit (十百千万亿): 一万两千三百四十五、十万、三百
+_NUM_RE = re.compile(
+    r"[零一二两三四五六七八九]{2,}"                                       # 2+ pure digits
+    r"|[零一二两三四五六七八九十百千万亿]*[十百千万亿][零一二两三四五六七八九十百千万亿]*"  # contains unit
+)
 
 
 def _convert_number_str(s: str) -> str:
