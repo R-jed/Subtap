@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from subtap.schemas.config import CleanConfig
+from subtap.schemas.config import CleanConfig, RemoteAPIConfig
 
 if TYPE_CHECKING:
     from subtap.backends.llm.base import LLMBackend
 
 
-def get_llm_backend(config: CleanConfig) -> LLMBackend:
+def get_llm_backend(
+    config: CleanConfig, remote_api: RemoteAPIConfig | None = None
+) -> LLMBackend:
     """Instantiate an LLM backend by name.
 
     Supports formats:
@@ -29,7 +31,7 @@ def get_llm_backend(config: CleanConfig) -> LLMBackend:
         model = backend_str.split(":", 1)[1]
         from subtap.backends.llm.openai_compat import OpenAICompatibleLLM
 
-        return OpenAICompatibleLLM(model=model)
+        return OpenAICompatibleLLM(model=model, remote_api=remote_api)
     elif backend_str.startswith("lmstudio:"):
         model = backend_str.split(":", 1)[1]
         from subtap.backends.llm.lmstudio import LMStudioLLM

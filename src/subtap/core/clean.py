@@ -107,7 +107,10 @@ def run_clean(
         clean_config.backend = llm_backend_name
 
     try:
-        llm = get_llm_backend(clean_config)
+        if clean_config.backend.startswith("openai:"):
+            llm = get_llm_backend(clean_config, config.remote_api)
+        else:
+            llm = get_llm_backend(clean_config)
         if llm is not None:
             cleaned = llm.clean_segments(
                 replaced,
