@@ -37,11 +37,14 @@ for check in "${CHECKS[@]}"; do
     label="${check%%|*}"
     command="${check#*|}"
     echo "▸ 检查: $label"
-    if eval "$command" > /dev/null 2>&1; then
+    OUTPUT=$(eval "$command" 2>&1)
+    RC=$?
+    if [ $RC -eq 0 ]; then
         echo "  ✓ 通过"
         PASSED=$((PASSED + 1))
     else
         echo "  ✗ 失败"
+        echo "$OUTPUT" | head -10
         FAILED=$((FAILED + 1))
     fi
 done
