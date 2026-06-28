@@ -90,15 +90,14 @@ def load_asr_draft(asr_jsonl: Path) -> list[ASRSegment]:
     return segments
 
 
-_SPLIT_RE = re.compile(r"(?<=[，。？！、,;:：；.!?])")
-
-
 def _smart_split(
     words: list[dict],
     text: str,
     max_chars: int = 20,
     min_chars: int = 3,
     pause_threshold: float = 0.3,
+    start_sec: float = 0.0,
+    end_sec: float = 0.0,
 ) -> list[dict]:
     """Split subtitle text based on word-level timestamps.
 
@@ -116,7 +115,7 @@ def _smart_split(
     6. Merge fragment lines (≤2 chars) into previous line
     """
     if not words:
-        return [{"text": text, "start_sec": 0.0, "end_sec": 0.0}]
+        return [{"text": text, "start_sec": start_sec, "end_sec": end_sec}]
 
     _SENT_END = set("。！？.!?")
     _COMMA = set("，、,;")
@@ -195,212 +194,6 @@ def _smart_split(
     return merged if merged else [{"text": text, "start_sec": words[0]["start_sec"], "end_sec": words[-1]["end_sec"]}]
 
 
-def _split_subtitle_lines(
-    text: str,
-    words: list[dict],
-    start_sec: float,
-    end_sec: float,
-    max_chars: int = 20,
-) -> list[dict]:
-    """Split subtitle text by punctuation, interpolate time from word timestamps."""
-    parts = _SPLIT_RE.split(text)
-    parts = [p.strip() for p in parts if p.strip()]
-
-    if not parts:
-        return [{"text": text, "start_sec": start_sec, "end_sec": end_sec}]
-
-    # Force-split long parts
-    final_parts: list[str] = []
-    for part in parts:
-        while len(part) > max_chars:
-            cut = max_chars
-            for sep in ["，", "、", " ", "。"]:
-                idx = part.rfind(sep, 0, max_chars)
-                if idx > 0:
-                    cut = idx + 1
-                    break
-            final_parts.append(part[:cut])
-            part = part[cut:]
-        if part:
-            final_parts.append(part)
-
-    if len(final_parts) <= 1:
-        return [{"text": text, "start_sec": start_sec, "end_sec": end_sec}]
-
-    # Time interpolation
-    if words:
-        return _interpolate_from_words(text, final_parts, words, start_sec, end_sec)
-    else:
-        return _interpolate_proportional(final_parts, start_sec, end_sec)
-
-
-# --- 断句后处理：碎片合并 ---
-
-_TAIL_PARTICLES = set("的和是在了把被让给对向从到过着地得")
-_FILLERS = {"呃", "嗯", "啊", "哦", "哈", "呀", "嘛", "吧", "呢", "喂", "哎", "唉"}
-_FRAG_THRESHOLD = 2
-
-
-def _merge_fragments(sub_lines: list[dict]) -> list[dict]:
-    """Merge fragment lines back into adjacent lines.
-
-    Rules (applied in priority order):
-    1. Filter empty text lines
-    2. Merge filler-only lines (呃/嗯/啊) into previous line
-    3. Merge lines ending with tail particles (的/在/了/…) into next line
-    4. Merge fragment lines (≤2 chars) into previous line
-    """
-    if not sub_lines:
-        return sub_lines
-
-    non_empty = [s for s in sub_lines if s["text"].strip()]
-    if not non_empty:
-        return []
-
-    merged: list[dict] = []
-
-    for i, cur in enumerate(non_empty):
-        text = cur["text"].strip()
-        char_count = len(text)
-
-        if text in _FILLERS and merged:
-            merged[-1]["text"] += text
-            merged[-1]["end_sec"] = cur["end_sec"]
-            continue
-
-        if merged and merged[-1]["text"] and merged[-1]["text"][-1] in _TAIL_PARTICLES:
-            merged[-1]["text"] += text
-            merged[-1]["end_sec"] = cur["end_sec"]
-            continue
-
-        if char_count <= _FRAG_THRESHOLD and merged:
-            merged[-1]["text"] += text
-            merged[-1]["end_sec"] = cur["end_sec"]
-            continue
-
-        merged.append({
-            "text": text,
-            "start_sec": cur["start_sec"],
-            "end_sec": cur["end_sec"],
-        })
-
-    return merged
-
-
-def _force_split_long(sub_lines: list[dict], max_chars: int = 20) -> list[dict]:
-    """Force-split lines exceeding max_chars at punctuation or char boundaries."""
-    _SPLIT_PUNCT = re.compile(r"(?<=[，。？！、,;:：；.!?])")
-    result = []
-    for line in sub_lines:
-        text = line["text"]
-        vis = _count_visible(text)
-        if vis <= max_chars:
-            result.append(line)
-            continue
-        # Try splitting at punctuation first
-        parts = _SPLIT_PUNCT.split(text)
-        parts = [p.strip() for p in parts if p.strip()]
-        if len(parts) <= 1:
-            # No punctuation — force-split at max_chars
-            parts = []
-            remaining = text
-            while _count_visible(remaining) > max_chars:
-                cut = max_chars
-                parts.append(remaining[:cut])
-                remaining = remaining[cut:]
-            if remaining:
-                parts.append(remaining)
-        # Distribute time proportionally by visible char count
-        total_vis = _count_visible(text)
-        elapsed = line["start_sec"]
-        duration = line["end_sec"] - line["start_sec"]
-        for part in parts:
-            part_vis = _count_visible(part)
-            part_dur = duration * part_vis / total_vis if total_vis > 0 else 0
-            result.append({
-                "text": part,
-                "start_sec": round(elapsed, 3),
-                "end_sec": round(elapsed + part_dur, 3),
-            })
-            elapsed += part_dur
-    return result
-
-
-def _count_visible(text: str) -> int:
-    """Count non-punctuation characters (consistent with _ALL_PUNCT_RE)."""
-    return len(_ALL_PUNCT_RE.sub("", text))
-
-
-def _interpolate_from_words(
-    original_text: str,
-    parts: list[str],
-    words: list[dict],
-    start_sec: float,
-    end_sec: float,
-) -> list[dict]:
-    """Interpolate sub-sentence times from word timestamps."""
-    result = []
-    word_idx = 0
-
-    for part in parts:
-        part_start_word = word_idx
-        part_visible = _count_visible(part)
-
-        matched = 0
-        while word_idx < len(words) and matched < part_visible:
-            matched += _count_visible(words[word_idx]["word"])
-            word_idx += 1
-
-        part_words = words[part_start_word:word_idx]
-        if part_words:
-            s = part_words[0]["start_sec"]
-            e = part_words[-1]["end_sec"]
-        else:
-            # Fallback: use previous word's end time
-            s = (
-                words[part_start_word - 1]["end_sec"]
-                if part_start_word > 0
-                else start_sec
-            )
-            e = s + 0.1
-
-        result.append({"text": part, "start_sec": round(s, 3), "end_sec": round(e, 3)})
-
-    # Ensure last part ends at end_sec
-    if result:
-        result[-1]["end_sec"] = round(end_sec, 3)
-
-    return result
-
-
-def _interpolate_proportional(
-    parts: list[str],
-    start_sec: float,
-    end_sec: float,
-) -> list[dict]:
-    """Interpolate sub-sentence times by visible character ratio."""
-    vis_counts = []
-    for part in parts:
-        count = sum(1 for ch in part if ch not in "，。？！、,.?! ")
-        vis_counts.append(max(count, 1))
-
-    total = sum(vis_counts)
-    duration = end_sec - start_sec
-
-    result = []
-    current = start_sec
-    for i, (part, vc) in enumerate(zip(parts, vis_counts)):
-        if i == len(parts) - 1:
-            s, e = current, end_sec
-        else:
-            s = current
-            e = current + duration * vc / total
-            current = e
-        result.append({"text": part, "start_sec": round(s, 3), "end_sec": round(e, 3)})
-
-    return result
-
-
 class BaseExporter(ABC):
     """Base class for subtitle exporters."""
 
@@ -437,23 +230,14 @@ class SRTExporter(BaseExporter):
         lines: list[str] = []
         index = 0
         for seg in sorted_segs:
-            if seg.words:
-                sub_lines = _smart_split(seg.words, seg.text, max_chars=20)
-            else:
-                sub_lines = _split_subtitle_lines(
-                    seg.text, seg.words, seg.start_sec, seg.end_sec, max_chars=20
-                )
-            sub_lines = _merge_fragments(sub_lines)
-            # Apply ITN before force-split so numbers stay intact
+            sub_lines = _smart_split(seg.words, seg.text, max_chars=20, start_sec=seg.start_sec, end_sec=seg.end_sec)
             for sub in sub_lines:
-                sub["text"] = chinese_to_num(sub["text"])
-            # Force-split any lines still exceeding max_chars
-            sub_lines = _force_split_long(sub_lines, max_chars=20)
-            for sub in sub_lines:
+                if not sub["text"].strip():
+                    continue
                 index += 1
                 start = _fmt_srt_time(sub["start_sec"])
                 end = _fmt_srt_time(sub["end_sec"])
-                text = sub["text"]
+                text = chinese_to_num(sub["text"])
                 if self.punctuation:
                     text = _normalize_punct(text, self.language)
                 else:
@@ -613,20 +397,12 @@ def run_final_exports(
     vtt_lines = ["WEBVTT", ""]
     vtt_index = 0
     for seg in sorted(segments, key=lambda s: s.start_sec):
-        if seg.words:
-            sub_lines = _smart_split(seg.words, seg.text, max_chars=20)
-        else:
-            sub_lines = _split_subtitle_lines(
-                seg.text, seg.words, seg.start_sec, seg.end_sec, max_chars=20
-            )
-        sub_lines = _merge_fragments(sub_lines)
-        # Apply ITN before force-split so numbers stay intact
+        sub_lines = _smart_split(seg.words, seg.text, max_chars=20, start_sec=seg.start_sec, end_sec=seg.end_sec)
         for sub in sub_lines:
-            sub["text"] = chinese_to_num(sub["text"])
-        sub_lines = _force_split_long(sub_lines, max_chars=20)
-        for sub in sub_lines:
+            if not sub["text"].strip():
+                continue
             vtt_index += 1
-            text = sub["text"]
+            text = chinese_to_num(sub["text"])
             if punctuation:
                 text = _normalize_punct(text, language)
             else:

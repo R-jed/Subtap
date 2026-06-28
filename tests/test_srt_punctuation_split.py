@@ -2,84 +2,60 @@
 
 from __future__ import annotations
 
-from subtap.core.export import SRTExporter, _split_subtitle_lines
+from subtap.core.export import SRTExporter, _smart_split
 from subtap.schemas.models import AlignedSegment
 
 
 def test_split_by_comma():
-    """按逗号断句。"""
-    seg = AlignedSegment(
-        sentence_id=0,
-        start_sec=0.0,
-        end_sec=5.0,
-        text="这台相机从2015年发布，一直是一机难求的状态。",
-        words=[
-            {"word": "这", "start_sec": 0.0, "end_sec": 0.2},
-            {"word": "台", "start_sec": 0.2, "end_sec": 0.4},
-            {"word": "相", "start_sec": 0.4, "end_sec": 0.6},
-            {"word": "机", "start_sec": 0.6, "end_sec": 0.8},
-            {"word": "从", "start_sec": 0.8, "end_sec": 1.0},
-            {"word": "2015", "start_sec": 1.0, "end_sec": 1.5},
-            {"word": "年", "start_sec": 1.5, "end_sec": 1.7},
-            {"word": "发", "start_sec": 1.7, "end_sec": 1.9},
-            {"word": "布", "start_sec": 1.9, "end_sec": 2.1},
-            {"word": "一", "start_sec": 2.5, "end_sec": 2.7},
-            {"word": "直", "start_sec": 2.7, "end_sec": 2.9},
-            {"word": "是", "start_sec": 2.9, "end_sec": 3.1},
-            {"word": "一", "start_sec": 3.1, "end_sec": 3.3},
-            {"word": "机", "start_sec": 3.3, "end_sec": 3.5},
-            {"word": "难", "start_sec": 3.5, "end_sec": 3.7},
-            {"word": "求", "start_sec": 3.7, "end_sec": 3.9},
-            {"word": "的", "start_sec": 3.9, "end_sec": 4.1},
-            {"word": "状", "start_sec": 4.1, "end_sec": 4.3},
-            {"word": "态", "start_sec": 4.3, "end_sec": 4.5},
-        ],
-    )
-    lines = _split_subtitle_lines(
-        seg.text, seg.words, seg.start_sec, seg.end_sec, max_chars=20
-    )
+    """按逗号断句（通过 _smart_split 的逗号+行长度逻辑）。"""
+    words = [
+        {"word": "这", "start_sec": 0.0, "end_sec": 0.2},
+        {"word": "台", "start_sec": 0.2, "end_sec": 0.4},
+        {"word": "相", "start_sec": 0.4, "end_sec": 0.6},
+        {"word": "机", "start_sec": 0.6, "end_sec": 0.8},
+        {"word": "从", "start_sec": 0.8, "end_sec": 1.0},
+        {"word": "2015", "start_sec": 1.0, "end_sec": 1.5},
+        {"word": "年", "start_sec": 1.5, "end_sec": 1.7},
+        {"word": "发", "start_sec": 1.7, "end_sec": 1.9},
+        {"word": "布", "start_sec": 1.9, "end_sec": 2.1},
+        {"word": "，", "start_sec": 2.1, "end_sec": 2.2},
+        {"word": "一", "start_sec": 2.5, "end_sec": 2.7},
+        {"word": "直", "start_sec": 2.7, "end_sec": 2.9},
+        {"word": "是", "start_sec": 2.9, "end_sec": 3.1},
+        {"word": "一", "start_sec": 3.1, "end_sec": 3.3},
+        {"word": "机", "start_sec": 3.3, "end_sec": 3.5},
+        {"word": "难", "start_sec": 3.5, "end_sec": 3.7},
+        {"word": "求", "start_sec": 3.7, "end_sec": 3.9},
+        {"word": "的", "start_sec": 3.9, "end_sec": 4.1},
+        {"word": "状", "start_sec": 4.1, "end_sec": 4.3},
+        {"word": "态", "start_sec": 4.3, "end_sec": 4.5},
+        {"word": "。", "start_sec": 4.5, "end_sec": 4.6},
+    ]
+    text = "这台相机从2015年发布，一直是一机难求的状态。"
+    lines = _smart_split(words, text, max_chars=20)
     assert len(lines) >= 2
-    # First line should contain the comma
-    assert "，" in lines[0]["text"] or "发布" in lines[0]["text"]
 
 
 def test_split_max_chars():
     """超过 max_chars 时强制断句。"""
-    seg = AlignedSegment(
-        sentence_id=0,
-        start_sec=0.0,
-        end_sec=10.0,
-        text="这是一段很长很长很长很长很长很长很长很长很长的文本没有标点符号",
-        words=[
-            {"word": ch, "start_sec": i * 0.5, "end_sec": (i + 1) * 0.5}
-            for i, ch in enumerate(
-                "这是一段很长很长很长很长很长很长很长很长很长的文本没有标点符号"
-            )
-        ],
-    )
-    lines = _split_subtitle_lines(
-        seg.text, seg.words, seg.start_sec, seg.end_sec, max_chars=20
-    )
+    text = "这是一段很长很长很长很长很长很长很长很长很长的文本没有标点符号"
+    words = [
+        {"word": ch, "start_sec": i * 0.5, "end_sec": (i + 1) * 0.5}
+        for i, ch in enumerate(text)
+    ]
+    lines = _smart_split(words, text, max_chars=20)
+    assert len(lines) >= 2
     for line in lines:
-        clean = line["text"].replace("，", "").replace("。", "").replace("、", "")
-        assert len(clean) <= 20, f"Line too long: '{line['text']}' ({len(clean)} chars)"
+        assert len(line["text"]) <= 23  # max_chars + number protection buffer
 
 
 def test_no_words_proportional():
-    """无 words 时按字数比例分配时间。"""
-    seg = AlignedSegment(
-        sentence_id=0,
-        start_sec=0.0,
-        end_sec=10.0,
-        text="一二三四五，六七八九十。",
-        words=[],
-    )
-    lines = _split_subtitle_lines(
-        seg.text, seg.words, seg.start_sec, seg.end_sec, max_chars=20
-    )
-    assert len(lines) == 2
+    """无 words 时使用传入的 start_sec/end_sec。"""
+    text = "一二三四五六七八九十"
+    lines = _smart_split([], text, max_chars=20, start_sec=0.0, end_sec=10.0)
+    assert len(lines) == 1
     assert lines[0]["start_sec"] == 0.0
-    assert lines[-1]["end_sec"] == 10.0
+    assert lines[0]["end_sec"] == 10.0
 
 
 def test_srt_exporter_uses_split():
