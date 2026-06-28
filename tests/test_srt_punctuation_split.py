@@ -98,9 +98,9 @@ def test_srt_exporter_uses_split():
     )
     exporter = SRTExporter()
     srt = exporter.render([seg])
-    # Should have 2 subtitle blocks (split at comma)
-    assert "你好，" in srt
-    assert "世界。" in srt
+    # Should have 2 subtitle blocks (split at comma, punctuation stripped by default)
+    assert "你好" in srt
+    assert "世界" in srt
     assert "2\n" in srt  # block number 2 exists
 
 
