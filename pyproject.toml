@@ -44,6 +44,7 @@ packages = ["src/subtap"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+asyncio_mode = "auto"
 
 [[tool.mypy.overrides]]
 module = ["mlx_audio.*", "pydub", "pydub.*", "yaml"]
