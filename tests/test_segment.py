@@ -132,17 +132,18 @@ def test_time_monotonic_in_segment(test_config: SubtapConfig, tmp_path: Path):
 
 
 def test_chunk_id_integrity(test_config: SubtapConfig, tmp_path: Path):
-    """chunk_id in SentenceSegment matches source segment_id."""
+    """chunk_id in SentenceSegment matches source_chunk_id."""
     segments = [
         CleanSegment(
             segment_id=5,
+            source_chunk_id=3,
             original_text="a",
             cleaned_text="Test sentence.",
             glossary_applied=[],
         ),
     ]
     result = segment_clean_segments(segments, chunk_start=0.0, chunk_end=1.0)
-    assert result[0].chunk_id == 5
+    assert result[0].chunk_id == 3
 
 
 def test_jsonl_valid_schema(test_config: SubtapConfig, tmp_path: Path):
