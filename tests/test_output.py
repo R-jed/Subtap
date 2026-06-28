@@ -290,7 +290,8 @@ def test_cli_run_uses_output_engine(tmp_path):
     assert result.exit_code == 0
     # Verify --mode option exists
     import re
-    clean = re.sub(r'\x1b\[[0-9;]*m', '', result.output)
+
+    clean = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
     assert "mode" in clean
 
 

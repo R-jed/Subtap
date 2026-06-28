@@ -12,9 +12,10 @@ from subtap.cli import app
 
 runner = CliRunner()
 
+
 def _strip_ansi(text: str) -> str:
     """Remove ANSI escape codes from text for reliable string matching."""
-    return re.sub(r'\x1b\[[0-9;]*m', '', text)
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 
 def _patch_stage_pipeline(monkeypatch, stage_name: str):
@@ -119,7 +120,10 @@ def test_doctor(tmp_path, monkeypatch):
     result = runner.invoke(app, ["doctor"])
     # Should either pass (exit 0) or fail due to missing ffmpeg (exit 1)
     assert result.exit_code in (0, 1)
-    assert "ffmpeg" in _strip_ansi(result.output).lower() or "python" in _strip_ansi(result.output).lower()
+    assert (
+        "ffmpeg" in _strip_ansi(result.output).lower()
+        or "python" in _strip_ansi(result.output).lower()
+    )
 
 
 def test_doctor_workspace(tmp_path, monkeypatch):
@@ -138,7 +142,10 @@ def test_doctor_workspace(tmp_path, monkeypatch):
 
     result = runner.invoke(app, ["doctor", "--workspace"])
     assert result.exit_code == 0
-    assert "工作区" in _strip_ansi(result.output) or "workspace" in _strip_ansi(result.output).lower()
+    assert (
+        "工作区" in _strip_ansi(result.output)
+        or "workspace" in _strip_ansi(result.output).lower()
+    )
 
 
 def test_doctor_json_outputs_machine_readable_status(tmp_path, monkeypatch):
@@ -190,9 +197,10 @@ def test_run_has_no_cleanroom_flag():
 def test_setup_has_remote_api_options():
     """subtap setup should expose remote API model discovery options."""
     import re
+
     result = runner.invoke(app, ["setup", "--help"])
     assert result.exit_code == 0
-    clean = re.sub(r'\x1b\[[0-9;]*m', '', _strip_ansi(result.output))
+    clean = re.sub(r"\x1b\[[0-9;]*m", "", _strip_ansi(result.output))
     assert "remote-api" in clean
     assert "remote-base-url" in clean
     assert "remote-api-key-env" in clean
@@ -201,9 +209,10 @@ def test_setup_has_remote_api_options():
 def test_quality_command_exists():
     """subtap quality command should exist."""
     import re
+
     result = runner.invoke(app, ["quality", "--help"])
     assert result.exit_code == 0
-    clean = re.sub(r'\x1b\[[0-9;]*m', '', _strip_ansi(result.output))
+    clean = re.sub(r"\x1b\[[0-9;]*m", "", _strip_ansi(result.output))
     assert "aligned.jsonl" in clean
     assert "fix" in clean
     assert "report-only" in clean
@@ -212,9 +221,10 @@ def test_quality_command_exists():
 def test_run_has_mode_flag():
     """subtap run should accept --mode flag."""
     import re
+
     result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
-    clean = re.sub(r'\x1b\[[0-9;]*m', '', _strip_ansi(result.output))
+    clean = re.sub(r"\x1b\[[0-9;]*m", "", _strip_ansi(result.output))
     assert "mode" in clean
 
 
