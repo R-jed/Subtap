@@ -309,3 +309,67 @@ def test_setup_models_fallback_user_declines(monkeypatch, tmp_path):
     ok = SetupWizard().setup_models(source="ask", include_optional=False)
 
     assert ok is False
+
+
+def test_fetch_remote_models_openai_compatible(monkeypatch):
+    """Test remote model list is fetched from OpenAI-compatible /models."""
+    calls = []
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"data": [{"id": "agnes-2.0-flash"}, {"id": "other-model"}]}
+
+    class Client:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def get(self, url, **kwargs):
+            calls.append((url, kwargs))
+            return Response()
+
+    monkeypatch.setattr("subtap.core.setup.httpx.Client", Client)
+
+    models = SetupWizard().fetch_remote_models("https://api.example.test/v1", "key")
+
+    assert models == ["agnes-2.0-flash", "other-model"]
+    assert calls[0][0] == "https://api.example.test/v1/models"
+    assert calls[0][1]["headers"]["Authorization"] == "Bearer key"
+
+
+def test_configure_remote_api_saves_model_without_key(monkeypatch, tmp_path):
+    """Test remote API setup stores URL/model/env name but not raw API key."""
+    config_dir = tmp_path / ".subtap"
+    config_dir.mkdir()
+    config_path = config_dir / "config.yaml"
+    config_path.write_text("mode: offline\n", encoding="utf-8")
+
+    wizard = SetupWizard()
+    monkeypatch.setattr("subtap.core.setup.Path.home", lambda: tmp_path)
+    monkeypatch.setattr(
+        wizard,
+        "fetch_remote_models",
+        lambda base_url, api_key, timeout_sec=60: ["agnes-2.0-flash"],
+    )
+    monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: "1")
+
+    ok = wizard.configure_remote_api(
+        base_url="https://api.example.test/v1",
+        api_key="test-api-key",
+        api_key_env="SUBTAP_API_KEY",
+    )
+
+    text = config_path.read_text(encoding="utf-8")
+    assert ok is True
+    assert "agnes-2.0-flash" in text
+    assert "https://api.example.test/v1" in text
+    assert "SUBTAP_API_KEY" in text
+    assert "test-api-key" not in text
