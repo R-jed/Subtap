@@ -116,3 +116,14 @@ def test_clean_segment_cannot_export_directly():
     )
     # FinalSubtitle 没有 from_clean 方法
     assert not hasattr(FinalSubtitle, "from_clean")
+
+
+def test_final_subtitle_cannot_be_created_directly():
+    """FinalSubtitle 不能直接实例化，必须通过 from_aligned()。"""
+    with pytest.raises(ValueError, match="只能通过 from_aligned"):
+        FinalSubtitle(
+            subtitle_id=0,
+            start_sec=0.0,
+            end_sec=2.0,
+            text="test",
+        )

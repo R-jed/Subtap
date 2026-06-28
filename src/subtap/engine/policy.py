@@ -10,6 +10,7 @@ class PolicyMode(enum.Enum):
 
     LOCAL_ONLY = "local"  # 本地模型，无 LLM，快速对齐
     FAST_MODE = "fast"  # 最小模型，跳过可选阶段
+    QUALITY_MODE = "quality"  # 大模型，完整流程，LLM 增强
 
 
 # Policy configuration
@@ -31,6 +32,15 @@ _POLICIES: dict[PolicyMode, dict] = {
         "align_backend": "mock-aligner",
         "skip_stages": ["clean", "align"],
         "description": "最快速度，跳过清洗和对齐",
+    },
+    PolicyMode.QUALITY_MODE: {
+        "asr_backend": "mlx-qwen-asr",
+        "asr_model": "asr_1.7b",
+        "use_llm": True,
+        "align_enabled": True,
+        "align_backend": "mlx-qwen-aligner",
+        "skip_stages": [],
+        "description": "高质量模式，使用大模型，完整流程 + LLM 增强",
     },
 }
 
