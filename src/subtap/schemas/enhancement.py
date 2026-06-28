@@ -29,6 +29,7 @@ class CleanSegment(BaseModel):
     enhancement_mode: str = Field(
         default="local",
         description="Enhancement mode used: off / local / api",
+        pattern="^(off|local|api)$",
     )
     changed: bool = Field(
         default=False, description="Whether text was modified"
