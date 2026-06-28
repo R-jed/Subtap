@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from subtap.enhancement.base import EnhancementMode, EnhancementResult
 from subtap.enhancement.prompts import build_prompt
 from subtap.enhancement.tasks import EnhancementTask, get_tasks_for_mode
@@ -26,6 +28,7 @@ class APIEnhancer:
         model: str = "gpt-4.1-mini",
         api_key: str | None = None,
         endpoint: str | None = None,
+        text_client: Callable[[str, str, dict[str, str] | None, str], str] | None = None,
     ):
         """Initialize API enhancer.
 
@@ -39,6 +42,7 @@ class APIEnhancer:
         self.model = model
         self.api_key = api_key
         self.endpoint = endpoint
+        self.text_client = text_client
         self.validator = EnhancementValidator()
 
     def enhance(
@@ -46,6 +50,7 @@ class APIEnhancer:
         segments: list[CleanSegment],
         glossary: dict[str, str] | None = None,
         tasks: list[EnhancementTask] | None = None,
+        target_language: str = "",
     ) -> EnhancementResult:
         """Enhance segments using external LLM API.
 
@@ -70,14 +75,19 @@ class APIEnhancer:
 
             for task in tasks:
                 try:
-                    build_prompt(
+                    prompt = build_prompt(
                         task.value,
                         text,
                         glossary=str(glossary) if glossary else "",
-                        target_language="",
+                        target_language=target_language,
                     )
-                    # In real implementation, this would call the LLM API
-                    # For now, we just pass through
+                    if self.text_client is not None:
+                        text = self.text_client(
+                            text, task.value, glossary, target_language
+                        )
+                    else:
+                        # Mock-friendly default: build the prompt but do not call network.
+                        _ = prompt
                     api_calls += 1
                     change_reasons.append(f"api_{task.value}")
                 except Exception as e:
