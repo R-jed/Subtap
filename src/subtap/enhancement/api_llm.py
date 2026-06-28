@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from subtap.enhancement.base import EnhancementMode, EnhancementResult
-from subtap.enhancement.prompts import SYSTEM_PROMPT, build_prompt
+from subtap.enhancement.prompts import build_prompt
 from subtap.enhancement.tasks import EnhancementTask, get_tasks_for_mode
 from subtap.enhancement.validator import EnhancementValidator
 from subtap.schemas.enhancement import CleanSegment
@@ -70,7 +70,7 @@ class APIEnhancer:
 
             for task in tasks:
                 try:
-                    prompt = build_prompt(
+                    build_prompt(
                         task.value,
                         text,
                         glossary=str(glossary) if glossary else "",

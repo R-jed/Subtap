@@ -43,9 +43,7 @@ class EnhancementValidator:
         warnings = []
 
         if len(original) != len(enhanced):
-            errors.append(
-                f"Segment count mismatch: {len(original)} vs {len(enhanced)}"
-            )
+            errors.append(f"Segment count mismatch: {len(original)} vs {len(enhanced)}")
             return ValidationResult(valid=False, errors=errors)
 
         for orig, enh in zip(original, enhanced):

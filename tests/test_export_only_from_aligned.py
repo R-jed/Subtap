@@ -93,7 +93,7 @@ def test_final_subtitle_srt_format():
 
 def test_asr_draft_cannot_export_directly():
     """ASRDraft 不能直接导出为 FinalSubtitle（无 from_asr 方法）。"""
-    draft = ASRDraft(
+    ASRDraft(
         chunk_id=0,
         text="test",
         start_sec=0.0,
@@ -106,7 +106,7 @@ def test_asr_draft_cannot_export_directly():
 
 def test_clean_segment_cannot_export_directly():
     """CleanSegment 不能直接导出为 FinalSubtitle（无 from_clean 方法）。"""
-    clean = CleanSegment(
+    CleanSegment(
         segment_id=0,
         source_chunk_id=0,
         text="test",

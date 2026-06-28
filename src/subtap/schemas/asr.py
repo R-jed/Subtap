@@ -39,9 +39,7 @@ class ASRDraft(BaseModel):
     confidence: Optional[float] = Field(
         default=None, description="Overall confidence score"
     )
-    provider: str = Field(
-        default="qwen3_mlx", description="ASR provider identifier"
-    )
+    provider: str = Field(default="qwen3_mlx", description="ASR provider identifier")
     model: str = Field(description="Model name used (e.g. asr_0.6b, asr_1.7b)")
     raw_ref: Optional[str] = Field(
         default=None, description="Reference to raw provider output for debugging"

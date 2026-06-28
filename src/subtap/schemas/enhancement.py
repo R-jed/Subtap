@@ -6,8 +6,6 @@ LLM can only modify text, NEVER start_sec/end_sec.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -31,9 +29,7 @@ class CleanSegment(BaseModel):
         description="Enhancement mode used: off / local / api",
         pattern="^(off|local|api)$",
     )
-    changed: bool = Field(
-        default=False, description="Whether text was modified"
-    )
+    changed: bool = Field(default=False, description="Whether text was modified")
     change_reasons: list[str] = Field(
         default_factory=list,
         description="Reasons for changes (e.g. glossary, typo, cleanup)",

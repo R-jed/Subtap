@@ -495,7 +495,9 @@ def run(
     output_dir: Path = typer.Option(
         Path("./output"), "-o", "--output-dir", help="输出目录"
     ),
-    fmt: str = typer.Option("srt", "--format", "-f", help="导出格式：srt / vtt / json / tsv"),
+    fmt: str = typer.Option(
+        "srt", "--format", "-f", help="导出格式：srt / vtt / json / tsv"
+    ),
     mode: str = typer.Option("fast", "--mode", "-m", help="执行模式：fast / quality"),
     enhance: str = typer.Option(
         "local", "--enhance", "-e", help="字幕增强模式：off / local / api"
