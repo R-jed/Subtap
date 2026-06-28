@@ -238,8 +238,26 @@ def doctor(
         from subtap.core.models import ModelRegistry
 
         config = load_config(config_path)
-        registry = ModelRegistry(config)
+        report["runtime"] = {
+            "asr_model": config.asr.model,
+            "asr_quantization": config.asr.quantization,
+            "aligner_model": config.align.model,
+            "aligner_quantization": config.align.quantization,
+            "keep_model_alive": bool(
+                config.asr.keep_model_alive or config.align.keep_model_alive
+            ),
+            "warmup": bool(config.asr.warmup or config.align.warmup),
+            "device_backend": "mlx-metal",
+        }
 
+        if not json_output:
+            typer.echo(
+                f"  ASR：{config.asr.model} / {config.asr.quantization}，"
+                f"对齐：{config.align.model} / {config.align.quantization}"
+            )
+            typer.echo("  模型策略：任务阶段加载，阶段结束释放，不默认常驻或预热")
+
+        registry = ModelRegistry(config)
         for ms in registry.status():
             icon = (
                 typer.style("✓", fg=typer.colors.GREEN)

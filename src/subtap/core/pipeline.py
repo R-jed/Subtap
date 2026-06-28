@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from subtap.schemas.config import SubtapConfig
 from subtap.core.workspace import Workspace
+from subtap.metrics.events import EventBus, EventType, make_pipeline_event
 
 
 class Pipeline:
@@ -18,9 +19,30 @@ class Pipeline:
 
     STAGES = ["prepare", "chunk", "asr", "clean", "segment", "align", "export"]
 
-    def __init__(self, config: SubtapConfig, work_dir: Path):
+    def __init__(
+        self,
+        config: SubtapConfig,
+        work_dir: Path,
+        event_bus: EventBus | None = None,
+        task_id: str = "local",
+    ):
         self.config = config
         self.workspace = Workspace(config, base_dir=work_dir)
+        self.event_bus = event_bus
+        self.task_id = task_id
+
+    def _publish_event(self, event_type: EventType, *, stage: str, **data: Any) -> None:
+        """Publish a non-blocking pipeline event without UI coupling."""
+        if self.event_bus is None:
+            return
+        self.event_bus.publish_nowait(
+            make_pipeline_event(
+                event_type,
+                task_id=self.task_id,
+                stage=stage,
+                **data,
+            )
+        )
 
     def run_stage(self, stage: str, **kwargs) -> dict:
         """Run a single pipeline stage."""
@@ -51,6 +73,16 @@ class Pipeline:
         from subtap.core.vad import split_chunks
 
         chunks = split_chunks(self.workspace, self.config)
+        total = len(chunks) or 1
+        for index, chunk in enumerate(chunks, start=1):
+            self._publish_event(
+                EventType.AUDIO_CHUNK_READY,
+                stage="chunk",
+                chunk_id=chunk.chunk_id,
+                progress=round(index / total * 100),
+                duration_sec=chunk.end_sec - chunk.start_sec,
+                message_zh="音频片段已准备",
+            )
         return {
             "chunk_count": len(chunks),
             "chunks_jsonl": str(self.workspace.chunks_jsonl),
@@ -59,7 +91,13 @@ class Pipeline:
     def _stage_asr(self, backend_name: str | None = None, **_) -> dict:
         from subtap.core.asr import run_asr
 
-        result = run_asr(self.workspace, self.config, backend_name=backend_name)
+        result = run_asr(
+            self.workspace,
+            self.config,
+            backend_name=backend_name,
+            event_bus=self.event_bus,
+            task_id=self.task_id,
+        )
         return {
             "segment_count": result["segment_count"],
             "asr_jsonl": str(self.workspace.asr_jsonl),
@@ -76,6 +114,12 @@ class Pipeline:
             llm_backend_name=llm_backend,
             glossary_path=glossary_path,
         )
+        self._publish_event(
+            EventType.ENHANCEMENT_READY,
+            stage="clean",
+            progress=100,
+            message_zh="字幕文本增强完成",
+        )
         return {
             "segment_count": result["segment_count"],
             "cleaned_jsonl": str(self.workspace.cleaned_jsonl),
@@ -87,6 +131,12 @@ class Pipeline:
         from subtap.core.segment import run_segment
 
         result = run_segment(self.workspace, chunk_start, chunk_end)
+        self._publish_event(
+            EventType.SENTENCE_CANDIDATE_READY,
+            stage="segment",
+            progress=100,
+            message_zh="字幕候选句已生成",
+        )
         return {
             "sentence_count": result["sentence_count"],
             "sentences_jsonl": str(self.workspace.sentences_jsonl),
@@ -95,7 +145,13 @@ class Pipeline:
     def _stage_align(self, backend_name: str | None = None, **_) -> dict:
         from subtap.core.align import run_align
 
-        result = run_align(self.workspace, self.config, backend_name=backend_name)
+        result = run_align(
+            self.workspace,
+            self.config,
+            backend_name=backend_name,
+            event_bus=self.event_bus,
+            task_id=self.task_id,
+        )
         return {
             "aligned_count": result["aligned_count"],
             "aligned_jsonl": str(self.workspace.aligned_jsonl),

@@ -27,9 +27,16 @@ class MLXQwenAligner:
 
     def __init__(self, config: AlignConfig):
         self.config = config
+        self.model_name = config.model
+        self.quantization = config.quantization
+        self.runtime_name = f"qwen3-forcedaligner-{self.quantization}"
         self._model = None
         self._model_path = _DEFAULT_MODEL
         self._chunk_info: dict[int, dict] = {}  # chunk_id → {start_sec, path}
+
+    def release_model(self) -> None:
+        """Release the in-memory MLX aligner after the alignment stage."""
+        self._model = None
 
     def _load_model(self):
         """Lazy-load the MLX alignment model."""

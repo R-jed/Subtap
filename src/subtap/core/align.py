@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from subtap.backends.align import get_aligner_backend
+from subtap.schemas.alignment import AlignedSubtitle
 from subtap.schemas.config import SubtapConfig
 from subtap.schemas.models import SentenceSegment, AlignedSegment
 from subtap.core.workspace import Workspace
@@ -27,6 +28,20 @@ def write_aligned(segments: list[AlignedSegment], output_path: Path) -> None:
     with open(output_path, "w") as f:
         for seg in segments:
             f.write(seg.model_dump_json() + "\n")
+
+
+def write_aligned_subtitles(segments: list[AlignedSegment], output_path: Path) -> None:
+    """Write AlignedSubtitle final-timing artifact."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w") as f:
+        for seg in segments:
+            subtitle = AlignedSubtitle(
+                subtitle_id=seg.sentence_id,
+                start_sec=seg.start_sec,
+                end_sec=seg.end_sec,
+                text=seg.text,
+            )
+            f.write(subtitle.model_dump_json() + "\n")
 
 
 def run_align(
@@ -57,9 +72,14 @@ def run_align(
     backend = get_aligner_backend(align_config)
 
     # Align
-    aligned = backend.align(sentences, workspace.source_audio)
+    try:
+        aligned = backend.align(sentences, workspace.source_audio)
+    finally:
+        if not align_config.keep_model_alive and hasattr(backend, "release_model"):
+            backend.release_model()
 
     # Write aligned.jsonl
     write_aligned(aligned, workspace.aligned_jsonl)
+    write_aligned_subtitles(aligned, workspace.aligned_subtitles_jsonl)
 
     return {"aligned_count": len(aligned)}
