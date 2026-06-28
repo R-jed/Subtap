@@ -244,3 +244,71 @@ def test_cli_export_runnable(test_config: SubtapConfig, tmp_path: Path, monkeypa
     )
     assert result.exit_code == 0
     assert "完成" in result.output
+
+
+# ── Fragment merge tests ──
+
+
+def test_merge_fragments_merges_short_lines():
+    """碎片行（≤2字）应被合并到上一行。"""
+    from subtap.core.export import _merge_fragments
+    lines = [
+        {"text": "这是一句完整的话", "start_sec": 1.0, "end_sec": 2.0},
+        {"text": "我们", "start_sec": 2.0, "end_sec": 2.5},
+        {"text": "继续下一句", "start_sec": 2.5, "end_sec": 3.0},
+    ]
+    result = _merge_fragments(lines)
+    assert len(result) == 2
+    assert result[0]["text"] == "这是一句完整的话我们"
+    assert result[0]["start_sec"] == 1.0
+    assert result[0]["end_sec"] == 2.5
+
+
+def test_merge_fragments_filters_empty():
+    """空文本行应被过滤。"""
+    from subtap.core.export import _merge_fragments
+    lines = [
+        {"text": "第一句", "start_sec": 1.0, "end_sec": 2.0},
+        {"text": "", "start_sec": 2.0, "end_sec": 2.5},
+        {"text": "第二句", "start_sec": 2.5, "end_sec": 3.0},
+    ]
+    result = _merge_fragments(lines)
+    assert len(result) == 2
+    assert result[0]["text"] == "第一句"
+    assert result[1]["text"] == "第二句"
+
+
+def test_merge_fragments_merges_tail_particle():
+    """以虚词结尾的行应与下一行合并。"""
+    from subtap.core.export import _merge_fragments
+    lines = [
+        {"text": "核心的", "start_sec": 1.0, "end_sec": 2.0},
+        {"text": "点是这个虚化", "start_sec": 2.0, "end_sec": 3.0},
+    ]
+    result = _merge_fragments(lines)
+    assert len(result) == 1
+    assert result[0]["text"] == "核心的点是这个虚化"
+
+
+def test_merge_fragments_merges_filler():
+    """语气词独立成行应被合并到上一行。"""
+    from subtap.core.export import _merge_fragments
+    lines = [
+        {"text": "我觉得不太好", "start_sec": 1.0, "end_sec": 2.0},
+        {"text": "呃", "start_sec": 2.0, "end_sec": 2.2},
+        {"text": "应该是这样的", "start_sec": 2.2, "end_sec": 3.0},
+    ]
+    result = _merge_fragments(lines)
+    assert len(result) == 2
+    assert result[0]["text"] == "我觉得不太好呃"
+
+
+def test_merge_fragments_no_merge_for_normal():
+    """正常长度的行不应被合并。"""
+    from subtap.core.export import _merge_fragments
+    lines = [
+        {"text": "这是一句正常的话", "start_sec": 1.0, "end_sec": 2.0},
+        {"text": "这是另一句正常的话", "start_sec": 2.0, "end_sec": 3.0},
+    ]
+    result = _merge_fragments(lines)
+    assert len(result) == 2
