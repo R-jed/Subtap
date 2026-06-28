@@ -18,6 +18,12 @@ logger = logging.getLogger(__name__)
 # Local aligner model path (relative to project root)
 _PROJECT_ROOT = Path(__file__).resolve().parents[4]
 _DEFAULT_MODEL = str(_PROJECT_ROOT / "models" / "aligner")
+_PUNCT = set("，。？！、,.?! ")
+
+
+def _visible_len(text: str) -> int:
+    """Count non-punctuation visible characters."""
+    return sum(1 for ch in text if ch not in _PUNCT)
 
 
 class MLXQwenAligner:
@@ -88,104 +94,125 @@ class MLXQwenAligner:
     ) -> list[AlignedSegment]:
         """Align sentences to audio using forced alignment.
 
-        Each sentence is aligned against its SOURCE CHUNK audio (not the full file),
-        then timestamps are offset by the chunk's start time for absolute positioning.
+        Each source chunk is aligned once with all sentences in that chunk,
+        then word timestamps are assigned back to sentences by visible character count.
         Falls back to sentence timing if alignment fails.
         """
         self._load_model()
+        if self._model is None:
+            raise RuntimeError("Aligner model is not loaded")
+        model = self._model
 
         # Load chunk metadata
         chunks_jsonl = audio_path.parent.parent / "chunks" / "chunks.jsonl"
         work_dir = audio_path.parent.parent  # work/
         self._load_chunk_info(chunks_jsonl)
 
-        results: list[AlignedSegment] = []
-
+        results_by_id: dict[int, AlignedSegment] = {}
+        groups: dict[int, list[SentenceSegment]] = {}
         for sent in sentences:
-            chunk_info = self._chunk_info.get(sent.chunk_id, {})
+            groups.setdefault(sent.chunk_id, []).append(sent)
+
+        for chunk_id, chunk_sentences in groups.items():
+            chunk_info = self._chunk_info.get(chunk_id, {})
             chunk_offset = chunk_info.get("start_sec", 0.0)
-            chunk_audio = self._get_chunk_audio_path(sent.chunk_id, work_dir)
+            chunk_audio = self._get_chunk_audio_path(chunk_id, work_dir)
 
             if chunk_audio is None:
-                logger.warning(
-                    "Chunk %d audio not found, using fallback", sent.chunk_id
-                )
-                results.append(
-                    AlignedSegment(
+                logger.warning("Chunk %d audio not found, using fallback", chunk_id)
+                for sent in chunk_sentences:
+                    results_by_id[sent.sentence_id] = AlignedSegment(
                         sentence_id=sent.sentence_id,
                         start_sec=sent.start_sec,
                         end_sec=sent.end_sec,
                         text=sent.text,
                     )
-                )
                 continue
 
             try:
-                # ForcedAlignerModel.generate() returns word-level timestamps
-                align_result = self._model.generate(
+                # ForcedAlignerModel.generate() returns word-level timestamps.
+                # Align the whole chunk once; per-sentence calls restart at chunk start.
+                full_text = " ".join(sent.text for sent in chunk_sentences)
+                align_result = model.generate(
                     audio=str(chunk_audio),
-                    text=sent.text,
+                    text=full_text,
                     language=self.config.language,
                 )
 
                 # Collect word-level timing with chunk offset
-                words: list[dict] = []
+                chunk_words: list[dict] = []
                 for item in align_result:
                     start = chunk_offset + item.start_time
                     end = chunk_offset + item.end_time
                     # Enforce minimum duration (model may output start==end)
                     if end <= start:
                         end = start + 0.020
-                    words.append({
-                        "word": item.text,
-                        "start_sec": round(start, 3),
-                        "end_sec": round(end, 3),
-                    })
+                    chunk_words.append(
+                        {
+                            "word": item.text,
+                            "start_sec": round(start, 3),
+                            "end_sec": round(end, 3),
+                        }
+                    )
 
-                if words:
-                    # Use first/last word time as sentence boundaries
-                    start = words[0]["start_sec"]
-                    end = words[-1]["end_sec"]
+                if chunk_words:
+                    word_idx = 0
+                    chunk_end = chunk_info.get("end_sec", chunk_words[-1]["end_sec"])
+                    for sent_index, sent in enumerate(chunk_sentences):
+                        start_word = word_idx
+                        matched = 0
+                        target = _visible_len(sent.text)
+                        is_last = sent_index == len(chunk_sentences) - 1
+                        while word_idx < len(chunk_words) and (
+                            matched < target or is_last
+                        ):
+                            matched += _visible_len(chunk_words[word_idx]["word"])
+                            word_idx += 1
+                            if not is_last and matched >= target:
+                                break
 
-                    # Clamp to chunk boundaries
-                    chunk_end = chunk_info.get("end_sec", end + 1.0)
-                    start = max(chunk_offset, min(start, chunk_end))
-                    end = max(start + 0.01, min(end, chunk_end))
+                        words = chunk_words[start_word:word_idx]
+                        if not words:
+                            results_by_id[sent.sentence_id] = AlignedSegment(
+                                sentence_id=sent.sentence_id,
+                                start_sec=sent.start_sec,
+                                end_sec=sent.end_sec,
+                                text=sent.text,
+                            )
+                            continue
 
-                    results.append(
-                        AlignedSegment(
+                        start = max(chunk_offset, min(words[0]["start_sec"], chunk_end))
+                        end = max(start + 0.01, min(words[-1]["end_sec"], chunk_end))
+                        results_by_id[sent.sentence_id] = AlignedSegment(
                             sentence_id=sent.sentence_id,
                             start_sec=round(start, 3),
                             end_sec=round(end, 3),
                             text=sent.text,
                             words=words,
                         )
-                    )
+
                     logger.info(
-                        "Aligned sentence %d: %.3f - %.3f (chunk %d, %d words)",
-                        sent.sentence_id,
-                        start,
-                        end,
-                        sent.chunk_id,
-                        len(words),
+                        "Aligned chunk %d: %d sentences, %d words",
+                        chunk_id,
+                        len(chunk_sentences),
+                        len(chunk_words),
                     )
                     continue
 
             except Exception as e:
                 logger.warning(
-                    "Alignment failed for sentence %d: %s, using fallback",
-                    sent.sentence_id,
+                    "Alignment failed for chunk %d: %s, using fallback",
+                    chunk_id,
                     e,
                 )
 
             # Fallback: use sentence timing
-            results.append(
-                AlignedSegment(
+            for sent in chunk_sentences:
+                results_by_id[sent.sentence_id] = AlignedSegment(
                     sentence_id=sent.sentence_id,
                     start_sec=sent.start_sec,
                     end_sec=sent.end_sec,
                     text=sent.text,
                 )
-            )
 
-        return results
+        return [results_by_id[sent.sentence_id] for sent in sentences]
