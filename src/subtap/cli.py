@@ -705,21 +705,60 @@ def batch_transcribe(
     json_output: bool = typer.Option(False, "--json", help="输出机器可读 JSON"),
 ) -> None:
     """批量转录多个媒体文件。"""
+    from subtap.core.pipeline import Pipeline
+    from subtap.schemas.config import load_config
+    from subtap.ui.tui import PlainRunner
+
+    config = load_config(Path.home() / ".subtap" / "config.yaml")
     paths = [Path(item.strip()) for item in files.split(",") if item.strip()]
     if not paths:
         typer.echo("✗ 未提供输入文件", err=True)
         raise typer.Exit(1)
 
-    items = [
-        {
-            "input_path": str(path),
-            "ok": path.exists(),
-            "error": "" if path.exists() else "文件不存在",
-        }
-        for path in paths
-    ]
+    items: list[dict[str, Any]] = []
+    for path in paths:
+        item_output_dir = output_dir / path.stem
+        if not path.exists():
+            items.append(
+                {
+                    "input_path": str(path),
+                    "output_dir": str(item_output_dir),
+                    "ok": False,
+                    "error": "文件不存在",
+                }
+            )
+            continue
+
+        try:
+            pipeline = Pipeline(config, work_dir=item_output_dir / "work")
+            pipeline.workspace.ensure_dirs()
+            runner = PlainRunner()
+            if json_output:
+                with redirect_stdout(StringIO()):
+                    meta = runner.run_pipeline(pipeline, path, item_output_dir)
+            else:
+                typer.echo(f"▸ 处理：{path}")
+                meta = runner.run_pipeline(pipeline, path, item_output_dir)
+            items.append(
+                {
+                    "input_path": str(path),
+                    "output_dir": str(item_output_dir),
+                    "ok": True,
+                    "error": "",
+                    "meta": meta,
+                }
+            )
+        except Exception as e:
+            items.append(
+                {
+                    "input_path": str(path),
+                    "output_dir": str(item_output_dir),
+                    "ok": False,
+                    "error": str(e),
+                }
+            )
     result: dict[str, Any] = {
-        "ok": all(path.exists() for path in paths),
+        "ok": all(item["ok"] for item in items),
         "output_dir": str(output_dir),
         "mode": mode,
         "items": items,
