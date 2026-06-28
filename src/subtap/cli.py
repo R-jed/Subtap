@@ -469,9 +469,7 @@ def run(
         Path("./output"), "-o", "--output-dir", help="输出目录"
     ),
     fmt: str = typer.Option("srt", "--format", "-f", help="导出格式：srt / ass / txt"),
-    mode: str = typer.Option(
-        "fast", "--mode", "-m", help="执行模式：fast / quality"
-    ),
+    mode: str = typer.Option("fast", "--mode", "-m", help="执行模式：fast / quality"),
     use_tui: bool = typer.Option(
         True, "--tui/--no-tui", help="启用 TUI 界面（默认开启）"
     ),
@@ -703,9 +701,7 @@ def batch_transcribe(
     output_dir: Path = typer.Option(
         Path("./output"), "--output-dir", "-o", help="输出目录"
     ),
-    mode: str = typer.Option(
-        "fast", "--mode", "-m", help="fast / quality"
-    ),
+    mode: str = typer.Option("fast", "--mode", "-m", help="fast / quality"),
     json_output: bool = typer.Option(False, "--json", help="输出机器可读 JSON"),
 ) -> None:
     """批量转录多个媒体文件。"""

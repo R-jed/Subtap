@@ -161,8 +161,6 @@ class PipelineController:
             input_path,
             output_dir,
             fmt=fmt,
-            skip_clean=self.policy.should_skip("clean"),
-            skip_align=self.policy.should_skip("align"),
         )
 
     def _execute_stage_with_retry(self, stage_name: str, timings: dict) -> None:
