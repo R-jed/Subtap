@@ -216,13 +216,13 @@ def _smart_split(
 
     merged: list[dict] = []
     for line in lines:
-        text = line["text"]
-        if text in _FILLERS and merged:
-            merged[-1]["text"] += text
+        line_text = line["text"]
+        if line_text in _FILLERS and merged:
+            merged[-1]["text"] += line_text
             merged[-1]["end_sec"] = line["end_sec"]
             continue
-        if len(text) <= 1 and merged:
-            merged[-1]["text"] += text
+        if len(line_text) <= 1 and merged:
+            merged[-1]["text"] += line_text
             merged[-1]["end_sec"] = line["end_sec"]
             continue
         merged.append(line)
@@ -470,7 +470,8 @@ def run_final_exports(
     vtt_lines = ["WEBVTT", ""]
     vtt_index = 0
     for seg in sorted(segments, key=lambda s: s.start_sec):
-        sub_lines = _smart_split(seg.words, seg.text, max_chars=25, start_sec=seg.start_sec, end_sec=seg.end_sec)
+        words_with_punct = _inject_punct(seg.words, seg.text)
+        sub_lines = _smart_split(words_with_punct, seg.text, max_chars=25, start_sec=seg.start_sec, end_sec=seg.end_sec)
         for sub in sub_lines:
             if not sub["text"].strip():
                 continue
