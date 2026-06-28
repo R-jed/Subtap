@@ -37,8 +37,7 @@ for check in "${CHECKS[@]}"; do
     label="${check%%|*}"
     command="${check#*|}"
     echo "▸ 检查: $label"
-    OUTPUT=$(eval "$command" 2>&1)
-    RC=$?
+    OUTPUT=$(eval "$command" 2>&1) && RC=0 || RC=$?
     if [ $RC -eq 0 ]; then
         echo "  ✓ 通过"
         PASSED=$((PASSED + 1))
