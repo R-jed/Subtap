@@ -51,3 +51,62 @@ replacements:
 
     assert result.exit_code == 0
     assert "错词 -> 正确词" in result.output
+
+
+def test_glossary_batch_add_from_inline_pairs(tmp_path):
+    """batch-add should parse haoone-style inline hotword pairs."""
+    path = tmp_path / "glossary.yaml"
+
+    result = runner.invoke(
+        app,
+        [
+            "glossary",
+            "batch-add",
+            "--language",
+            "zh",
+            "--input",
+            "OpenAI=欧喷AI,Open A I\nChatGPT=chat g p t",
+            "--file",
+            str(path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    glossary = load_glossary(path)
+    assert [(r.find, r.replace) for r in glossary.replacements] == [
+        ("欧喷AI", "OpenAI"),
+        ("Open A I", "OpenAI"),
+        ("chat g p t", "ChatGPT"),
+    ]
+    assert "已添加 3 条" in result.output
+
+
+def test_glossary_batch_add_from_block_file(tmp_path):
+    """batch-add should parse block format from file."""
+    path = tmp_path / "glossary.yaml"
+    source = tmp_path / "hotwords.txt"
+    source.write_text(
+        "OpenAI\n欧喷AI\nOpen A I\n\nChatGPT\nchat g p t\n", encoding="utf-8"
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "glossary",
+            "batch-add",
+            "--language",
+            "zh",
+            "--source",
+            str(source),
+            "--file",
+            str(path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    glossary = load_glossary(path)
+    assert [(r.find, r.replace) for r in glossary.replacements] == [
+        ("欧喷AI", "OpenAI"),
+        ("Open A I", "OpenAI"),
+        ("chat g p t", "ChatGPT"),
+    ]

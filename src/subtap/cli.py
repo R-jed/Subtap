@@ -993,31 +993,42 @@ def batch_transcribe(
     json_output: bool = typer.Option(False, "--json", help="输出机器可读 JSON"),
 ) -> None:
     """批量转录多个媒体文件。"""
+    from subtap.batch import build_manifest, make_item, parse_files, write_manifest
     from subtap.core.pipeline import Pipeline
     from subtap.schemas.config import load_config
     from subtap.ui.tui import PlainRunner
 
     config = load_config(Path.home() / ".subtap" / "config.yaml")
-    paths = [Path(item.strip()) for item in files.split(",") if item.strip()]
+    paths = parse_files(files)
     if not paths:
         typer.echo("✗ 未提供输入文件", err=True)
         raise typer.Exit(1)
 
     items: list[dict[str, Any]] = []
-    for path in paths:
-        item_output_dir = output_dir / path.stem
+    output_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = output_dir / "manifest.json"
+    total = len(paths)
+    for index, path in enumerate(paths, start=1):
+        item = make_item(path, output_dir)
+        item_output_dir = Path(item["output_dir"])
         if not path.exists():
-            items.append(
+            item.update(
                 {
-                    "input_path": str(path),
-                    "output_dir": str(item_output_dir),
-                    "ok": False,
+                    "status": "failed",
                     "error": "文件不存在",
+                    "suggestion": "请检查输入路径，修正后重新运行批量任务",
                 }
             )
+            items.append(item)
+            write_manifest(manifest_path, build_manifest(output_dir, mode, items))
             continue
 
         try:
+            if not json_output:
+                typer.echo(f"▸ [{index}/{total}] 正在处理：{path}")
+            item["status"] = "running"
+            items.append(item)
+            write_manifest(manifest_path, build_manifest(output_dir, mode, items))
             pipeline = Pipeline(config, work_dir=item_output_dir / "work")
             pipeline.workspace.ensure_dirs()
             runner = PlainRunner()
@@ -1025,39 +1036,34 @@ def batch_transcribe(
                 with redirect_stdout(StringIO()):
                     meta = runner.run_pipeline(pipeline, path, item_output_dir)
             else:
-                typer.echo(f"▸ 处理：{path}")
                 meta = runner.run_pipeline(pipeline, path, item_output_dir)
-            items.append(
+            item.update(
                 {
-                    "input_path": str(path),
-                    "output_dir": str(item_output_dir),
+                    "status": "succeeded",
                     "ok": True,
                     "error": "",
                     "meta": meta,
                 }
             )
         except Exception as e:
-            items.append(
+            item.update(
                 {
-                    "input_path": str(path),
-                    "output_dir": str(item_output_dir),
+                    "status": "failed",
                     "ok": False,
                     "error": str(e),
+                    "suggestion": "请查看该文件输出目录中的日志，修复后单独重试",
                 }
             )
-    result: dict[str, Any] = {
-        "ok": all(item["ok"] for item in items),
-        "output_dir": str(output_dir),
-        "mode": mode,
-        "items": items,
-    }
+        write_manifest(manifest_path, build_manifest(output_dir, mode, items))
+    result = build_manifest(output_dir, mode, items)
     if json_output:
         typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
         return
 
+    typer.echo(f"\n▸ 批量任务清单：{manifest_path}")
     for item in items:
-        icon = "✓" if item["ok"] else "✗"
-        typer.echo(f"  {icon} {item['input_path']}")
+        icon = "✓" if item["status"] == "succeeded" else "✗"
+        typer.echo(f"  {icon} {item['input_path']} — {item['status']}")
 
 
 @script_app.command("match")
@@ -1065,9 +1071,18 @@ def script_match(
     timeline: Path = typer.Option(..., "--timeline", help="已有时间轴 JSONL"),
     script: Path = typer.Option(..., "--script", help="文稿文本文件"),
     output: Path = typer.Option(..., "--output", "-o", help="输出 JSONL"),
+    follow_script_lines: bool = typer.Option(
+        False,
+        "--follow-script-lines/--keep-subtitle-lines",
+        help="按文稿行数重排；默认保持原字幕段数和时间轴",
+    ),
 ) -> None:
     """按顺序用文稿替换已有时间轴文本。"""
-    from subtap.script.match import format_script, match_script_lines
+    from subtap.script.match import (
+        build_match_report,
+        format_script,
+        match_script_lines,
+    )
 
     if not timeline.exists():
         typer.echo(f"✗ 时间轴文件不存在：{timeline}", err=True)
@@ -1082,13 +1097,39 @@ def script_match(
         if line.strip()
     ]
     lines = format_script(script.read_text(encoding="utf-8"))
-    matched = match_script_lines(segments, lines)
+    mode = "follow_script" if follow_script_lines else "keep_subtitle"
+    matched = match_script_lines(segments, lines, mode=mode)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
         "\n".join(json.dumps(item, ensure_ascii=False) for item in matched) + "\n",
         encoding="utf-8",
     )
+    report_path = output.with_name("matched_report.md")
+    report_path.write_text(
+        build_match_report(
+            segments_total=len(segments),
+            script_lines_total=len(lines),
+            output_total=len(matched),
+            mode=mode,
+        ),
+        encoding="utf-8",
+    )
     typer.echo(f"✓ 已输出：{output}")
+    typer.echo(f"▸ 文稿匹配报告：{report_path}")
+
+
+@script_app.command("format")
+def script_format(
+    script: Path = typer.Option(..., "--script", help="文稿文本文件"),
+) -> None:
+    """清理文稿空行、标题和备注后输出到终端。"""
+    from subtap.script.match import format_script
+
+    if not script.exists():
+        typer.echo(f"✗ 文稿文件不存在：{script}", err=True)
+        raise typer.Exit(1)
+    for line in format_script(script.read_text(encoding="utf-8")):
+        typer.echo(line)
 
 
 @app.command()
