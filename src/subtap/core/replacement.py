@@ -41,6 +41,7 @@ def apply_replacements(
         results.append(
             CleanSegment(
                 segment_id=seg.segment_id,
+                source_chunk_id=seg.chunk_id,
                 original_text=seg.text,
                 cleaned_text=text,
                 glossary_applied=applied,

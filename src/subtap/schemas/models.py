@@ -44,6 +44,7 @@ class CleanSegment(BaseModel):
     """A cleaned transcription segment with glossary tracking."""
 
     segment_id: int = Field(description="Segment index (maps to ASR segment)")
+    source_chunk_id: int = Field(default=0, description="Source chunk index for traceability")
     original_text: str = Field(description="Original ASR text before cleaning")
     cleaned_text: str = Field(description="Text after cleaning")
     glossary_applied: list[str] = Field(
