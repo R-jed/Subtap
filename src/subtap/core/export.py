@@ -352,15 +352,20 @@ def run_final_exports(aligned_jsonl: Path, output_dir: Path) -> dict:
     srt_path.write_text(SRTExporter().render(segments), encoding="utf-8")
 
     vtt_lines = ["WEBVTT", ""]
-    for index, seg in enumerate(sorted(segments, key=lambda s: s.sentence_id), start=1):
-        vtt_lines.extend(
-            [
-                str(index),
-                f"{_fmt_vtt_time(seg.start_sec)} --> {_fmt_vtt_time(seg.end_sec)}",
-                seg.text,
-                "",
-            ]
+    vtt_index = 0
+    for seg in sorted(segments, key=lambda s: s.sentence_id):
+        sub_lines = _split_subtitle_lines(
+            seg.text, seg.words, seg.start_sec, seg.end_sec, max_chars=20
         )
+        for sub in sub_lines:
+            vtt_index += 1
+            text = chinese_to_num(sub["text"])
+            vtt_lines.extend([
+                str(vtt_index),
+                f"{_fmt_vtt_time(sub['start_sec'])} --> {_fmt_vtt_time(sub['end_sec'])}",
+                text,
+                "",
+            ])
     vtt_path.write_text("\n".join(vtt_lines), encoding="utf-8")
 
     final_payload = [_final_json_item(seg) for seg in segments]
