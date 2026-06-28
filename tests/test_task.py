@@ -68,7 +68,7 @@ class TestTaskMode:
 
     def test_quality_mode_policy(self, sample_audio: Path):
         task = Task(input_file=sample_audio, mode="quality")
-        assert task.to_policy_mode() == "hybrid"
+        assert task.to_policy_mode() == "quality"
 
     def test_default_mode_policy(self, sample_audio: Path):
         task = Task(input_file=sample_audio)
