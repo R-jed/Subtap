@@ -215,6 +215,57 @@ def test_batch_transcribe_command_exists():
     assert "--json" in result.output
 
 
+def test_batch_transcribe_runs_each_file(tmp_path, monkeypatch):
+    """batch-transcribe should run the pipeline once per input file."""
+    calls = []
+
+    class FakeRunner:
+        def run_pipeline(self, pipeline, input_path, output_dir, fmt="srt"):
+            calls.append((pipeline.work_dir, input_path, output_dir, fmt))
+            return {"output_dir": str(output_dir), "format": fmt}
+
+    class FakePipeline:
+        def __init__(self, _config, work_dir):
+            self.work_dir = work_dir
+
+            class Workspace:
+                def ensure_dirs(self):
+                    return None
+
+            self.workspace = Workspace()
+
+    monkeypatch.setattr("subtap.ui.tui.PlainRunner", FakeRunner)
+    monkeypatch.setattr("subtap.core.pipeline.Pipeline", FakePipeline)
+    monkeypatch.setattr(
+        "subtap.schemas.config.load_config", lambda _: SimpleNamespace()
+    )
+    one = tmp_path / "one.wav"
+    two = tmp_path / "two.wav"
+    one.write_bytes(b"1")
+    two.write_bytes(b"2")
+
+    result = runner.invoke(
+        app,
+        [
+            "batch-transcribe",
+            "--files",
+            f"{one},{two}",
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert data["ok"] is True
+    assert len(data["items"]) == 2
+    assert len(calls) == 2
+    assert calls[0][0] == tmp_path / "out" / one.stem / "work"
+    assert calls[0][2] == tmp_path / "out" / one.stem
+    assert calls[1][2] == tmp_path / "out" / two.stem
+
+
 def test_run_mode_fast():
     """subtap run should accept --mode fast."""
     result = runner.invoke(app, ["run", "--help"])
