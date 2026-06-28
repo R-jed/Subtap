@@ -11,6 +11,11 @@ from pydub.generators import Sine
 from subtap.schemas.config import SubtapConfig, VADConfig, AudioConfig, WorkspaceConfig
 
 
+def pytest_configure(config):
+    """Configure asyncio mode for all async tests."""
+    config._inicache["asyncio_mode"] = "auto"
+
+
 @pytest.fixture
 def sample_wav(tmp_path: Path) -> Path:
     """Create a synthetic WAV file with speech-like segments and silence."""
