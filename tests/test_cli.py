@@ -206,9 +206,11 @@ def test_quality_command_exists():
 
 def test_run_has_mode_flag():
     """subtap run should accept --mode flag."""
+    import re
     result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
-    assert "--mode" in result.output
+    clean = re.sub(r'\x1b\[[0-9;]*m', '', result.output)
+    assert "mode" in clean
 
 
 def test_run_json_flag_is_available():
