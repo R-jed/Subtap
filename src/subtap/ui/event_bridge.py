@@ -49,12 +49,20 @@ class EventBridge:
     def _on_chunk_end(self, event: PipelineEvent) -> None:
         """处理 chunk 结束事件。"""
         if self.dashboard and hasattr(self.dashboard, "update_chunk"):
-            self.dashboard.update_chunk(event.data)
+            current = int(event.data.get("chunk_id", event.data.get("current", 0)))
+            total = int(
+                event.data.get(
+                    "chunks_total",
+                    event.data.get("total_chunks", event.data.get("total", current)),
+                )
+            )
+            self.dashboard.update_chunk(current, total)
 
     def _on_progress(self, event: PipelineEvent) -> None:
         """处理进度事件。"""
         if self.dashboard and hasattr(self.dashboard, "update_progress"):
-            self.dashboard.update_progress(event.data)
+            progress = int(event.data.get("progress", event.data.get("percent", 0)))
+            self.dashboard.update_progress(progress)
 
     def _on_streaming_event(self, event: PipelineEvent) -> None:
         """处理字幕生产流式事件。"""

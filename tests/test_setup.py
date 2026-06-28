@@ -36,6 +36,13 @@ def test_check_system_deps_python_version():
     assert isinstance(result["python"], bool)
 
 
+def test_check_system_deps_does_not_require_models_dir():
+    """setup should not fail before it has a chance to create/download models."""
+    wizard = SetupWizard()
+    result = wizard.check_system_deps()
+    assert "models" not in result
+
+
 def test_check_config_exists_true(tmp_path):
     """Test config check when config exists."""
     wizard = SetupWizard()

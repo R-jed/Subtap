@@ -81,8 +81,8 @@ def test_event_bridge_on_chunk_end():
         def __init__(self):
             self.chunk_data = None
 
-        def update_chunk(self, data):
-            self.chunk_data = data
+        def update_chunk(self, current, total):
+            self.chunk_data = (current, total)
 
     dashboard = MockDashboard()
     bridge = EventBridge(bus, dashboard)
@@ -96,7 +96,7 @@ def test_event_bridge_on_chunk_end():
     )
     bridge._on_chunk_end(event)
 
-    assert dashboard.chunk_data["chunk_id"] == 1
+    assert dashboard.chunk_data == (1, 1)
 
 
 def test_event_bridge_on_progress():
@@ -107,8 +107,8 @@ def test_event_bridge_on_progress():
         def __init__(self):
             self.progress = None
 
-        def update_progress(self, data):
-            self.progress = data
+        def update_progress(self, progress):
+            self.progress = progress
 
     dashboard = MockDashboard()
     bridge = EventBridge(bus, dashboard)
@@ -120,7 +120,90 @@ def test_event_bridge_on_progress():
     )
     bridge._on_progress(event)
 
-    assert dashboard.progress["percent"] == 50
+    assert dashboard.progress == 50
+
+
+def test_event_bridge_updates_real_dashboard_contract(monkeypatch):
+    """EventBridge should adapt event payloads to PipelineDashboard methods."""
+    from subtap.metrics.profiler import PipelineProfiler
+    from subtap.ui.dashboard import PipelineDashboard
+
+    bus = EventBus()
+    dashboard = PipelineDashboard(bus, PipelineProfiler(bus))
+    bridge = EventBridge(bus, dashboard)
+
+    captured = {}
+    monkeypatch.setattr(
+        dashboard,
+        "update_chunk",
+        lambda current, total: captured.update(chunk=(current, total)),
+    )
+    monkeypatch.setattr(
+        dashboard,
+        "update_progress",
+        lambda progress: captured.update(progress=progress),
+    )
+
+    bridge._on_chunk_end(
+        PipelineEvent(
+            event_type=EventType.CHUNK_END,
+            data={"chunk_id": 2, "chunks_total": 5},
+            timestamp=100.0,
+        )
+    )
+    bridge._on_progress(
+        PipelineEvent(
+            event_type=EventType.PROGRESS,
+            data={"progress": 40},
+            timestamp=100.0,
+        )
+    )
+
+    assert captured["chunk"] == (2, 5)
+    assert captured["progress"] == 40
+
+
+def test_dashboard_streaming_event_refreshes_visible_panels(monkeypatch):
+    """A single streaming event should update all visible panels once allowed."""
+    from subtap.metrics.profiler import PipelineProfiler
+    from subtap.ui.dashboard import (
+        ModelPanel,
+        PipelineDashboard,
+        ProgressPanel,
+        StagePanel,
+    )
+
+    bus = EventBus()
+    dashboard = PipelineDashboard(bus, PipelineProfiler(bus))
+
+    captured = {}
+
+    class FakeStage:
+        def update_stage(self, stage):
+            captured["stage"] = stage
+
+    class FakeProgress:
+        def update_progress(self, progress):
+            captured["progress"] = progress
+
+    class FakeModel:
+        def update_model(self, model, latency):
+            captured["model"] = (model, latency)
+
+    panels = {
+        StagePanel: FakeStage(),
+        ProgressPanel: FakeProgress(),
+        ModelPanel: FakeModel(),
+    }
+    monkeypatch.setattr(dashboard, "query_one", lambda panel: panels[panel])
+
+    dashboard.update_streaming_event(
+        {"stage": "asr", "progress": 30, "model": "asr_0.6b", "duration_sec": 1.5}
+    )
+
+    assert captured["stage"] == "asr"
+    assert captured["progress"] == 30
+    assert captured["model"] == ("asr_0.6b", 1.5)
 
 
 def test_cli_run_has_tui_flag():

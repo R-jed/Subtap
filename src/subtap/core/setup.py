@@ -33,7 +33,6 @@ class SetupWizard:
             "python": sys.version_info >= (3, 10),
             "venv": sys.prefix != sys.base_prefix,
             "mlx": importlib.util.find_spec("mlx") is not None,
-            "models": Path("models").exists(),
             "output": os_access_writable(Path.cwd()),
         }
 
