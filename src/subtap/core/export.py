@@ -16,7 +16,7 @@ _PUNCT_MAP = str.maketrans(
 )
 
 # All punctuation (both half-width and full-width) for stripping
-_ALL_PUNCT_RE = re.compile(r"[，。？！、；：""''（）《》,.?!;:\"\'()\[\]{}\-—…·]")
+_ALL_PUNCT_RE = re.compile(r"[，。？！、；：“”‘’（）《》,.?!;:\"'()\[\]{}\-—…·]")
 
 
 def _normalize_punct(text: str, language: str = "zh") -> str:
