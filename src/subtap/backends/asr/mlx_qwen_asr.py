@@ -26,9 +26,17 @@ class MLXQwenASR:
 
     def __init__(self, config: ASRConfig):
         self.config = config
+        self.model_name = config.model
+        self.quantization = config.quantization
+        self.runtime_name = (
+            f"qwen3-asr-{self.model_name.replace('asr_', '')}-{self.quantization}"
+        )
         self._model = None
-        # Use 0.6B by default (faster), 1.7B if batch_size > 1
-        self._model_path = _MODEL_0_6B
+        self._model_path = _MODEL_1_7B if self.model_name == "asr_1.7b" else _MODEL_0_6B
+
+    def release_model(self) -> None:
+        """Release the in-memory MLX model after the ASR stage."""
+        self._model = None
 
     def _load_model(self):
         """Lazy-load the MLX STT model."""

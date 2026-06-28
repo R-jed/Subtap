@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from subtap.backends.asr import get_backend
+from subtap.metrics.events import EventBus, EventType, make_pipeline_event
+from subtap.schemas.asr import ASRDraft
 from subtap.schemas.config import SubtapConfig
 from subtap.schemas.models import Chunk, ASRSegment
 from subtap.core.workspace import Workspace
@@ -29,10 +31,51 @@ def write_asr_segments(segments: list[ASRSegment], output_path: Path) -> None:
             f.write(seg.model_dump_json() + "\n")
 
 
+def write_asr_drafts(
+    segments: list[ASRSegment],
+    output_path: Path,
+    model: str,
+    quantization: str,
+    event_bus: EventBus | None = None,
+    task_id: str = "local",
+) -> None:
+    """Write ASRDraft reference-timing artifact."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    total = len(segments) or 1
+    with open(output_path, "w") as f:
+        for index, seg in enumerate(segments, start=1):
+            draft = ASRDraft(
+                chunk_id=seg.chunk_id,
+                text=seg.text,
+                start_sec=seg.start_sec,
+                end_sec=seg.end_sec,
+                confidence=seg.confidence,
+                provider="qwen3_mlx",
+                model=f"{model}-{quantization}",
+            )
+            f.write(draft.model_dump_json() + "\n")
+            if event_bus is not None:
+                event_bus.publish_nowait(
+                    make_pipeline_event(
+                        EventType.ASR_DRAFT_READY,
+                        task_id=task_id,
+                        stage="asr",
+                        chunk_id=seg.chunk_id,
+                        segment_id=seg.segment_id,
+                        progress=round(index / total * 100),
+                        duration_sec=seg.end_sec - seg.start_sec,
+                        model=f"{model}-{quantization}",
+                        message_zh="已生成 ASR 草稿",
+                    )
+                )
+
+
 def run_asr(
     workspace: Workspace,
     config: SubtapConfig,
     backend_name: str | None = None,
+    event_bus: EventBus | None = None,
+    task_id: str = "local",
 ) -> dict:
     """Run ASR stage: load chunks, transcribe, write asr.jsonl.
 
@@ -68,13 +111,66 @@ def run_asr(
         abs_chunks.append(chunk.model_copy(update={"path": str(chunk_path)}))
 
     # Transcribe
-    segments = backend.transcribe(
-        abs_chunks,
-        language=None,
-        hotwords=config.asr.hotwords or None,
-    )
+    model_name = f"{asr_config.model}-{asr_config.quantization}"
+    if event_bus is not None:
+        event_bus.publish_nowait(
+            make_pipeline_event(
+                EventType.MODEL_LOAD_START,
+                task_id=task_id,
+                stage="asr",
+                model=model_name,
+                message_zh="开始加载 ASR 模型",
+            )
+        )
+    try:
+        segments = backend.transcribe(
+            abs_chunks,
+            language=None,
+            hotwords=config.asr.hotwords or None,
+        )
+        if event_bus is not None:
+            event_bus.publish_nowait(
+                make_pipeline_event(
+                    EventType.MODEL_LOAD_DONE,
+                    task_id=task_id,
+                    stage="asr",
+                    model=model_name,
+                    message_zh="ASR 模型加载完成",
+                )
+            )
+    finally:
+        if not asr_config.keep_model_alive and hasattr(backend, "release_model"):
+            if event_bus is not None:
+                event_bus.publish_nowait(
+                    make_pipeline_event(
+                        EventType.MODEL_RELEASE_START,
+                        task_id=task_id,
+                        stage="asr",
+                        model=model_name,
+                        message_zh="开始释放 ASR 模型",
+                    )
+                )
+            backend.release_model()
+            if event_bus is not None:
+                event_bus.publish_nowait(
+                    make_pipeline_event(
+                        EventType.MODEL_RELEASE_DONE,
+                        task_id=task_id,
+                        stage="asr",
+                        model=model_name,
+                        message_zh="ASR 模型已释放",
+                    )
+                )
 
     # Write asr.jsonl
     write_asr_segments(segments, workspace.asr_jsonl)
+    write_asr_drafts(
+        segments,
+        workspace.asr_draft_jsonl,
+        model=asr_config.model,
+        quantization=asr_config.quantization,
+        event_bus=event_bus,
+        task_id=task_id,
+    )
 
     return {"segment_count": len(segments)}

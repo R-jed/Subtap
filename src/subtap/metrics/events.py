@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable
@@ -18,6 +19,16 @@ class EventType(Enum):
     CHUNK_END = "chunk_end"
     PROGRESS = "progress"
     MODEL_LOAD = "model_load"
+    AUDIO_CHUNK_READY = "audio_chunk_ready"
+    ASR_DRAFT_READY = "asr_draft_ready"
+    ENHANCEMENT_READY = "enhancement_ready"
+    SENTENCE_CANDIDATE_READY = "sentence_candidate_ready"
+    ALIGNMENT_READY = "alignment_ready"
+    SUBTITLE_PREVIEW_READY = "subtitle_preview_ready"
+    MODEL_LOAD_START = "model_load_start"
+    MODEL_LOAD_DONE = "model_load_done"
+    MODEL_RELEASE_START = "model_release_start"
+    MODEL_RELEASE_DONE = "model_release_done"
 
 
 @dataclass
@@ -27,6 +38,41 @@ class PipelineEvent:
     event_type: EventType
     data: dict[str, Any] = field(default_factory=dict)
     timestamp: float = 0.0
+
+
+def make_pipeline_event(
+    event_type: EventType,
+    *,
+    task_id: str,
+    stage: str,
+    chunk_id: int | None = None,
+    segment_id: int | None = None,
+    subtitle_id: int | None = None,
+    progress: int | float | None = None,
+    duration_sec: float | None = None,
+    model: str | None = None,
+    message_zh: str = "",
+) -> PipelineEvent:
+    """Build a streaming event with the shared payload contract."""
+    timestamp = time.time()
+    data: dict[str, Any] = {
+        "task_id": task_id,
+        "stage": stage,
+        "timestamp": timestamp,
+        "message_zh": message_zh,
+    }
+    optional = {
+        "chunk_id": chunk_id,
+        "segment_id": segment_id,
+        "subtitle_id": subtitle_id,
+        "progress": progress,
+        "duration_sec": duration_sec,
+        "model": model,
+    }
+    for key, value in optional.items():
+        if value is not None:
+            data[key] = value
+    return PipelineEvent(event_type=event_type, data=data, timestamp=timestamp)
 
 
 class EventBus:

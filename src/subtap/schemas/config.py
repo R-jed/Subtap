@@ -30,6 +30,10 @@ class ASRConfig(BaseModel):
     """ASR backend configuration."""
 
     backend: str = "mlx-qwen-asr"
+    model: str = "asr_0.6b"
+    quantization: str = "q8"
+    keep_model_alive: bool = False
+    warmup: bool = False
     hotwords: list[str] = Field(default_factory=list)
     batch_size: int = 4
 
@@ -46,6 +50,10 @@ class AlignConfig(BaseModel):
     """Forced alignment backend configuration."""
 
     backend: str = "mlx-qwen-aligner"
+    model: str = "aligner"
+    quantization: str = "q8"
+    keep_model_alive: bool = False
+    warmup: bool = False
 
 
 class RemoteAPIConfig(BaseModel):

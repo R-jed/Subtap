@@ -43,6 +43,10 @@ class Workspace:
         return self.asr_dir / "asr.jsonl"
 
     @property
+    def asr_draft_jsonl(self) -> Path:
+        return self.asr_dir / "asr_draft.jsonl"
+
+    @property
     def cleaned_jsonl(self) -> Path:
         return self.root / "cleaned.jsonl"
 
@@ -53,6 +57,10 @@ class Workspace:
     @property
     def aligned_jsonl(self) -> Path:
         return self.root / "aligned.jsonl"
+
+    @property
+    def aligned_subtitles_jsonl(self) -> Path:
+        return self.root / "aligned_subtitles.jsonl"
 
     @property
     def media_info_path(self) -> Path:
