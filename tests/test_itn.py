@@ -52,3 +52,9 @@ def test_large_number_combo():
 def test_large_number_wan():
     """万级：十二万。"""
     assert chinese_to_num("十二万") == "120000"
+
+
+def test_single_digit_not_converted():
+    """单独的数字词（非数字语境）不转换。"""
+    assert chinese_to_num("一直是一机难求") == "一直是一机难求"
+    assert chinese_to_num("一点都不便宜") == "一点都不便宜"
