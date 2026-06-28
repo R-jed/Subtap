@@ -24,6 +24,8 @@ app = typer.Typer(
     rich_markup_mode="rich",
 )
 app.add_typer(glossary_app, name="glossary")
+script_app = typer.Typer(help="文稿匹配")
+app.add_typer(script_app, name="script")
 
 # ── 基础命令 ──────────────────────────────────────────────
 
@@ -770,6 +772,37 @@ def batch_transcribe(
     for item in items:
         icon = "✓" if item["ok"] else "✗"
         typer.echo(f"  {icon} {item['input_path']}")
+
+
+@script_app.command("match")
+def script_match(
+    timeline: Path = typer.Option(..., "--timeline", help="已有时间轴 JSONL"),
+    script: Path = typer.Option(..., "--script", help="文稿文本文件"),
+    output: Path = typer.Option(..., "--output", "-o", help="输出 JSONL"),
+) -> None:
+    """按顺序用文稿替换已有时间轴文本。"""
+    from subtap.script.match import format_script, match_script_lines
+
+    if not timeline.exists():
+        typer.echo(f"✗ 时间轴文件不存在：{timeline}", err=True)
+        raise typer.Exit(1)
+    if not script.exists():
+        typer.echo(f"✗ 文稿文件不存在：{script}", err=True)
+        raise typer.Exit(1)
+
+    segments = [
+        json.loads(line)
+        for line in timeline.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    lines = format_script(script.read_text(encoding="utf-8"))
+    matched = match_script_lines(segments, lines)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        "\n".join(json.dumps(item, ensure_ascii=False) for item in matched) + "\n",
+        encoding="utf-8",
+    )
+    typer.echo(f"✓ 已输出：{output}")
 
 
 @app.command()
