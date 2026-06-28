@@ -440,8 +440,6 @@ class SRTExporter(BaseExporter):
             sub_lines = _merge_fragments(sub_lines)
             # Force-split any lines still exceeding max_chars
             sub_lines = _force_split_long(sub_lines, max_chars=20)
-            # Re-merge fragments created by force-split
-            sub_lines = _merge_fragments(sub_lines)
             for sub in sub_lines:
                 index += 1
                 start = _fmt_srt_time(sub["start_sec"])
