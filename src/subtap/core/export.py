@@ -281,6 +281,45 @@ def _merge_fragments(sub_lines: list[dict]) -> list[dict]:
     return merged
 
 
+def _force_split_long(sub_lines: list[dict], max_chars: int = 20) -> list[dict]:
+    """Force-split lines exceeding max_chars at punctuation or char boundaries."""
+    _SPLIT_PUNCT = re.compile(r"(?<=[，。？！、,;:：；.!?])")
+    result = []
+    for line in sub_lines:
+        text = line["text"]
+        vis = _count_visible(text)
+        if vis <= max_chars:
+            result.append(line)
+            continue
+        # Try splitting at punctuation first
+        parts = _SPLIT_PUNCT.split(text)
+        parts = [p.strip() for p in parts if p.strip()]
+        if len(parts) <= 1:
+            # No punctuation — force-split at max_chars
+            parts = []
+            remaining = text
+            while _count_visible(remaining) > max_chars:
+                cut = max_chars
+                parts.append(remaining[:cut])
+                remaining = remaining[cut:]
+            if remaining:
+                parts.append(remaining)
+        # Distribute time proportionally by visible char count
+        total_vis = _count_visible(text)
+        elapsed = line["start_sec"]
+        duration = line["end_sec"] - line["start_sec"]
+        for part in parts:
+            part_vis = _count_visible(part)
+            part_dur = duration * part_vis / total_vis if total_vis > 0 else 0
+            result.append({
+                "text": part,
+                "start_sec": round(elapsed, 3),
+                "end_sec": round(elapsed + part_dur, 3),
+            })
+            elapsed += part_dur
+    return result
+
+
 def _count_visible(text: str) -> int:
     """Count non-punctuation characters (consistent with _ALL_PUNCT_RE)."""
     return len(_ALL_PUNCT_RE.sub("", text))
@@ -398,6 +437,10 @@ class SRTExporter(BaseExporter):
                 sub_lines = _split_subtitle_lines(
                     seg.text, seg.words, seg.start_sec, seg.end_sec, max_chars=20
                 )
+            sub_lines = _merge_fragments(sub_lines)
+            # Force-split any lines still exceeding max_chars
+            sub_lines = _force_split_long(sub_lines, max_chars=20)
+            # Re-merge fragments created by force-split
             sub_lines = _merge_fragments(sub_lines)
             for sub in sub_lines:
                 index += 1
@@ -570,6 +613,7 @@ def run_final_exports(
                 seg.text, seg.words, seg.start_sec, seg.end_sec, max_chars=20
             )
         sub_lines = _merge_fragments(sub_lines)
+        sub_lines = _force_split_long(sub_lines, max_chars=20)
         for sub in sub_lines:
             vtt_index += 1
             text = chinese_to_num(sub["text"])

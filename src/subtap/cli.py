@@ -594,6 +594,11 @@ def run(
     translate_to: str | None = typer.Option(
         None, "--translate-to", help="翻译目标语言：en / ja / zh"
     ),
+    bilingual: str = typer.Option(
+        "off",
+        "--bilingual",
+        help="双语字幕顺序：off / source-first / target-first",
+    ),
     align_enabled: bool = typer.Option(
         True,
         "--align/--no-align",
@@ -660,6 +665,21 @@ def run(
 
     if local_only and enhance == "api":
         typer.echo("✗ 错误：--local-only 模式下不能使用 --enhance api", err=True)
+        raise typer.Exit(1)
+
+    if local_only and translate_to:
+        typer.echo("✗ 错误：--local-only 模式下不能使用 --translate-to", err=True)
+        raise typer.Exit(1)
+
+    if bilingual not in ("off", "source-first", "target-first"):
+        typer.echo(
+            f"✗ 错误：--bilingual 必须是 off/source-first/target-first，收到：{bilingual}",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    if bilingual != "off" and not translate_to:
+        typer.echo("✗ 错误：--bilingual 需要同时使用 --translate-to", err=True)
         raise typer.Exit(1)
 
     if enhance == "api":
@@ -1064,6 +1084,49 @@ def batch_transcribe(
     for item in items:
         icon = "✓" if item["status"] == "succeeded" else "✗"
         typer.echo(f"  {icon} {item['input_path']} — {item['status']}")
+
+
+@app.command("compose")
+def compose_subtitle(
+    video: Path = typer.Argument(..., help="输入视频文件"),
+    subtitle: Path = typer.Option(..., "--subtitle", "-s", help="字幕文件 SRT/ASS"),
+    output: Path = typer.Option(..., "--output", "-o", help="输出视频路径"),
+    overwrite: bool = typer.Option(False, "--overwrite", help="覆盖已存在输出文件"),
+) -> None:
+    """把字幕烧录进单个视频。"""
+    from subtap.compose import compose_one
+
+    result = compose_one(video, subtitle, output, overwrite=overwrite)
+    if result["status"] != "succeeded":
+        typer.echo(f"✗ 合成失败：{result['error']}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"✓ 合成完成：{output}")
+
+
+@app.command("batch-compose")
+def batch_compose_subtitle(
+    items: Path = typer.Option(..., "--items", help="JSON 文件：[{video, subtitle}]"),
+    output_dir: Path = typer.Option(
+        Path("./output/composed"), "--output-dir", "-o", help="输出目录"
+    ),
+    overwrite: bool = typer.Option(False, "--overwrite", help="覆盖已存在输出文件"),
+    json_output: bool = typer.Option(False, "--json", help="输出机器可读 JSON"),
+) -> None:
+    """批量把字幕烧录进视频。"""
+    from subtap.compose import compose_batch
+
+    if not items.exists():
+        typer.echo(f"✗ 批量合成清单不存在：{items}", err=True)
+        raise typer.Exit(1)
+    payload = json.loads(items.read_text(encoding="utf-8"))
+    manifest = compose_batch(payload, output_dir, overwrite=overwrite)
+    if json_output:
+        typer.echo(json.dumps(manifest, ensure_ascii=False, indent=2))
+        return
+    typer.echo(f"▸ 批量合成清单：{output_dir / 'compose-manifest.json'}")
+    for item in manifest["items"]:
+        icon = "✓" if item["status"] == "succeeded" else "✗"
+        typer.echo(f"  {icon} {item['video']} — {item['status']}")
 
 
 @script_app.command("match")

@@ -10,6 +10,7 @@ class EnhancementTask(enum.Enum):
 
     CORRECTION = "correction"  # ASR error correction
     GLOSSARY_CORRECTION = "glossary_correction"  # Glossary-based correction
+    AI_HOTWORD_REPLACEMENT = "ai_hotword_replacement"  # Contextual hotword replacement
     CLEANING = "cleaning"  # Text cleanup
     SEGMENTATION = "segmentation"  # Smart sentence splitting
     TRANSLATION = "translation"  # Translation
@@ -25,6 +26,7 @@ MODE_TASKS: dict[str, list[EnhancementTask]] = {
     "api": [
         EnhancementTask.CORRECTION,
         EnhancementTask.GLOSSARY_CORRECTION,
+        EnhancementTask.AI_HOTWORD_REPLACEMENT,
         EnhancementTask.CLEANING,
         EnhancementTask.SEGMENTATION,
     ],
