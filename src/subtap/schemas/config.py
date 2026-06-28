@@ -97,6 +97,14 @@ class OutputConfig(BaseModel):
     generate_report: bool = True
     generate_metrics: bool = True
     timestamp: bool = True
+    subtitle_punctuation: bool = Field(
+        default=False,
+        description="字幕是否带标点符号（默认不带）",
+    )
+    subtitle_language: str = Field(
+        default="zh",
+        description="字幕输出语种（zh/en/ja），影响标点全角/半角规范",
+    )
 
 
 class MetricsConfig(BaseModel):

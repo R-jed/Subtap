@@ -15,10 +15,31 @@ _PUNCT_MAP = str.maketrans(
     "，。？！；：（）",
 )
 
+# All punctuation (both half-width and full-width) for stripping
+_ALL_PUNCT_RE = re.compile(r"[，。？！、；：""''（）《》,.?!;:\"\'()\[\]{}\-—…·]")
 
-def _normalize_punct(text: str) -> str:
-    """Normalize half-width punctuation to full-width Chinese."""
-    return text.translate(_PUNCT_MAP)
+
+def _normalize_punct(text: str, language: str = "zh") -> str:
+    """Normalize punctuation by language.
+
+    zh/ja: full-width Chinese punctuation
+    en: half-width English punctuation
+    """
+    if language in ("zh", "ja"):
+        return text.translate(_PUNCT_MAP)
+    # English: convert full-width back to half-width
+    _EN_PUNCT_MAP = str.maketrans(
+        "，。？！；：（）",
+        ",.?!;:()",
+    )
+    return text.translate(_EN_PUNCT_MAP)
+
+
+def _strip_punct(text: str) -> str:
+    """Remove all punctuation from text."""
+    return _ALL_PUNCT_RE.sub("", text)
+
+
 from subtap.schemas.models import AlignedSegment, ASRSegment
 
 
@@ -209,6 +230,10 @@ class BaseExporter(ABC):
 class SRTExporter(BaseExporter):
     """SRT subtitle exporter."""
 
+    def __init__(self, punctuation: bool = False, language: str = "zh"):
+        self.punctuation = punctuation
+        self.language = language
+
     @property
     def extension(self) -> str:
         return "srt"
@@ -225,7 +250,11 @@ class SRTExporter(BaseExporter):
                 index += 1
                 start = _fmt_srt_time(sub["start_sec"])
                 end = _fmt_srt_time(sub["end_sec"])
-                text = _normalize_punct(chinese_to_num(sub["text"]))
+                text = chinese_to_num(sub["text"])
+                if self.punctuation:
+                    text = _normalize_punct(text, self.language)
+                else:
+                    text = _strip_punct(text)
                 lines.append(str(index))
                 lines.append(f"{start} --> {end}")
                 lines.append(text)
@@ -353,7 +382,12 @@ def _final_json_item(seg: AlignedSegment) -> dict:
     }
 
 
-def run_final_exports(aligned_jsonl: Path, output_dir: Path) -> dict:
+def run_final_exports(
+    aligned_jsonl: Path,
+    output_dir: Path,
+    punctuation: bool = False,
+    language: str = "zh",
+) -> dict:
     """Export aligned subtitles to the stable final.* output contract."""
     if not aligned_jsonl.exists():
         return run_export(aligned_jsonl, output_dir, fmt="srt", stem="final")
@@ -368,7 +402,10 @@ def run_final_exports(aligned_jsonl: Path, output_dir: Path) -> dict:
     json_path = output_dir / "final.json"
     tsv_path = output_dir / "final.tsv"
 
-    srt_path.write_text(SRTExporter().render(segments), encoding="utf-8")
+    srt_path.write_text(
+        SRTExporter(punctuation=punctuation, language=language).render(segments),
+        encoding="utf-8",
+    )
 
     vtt_lines = ["WEBVTT", ""]
     vtt_index = 0
@@ -378,7 +415,11 @@ def run_final_exports(aligned_jsonl: Path, output_dir: Path) -> dict:
         )
         for sub in sub_lines:
             vtt_index += 1
-            text = _normalize_punct(chinese_to_num(sub["text"]))
+            text = chinese_to_num(sub["text"])
+            if punctuation:
+                text = _normalize_punct(text, language)
+            else:
+                text = _strip_punct(text)
             vtt_lines.extend(
                 [
                     str(vtt_index),

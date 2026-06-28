@@ -596,6 +596,12 @@ def run(
         "--align/--no-align",
         help="默认执行精对齐；关闭后不生成 final.srt，只生成 draft 粗剪预览",
     ),
+    punctuation: bool = typer.Option(
+        False, "--punctuation", help="字幕带标点符号（默认不带）"
+    ),
+    subtitle_language: str = typer.Option(
+        "zh", "--subtitle-language", help="字幕输出语种（zh/en/ja），影响标点规范"
+    ),
     use_tui: bool = typer.Option(
         True, "--tui/--no-tui", help="启用 TUI 界面（默认开启）"
     ),
@@ -656,6 +662,8 @@ def run(
 
     config = load_config(Path.home() / ".subtap" / "config.yaml")
     config.output.timestamp = timestamp  # CLI overrides config
+    config.output.subtitle_punctuation = punctuation
+    config.output.subtitle_language = subtitle_language
 
     pipeline = Pipeline(config, work_dir=work_dir)
     pipeline.workspace.ensure_dirs()
