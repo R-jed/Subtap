@@ -131,7 +131,11 @@ def _interpolate_from_words(
             e = part_words[-1]["end_sec"]
         else:
             # Fallback: use previous word's end time
-            s = words[part_start_word - 1]["end_sec"] if part_start_word > 0 else start_sec
+            s = (
+                words[part_start_word - 1]["end_sec"]
+                if part_start_word > 0
+                else start_sec
+            )
             e = s + 0.1
 
         result.append({"text": part, "start_sec": round(s, 3), "end_sec": round(e, 3)})
@@ -364,12 +368,14 @@ def run_final_exports(aligned_jsonl: Path, output_dir: Path) -> dict:
         for sub in sub_lines:
             vtt_index += 1
             text = chinese_to_num(sub["text"])
-            vtt_lines.extend([
-                str(vtt_index),
-                f"{_fmt_vtt_time(sub['start_sec'])} --> {_fmt_vtt_time(sub['end_sec'])}",
-                text,
-                "",
-            ])
+            vtt_lines.extend(
+                [
+                    str(vtt_index),
+                    f"{_fmt_vtt_time(sub['start_sec'])} --> {_fmt_vtt_time(sub['end_sec'])}",
+                    text,
+                    "",
+                ]
+            )
     vtt_path.write_text("\n".join(vtt_lines), encoding="utf-8")
 
     final_payload = [_final_json_item(seg) for seg in segments]

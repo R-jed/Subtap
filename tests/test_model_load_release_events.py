@@ -11,7 +11,7 @@ import pytest
 from subtap.core.align import run_align
 from subtap.core.asr import run_asr
 from subtap.core.workspace import Workspace
-from subtap.metrics.events import EventBus, EventType, PipelineEvent
+from subtap.metrics.events import EventType, PipelineEvent
 from subtap.schemas.config import SubtapConfig
 from subtap.schemas.models import (
     AlignedSegment,
