@@ -407,7 +407,7 @@ def test_run_no_align_passes_align_disabled_to_runner(tmp_path, monkeypatch):
     assert (output_dir / "draft.srt").exists()
     assert (output_dir / "draft.json").exists()
     assert not (output_dir / "final.srt").exists()
-    work_dir = Path("./work")
+    work_dir = tmp_path / "work"
     assert "未精对齐" in (work_dir / "report.md").read_text(encoding="utf-8")
     metrics = json.loads((work_dir / "metrics.json").read_text(encoding="utf-8"))
     assert metrics["alignment_enabled"] is False
@@ -518,7 +518,7 @@ def test_run_tui_starts_observer_child_process(tmp_path, monkeypatch):
     assert "--observer-child" in command
     assert "--no-tui" in command
     assert "--no-align" in command
-    assert log_path == Path("work/run.log.jsonl")
+    assert log_path == tmp_path / "work" / "run.log.jsonl"
     assert "观察者进程" in result.output
 
 
