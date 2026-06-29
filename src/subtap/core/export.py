@@ -421,26 +421,45 @@ class SRTExporter(BaseExporter):
 
     def render(self, segments: list[AlignedSegment]) -> str:
         sorted_segs = sorted(segments, key=lambda s: s.start_sec)
-        lines: list[str] = []
-        index = 0
+        # Collect all sub_lines from all sentences
+        all_subs: list[dict] = []
         for seg in sorted_segs:
             words_with_punct = _inject_punct(seg.words, seg.text)
             sub_lines = _smart_split(words_with_punct, seg.text, max_chars=25, start_sec=seg.start_sec, end_sec=seg.end_sec)
             for sub in sub_lines:
-                if not sub["text"].strip():
+                if sub["text"].strip():
+                    all_subs.append(sub)
+
+        # Cross-sentence fragment merge: merge ≤2 char fragments into adjacent lines
+        # This handles cases where a sentence starts with a short word like "今天"
+        # that should be merged with the previous sentence's last line
+        merged_subs: list[dict] = []
+        for sub in all_subs:
+            txt = sub["text"].strip()
+            visible = _strip_punct(txt).replace(" ", "")
+            if merged_subs and len(visible) <= 2:
+                prev = merged_subs[-1]
+                prev_visible = _strip_punct(prev["text"]).replace(" ", "")
+                if len(prev_visible) + len(visible) <= 25:
+                    prev["text"] = prev["text"].rstrip() + txt
+                    prev["end_sec"] = sub["end_sec"]
                     continue
-                index += 1
-                start = _fmt_srt_time(sub["start_sec"])
-                end = _fmt_srt_time(sub["end_sec"])
-                text = chinese_to_num(sub["text"])
-                if self.punctuation:
-                    text = _normalize_punct(text, self.language)
-                else:
-                    text = _strip_punct(text)
-                lines.append(str(index))
-                lines.append(f"{start} --> {end}")
-                lines.append(text)
-                lines.append("")
+            merged_subs.append(sub)
+
+        # Render SRT
+        lines: list[str] = []
+        for index, sub in enumerate(merged_subs, 1):
+            start = _fmt_srt_time(sub["start_sec"])
+            end = _fmt_srt_time(sub["end_sec"])
+            text = chinese_to_num(sub["text"])
+            if self.punctuation:
+                text = _normalize_punct(text, self.language)
+            else:
+                text = _strip_punct(text)
+            lines.append(str(index))
+            lines.append(f"{start} --> {end}")
+            lines.append(text)
+            lines.append("")
         return "\n".join(lines)
 
 
