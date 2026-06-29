@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 from subtap.core.itn import chinese_to_num
+from subtap.schemas.models import AlignedSegment, ASRSegment
 
 
 _PUNCT_MAP = str.maketrans(
@@ -38,9 +39,6 @@ def _normalize_punct(text: str, language: str = "zh") -> str:
 def _strip_punct(text: str) -> str:
     """Remove all punctuation from text."""
     return _ALL_PUNCT_RE.sub("", text)
-
-
-from subtap.schemas.models import AlignedSegment, ASRSegment
 
 
 def _fmt_srt_time(seconds: float) -> str:
@@ -232,7 +230,7 @@ def _smart_split(
         _flush()
 
     # --- Phase 2: Post-processing ---
-    lines = [l for l in lines if l["text"].strip()]
+    lines = [line for line in lines if line["text"].strip()]
 
     # 2a: Merge fillers and very short fragments (≤1 char) into previous
     merged: list[dict] = []
