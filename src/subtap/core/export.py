@@ -133,8 +133,8 @@ def _is_incomplete_word(tail: str, next_start: str) -> bool:
     """检查 tail 是否是不完整词，next_start 能否组成完整词"""
     if not next_start:
         return False
-    # 英文词组不拆分：行尾有字母或行首有字母
-    if _has_latin(tail) or _has_latin(next_start[:1]):
+    # 英文词组不拆分：仅当尾部 ≤2 字符时（避免 "Hello"+"World" 误合并）
+    if len(tail) <= 2 and (_has_latin(tail) or _has_latin(next_start[:1])):
         return True
     # 如果 tail + next_start 是常见断词模式
     if (tail, next_start[:1]) in _SPLIT_WORD_PATTERNS:
