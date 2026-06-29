@@ -36,7 +36,7 @@ _UNIT_MAP = {
 # Negative lookahead: skip when followed by 概数后缀 (多/余/左右/上下)
 _NUM_RE = re.compile(
     r"[零一二两三四五六七八九]{2,}"  # 2+ pure digits
-    r"|[零一二两三四五六七八九十百千万亿]*[十百千万亿][零一二两三四五六七八九十百千万亿]*(?![多余])"  # contains unit, not followed by 多/余
+    r"|[零一二两三四五六七八九十百千万亿]+[十百千万亿][零一二两三四五六七八九十百千万亿]*(?![多余])"  # contains unit (at least 1 char before unit)
 )
 
 
@@ -51,6 +51,8 @@ def _parse_total(s: str) -> int:
         elif ch in _UNIT_MAP:
             unit = _UNIT_MAP[ch]
             if unit >= 10000:
+                if current == 0:
+                    current = 1  # 裸单位 "万" → "一万"
                 current_group += current
                 total += current_group * unit
                 current_group = 0
@@ -105,8 +107,8 @@ def _convert_number_str(s: str) -> str:
             current = _NUM_MAP[ch]
         elif ch in _UNIT_MAP:
             unit = _UNIT_MAP[ch]
-            if current == 0 and unit == 10:
-                current = 1
+            if current == 0:
+                current = 1  # 裸单位 "十/百/千" → 1
             current_group += current * unit
             current = 0
 
@@ -186,8 +188,8 @@ def _sub_unit_parse(s: str) -> int:
             current = _NUM_MAP[ch]
         elif ch in _UNIT_MAP:
             unit = _UNIT_MAP[ch]
-            if current == 0 and unit == 10:
-                current = 1
+            if current == 0:
+                current = 1  # 裸单位 "十/百/千" → 1
             current_group += current * unit
             current = 0
     current_group += current
