@@ -119,26 +119,22 @@ def _fix_split_words(lines: list[dict], max_chars: int) -> list[dict]:
     if len(lines) < 2:
         return lines
 
-    fixed = [lines[0]]
+    fixed = [{**lines[0]}]
     for i in range(1, len(lines)):
         prev = fixed[-1]
-        curr = lines[i]
+        curr = {**lines[i]}
         prev_text = prev["text"]
         curr_text = curr["text"]
 
         # 尝试从 prev 末尾取 1-2 个字，检查是否能和 curr 开头组成完整词
-        moved = False
         for take in (2, 1):
             if len(prev_text) <= take:
                 continue
             tail = prev_text[-take:]
-            # 检查 tail + curr_text 开头是否是常见词组的前缀
-            # 如果 tail 是单字且 curr_text 以能组成词的字开头，则移动
             if _is_incomplete_word(tail, curr_text[:2] if len(curr_text) >= 2 else curr_text):
                 # 移动 tail 到 curr 开头
                 prev["text"] = prev_text[:-take]
                 curr["text"] = tail + curr_text
-                moved = True
                 break
 
         fixed.append(curr)
