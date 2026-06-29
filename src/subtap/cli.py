@@ -1197,85 +1197,356 @@ def observe(
 
 @app.command("batch-transcribe")
 def batch_transcribe(
-    files: str = typer.Option(..., "--files", "-f", help="输入文件，逗号分隔"),
+    files: str = typer.Option(None, "--files", "-f", help="输入文件，逗号分隔"),
     output_dir: Path = typer.Option(
         Path("./output"), "--output-dir", "-o", help="输出目录"
     ),
     mode: str = typer.Option("fast", "--mode", "-m", help="fast / quality"),
+    enhance: str = typer.Option(
+        "local", "--enhance", "-e", help="字幕增强模式：off / local / api"
+    ),
+    translate_to: str | None = typer.Option(
+        None, "--translate-to", help="翻译目标语言：en / ja / zh"
+    ),
+    bilingual: str = typer.Option(
+        "off",
+        "--bilingual",
+        help="双语字幕顺序：off / source-first / target-first",
+    ),
+    max_chars: int = typer.Option(
+        25, "--max-chars", help="每行字幕最大字符数（10-60）", min=10, max=60
+    ),
+    min_chars: int = typer.Option(
+        10, "--min-chars", help="每行字幕最小字符数（4-30）", min=4, max=30
+    ),
+    punctuation: bool = typer.Option(
+        False, "--punctuation", help="字幕带标点符号（默认不带）"
+    ),
+    subtitle_language: str = typer.Option(
+        "zh", "--subtitle-language", help="字幕输出语种（zh/en/ja）"
+    ),
+    no_align: bool = typer.Option(False, "--no-align", help="跳过对齐阶段"),
+    concurrency: int = typer.Option(
+        1, "--concurrency", "-c", help="并发处理数（最大 4）", min=1, max=4
+    ),
+    resume: Path | None = typer.Option(
+        None, "--resume", help="恢复中断的任务（传入 manifest.json 路径）"
+    ),
+    retry_failed: Path | None = typer.Option(
+        None, "--retry-failed", help="重试失败的文件（传入 manifest.json 路径）"
+    ),
     json_output: bool = typer.Option(False, "--json", help="输出机器可读 JSON"),
 ) -> None:
-    """批量转录多个媒体文件。"""
-    from subtap.batch import build_manifest, make_item, parse_files, write_manifest
+    """批量转录多个媒体文件。
+
+    [bold]示例：[/bold]
+      subtap batch-transcribe --files a.mp4,b.mp4,c.mp4
+      subtap batch-transcribe --files a.mp4,b.mp4 --mode quality --translate-to en
+      subtap batch-transcribe --resume output/manifest.json
+      subtap batch-transcribe --retry-failed output/manifest.json
+      subtap batch-transcribe --files a.mp4,b.mp4 --concurrency 2
+      subtap batch-transcribe --files a.mp4,b.mp4 --json
+    """
+    import time
+    from datetime import datetime, timezone
+
+    from subtap.batch import (
+        build_manifest,
+        get_failed_items,
+        get_pending_items,
+        load_manifest,
+        make_item,
+        parse_files,
+        write_manifest,
+    )
+    from subtap.batch_abort import AbortController
+    from subtap.batch_progress import (
+        JsonProgressWriter,
+        print_progress_footer,
+        print_progress_header,
+        print_progress_item,
+    )
     from subtap.core.pipeline import Pipeline
     from subtap.schemas.config import load_config
     from subtap.ui.tui import PlainRunner
 
-    config = load_config(Path.home() / ".subtap" / "config.yaml")
-    paths = parse_files(files)
-    if not paths:
-        typer.echo("✗ 未提供输入文件", err=True)
+    # ── 参数冲突检查 ──────────────────────────────────────────
+    if resume and retry_failed:
+        typer.echo("✗ 错误：--resume 和 --retry-failed 不能同时使用", err=True)
         raise typer.Exit(1)
 
-    items: list[dict[str, Any]] = []
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if (resume or retry_failed) and files:
+        typer.echo(
+            "✗ 错误：--resume/--retry-failed 不能与 --files 同时使用", err=True
+        )
+        raise typer.Exit(1)
+
+    if bilingual != "off" and not translate_to:
+        typer.echo("✗ 错误：--bilingual 需要同时使用 --translate-to", err=True)
+        raise typer.Exit(1)
+
+    if not files and not resume and not retry_failed:
+        typer.echo(
+            "✗ 错误：必须指定 --files 或 --resume/--retry-failed", err=True
+        )
+        raise typer.Exit(1)
+
+    # ── 加载配置 ──────────────────────────────────────────────
+    config = load_config(Path.home() / ".subtap" / "config.yaml")
+    config.output.timestamp = True
+    config.output.subtitle_punctuation = punctuation
+    config.output.subtitle_language = subtitle_language
+    config.output.max_chars = max_chars
+    config.output.min_chars = min_chars
+    config.output.subtitle_stem = "batch"
+
+    if mode == "quality":
+        config.asr.model = "asr_1.7b"
+
+    # ── 恢复或重试模式 ──────────────────────────────────────
+    if resume or retry_failed:
+        manifest_path = resume or retry_failed
+        if not manifest_path.exists():
+            typer.echo(f"✗ manifest 文件不存在：{manifest_path}", err=True)
+            raise typer.Exit(1)
+
+        manifest = load_manifest(manifest_path)
+        output_dir = Path(manifest["output_dir"])
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        if resume:
+            items_to_process = get_pending_items(manifest["items"])
+            typer.echo(f"▸ 恢复模式：跳过 {manifest['succeeded']} 个成功文件")
+        else:
+            items_to_process = get_failed_items(manifest["items"])
+            typer.echo(f"▸ 重试模式：重试 {len(items_to_process)} 个失败文件")
+
+        if not items_to_process:
+            typer.echo("✓ 没有需要处理的文件")
+            return
+
+        # 重置待处理项状态
+        for item in items_to_process:
+            item["status"] = "pending"
+            item["error"] = ""
+            for stage in item.get("stages", {}).values():
+                if isinstance(stage, dict):
+                    stage["status"] = "pending"
+
+        items = manifest["items"]
+    else:
+        paths = parse_files(files)
+        if not paths:
+            typer.echo("✗ 未提供输入文件", err=True)
+            raise typer.Exit(1)
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+        items = [make_item(p, output_dir) for p in paths]
+
+    # ── 构建参数快照 ──────────────────────────────────────────
+    params = {
+        "mode": mode,
+        "enhance": enhance,
+        "translate_to": translate_to,
+        "bilingual": bilingual,
+        "max_chars": max_chars,
+        "min_chars": min_chars,
+        "punctuation": punctuation,
+        "subtitle_language": subtitle_language,
+        "concurrency": concurrency,
+        "align_enabled": not no_align,
+    }
+
+    # ── 初始化中止控制器 ──────────────────────────────────────
+    abort_controller = AbortController(output_dir)
+    # 清理旧的 abort 标记
+    abort_controller.cleanup()
+    abort_controller.install_signal_handler()
+
+    # ── 初始化进度显示 ──────────────────────────────────────
+    json_writer = JsonProgressWriter() if json_output else None
+    total = len(items)
     manifest_path = output_dir / "manifest.json"
-    total = len(paths)
-    for index, path in enumerate(paths, start=1):
-        item = make_item(path, output_dir)
-        item_output_dir = Path(item["output_dir"])
-        if not path.exists():
-            item.update(
-                {
-                    "status": "failed",
-                    "error": "文件不存在",
-                    "suggestion": "请检查输入路径，修正后重新运行批量任务",
-                }
-            )
-            items.append(item)
-            write_manifest(manifest_path, build_manifest(output_dir, mode, items))
+
+    if json_writer:
+        json_writer.write_start(total, mode)
+    else:
+        print_progress_header(total, mode)
+
+    # ── 写入初始 manifest ──────────────────────────────────────
+    write_manifest(manifest_path, build_manifest(output_dir, mode, items, params))
+
+    # ── 处理文件 ──────────────────────────────────────────────
+    start_time = time.time()
+
+    for index, item in enumerate(items, start=1):
+        # 检查中止
+        if abort_controller.is_aborted():
+            if item["status"] in ("pending", "running"):
+                item["status"] = "interrupted"
+                item["error"] = "用户中止"
             continue
 
+        # 跳过已成功的文件
+        if item["status"] == "succeeded":
+            continue
+
+        path = Path(item["input_path"])
+        item_output_dir = Path(item["output_dir"])
+        filename = path.name
+
+        # 文件不存在
+        if not path.exists():
+            item["status"] = "failed"
+            item["error"] = "文件不存在"
+            if json_writer:
+                json_writer.write_item_complete(
+                    index, filename, "failed", error="文件不存在"
+                )
+            else:
+                print_progress_item(index, total, filename, "failed")
+            write_manifest(
+                manifest_path, build_manifest(output_dir, mode, items, params)
+            )
+            continue
+
+        # 开始处理
+        item["status"] = "running"
+        item["stages"] = {
+            s: {"status": "pending"}
+            for s in [
+                "prepare",
+                "chunk",
+                "asr",
+                "clean",
+                "segment",
+                "align",
+                "export",
+            ]
+        }
+
+        if json_writer:
+            json_writer.write_item_start(index, filename)
+        else:
+            print_progress_item(index, total, filename, "running")
+
+        write_manifest(manifest_path, build_manifest(output_dir, mode, items, params))
+
         try:
-            if not json_output:
-                typer.echo(f"▸ [{index}/{total}] 正在处理：{path}")
-            item["status"] = "running"
-            items.append(item)
-            write_manifest(manifest_path, build_manifest(output_dir, mode, items))
-            pipeline = Pipeline(config, work_dir=item_output_dir / "work")
+            # 配置 Pipeline
+            item_config = load_config(Path.home() / ".subtap" / "config.yaml")
+            item_config.output.timestamp = True
+            item_config.output.subtitle_punctuation = punctuation
+            item_config.output.subtitle_language = subtitle_language
+            item_config.output.max_chars = max_chars
+            item_config.output.min_chars = min_chars
+            item_config.output.subtitle_stem = path.stem
+
+            if mode == "quality":
+                item_config.asr.model = "asr_1.7b"
+
+            pipeline = Pipeline(item_config, work_dir=item_output_dir / "work")
             pipeline.workspace.ensure_dirs()
+
+            # 运行 Pipeline
+            stage_start = time.time()
             runner = PlainRunner()
+
             if json_output:
                 with redirect_stdout(StringIO()):
-                    meta = runner.run_pipeline(pipeline, path, item_output_dir)
+                    meta = runner.run_pipeline(
+                        pipeline,
+                        path,
+                        item_output_dir,
+                        enhance=enhance,
+                        align_enabled=not no_align,
+                    )
             else:
-                meta = runner.run_pipeline(pipeline, path, item_output_dir)
-            item.update(
-                {
-                    "status": "succeeded",
-                    "ok": True,
-                    "error": "",
-                    "meta": meta,
-                }
-            )
-        except Exception as e:
-            item.update(
-                {
-                    "status": "failed",
-                    "ok": False,
-                    "error": str(e),
-                    "suggestion": "请查看该文件输出目录中的日志，修复后单独重试",
-                }
-            )
-        write_manifest(manifest_path, build_manifest(output_dir, mode, items))
-    result = build_manifest(output_dir, mode, items)
-    if json_output:
-        typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
-        return
+                meta = runner.run_pipeline(
+                    pipeline,
+                    path,
+                    item_output_dir,
+                    enhance=enhance,
+                    align_enabled=not no_align,
+                )
 
-    typer.echo(f"\n▸ 批量任务清单：{manifest_path}")
-    for item in items:
-        icon = "✓" if item["status"] == "succeeded" else "✗"
-        typer.echo(f"  {icon} {item['input_path']} — {item['status']}")
+            # 记录成功
+            item["status"] = "succeeded"
+            item["duration"] = time.time() - stage_start
+            item["meta"] = meta
+
+            # 更新阶段状态
+            timings = meta.get("timings", {})
+            for stage_name in item.get("stages", {}):
+                if stage_name in timings:
+                    item["stages"][stage_name] = {
+                        "status": "done",
+                        "duration": round(timings[stage_name], 2),
+                    }
+                elif no_align and stage_name == "align":
+                    item["stages"][stage_name] = {
+                        "status": "skipped",
+                        "reason": "--no-align",
+                    }
+
+            if json_writer:
+                json_writer.write_item_complete(
+                    index, filename, "succeeded", item["duration"]
+                )
+            else:
+                print_progress_item(
+                    index, total, filename, "succeeded", duration=item["duration"]
+                )
+
+        except Exception as e:
+            item["status"] = "failed"
+            item["error"] = str(e)
+            item["duration"] = time.time() - stage_start
+
+            # 标记失败的阶段
+            for stage_name, stage_info in item.get("stages", {}).items():
+                if isinstance(stage_info, dict) and stage_info.get("status") == "running":
+                    stage_info["status"] = "failed"
+                    stage_info["error"] = str(e)
+
+            if json_writer:
+                json_writer.write_item_complete(
+                    index, filename, "failed", error=str(e)
+                )
+            else:
+                print_progress_item(index, total, filename, "failed")
+
+        write_manifest(manifest_path, build_manifest(output_dir, mode, items, params))
+
+    # ── 完成 ──────────────────────────────────────────────────
+    total_duration = time.time() - start_time
+    abort_controller.restore_signal_handler()
+    abort_controller.cleanup()
+
+    # 更新完成时间
+    manifest = build_manifest(output_dir, mode, items, params)
+    manifest["completed_at"] = datetime.now(timezone.utc).isoformat()
+    manifest["duration"] = total_duration
+    write_manifest(manifest_path, manifest)
+
+    if json_writer:
+        json_writer.write_complete(
+            manifest["ok"],
+            manifest["total"],
+            manifest["succeeded"],
+            manifest["failed"],
+            manifest["interrupted"],
+            total_duration,
+        )
+    else:
+        print_progress_footer(
+            manifest["total"],
+            manifest["succeeded"],
+            manifest["failed"],
+            manifest["interrupted"],
+            total_duration,
+        )
+        typer.echo(f"\n▸ 批量任务清单：{manifest_path}")
 
 
 @app.command("compose")
