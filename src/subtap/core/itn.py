@@ -337,9 +337,14 @@ def chinese_to_num(text: str) -> str:
     text = _NUM_RE.sub(_replace, text)
 
     # Handle 概数前缀 + 数字: 上1000张 → 上千张
-    text = _APPROX_RE.sub(
-        lambda m: m.group(1) + _arabic_to_chinese(int(m.group(2))) + m.group(3),
-        text,
-    )
+    def _approx_repl(m):
+        num_str = m.group(2)
+        # 中文数字 → 阿拉伯数字 → 中文简写
+        if num_str.isdigit():
+            n = int(num_str)
+        else:
+            n = _parse_total(num_str)
+        return m.group(1) + _arabic_to_chinese(n) + m.group(3)
+    text = _APPROX_RE.sub(_approx_repl, text)
 
     return text
