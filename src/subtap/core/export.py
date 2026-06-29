@@ -248,17 +248,18 @@ def _smart_split(
     merged = conj_merged
 
     # 2c: Merge remaining short lines (≤4 visible chars) into previous,
-    #     but only if combined length ≤ max_chars and previous wasn't a pause break
+    #     but only if combined length ≤ max_chars and not a hard break
     def _visible_len(s: str) -> int:
         return len([c for c in s if c.strip()])
 
+    _HARD_BREAKS = {"pause", "sentence_end", "comma"}
     short_merged: list[dict] = []
     for line in merged:
         text = line["text"]
         if short_merged and _visible_len(text) <= 4:
             prev = short_merged[-1]
-            # Don't merge back into a line that was paused (valid short sentence)
-            if prev.get("break_type") == "pause":
+            # Don't merge back into lines created by hard breaks
+            if prev.get("break_type") in _HARD_BREAKS:
                 pass  # keep separate
             elif _visible_len(prev["text"]) + _visible_len(text) <= max_chars:
                 prev["text"] += text
