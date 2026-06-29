@@ -61,3 +61,19 @@ def test_single_digit_not_converted():
     """单独的数字词（非数字语境）不转换。"""
     assert chinese_to_num("一直是一机难求") == "一直是一机难求"
     assert chinese_to_num("一点都不便宜") == "一点都不便宜"
+
+
+def test_itn_approximate_shang():
+    """上1000张 → 上千张（概数前缀）"""
+    assert chinese_to_num("上1000张") == "上千张"
+
+
+def test_itn_decimal_missing_dot():
+    """06秒 → 0.6秒（小数点缺失）"""
+    assert chinese_to_num("06秒") == "0.6秒"
+
+
+def test_itn_approximate_context():
+    """我们用他们拍了上1000张照片 → 上千张"""
+    result = chinese_to_num("我们用他们拍了上1000张照片")
+    assert "上千张" in result

@@ -29,6 +29,58 @@ _UNIT_MAP = {
 # 成语/复合词保护：这些词中的数字不转换
 _IDIOMS = {"百万富翁", "万元户", "万元", "亿元", "十亿", "百亿", "千亿", "万亿"}
 
+# 概数前缀
+_APPROX_PREFIXES = ("上", "下", "近", "约", "大概", "差不多", "超过", "不到", "将近")
+
+# 概数量词
+_APPROX_UNITS = "[个只张条块元万千百十秒分米克斤两]"
+
+# 阿拉伯数字 → 中文数字映射（用于概数转换）
+_ARABIC_TO_CHINESE = {
+    0: "零", 1: "一", 2: "二", 3: "三", 4: "四",
+    5: "五", 6: "六", 7: "七", 8: "八", 9: "九",
+}
+
+# 大单位映射
+_MAGNITUDE_UNITS = [
+    (100000000, "亿"), (10000, "万"), (1000, "千"), (100, "百"), (10, "十"),
+]
+
+
+def _arabic_to_chinese(n: int) -> str:
+    """将阿拉伯数字转为中文数字（简洁形式）。
+
+    Examples:
+        1000 → 千, 100 → 百, 3000 → 三千, 5 → 五
+    """
+    if n == 0:
+        return "零"
+    parts = []
+    for mag, unit in _MAGNITUDE_UNITS:
+        if n >= mag:
+            count = n // mag
+            n = n % mag
+            if mag >= 10000:
+                # 万/亿级别用递归
+                parts.append(_arabic_to_chinese(count) + unit)
+            elif count == 1 and mag >= 10:
+                parts.append(unit)  # 裸单位：千、百、十
+            else:
+                parts.append(_ARABIC_TO_CHINESE[count] + unit)
+    if n > 0:
+        parts.append(_ARABIC_TO_CHINESE[n])
+    return "".join(parts)
+
+
+# 概数模式：前缀 + 数字（阿拉伯或中文） + 量词
+# 在 _NUM_RE 之后使用，此时中文数字已转为阿拉伯数字
+_APPROX_RE = re.compile(
+    r"(" + "|".join(_APPROX_PREFIXES) + r")([\d零一二两三四五六七八九十百千万亿]+)(" + _APPROX_UNITS + r")"
+)
+
+# 小数点缺失模式：0开头的数字 + 时间/度量单位
+_DECIMAL_DOT_RE = re.compile(r"(?<!\d)0(\d+)(秒|分|米|克|斤|两|元|块|度)")
+
 
 def _is_idiom(text: str, match_start: int, match_end: int) -> bool:
     """Check if the matched number is part of an idiom/compound word."""
@@ -228,6 +280,12 @@ def chinese_to_num(text: str) -> str:
     if not text:
         return text
 
+    # Handle 小数点缺失: 06秒 → 0.6秒
+    text = _DECIMAL_DOT_RE.sub(
+        lambda m: "0." + m.group(1) + m.group(2),
+        text,
+    )
+
     # Handle 小数点: 三点一四 → 3.14
     text = re.sub(
         r"([零一二两三四五六七八九十百千万亿]+)点([零一二两三四五六七八九]+)",
@@ -250,5 +308,11 @@ def chinese_to_num(text: str) -> str:
         return _convert_number_str(matched)
 
     text = _NUM_RE.sub(_replace, text)
+
+    # Handle 概数前缀 + 数字: 上1000张 → 上千张
+    text = _APPROX_RE.sub(
+        lambda m: m.group(1) + _arabic_to_chinese(int(m.group(2))) + m.group(3),
+        text,
+    )
 
     return text
