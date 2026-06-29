@@ -251,26 +251,48 @@ def _smart_split(
     #     its pair char (e.g., 所+以, 但+是), move the connector to the next line.
     #     Also: if a line ends with a single connector char and is long (>4),
     #     move it to the next line to avoid "照片但" / "是卖..." patterns.
+    #     Handles trailing punctuation: "但," → move "但," to next line.
     _CONJUNCTIONS = set("但所是以才会又也则且而因如虽即无哪怕只另")
+    _PUNCT_SET = set("，。？！、；：''（）《》,.?!;:\"'()[]{}\\-—…·")
+
+    def _last_non_punct(s: str) -> str | None:
+        """Return the last non-punctuation, non-space character."""
+        for ch in reversed(s):
+            if ch not in _PUNCT_SET and ch.strip():
+                return ch
+        return None
+
+    def _first_non_punct(s: str) -> str | None:
+        """Return the first non-punctuation, non-space character."""
+        for ch in s:
+            if ch not in _PUNCT_SET and ch.strip():
+                return ch
+        return None
+
     conj_fixed: list[dict] = []
     for idx, line in enumerate(merged):
         txt = line["text"]
-        if txt and txt[-1] in _CONJUNCTIONS:
+        last_char = _last_non_punct(txt)
+        moved = False
+        if txt and last_char and last_char in _CONJUNCTIONS:
             # Check if next line starts with the pair char
             if idx + 1 < len(merged):
                 nxt = merged[idx + 1]["text"]
-                pair = txt[-1] + nxt[0] if nxt else ""
-                if pair in _CONNECTORS_2:
-                    # Move last char to next line
-                    line = {**line, "text": txt[:-1]}
-                    merged[idx + 1] = {**merged[idx + 1], "text": txt[-1] + merged[idx + 1]["text"]}
+                first_nxt = _first_non_punct(nxt)
+                if first_nxt and (last_char + first_nxt) in _CONNECTORS_2:
+                    # Move connector char + any trailing punct to next line
+                    char_pos = txt.rindex(last_char)
+                    moved_part = txt[char_pos:]
+                    line = {**line, "text": txt[:char_pos]}
+                    merged[idx + 1] = {**merged[idx + 1], "text": moved_part + merged[idx + 1]["text"]}
+                    moved = True
             # If line is long (>4 visible chars) and ends with connector, move it
-            if len([c for c in txt if c.strip()]) > 4 and txt[-1] in _CONJUNCTIONS:
+            if not moved and len([c for c in txt if c.strip()]) > 4:
                 if idx + 1 < len(merged):
-                    nxt_text = merged[idx + 1]["text"]
-                    moved_char = txt[-1]
-                    line = {**line, "text": txt[:-1]}
-                    merged[idx + 1] = {**merged[idx + 1], "text": moved_char + nxt_text}
+                    char_pos = txt.rindex(last_char)
+                    moved_part = txt[char_pos:]
+                    line = {**line, "text": txt[:char_pos]}
+                    merged[idx + 1] = {**merged[idx + 1], "text": moved_part + merged[idx + 1]["text"]}
         conj_fixed.append(line)
     merged = conj_fixed
 
