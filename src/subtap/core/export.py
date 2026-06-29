@@ -113,23 +113,34 @@ def load_asr_draft(asr_jsonl: Path) -> list[ASRSegment]:
 
 _PUNCT_CHARS = set("，。？！、；：""''（）《》,.?!;:\"'()[]{}\\-—…·")
 
-# 常见的跨行断词模式
+# 常见的跨行断词模式（单字+单字/多字组成词）
 _SPLIT_WORD_PATTERNS = {
-    # 单字+单字组成词
     ("虚", "化"), ("二", "八"), ("三", "百"), ("四", "十"),
     ("五", "千"), ("六", "万"), ("七", "亿"),
-    # 单字+多字
     ("微", "距"), ("功", "能"), ("像", "素"),
+    ("过", "程"), ("眼", "镜"), ("画", "面"), ("屏", "幕"),
+    ("时", "间"), ("空", "间"), ("体", "验"), ("系", "统"),
+    ("完", "全"), ("已", "经"), ("可", "以"), ("不", "过"),
 }
+
+
+def _has_latin(s: str) -> bool:
+    """字符串是否包含拉丁字母"""
+    return any("A" <= c <= "Z" or "a" <= c <= "z" for c in s)
 
 
 def _is_incomplete_word(tail: str, next_start: str) -> bool:
     """检查 tail 是否是不完整词，next_start 能否组成完整词"""
+    if not next_start:
+        return False
+    # 英文词组不拆分：行尾有字母或行首有字母
+    if _has_latin(tail) or _has_latin(next_start[:1]):
+        return True
     # 如果 tail + next_start 是常见断词模式
     if (tail, next_start[:1]) in _SPLIT_WORD_PATTERNS:
         return True
     # 如果 tail 是数字且 next_start 也是数字/单位
-    if tail.isdigit() and next_start and (next_start[0].isdigit() or next_start[0] in "零一二两三四五六七八九十百千万亿"):
+    if tail.isdigit() and (next_start[0].isdigit() or next_start[0] in "零一二两三四五六七八九十百千万亿"):
         return True
     return False
 
