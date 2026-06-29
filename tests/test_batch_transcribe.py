@@ -46,6 +46,7 @@ def test_batch_transcribe_writes_manifest_and_keeps_failed_items(
             fmt="srt",
             enhance="local",
             align_enabled=True,
+            hotword_enabled=True,
         ):
             calls.append(
                 (pipeline.work_dir, input_path, output_dir, fmt, align_enabled)
