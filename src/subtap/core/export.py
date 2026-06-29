@@ -494,6 +494,7 @@ class SRTExporter(BaseExporter):
         # Only merge if:
         #   1. Previous line is longer than the fragment (avoids merging "A"+"B")
         #   2. Combined length ≤ max_chars
+        #   3. Merge doesn't create trailing word at line end
         merged_subs: list[dict] = []
         for sub in all_subs:
             txt = sub["text"].strip()
@@ -504,9 +505,18 @@ class SRTExporter(BaseExporter):
                 # Only merge into a longer line, not into another short line
                 if (len(prev_visible) > len(visible)
                         and len(prev_visible) + len(visible) <= 25):
-                    prev["text"] = prev["text"].rstrip() + txt
-                    prev["end_sec"] = sub["end_sec"]
-                    continue
+                    # Check: would merge create trailing word at line end?
+                    merged_text = prev["text"].rstrip() + txt
+                    merged_stripped = _strip_punct(merged_text).replace(" ", "")
+                    creates_trailing = False
+                    for tlen in (2, 1):
+                        if len(merged_stripped) > tlen and merged_stripped[-tlen:] in _TRAILING_WORDS:
+                            creates_trailing = True
+                            break
+                    if not creates_trailing:
+                        prev["text"] = merged_text
+                        prev["end_sec"] = sub["end_sec"]
+                        continue
             merged_subs.append(sub)
 
         # Render SRT
