@@ -188,10 +188,13 @@ def _smart_split(
             continue
 
         # 2. Pause detection → new subtitle
+        # Skip if current line ends with 得/地 (complement/adverbial marker)
+        _DE_DI = set("得地")
         if i > 0 and current_text and len(current_text.strip()) >= min_chars:
             gap = w["start_sec"] - words[i - 1]["end_sec"]
             if gap >= pause_threshold:
-                _flush("pause")
+                if current_text.strip()[-1] not in _DE_DI:
+                    _flush("pause")
 
         # 3. Max chars → new line (with number protection)
         if current_text and len(current_text.strip()) + len(word_text) > max_chars:
