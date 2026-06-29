@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
 from typing import Any, TextIO
 
 import typer
@@ -124,21 +123,6 @@ class JsonProgressWriter:
             "type": "item_start",
             "index": index,
             "file": filename,
-        })
-
-    def write_item_progress(
-        self,
-        index: int,
-        filename: str,
-        stage: str,
-        progress: int,
-    ) -> None:
-        self._write({
-            "type": "item_progress",
-            "index": index,
-            "file": filename,
-            "stage": stage,
-            "progress": progress,
         })
 
     def write_item_complete(

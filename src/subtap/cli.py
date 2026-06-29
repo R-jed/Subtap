@@ -1251,6 +1251,7 @@ def batch_transcribe(
     from datetime import datetime, timezone
 
     from subtap.batch import (
+        PIPELINE_STAGES,
         build_manifest,
         get_failed_items,
         get_pending_items,
@@ -1371,8 +1372,6 @@ def batch_transcribe(
 
     # ── 初始化进度显示 ──────────────────────────────────────
     # I2 fix: 记录任务真正开始时间，后续调用复用
-    from datetime import timezone
-
     task_created_at = datetime.now(timezone.utc).isoformat()
 
     json_writer = JsonProgressWriter() if json_output else None
@@ -1426,8 +1425,6 @@ def batch_transcribe(
 
         # 开始处理
         item["status"] = "running"
-        from subtap.batch import PIPELINE_STAGES
-
         item["stages"] = {s: {"status": "pending"} for s in PIPELINE_STAGES}
 
         if json_writer:
