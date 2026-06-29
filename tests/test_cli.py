@@ -563,6 +563,42 @@ def test_observe_command_prints_event_log_status(tmp_path):
     assert "已对齐：1" in clean
 
 
+def test_observer_parent_runs_textual_dashboard(tmp_path, monkeypatch):
+    """父进程启动子进程后，应进入 Textual 观察者 Dashboard。"""
+    from subtap.cli import _run_observer_parent
+
+    calls = []
+
+    class FakeProcess:
+        returncode = 0
+
+        def poll(self):
+            return 0
+
+    class FakePopen:
+        def __new__(cls, command, stdout, stderr):
+            calls.append(("popen", command, bool(stdout), bool(stderr)))
+            return FakeProcess()
+
+    class FakeDashboard:
+        def __init__(self, log_path, process):
+            calls.append(("dashboard", log_path, process))
+
+        def run(self):
+            calls.append(("run",))
+
+    monkeypatch.setattr("subtap.cli.subprocess.Popen", FakePopen)
+    monkeypatch.setattr("subtap.ui.observer.ObserverDashboard", FakeDashboard)
+
+    log_path = tmp_path / "run.log.jsonl"
+    _run_observer_parent(["subtap", "run"], log_path)
+
+    assert calls[0][0] == "popen"
+    assert calls[1][0] == "dashboard"
+    assert calls[1][1] == log_path
+    assert calls[2] == ("run",)
+
+
 def test_run_mode_fast():
     """subtap run should accept --mode fast."""
     result = runner.invoke(app, ["run", "--help"])

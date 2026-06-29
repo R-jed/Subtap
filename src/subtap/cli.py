@@ -8,7 +8,6 @@ import platform
 import shutil
 import subprocess
 import sys
-import time
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -627,7 +626,7 @@ def _run_observer_parent(
     command: list[str], log_path: Path, refresh_interval: float = 1.0
 ) -> None:
     """父进程只观察日志；推理在子进程内执行。"""
-    from subtap.ui.observer import summarize_event_log
+    from subtap.ui.observer import ObserverDashboard
 
     output_dir = log_path.parent
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -637,13 +636,7 @@ def _run_observer_parent(
         "w", encoding="utf-8"
     ) as stderr:
         process = subprocess.Popen(command, stdout=stdout, stderr=stderr)
-        last_state = ""
-        while process.poll() is None:
-            state = json.dumps(summarize_event_log(log_path), ensure_ascii=False)
-            if state != last_state:
-                _print_observer_state(log_path)
-                last_state = state
-            time.sleep(refresh_interval)
+        ObserverDashboard(log_path, process).run()
 
     _print_observer_state(log_path)
     if process.returncode:
