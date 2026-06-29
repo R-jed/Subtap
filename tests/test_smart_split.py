@@ -531,3 +531,45 @@ def test_clause_boundary_driven_split():
     assert len(result) >= 2, f"逗号后应该断句: {result}"
     for line in result:
         assert line["text"].strip() != "所以", f"'所以' 不应独立成行: {result}"
+
+
+# ── Task 3: 跨行断词修复 ──
+
+
+def test_no_split_word_across_lines():
+    """不应将词语切断跨行（如虚化→虚/化）"""
+    # 构造一个场景，使"虚化"被拆分到两行
+    # 核心的点是这个虚化的照片 - 总长度15字符
+    # 设置 max_chars=8，迫使在"虚"和"化"之间断行
+    words = [
+        {"word": "核心的点是这个", "start_sec": 0.0, "end_sec": 2.0},
+        {"word": "虚", "start_sec": 2.0, "end_sec": 2.2},
+        {"word": "化", "start_sec": 2.2, "end_sec": 2.5},
+        {"word": "的照片", "start_sec": 2.5, "end_sec": 3.0},
+    ]
+    result = _smart_split(words, "核心的点是这个虚化的照片", max_chars=8)
+    # "虚化" 不应被拆分到两行
+    all_text = "".join(line["text"] for line in result)
+    # 检查没有单独的"虚"在行尾或单独的"化"在行首
+    for i, line in enumerate(result):
+        txt = line["text"]
+        # 如果行尾是"虚"，检查下一行是否以"化"开头（这表示被拆分了）
+        if txt.endswith("虚") and i + 1 < len(result):
+            next_txt = result[i + 1]["text"]
+            if next_txt.startswith("化"):
+                # 这是一个断词错误，应该失败
+                assert False, f"虚化被拆分到两行: '{txt}' | '{next_txt}'"
+
+
+def test_no_split_number_unit():
+    """不应将数字+单位切断（如二十八→二/八）"""
+    words = [
+        {"word": "都是", "start_sec": 0.0, "end_sec": 0.5},
+        {"word": "二", "start_sec": 0.5, "end_sec": 0.7},
+        {"word": "八毫米", "start_sec": 0.7, "end_sec": 1.2},
+        {"word": "的", "start_sec": 1.2, "end_sec": 1.3},
+    ]
+    result = _smart_split(words, "都是二八毫米的", max_chars=10)
+    # "二八毫米" 不应被拆分
+    all_text = "".join(line["text"] for line in result)
+    assert "二八毫米" in all_text, f"二八毫米被拆分: {result}"

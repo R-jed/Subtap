@@ -93,6 +93,59 @@ def load_asr_draft(asr_jsonl: Path) -> list[ASRSegment]:
 
 _PUNCT_CHARS = set("，。？！、；：""''（）《》,.?!;:\"'()[]{}\\-—…·")
 
+# 常见的跨行断词模式
+_SPLIT_WORD_PATTERNS = {
+    # 单字+单字组成词
+    ("虚", "化"), ("二", "八"), ("三", "百"), ("四", "十"),
+    ("五", "千"), ("六", "万"), ("七", "亿"),
+    # 单字+多字
+    ("微", "距"), ("功", "能"), ("像", "素"),
+}
+
+
+def _is_incomplete_word(tail: str, next_start: str) -> bool:
+    """检查 tail 是否是不完整词，next_start 能否组成完整词"""
+    # 如果 tail + next_start 是常见断词模式
+    if (tail, next_start[:1]) in _SPLIT_WORD_PATTERNS:
+        return True
+    # 如果 tail 是数字且 next_start 也是数字/单位
+    if tail.isdigit() and next_start and (next_start[0].isdigit() or next_start[0] in "零一二两三四五六七八九十百千万亿"):
+        return True
+    return False
+
+
+def _fix_split_words(lines: list[dict], max_chars: int) -> list[dict]:
+    """修复跨行断词：如果行尾是不完整词，移到下一行"""
+    if len(lines) < 2:
+        return lines
+
+    fixed = [lines[0]]
+    for i in range(1, len(lines)):
+        prev = fixed[-1]
+        curr = lines[i]
+        prev_text = prev["text"]
+        curr_text = curr["text"]
+
+        # 尝试从 prev 末尾取 1-2 个字，检查是否能和 curr 开头组成完整词
+        moved = False
+        for take in (2, 1):
+            if len(prev_text) <= take:
+                continue
+            tail = prev_text[-take:]
+            # 检查 tail + curr_text 开头是否是常见词组的前缀
+            # 如果 tail 是单字且 curr_text 以能组成词的字开头，则移动
+            if _is_incomplete_word(tail, curr_text[:2] if len(curr_text) >= 2 else curr_text):
+                # 移动 tail 到 curr 开头
+                prev["text"] = prev_text[:-take]
+                curr["text"] = tail + curr_text
+                moved = True
+                break
+
+        fixed.append(curr)
+
+    # 过滤空行
+    return [ln for ln in fixed if ln["text"].strip()]
+
 
 def _inject_punct(words: list[dict], text: str) -> list[dict]:
     """Inject punctuation from original text into word list.
@@ -392,6 +445,9 @@ def _smart_split(
                 continue
         merged.append(line)
     lines = merged
+
+    # Fix split words (跨行断词修复)
+    lines = _fix_split_words(lines, max_chars)
 
     return lines if lines else [{"text": text, "start_sec": words[0]["start_sec"], "end_sec": words[-1]["end_sec"]}]
 
