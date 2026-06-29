@@ -224,6 +224,69 @@ def test_merge_short_fragments():
     assert "的" in result[0]["text"]
 
 
+def test_conjunction_not_at_line_end():
+    """验收标准 (Task 3c-1): '但是' 不应留在行尾，应移到下一行开头。
+
+    Scenario: pause-based split triggers after '但是' has been accumulated.
+    The conjunction should be stripped from line end and prepended to next line.
+    """
+    words = [
+        {"word": "是", "start_sec": 0.0, "end_sec": 0.2},
+        {"word": "我", "start_sec": 0.2, "end_sec": 0.4},
+        {"word": "见", "start_sec": 0.4, "end_sec": 0.6},
+        {"word": "过", "start_sec": 0.6, "end_sec": 0.8},
+        {"word": "开", "start_sec": 0.8, "end_sec": 1.0},
+        {"word": "机", "start_sec": 1.0, "end_sec": 1.2},
+        {"word": "速", "start_sec": 1.2, "end_sec": 1.4},
+        {"word": "度", "start_sec": 1.4, "end_sec": 1.6},
+        {"word": "最", "start_sec": 1.6, "end_sec": 1.8},
+        {"word": "快", "start_sec": 1.8, "end_sec": 2.0},
+        {"word": "的", "start_sec": 2.0, "end_sec": 2.2},
+        {"word": "相", "start_sec": 2.2, "end_sec": 2.4},
+        {"word": "机", "start_sec": 2.4, "end_sec": 2.6},
+        # Pause > 0.2 threshold before "但是"
+        {"word": "但", "start_sec": 3.0, "end_sec": 3.2},
+        {"word": "是", "start_sec": 3.2, "end_sec": 3.4},
+        # Another pause before the rest
+        {"word": "轻", "start_sec": 3.8, "end_sec": 4.0},
+        {"word": "便", "start_sec": 4.0, "end_sec": 4.2},
+    ]
+    result = _smart_split(
+        words, "是我见过开机速度最快的相机但是轻便",
+        max_chars=25, min_chars=5, pause_threshold=0.2,
+    )
+    total = "".join(r["text"] for r in result)
+    assert total == "是我见过开机速度最快的相机但是轻便"
+    # "但是" should NOT be at the end of any line
+    for line in result:
+        assert not line["text"].endswith("但是"), (
+            f"'但是' at line end: {result}"
+        )
+    # "但是" should be at the start of a line
+    assert any(line["text"].startswith("但是") for line in result), (
+        f"'但是' not at any line start: {result}"
+    )
+
+
+def test_so_yi_not_split_realistic():
+    """验收标准 (Task 3c-2): '所以' 不被拆开 — realistic scenario with pause.
+
+    Text: '搭配镜头比它大了这么多所以是比它好的没它小'
+    With max_chars=15, '所以' should NOT be split across lines.
+    """
+    text = "搭配镜头比它大了这么多所以是比它好的没它小"
+    words = [
+        {"word": ch, "start_sec": i * 0.15, "end_sec": (i + 1) * 0.15}
+        for i, ch in enumerate(text)
+    ]
+    result = _smart_split(words, text, max_chars=15)
+    total = "".join(r["text"] for r in result)
+    assert total == text
+    # "所以" should not be split: no line ends with "所" alone
+    for line in result:
+        assert not line["text"].endswith("所"), f"'所以' was split: {result}"
+
+
 def test_comma_split_when_line_full():
     """逗号 + 当前行已满时断句。"""
     words = [

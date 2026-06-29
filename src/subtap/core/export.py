@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import re
 from abc import ABC, abstractmethod
@@ -190,6 +191,10 @@ def _smart_split(
         "只有", "只要", "既然", "哪怕", "无论", "不管", "另外",
     }
 
+    # 1-2 character conjunctions that should move to next line if at line end.
+    # Subset of _CONJ_STARTERS — only those that make sense as trailing words.
+    _CONJ_ENDINGS = {"但是", "所以", "因为", "而且", "不过", "可是", "然后", "或者", "于是", "因此"}
+
     # --- Step 1: Mark phrase boundaries ---
     marked_words = mark_phrase_boundaries(words)
     _phrase_roles: dict[int, str | None] = {
@@ -198,9 +203,32 @@ def _smart_split(
 
     # --- Step 2: Greedy split with scoring ---
     lines: list[dict] = []
+    _pending_prefix: list[dict] = []
+
+    def _strip_trailing_conjunction(
+        cur_words: list[dict], cur_text: str
+    ) -> tuple[list[dict], str, list[dict]]:
+        """Strip trailing conjunction from line, return (words, text, stripped)."""
+        for clen in (2, 1):
+            if len(cur_text) > clen and cur_text[-clen:] in _CONJ_ENDINGS:
+                stripped = cur_words[-clen:]
+                remaining = cur_words[:-clen]
+                remaining_text = cur_text[:-clen]
+                return remaining, remaining_text, stripped
+        return cur_words, cur_text, []
 
     def _flush(cur_words: list[dict], cur_text: str, ends_punct: bool):
         if not cur_words:
+            return
+        # Strip trailing conjunction (e.g. "但是") from line end;
+        # it will be prepended to the next line via _pending_prefix.
+        if not ends_punct:
+            cur_words, cur_text, stripped = _strip_trailing_conjunction(
+                cur_words, cur_text
+            )
+            if stripped:
+                _pending_prefix.extend(stripped)
+        if not cur_words or not cur_text:
             return
         lines.append({
             "text": cur_text,
@@ -275,8 +303,13 @@ def _smart_split(
             # Lookahead: if breaking here means the next word (first word after
             # this chunk) is a phrase_mid, penalize this position to prevent
             # splitting a phrase across lines (e.g. 所/以 split).
-            if pos == n - 1 and next_word is not None:
-                next_role = next_word.get("phrase_role")
+            # Must check ALL positions, not just n-1 — the best break could
+            # happen at an earlier position where accum >= max_chars.
+            next_after_break = (
+                cur_words[pos + 1] if pos + 1 < n else next_word
+            )
+            if next_after_break is not None:
+                next_role = next_after_break.get("phrase_role")
                 if next_role == "phrase_mid":
                     score = -1000
 
@@ -295,6 +328,16 @@ def _smart_split(
     cur_text = ""
 
     for i, w in enumerate(words):
+        # Apply pending prefix (conjunction stripped from previous line end)
+        if _pending_prefix:
+            prefix_copy = copy.deepcopy(_pending_prefix)
+            cur_words = prefix_copy + cur_words
+            cur_text = "".join(x["word"] for x in cur_words)
+            # Set prefix start time to current word's start
+            for pw in prefix_copy:
+                pw["start_sec"] = w["start_sec"]
+                pw["end_sec"] = w["start_sec"]
+            _pending_prefix = []
         word_text = w["word"]
 
         # Sentence-ending punctuation → flush and skip
@@ -363,6 +406,16 @@ def _smart_split(
                         cur_words = right
                         cur_text = "".join(x["word"] for x in right)
 
+    # Prepend any pending prefix before the final flush
+    if _pending_prefix:
+        prefix_copy = copy.deepcopy(_pending_prefix)
+        cur_words = prefix_copy + cur_words
+        cur_text = "".join(x["word"] for x in cur_words)
+        if cur_words:
+            for pw in prefix_copy:
+                pw["start_sec"] = cur_words[0]["start_sec"]
+                pw["end_sec"] = cur_words[0]["start_sec"]
+        _pending_prefix = []
     _flush(cur_words, cur_text, False)
 
     # Filter empty lines
