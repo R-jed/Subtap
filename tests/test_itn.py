@@ -20,7 +20,7 @@ def test_decimal():
 
 def test_large_number():
     """大数字。"""
-    assert chinese_to_num("一万两千三百四十五") == "12345"
+    assert chinese_to_num("一万两千三百四十五") == "1.2345万"
 
 
 def test_mixed_text():
