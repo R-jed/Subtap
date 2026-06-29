@@ -35,9 +35,15 @@ _IDIOMS = {"百万富翁", "万元户", "万元", "亿元", "十亿", "百亿", 
 
 def _is_approx_context(text: str, match_start: int, match_end: int) -> bool:
     """Check if the matched number is in an approximate context."""
-    # Check character after the match
-    if match_end < len(text) and text[match_end] in _APPROX_SUFFIXES:
-        return True
+    # Check up to 3 chars after match for suffix (skip units like 元/块/个)
+    for offset in range(1, 4):
+        if match_end + offset <= len(text):
+            ch = text[match_end + offset - 1]
+            if ch in _APPROX_SUFFIXES:
+                return True
+            # Stop if we hit a non-unit char that's not the suffix
+            if ch not in _UNIT_MAP and ch not in _NUM_MAP and ch not in set("元块个只台"):
+                break
     return False
 
 
@@ -196,8 +202,12 @@ def _convert_number_str(s: str) -> str:
     if all(ch in _NUM_MAP for ch in s):
         return "".join(str(_NUM_MAP[ch]) for ch in s)
 
-    # 万/亿 level: keep unit
+    # 万/亿 level: keep unit for large numbers, convert fully for small
     if "万" in s or "亿" in s:
+        total = _parse_total(s)
+        # Small numbers with 万: convert fully (一万两千九百九十九 → 12999)
+        if "万" in s and "亿" not in s and total < 20000:
+            return str(total)
         return _convert_keep_unit(s)
 
     # 千/百/十 level: convert fully
