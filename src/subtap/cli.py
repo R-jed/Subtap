@@ -1197,35 +1197,41 @@ def observe(
 
 @app.command("batch-transcribe")
 def batch_transcribe(
+    args: list[str] = typer.Argument(None, help="输入文件路径（支持拖入）"),
+    directory: str = typer.Option(None, "--dir", "-d", help="扫描目录中的媒体文件"),
+    configure: bool = typer.Option(False, "--configure", help="运行配置向导"),
+    no_confirm: bool = typer.Option(
+        False, "--no-confirm", "-y", help="跳过确认"
+    ),
     files: str = typer.Option(None, "--files", "-f", help="输入文件，逗号分隔"),
     output_dir: Path = typer.Option(
         Path("./output"), "--output-dir", "-o", help="输出目录"
     ),
-    mode: str = typer.Option("fast", "--mode", "-m", help="fast / quality"),
-    enhance: str = typer.Option(
-        "local", "--enhance", "-e", help="字幕增强模式：off / local / api"
+    mode: str | None = typer.Option(None, "--mode", "-m", help="fast / quality"),
+    enhance: str | None = typer.Option(
+        None, "--enhance", "-e", help="字幕增强模式：off / local / api"
     ),
     translate_to: str | None = typer.Option(
         None, "--translate-to", help="翻译目标语言：en / ja / zh"
     ),
-    bilingual: str = typer.Option(
-        "off",
+    bilingual: str | None = typer.Option(
+        None,
         "--bilingual",
         help="双语字幕顺序：off / source-first / target-first",
     ),
-    max_chars: int = typer.Option(
-        25, "--max-chars", help="每行字幕最大字符数（10-60）", min=10, max=60
+    max_chars: int | None = typer.Option(
+        None, "--max-chars", help="每行字幕最大字符数（10-60）", min=10, max=60
     ),
-    min_chars: int = typer.Option(
-        10, "--min-chars", help="每行字幕最小字符数（4-30）", min=4, max=30
+    min_chars: int | None = typer.Option(
+        None, "--min-chars", help="每行字幕最小字符数（4-30）", min=4, max=30
     ),
-    punctuation: bool = typer.Option(
-        False, "--punctuation", help="字幕带标点符号（默认不带）"
+    punctuation: bool | None = typer.Option(
+        None, "--punctuation", help="字幕带标点符号（默认不带）"
     ),
-    subtitle_language: str = typer.Option(
-        "zh", "--subtitle-language", help="字幕输出语种（zh/en/ja）"
+    subtitle_language: str | None = typer.Option(
+        None, "--subtitle-language", help="字幕输出语种（zh/en/ja）"
     ),
-    no_align: bool = typer.Option(False, "--no-align", help="跳过对齐阶段"),
+    no_align: bool | None = typer.Option(None, "--no-align", help="跳过对齐阶段"),
     concurrency: int = typer.Option(
         1, "--concurrency", "-c", help="并发处理数（最大 4）（尚未实现）", min=1, max=4, hidden=True
     ),
@@ -1239,12 +1245,16 @@ def batch_transcribe(
 ) -> None:
     """批量转录多个媒体文件。
 
+    支持将文件拖入终端或手动输入路径。首次运行会显示配置向导。
+
     [bold]示例：[/bold]
+      subtap batch-transcribe a.mp4 b.mp4 c.mp4
       subtap batch-transcribe --files a.mp4,b.mp4,c.mp4
+      subtap batch-transcribe --dir /path/to/media
+      subtap batch-transcribe --configure
       subtap batch-transcribe --files a.mp4,b.mp4 --mode quality --translate-to en
       subtap batch-transcribe --resume output/manifest.json
       subtap batch-transcribe --retry-failed output/manifest.json
-      subtap batch-transcribe --files a.mp4,b.mp4 --concurrency 2
       subtap batch-transcribe --files a.mp4,b.mp4 --json
     """
     import time
@@ -1276,21 +1286,75 @@ def batch_transcribe(
         typer.echo("✗ 错误：--resume 和 --retry-failed 不能同时使用", err=True)
         raise typer.Exit(1)
 
-    if (resume or retry_failed) and files:
+    if (resume or retry_failed) and (files or args or directory):
         typer.echo(
-            "✗ 错误：--resume/--retry-failed 不能与 --files 同时使用", err=True
+            "✗ 错误：--resume/--retry-failed 不能与输入文件同时使用", err=True
         )
         raise typer.Exit(1)
+
+    # ── 配置向导 ──────────────────────────────────────────────
+    from subtap.batch_config import load_batch_config
+    from subtap.batch_interactive import (
+        collect_files,
+        confirm_files,
+        run_config_wizard,
+        validate_files,
+    )
+
+    config_path = Path.home() / ".subtap" / "batch-config.yaml"
+
+    if configure or (not config_path.exists() and not json_output):
+        batch_config = run_config_wizard(config_path)
+    else:
+        batch_config = load_batch_config(config_path)
+
+    # 使用配置文件的值作为默认值（CLI 参数优先）
+    if mode is None:
+        mode = batch_config.mode
+    if enhance is None:
+        enhance = batch_config.enhance
+    if translate_to is None:
+        translate_to = batch_config.translate_to
+    if bilingual is None:
+        bilingual = batch_config.bilingual
+    if max_chars is None:
+        max_chars = batch_config.max_chars
+    if min_chars is None:
+        min_chars = batch_config.min_chars
+    if punctuation is None:
+        punctuation = batch_config.punctuation
+    if subtitle_language is None:
+        subtitle_language = batch_config.subtitle_language
+    if no_align is None:
+        no_align = False
 
     if bilingual != "off" and not translate_to:
         typer.echo("✗ 错误：--bilingual 需要同时使用 --translate-to", err=True)
         raise typer.Exit(1)
 
-    if not files and not resume and not retry_failed:
-        typer.echo(
-            "✗ 错误：必须指定 --files 或 --resume/--retry-failed", err=True
-        )
-        raise typer.Exit(1)
+    # ── 收集文件（支持多种方式）─────────────────────────────────
+    if not resume and not retry_failed:
+        collected = collect_files(args, directory)
+
+        # 兼容旧的 --files 参数
+        if files:
+            collected.extend(parse_files(files))
+
+        if not collected:
+            typer.echo("✗ 未找到媒体文件", err=True)
+            raise typer.Exit(1)
+
+        # 验证文件（仅用于确认提示，不预过滤——让处理循环记录失败）
+        valid, invalid = validate_files(collected)
+        if invalid and not json_output:
+            for f in invalid:
+                typer.echo(f"⚠ 文件不存在：{f}", err=True)
+
+        # 确认（--json 或 --no-confirm 时跳过）
+        if not no_confirm and not json_output:
+            if not confirm_files(collected):
+                typer.echo("已取消")
+                return
 
     # ── 加载配置 ──────────────────────────────────────────────
     config = load_config(Path.home() / ".subtap" / "config.yaml")
@@ -1342,13 +1406,8 @@ def batch_transcribe(
 
         items = manifest["items"]
     else:
-        paths = parse_files(files)
-        if not paths:
-            typer.echo("✗ 未提供输入文件", err=True)
-            raise typer.Exit(1)
-
         output_dir.mkdir(parents=True, exist_ok=True)
-        items = [make_item(p, output_dir) for p in paths]
+        items = [make_item(p, output_dir) for p in collected]
 
     # ── 构建参数快照 ──────────────────────────────────────────
     params = {
