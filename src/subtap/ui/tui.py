@@ -105,7 +105,19 @@ class TUIRunner:
             if self.use_tui:
                 self.progress.print_stage_result(self.state, result)
 
-            # Stage 5: segment
+            # Stage 5: hotword
+            self.state.update(stage="hotword", status="processing", progress=0)
+            if self.use_tui:
+                self.progress.print_stage_start(self.state)
+
+            stage_start = time.time()
+            result = pipeline.run_stage("hotword")
+            self.timings["hotword"] = time.time() - stage_start
+            self.state.update(progress=100, status="completed")
+            if self.use_tui:
+                self.progress.print_stage_result(self.state, result)
+
+            # Stage 6: segment
             self.state.update(stage="segment", status="processing", progress=0)
             if self.use_tui:
                 self.progress.print_stage_start(self.state)
