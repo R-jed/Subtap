@@ -476,3 +476,48 @@ def test_inject_punct_timestamp_interpolation():
     # 逗号时间应在 44.5 和 44.8 之间
     assert 44.5 <= comma["start_sec"] <= 44.8
     assert comma["start_sec"] == comma["end_sec"]
+
+
+def test_inject_punct_missing_word_after_punct():
+    """缺失词在标点之后：标点仍应在正确位置。"""
+    from subtap.core.export import _inject_punct
+    words = [
+        {"word": "照", "start_sec": 44.0, "end_sec": 44.2},
+        {"word": "片", "start_sec": 44.2, "end_sec": 44.5},
+        {"word": "是", "start_sec": 45.0, "end_sec": 45.1},
+        {"word": "卖", "start_sec": 45.2, "end_sec": 45.5},
+    ]
+    # text = '照片,但是卖', 缺少'但'
+    result = _inject_punct(words, "照片,但是卖")
+    seq = [w["word"] for w in result]
+    assert seq == ["照", "片", ",", "是", "卖"]
+
+
+def test_inject_punct_consecutive_punct():
+    """连续多个标点应全部保留。"""
+    from subtap.core.export import _inject_punct
+    words = [
+        {"word": "哇", "start_sec": 1.0, "end_sec": 1.2},
+        {"word": "好", "start_sec": 1.5, "end_sec": 1.7},
+    ]
+    result = _inject_punct(words, "哇！！好")
+    seq = [w["word"] for w in result]
+    assert seq == ["哇", "！", "！", "好"]
+
+
+def test_inject_punct_missing_word_with_trailing_punct():
+    """缺失词 + 结尾标点。"""
+    from subtap.core.export import _inject_punct
+    words = [
+        {"word": "好", "start_sec": 1.0, "end_sec": 1.2},
+    ]
+    # text = '好的。', '的'缺失，句号在结尾
+    result = _inject_punct(words, "好的。")
+    seq = [w["word"] for w in result]
+    assert seq == ["好", "。"]
+
+
+def test_inject_punct_empty_input():
+    """空输入应返回空列表。"""
+    from subtap.core.export import _inject_punct
+    assert _inject_punct([], "") == []
