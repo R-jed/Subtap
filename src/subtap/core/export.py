@@ -133,7 +133,7 @@ def _smart_split(
     words: list[dict],
     text: str,
     max_chars: int = 25,
-    min_chars: int = 10,
+    min_chars: int = 8,
     pause_threshold: float = 0.2,
     start_sec: float = 0.0,
     end_sec: float = 0.0,
@@ -206,7 +206,7 @@ def _smart_split(
 
         # 2. Pause detection → new subtitle
         #    Only split if line is long enough AND doesn't break connector words
-        if i > 0 and current_text and len(current_text.strip()) >= min_chars:
+        if i > 0 and current_text:
             gap = w["start_sec"] - words[i - 1]["end_sec"]
             if gap >= pause_threshold:
                 # Don't split if current word starts a connector pair
@@ -288,6 +288,9 @@ def _smart_split(
         text = line["text"]
         if tiny_merged and _visible_len(text) <= 2:
             prev = tiny_merged[-1]
+            if prev.get("break_type") in _HARD_BREAKS:
+                tiny_merged.append(line)
+                continue
             if _visible_len(prev["text"]) + _visible_len(text) <= max_chars:
                 prev["text"] += text
                 prev["end_sec"] = line["end_sec"]
