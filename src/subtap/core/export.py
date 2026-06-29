@@ -495,7 +495,7 @@ class SRTExporter(BaseExporter):
         all_subs: list[dict] = []
         for seg in sorted_segs:
             words_with_punct = _inject_punct(_filter_words_to_text(seg.words, seg.text), seg.text)
-            sub_lines = _smart_split(words_with_punct, seg.text, max_chars=max_chars, start_sec=seg.start_sec, end_sec=seg.end_sec)
+            sub_lines = _smart_split(words_with_punct, seg.text, max_chars=self.max_chars, start_sec=seg.start_sec, end_sec=seg.end_sec)
             for sub in sub_lines:
                 if sub["text"].strip():
                     all_subs.append(sub)
