@@ -102,6 +102,10 @@ def run_clean(
         seg.cleaned_text = local_clean_text(seg.cleaned_text)
 
     # Step 3: LLM cleaning (optional, never blocks)
+    if llm_backend_name in {"off", "none", "false"}:
+        write_clean_segments(replaced, workspace.cleaned_jsonl)
+        return {"segment_count": len(replaced)}
+
     clean_config = config.clean.model_copy()
     if llm_backend_name:
         clean_config.backend = llm_backend_name

@@ -198,6 +198,29 @@ replacements:
     assert "maching learning→machine learning" in segs[0].glossary_applied
 
 
+def test_clean_llm_backend_off_does_not_call_llm(
+    test_config: SubtapConfig, tmp_path: Path, monkeypatch
+):
+    """增强关闭时，clean 阶段只做本地清洗，不触发 LLM 后端。"""
+    ws = Workspace(test_config, base_dir=tmp_path / "work")
+    ws.ensure_dirs()
+    _make_asr_jsonl(ws, ["hello  world"])
+    called = {"count": 0}
+
+    def fail_if_called(*_args, **_kwargs):
+        called["count"] += 1
+        raise AssertionError("LLM backend must not be called when enhancement is off")
+
+    monkeypatch.setattr("subtap.core.clean.get_llm_backend", fail_if_called)
+
+    result = run_clean(ws, test_config, llm_backend_name="off")
+
+    assert result["segment_count"] == 1
+    assert called["count"] == 0
+    seg = CleanSegment.model_validate_json(ws.cleaned_jsonl.read_text().strip())
+    assert seg.cleaned_text == "hello world"
+
+
 def test_clean_jsonl_valid_schema(test_config: SubtapConfig, tmp_path: Path):
     """cleaned.jsonl contains valid CleanSegment JSONL."""
     ws = Workspace(test_config, base_dir=tmp_path / "work")

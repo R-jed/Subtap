@@ -30,6 +30,7 @@ class TUIRunner:
         input_path: Path,
         output_dir: Path,
         fmt: str = "srt",
+        enhance: str = "local",
         align_enabled: bool = True,
     ) -> dict:
         """Execute full pipeline with TUI feedback."""
@@ -97,7 +98,8 @@ class TUIRunner:
                 self.progress.print_stage_start(self.state)
 
             stage_start = time.time()
-            result = pipeline.run_stage("clean")
+            clean_kwargs = {"llm_backend": "off"} if enhance == "off" else {}
+            result = pipeline.run_stage("clean", **clean_kwargs)
             self.timings["clean"] = time.time() - stage_start
             self.state.update(progress=100, status="completed")
             if self.use_tui:
@@ -222,6 +224,7 @@ class PlainRunner:
         input_path,
         output_dir,
         fmt="srt",
+        enhance: str = "local",
         align_enabled: bool = True,
     ) -> dict:
         """Execute pipeline with plain text output."""
@@ -255,7 +258,8 @@ class PlainRunner:
 
             _echo("▸ [4/7] 文本清洗...")
             t = time.time()
-            r = pipeline.run_stage("clean")
+            clean_kwargs = {"llm_backend": "off"} if enhance == "off" else {}
+            r = pipeline.run_stage("clean", **clean_kwargs)
             self.timings["clean"] = time.time() - t
             _echo(f"  ✓ {r['segment_count']} 条")
 
