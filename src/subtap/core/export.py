@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import copy
 import json
 import re
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from subtap.core.clauses import identify_clause_boundaries, _CONJ_STARTERS, _CONJ_PAIRS
+from subtap.core.clauses import identify_clause_boundaries, _CONJ_PAIRS
 from subtap.core.itn import chinese_to_num
 from subtap.core.phrases import mark_phrase_boundaries
 from subtap.schemas.models import AlignedSegment, ASRSegment
@@ -673,6 +672,7 @@ def run_export(
     fmt: str = "srt",
     stem: str = "output",
     max_chars: int = 25,
+    min_chars: int = 10,
     punctuation: bool = False,
     language: str = "zh",
 ) -> dict:
@@ -697,7 +697,7 @@ def run_export(
     if not segments:
         raise ValueError(f"No aligned segments found in {aligned_jsonl}")
 
-    exporter = exporter_cls(punctuation=punctuation, language=language, max_chars=max_chars)
+    exporter = exporter_cls(punctuation=punctuation, language=language, max_chars=max_chars, min_chars=min_chars)
     output_path = output_dir / f"{stem}.{exporter.extension}"
     exporter.export(segments, output_path)
 
