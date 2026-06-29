@@ -681,6 +681,7 @@ def run_final_exports(
     punctuation: bool = False,
     language: str = "zh",
     max_chars: int = 25,
+    formats: set[str] | None = None,
 ) -> dict:
     """Export aligned subtitles to the stable final.* output contract."""
     if not aligned_jsonl.exists():
@@ -690,70 +691,88 @@ def run_final_exports(
     if not segments:
         raise ValueError(f"No aligned segments found in {aligned_jsonl}")
 
+    if formats is None:
+        formats = {"srt"}
+
     output_dir.mkdir(parents=True, exist_ok=True)
     srt_path = output_dir / "final.srt"
     vtt_path = output_dir / "final.vtt"
     json_path = output_dir / "final.json"
     tsv_path = output_dir / "final.tsv"
 
+    # Always write SRT
     srt_path.write_text(
         SRTExporter(punctuation=punctuation, language=language, max_chars=max_chars).render(segments),
         encoding="utf-8",
     )
 
-    vtt_lines = ["WEBVTT", ""]
-    vtt_index = 0
-    for seg in sorted(segments, key=lambda s: s.start_sec):
-        words_with_punct = _inject_punct(_filter_words_to_text(seg.words, seg.text), seg.text)
-        sub_lines = _smart_split(words_with_punct, seg.text, max_chars=max_chars, start_sec=seg.start_sec, end_sec=seg.end_sec)
-        for sub in sub_lines:
-            if not sub["text"].strip():
-                continue
-            vtt_index += 1
-            text = chinese_to_num(sub["text"])
-            if punctuation:
-                text = _normalize_punct(text, language)
-            else:
-                text = _strip_punct(text)
-            vtt_lines.extend(
-                [
-                    str(vtt_index),
-                    f"{_fmt_vtt_time(sub['start_sec'])} --> {_fmt_vtt_time(sub['end_sec'])}",
-                    text,
-                    "",
-                ]
-            )
-    vtt_path.write_text("\n".join(vtt_lines), encoding="utf-8")
+    # VTT (opt-in)
+    if "vtt" in formats:
+        vtt_lines = ["WEBVTT", ""]
+        vtt_index = 0
+        for seg in sorted(segments, key=lambda s: s.start_sec):
+            words_with_punct = _inject_punct(_filter_words_to_text(seg.words, seg.text), seg.text)
+            sub_lines = _smart_split(words_with_punct, seg.text, max_chars=max_chars, start_sec=seg.start_sec, end_sec=seg.end_sec)
+            for sub in sub_lines:
+                if not sub["text"].strip():
+                    continue
+                vtt_index += 1
+                text = chinese_to_num(sub["text"])
+                if punctuation:
+                    text = _normalize_punct(text, language)
+                else:
+                    text = _strip_punct(text)
+                vtt_lines.extend(
+                    [
+                        str(vtt_index),
+                        f"{_fmt_vtt_time(sub['start_sec'])} --> {_fmt_vtt_time(sub['end_sec'])}",
+                        text,
+                        "",
+                    ]
+                )
+        vtt_path.write_text("\n".join(vtt_lines), encoding="utf-8")
 
-    final_payload = [_final_json_item(seg) for seg in segments]
-    json_path.write_text(
-        json.dumps(final_payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-
-    tsv_lines = ["subtitle_id\tstart_sec\tend_sec\ttext"]
-    for seg in sorted(segments, key=lambda s: s.start_sec):
-        text = seg.text.replace("\t", " ").replace("\n", " ")
-        tsv_lines.append(f"{seg.sentence_id}\t{seg.start_sec}\t{seg.end_sec}\t{text}")
-    tsv_path.write_text("\n".join(tsv_lines), encoding="utf-8")
-
-    run_log_path = output_dir / "run.log.jsonl"
-    if not run_log_path.exists():
-        run_log_path.write_text(
-            json.dumps(
-                {"event": "output_contract_written", "contract": "final"},
-                ensure_ascii=False,
-            )
-            + "\n",
+    # JSON (opt-in)
+    if "json" in formats:
+        final_payload = [_final_json_item(seg) for seg in segments]
+        json_path.write_text(
+            json.dumps(final_payload, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
 
+    # TSV (opt-in)
+    if "tsv" in formats:
+        tsv_lines = ["subtitle_id\tstart_sec\tend_sec\ttext"]
+        for seg in sorted(segments, key=lambda s: s.start_sec):
+            text = seg.text.replace("\t", " ").replace("\n", " ")
+            tsv_lines.append(f"{seg.sentence_id}\t{seg.start_sec}\t{seg.end_sec}\t{text}")
+        tsv_path.write_text("\n".join(tsv_lines), encoding="utf-8")
+
+    # Run log (opt-in)
+    if "log" in formats:
+        run_log_path = output_dir / "run.log.jsonl"
+        if not run_log_path.exists():
+            run_log_path.write_text(
+                json.dumps(
+                    {"event": "output_contract_written", "contract": "final"},
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+    outputs = [str(srt_path)]
+    if "vtt" in formats:
+        outputs.append(str(vtt_path))
+    if "json" in formats:
+        outputs.append(str(json_path))
+    if "tsv" in formats:
+        outputs.append(str(tsv_path))
+
     return {
         "output_path": str(srt_path),
-        "outputs": [str(srt_path), str(vtt_path), str(json_path), str(tsv_path)],
-        "format": "final",
+        "outputs": outputs,
         "segment_count": len(segments),
-        "output_contract": "final",
     }
 
 
