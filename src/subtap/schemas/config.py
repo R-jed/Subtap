@@ -111,6 +111,12 @@ class OutputConfig(BaseModel):
         ge=10,
         le=60,
     )
+    min_chars: int = Field(
+        default=10,
+        description="每行字幕最小字符数（低于此值不做停顿断句）",
+        ge=4,
+        le=30,
+    )
     subtitle_formats: set[str] = Field(
         default={"srt"},
         description="输出字幕格式（srt/vtt/json/tsv）",

@@ -512,10 +512,11 @@ class BaseExporter(ABC):
 class SRTExporter(BaseExporter):
     """SRT subtitle exporter."""
 
-    def __init__(self, punctuation: bool = False, language: str = "zh", max_chars: int = 25):
+    def __init__(self, punctuation: bool = False, language: str = "zh", max_chars: int = 25, min_chars: int = 10):
         self.punctuation = punctuation
         self.language = language
         self.max_chars = max_chars
+        self.min_chars = min_chars
 
     @property
     def extension(self) -> str:
@@ -527,7 +528,7 @@ class SRTExporter(BaseExporter):
         all_subs: list[dict] = []
         for seg in sorted_segs:
             words_with_punct = _inject_punct(_filter_words_to_text(seg.words, seg.text), seg.text)
-            sub_lines = _smart_split(words_with_punct, seg.text, max_chars=self.max_chars, start_sec=seg.start_sec, end_sec=seg.end_sec)
+            sub_lines = _smart_split(words_with_punct, seg.text, max_chars=self.max_chars, min_chars=self.min_chars, start_sec=seg.start_sec, end_sec=seg.end_sec)
             for sub in sub_lines:
                 if sub["text"].strip():
                     all_subs.append(sub)
@@ -716,6 +717,7 @@ def run_final_exports(
     punctuation: bool = False,
     language: str = "zh",
     max_chars: int = 25,
+    min_chars: int = 10,
     formats: set[str] | None = None,
     stem: str = "final",
 ) -> dict:
@@ -738,7 +740,7 @@ def run_final_exports(
 
     # Always write SRT
     srt_path.write_text(
-        SRTExporter(punctuation=punctuation, language=language, max_chars=max_chars).render(segments),
+        SRTExporter(punctuation=punctuation, language=language, max_chars=max_chars, min_chars=min_chars).render(segments),
         encoding="utf-8",
     )
 
@@ -748,7 +750,7 @@ def run_final_exports(
         vtt_index = 0
         for seg in sorted(segments, key=lambda s: s.start_sec):
             words_with_punct = _inject_punct(_filter_words_to_text(seg.words, seg.text), seg.text)
-            sub_lines = _smart_split(words_with_punct, seg.text, max_chars=max_chars, start_sec=seg.start_sec, end_sec=seg.end_sec)
+            sub_lines = _smart_split(words_with_punct, seg.text, max_chars=max_chars, min_chars=min_chars, start_sec=seg.start_sec, end_sec=seg.end_sec)
             for sub in sub_lines:
                 if not sub["text"].strip():
                     continue
