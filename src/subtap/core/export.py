@@ -143,7 +143,7 @@ def _smart_split(
 
     Priority:
     1. Sentence-ending punctuation (。！？.!?) → new subtitle
-    2. Pause ≥ pause_threshold AND line ≥ min_chars → new subtitle
+    2. Pause ≥ pause_threshold → new subtitle
     3. Comma/enum + line long enough → new line
     4. Exceeds max_chars → new line (with number protection)
 
@@ -203,8 +203,8 @@ def _smart_split(
             continue
 
         # 2. Pause detection → new subtitle
-        #    Only split if line is long enough AND doesn't break connector words
-        if i > 0 and current_text and len(current_text.strip()) >= min_chars:
+        #    Split on real pauses unless that would break connector words.
+        if i > 0 and current_text:
             gap = w["start_sec"] - words[i - 1]["end_sec"]
             if gap >= pause_threshold:
                 # Don't split if current word starts a connector pair
