@@ -554,6 +554,7 @@ def _run_pipeline_safely(
     output_dir: Path,
     mode: str,
     fmt: str,
+    enhance: str = "local",
     align_enabled: bool = True,
 ) -> dict:
     """在线程中安全运行 pipeline，不涉及 UI 操作。"""
@@ -565,8 +566,24 @@ def _run_pipeline_safely(
         input_path,
         output_dir,
         fmt=fmt,
+        enhance=enhance,
         align_enabled=align_enabled,
     )
+
+
+def _exit_dashboard_when_pipeline_done(future, dashboard) -> None:
+    """后台 pipeline 结束时退出 Textual dashboard。"""
+
+    def _exit(_future):
+        try:
+            dashboard.call_from_thread(dashboard.exit)
+        except Exception:
+            try:
+                dashboard.exit()
+            except Exception:
+                pass
+
+    future.add_done_callback(_exit)
 
 
 @app.command()
@@ -754,8 +771,10 @@ def run(
                 output_dir,
                 mode,
                 fmt,
+                enhance,
                 align_enabled,
             )
+            _exit_dashboard_when_pipeline_done(future, dashboard)
 
             # 运行 dashboard（它会启动 async loop 处理事件）
             dashboard.run()
@@ -784,6 +803,7 @@ def run(
                         input_path,
                         output_dir,
                         fmt=fmt,
+                        enhance=enhance,
                         align_enabled=align_enabled,
                     )
             else:
@@ -792,6 +812,7 @@ def run(
                     input_path,
                     output_dir,
                     fmt=fmt,
+                    enhance=enhance,
                     align_enabled=align_enabled,
                 )
             timings = result.get("timings", {})

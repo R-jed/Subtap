@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from concurrent.futures import Future
 from types import SimpleNamespace
 
 from typer.testing import CliRunner
@@ -16,6 +17,32 @@ runner = CliRunner()
 def _strip_ansi(text: str) -> str:
     """Remove ANSI escape codes from text for reliable string matching."""
     return re.sub(r"\x1b\[[0-9;]*m", "", text)
+
+
+def test_dashboard_exits_when_pipeline_future_finishes():
+    """后台 pipeline 完成时，TUI dashboard 必须主动退出。"""
+    from subtap.cli import _exit_dashboard_when_pipeline_done
+
+    future = Future()
+
+    class FakeDashboard:
+        def __init__(self):
+            self.call_from_thread_called = False
+            self.exited = False
+
+        def call_from_thread(self, callback):
+            self.call_from_thread_called = True
+            callback()
+
+        def exit(self):
+            self.exited = True
+
+    dashboard = FakeDashboard()
+    _exit_dashboard_when_pipeline_done(future, dashboard)
+    future.set_result({"timings": {}})
+
+    assert dashboard.call_from_thread_called is True
+    assert dashboard.exited is True
 
 
 def _patch_stage_pipeline(monkeypatch, stage_name: str):
@@ -385,6 +412,73 @@ def test_run_no_align_passes_align_disabled_to_runner(tmp_path, monkeypatch):
     assert metrics["alignment_enabled"] is False
     assert metrics["align_runtime_sec"] == 0
     assert metrics["external_audio_sent"] is False
+
+
+def test_run_enhance_off_passes_clean_off_to_pipeline(tmp_path, monkeypatch):
+    """--enhance off 应传到 clean 阶段，避免触发 LLM backend。"""
+    clean_kwargs = []
+
+    class FakePipeline:
+        def __init__(self, _config, work_dir):
+            self.config = _config
+
+            class Workspace:
+                root = work_dir
+                asr_jsonl = work_dir / "asr" / "asr.jsonl"
+                aligned_jsonl = work_dir / "aligned.jsonl"
+
+                def ensure_dirs(self):
+                    self.root.mkdir(parents=True, exist_ok=True)
+
+            self.workspace = Workspace()
+
+        def run_stage(self, stage, **kwargs):
+            if stage == "prepare":
+                return {"media_info": {"duration": 1.0, "sample_rate": 16000}}
+            if stage == "chunk":
+                return {"chunk_count": 1}
+            if stage == "asr":
+                self.workspace.asr_jsonl.parent.mkdir(parents=True, exist_ok=True)
+                self.workspace.asr_jsonl.write_text(
+                    '{"chunk_id":0,"segment_id":0,"start_sec":0.0,'
+                    '"end_sec":1.0,"text":"hello","confidence":null}\n',
+                    encoding="utf-8",
+                )
+                return {"segment_count": 1}
+            if stage == "clean":
+                clean_kwargs.append(kwargs)
+                return {"segment_count": 1}
+            if stage == "segment":
+                return {"sentence_count": 1}
+            if stage == "align":
+                raise AssertionError("--no-align must not run align")
+            raise AssertionError(stage)
+
+    config = SimpleNamespace(output=SimpleNamespace(timestamp=True))
+    monkeypatch.setattr("subtap.core.pipeline.Pipeline", FakePipeline)
+    monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
+
+    input_path = tmp_path / "input.wav"
+    input_path.write_bytes(b"data")
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            str(input_path),
+            "--enhance",
+            "off",
+            "--no-tui",
+            "--no-git-check",
+            "--no-cleanroom",
+            "--no-align",
+            "--output-dir",
+            str(tmp_path / "out"),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert clean_kwargs == [{"llm_backend": "off"}]
 
 
 def test_run_mode_fast():
