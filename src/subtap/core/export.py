@@ -431,8 +431,8 @@ class SRTExporter(BaseExporter):
                     all_subs.append(sub)
 
         # Cross-sentence fragment merge: merge ≤2 char fragments into adjacent lines
-        # This handles cases where a sentence starts with a short word like "今天"
-        # that should be merged with the previous sentence's last line
+        # Only merge if the gap between lines is small (< 0.5s) — avoids merging
+        # unrelated short sentences like "A" "B" "C"
         merged_subs: list[dict] = []
         for sub in all_subs:
             txt = sub["text"].strip()
@@ -440,7 +440,8 @@ class SRTExporter(BaseExporter):
             if merged_subs and len(visible) <= 2:
                 prev = merged_subs[-1]
                 prev_visible = _strip_punct(prev["text"]).replace(" ", "")
-                if len(prev_visible) + len(visible) <= 25:
+                gap = sub["start_sec"] - prev["end_sec"]
+                if len(prev_visible) + len(visible) <= 25 and gap < 0.5:
                     prev["text"] = prev["text"].rstrip() + txt
                     prev["end_sec"] = sub["end_sec"]
                     continue
