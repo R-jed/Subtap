@@ -134,7 +134,7 @@ def _smart_split(
     text: str,
     max_chars: int = 25,
     min_chars: int = 3,
-    pause_threshold: float = 0.3,
+    pause_threshold: float = 0.2,
     start_sec: float = 0.0,
     end_sec: float = 0.0,
 ) -> list[dict]:
@@ -205,7 +205,7 @@ def _smart_split(
         current_text += word_text
 
         # 4. Comma + line substantial → new line
-        if word_text in _COMMA and len(current_text.strip()) >= 10:
+        if word_text in _COMMA and len(current_text.strip()) >= 8:
             _flush("comma")
 
     if current_words:
