@@ -399,6 +399,8 @@ def test_run_no_align_passes_align_disabled_to_runner(tmp_path, monkeypatch):
             "--no-align",
             "--output-dir",
             str(output_dir),
+            "--work-dir",
+            str(tmp_path / "work"),
         ],
     )
 
@@ -509,6 +511,8 @@ def test_run_tui_starts_observer_child_process(tmp_path, monkeypatch):
             "--no-align",
             "--output-dir",
             str(output_dir),
+            "--work-dir",
+            str(tmp_path / "work"),
         ],
     )
 
