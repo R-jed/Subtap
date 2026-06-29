@@ -377,3 +377,106 @@ def test_single_conjunction_stripped_from_line_end():
     for line in result[:-1]:
         txt = line["text"]
         assert not txt.endswith("但"), f"行尾不应有孤立的 '但': {txt}"
+
+
+# ── Task 2: 基于小句边界重构 _smart_split ──
+
+
+def test_clause_based_split_no_fragments():
+    """基于小句边界断句不应产生碎片。"""
+    words = [
+        {"word": "这", "start_sec": 0.0, "end_sec": 0.2},
+        {"word": "个", "start_sec": 0.2, "end_sec": 0.4},
+        {"word": "问", "start_sec": 0.4, "end_sec": 0.6},
+        {"word": "题", "start_sec": 0.6, "end_sec": 0.8},
+        {"word": "，", "start_sec": 0.8, "end_sec": 0.8},
+        {"word": "所", "start_sec": 1.3, "end_sec": 1.5},
+        {"word": "以", "start_sec": 1.5, "end_sec": 1.7},
+        {"word": "我", "start_sec": 1.8, "end_sec": 2.0},
+        {"word": "们", "start_sec": 2.0, "end_sec": 2.2},
+        {"word": "要", "start_sec": 2.2, "end_sec": 2.4},
+        {"word": "做", "start_sec": 2.4, "end_sec": 2.6},
+    ]
+    result = _smart_split(words, "这个问题，所以我们要做", max_chars=25)
+    for line in result:
+        assert line["text"].strip() != "所以", f"'所以' 不应独立成行: {result}"
+
+
+def test_clause_based_split_conjunction_pair():
+    """关联词对在小句边界处正确断开。"""
+    words = [
+        {"word": "虽", "start_sec": 0.0, "end_sec": 0.2},
+        {"word": "然", "start_sec": 0.2, "end_sec": 0.4},
+        {"word": "贵", "start_sec": 0.4, "end_sec": 0.6},
+        {"word": "，", "start_sec": 0.6, "end_sec": 0.6},
+        {"word": "但", "start_sec": 0.8, "end_sec": 1.0},
+        {"word": "是", "start_sec": 1.0, "end_sec": 1.2},
+        {"word": "值", "start_sec": 1.2, "end_sec": 1.4},
+        {"word": "得", "start_sec": 1.4, "end_sec": 1.6},
+    ]
+    result = _smart_split(words, "虽然贵，但是值得", max_chars=25)
+    for line in result:
+        assert not line["text"].endswith("但"), f"行尾不应有孤立的 '但': {line['text']}"
+
+
+def test_clause_based_split_long_sentence():
+    """长小句不被过度拆分。"""
+    words = [
+        {"word": "我", "start_sec": 0.0, "end_sec": 0.2},
+        {"word": "必", "start_sec": 0.2, "end_sec": 0.4},
+        {"word": "须", "start_sec": 0.4, "end_sec": 0.6},
+        {"word": "得", "start_sec": 0.6, "end_sec": 0.8},
+        {"word": "先", "start_sec": 0.8, "end_sec": 1.0},
+        {"word": "强", "start_sec": 1.0, "end_sec": 1.2},
+        {"word": "调", "start_sec": 1.2, "end_sec": 1.4},
+        {"word": "这", "start_sec": 1.4, "end_sec": 1.6},
+        {"word": "个", "start_sec": 1.6, "end_sec": 1.8},
+        {"word": "视", "start_sec": 1.8, "end_sec": 2.0},
+        {"word": "频", "start_sec": 2.0, "end_sec": 2.2},
+        {"word": "我", "start_sec": 2.2, "end_sec": 2.4},
+        {"word": "绝", "start_sec": 2.4, "end_sec": 2.6},
+        {"word": "对", "start_sec": 2.6, "end_sec": 2.8},
+        {"word": "不", "start_sec": 2.8, "end_sec": 3.0},
+        {"word": "是", "start_sec": 3.0, "end_sec": 3.2},
+        {"word": "广", "start_sec": 3.2, "end_sec": 3.4},
+        {"word": "告", "start_sec": 3.4, "end_sec": 3.6},
+    ]
+    result = _smart_split(words, "我必须得先强调这个视频我绝对不是广告", max_chars=25)
+    assert len(result) == 1
+
+
+def test_clause_boundary_driven_split():
+    """验证小句边界驱动断句：断句位置应与小句边界一致。"""
+    from subtap.core.clauses import identify_clause_boundaries
+
+    words = [
+        {"word": "这", "start_sec": 0.0, "end_sec": 0.2},
+        {"word": "个", "start_sec": 0.2, "end_sec": 0.4},
+        {"word": "问", "start_sec": 0.4, "end_sec": 0.6},
+        {"word": "题", "start_sec": 0.6, "end_sec": 0.8},
+        {"word": "，", "start_sec": 0.8, "end_sec": 0.8},
+        {"word": "所", "start_sec": 1.3, "end_sec": 1.5},
+        {"word": "以", "start_sec": 1.5, "end_sec": 1.7},
+        {"word": "我", "start_sec": 1.8, "end_sec": 2.0},
+        {"word": "们", "start_sec": 2.0, "end_sec": 2.2},
+        {"word": "要", "start_sec": 2.2, "end_sec": 2.4},
+        {"word": "做", "start_sec": 2.4, "end_sec": 2.6},
+    ]
+    text = "这个问题，所以我们要做"
+
+    # 获取小句边界
+    boundaries = identify_clause_boundaries(words)
+    boundary_positions = [i for i, b in enumerate(boundaries) if b is not None]
+
+    # 执行断句
+    result = _smart_split(words, text, max_chars=25)
+
+    # 验证断句位置与小句边界一致
+    # 小句边界应该在位置 4 (逗号) 和位置 5 (所以)
+    assert 4 in boundary_positions, "逗号应该是小句边界"
+    assert 5 in boundary_positions, "'所' 应该是小句边界（连词起始）"
+
+    # 验证断句结果：逗号后应该断句，但"所以"不应独立成行
+    assert len(result) >= 2, f"逗号后应该断句: {result}"
+    for line in result:
+        assert line["text"].strip() != "所以", f"'所以' 不应独立成行: {result}"
