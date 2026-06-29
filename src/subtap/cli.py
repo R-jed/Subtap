@@ -877,7 +877,7 @@ def run(
     from subtap.metrics.profiler import PipelineProfiler
 
     # 创建 Event Bus 和 Profiler
-    event_log_path = output_dir / "run.log.jsonl"
+    event_log_path = work_dir / "run.log.jsonl"
     event_log_path.unlink(missing_ok=True)
     event_bus = EventBus(log_path=event_log_path)
     pipeline.event_bus = event_bus
