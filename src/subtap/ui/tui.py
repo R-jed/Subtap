@@ -279,24 +279,30 @@ class PlainRunner:
             self.timings["clean"] = time.time() - t
             _echo(f"  ✓ {r['segment_count']} 条")
 
-            _echo("▸ [5/7] 智能断句...")
+            _echo("▸ [5/8] 热词替换...")
+            t = time.time()
+            r = pipeline.run_stage("hotword")
+            self.timings["hotword"] = time.time() - t
+            _echo(f"  ✓ 替换 {r['replaced']}/{r['total']} 条")
+
+            _echo("▸ [6/8] 智能断句...")
             t = time.time()
             r = pipeline.run_stage("segment")
             self.timings["segment"] = time.time() - t
             _echo(f"  ✓ {r['sentence_count']} 句")
 
             if align_enabled:
-                _echo("▸ [6/7] 时间轴对齐...")
+                _echo("▸ [7/8] 时间轴对齐...")
                 t = time.time()
                 r = pipeline.run_stage("align")
                 self.timings["align"] = time.time() - t
                 _echo(f"  ✓ {r['aligned_count']} 条")
             else:
                 self.timings["align"] = 0.0
-                _echo("▸ [6/7] 时间轴对齐（已关闭）...")
+                _echo("▸ [7/8] 时间轴对齐（已关闭）...")
                 _echo("  ⚠ 未精对齐，仅生成 draft 粗剪预览")
 
-            _echo(f"▸ [7/7] 字幕导出 ({fmt.upper()})...")
+            _echo(f"▸ [8/8] 字幕导出 ({fmt.upper()})...")
             t = time.time()
             if align_enabled:
                 from subtap.core.export import run_final_exports
