@@ -750,6 +750,10 @@ def run(
     profiler = PipelineProfiler(event_bus)
     profiler.wrap_pipeline(pipeline)
 
+    if use_tui and getattr(config.asr, "backend", "") == "mlx-qwen-asr":
+        typer.echo("⚠ MLX/Metal 推理与 Textual 实时界面存在兼容风险，已切换为安全进度模式")
+        use_tui = False
+
     if use_tui:
         from concurrent.futures import ThreadPoolExecutor
         from subtap.ui.dashboard import PipelineDashboard
@@ -764,23 +768,31 @@ def run(
         pipeline_error = None
 
         with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(
-                _run_pipeline_safely,
-                pipeline,
-                input_path,
-                output_dir,
-                mode,
-                fmt,
-                enhance,
-                align_enabled,
-            )
-            _exit_dashboard_when_pipeline_done(future, dashboard)
+            future = None
+
+            def _start_pipeline():
+                nonlocal future
+                future = executor.submit(
+                    _run_pipeline_safely,
+                    pipeline,
+                    input_path,
+                    output_dir,
+                    mode,
+                    fmt,
+                    enhance,
+                    align_enabled,
+                )
+                _exit_dashboard_when_pipeline_done(future, dashboard)
+
+            dashboard.set_startup_callback(_start_pipeline)
 
             # 运行 dashboard（它会启动 async loop 处理事件）
             dashboard.run()
 
             # 获取结果（future.result() 会阻塞直到完成）
             try:
+                if future is None:
+                    raise RuntimeError("TUI 未能启动处理任务")
                 result = future.result(timeout=300)
                 timings = result.get("timings", {})
             except Exception as e:

@@ -481,6 +481,75 @@ def test_run_enhance_off_passes_clean_off_to_pipeline(tmp_path, monkeypatch):
     assert clean_kwargs == [{"llm_backend": "off"}]
 
 
+def test_run_mlx_tui_falls_back_to_plain_runner(tmp_path, monkeypatch):
+    """MLX ASR 与 Textual 同进程冲突时，应自动切到安全进度模式。"""
+
+    class FakePipeline:
+        def __init__(self, _config, work_dir):
+            self.config = _config
+
+            class Workspace:
+                root = work_dir
+                asr_jsonl = work_dir / "asr" / "asr.jsonl"
+                aligned_jsonl = work_dir / "aligned.jsonl"
+
+                def ensure_dirs(self):
+                    self.root.mkdir(parents=True, exist_ok=True)
+
+            self.workspace = Workspace()
+
+        def run_stage(self, stage, **_kwargs):
+            if stage == "prepare":
+                return {"media_info": {"duration": 1.0, "sample_rate": 16000}}
+            if stage == "chunk":
+                return {"chunk_count": 1}
+            if stage == "asr":
+                self.workspace.asr_jsonl.parent.mkdir(parents=True, exist_ok=True)
+                self.workspace.asr_jsonl.write_text(
+                    '{"chunk_id":0,"segment_id":0,"start_sec":0.0,'
+                    '"end_sec":1.0,"text":"hello","confidence":null}\n',
+                    encoding="utf-8",
+                )
+                return {"segment_count": 1}
+            if stage == "clean":
+                return {"segment_count": 1}
+            if stage == "segment":
+                return {"sentence_count": 1}
+            if stage == "align":
+                raise AssertionError("--no-align must not run align")
+            raise AssertionError(stage)
+
+    def fail_dashboard(*_args, **_kwargs):
+        raise AssertionError("MLX ASR should not enter Textual dashboard")
+
+    config = SimpleNamespace(
+        asr=SimpleNamespace(backend="mlx-qwen-asr"),
+        output=SimpleNamespace(timestamp=True),
+    )
+    monkeypatch.setattr("subtap.core.pipeline.Pipeline", FakePipeline)
+    monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
+    monkeypatch.setattr("subtap.ui.dashboard.PipelineDashboard", fail_dashboard)
+
+    input_path = tmp_path / "input.wav"
+    input_path.write_bytes(b"data")
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            str(input_path),
+            "--no-git-check",
+            "--no-cleanroom",
+            "--no-align",
+            "--output-dir",
+            str(tmp_path / "out"),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "安全进度模式" in result.output
+
+
 def test_run_mode_fast():
     """subtap run should accept --mode fast."""
     result = runner.invoke(app, ["run", "--help"])

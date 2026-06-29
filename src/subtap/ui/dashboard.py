@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, Static
@@ -128,6 +129,11 @@ class PipelineDashboard(App):
             "model": "未知",
             "quantization": "未知",
         }
+        self._startup_callback: Callable[[], None] | None = None
+
+    def set_startup_callback(self, callback: Callable[[], None]) -> None:
+        """设置 TUI mount 后启动的后台任务。"""
+        self._startup_callback = callback
 
     def _should_update(self) -> bool:
         """检查是否应该更新（节流）。"""
@@ -149,6 +155,8 @@ class PipelineDashboard(App):
     async def on_mount(self) -> None:
         """启动事件处理。"""
         self.run_worker(self.event_bus.start())
+        if self._startup_callback is not None:
+            self._startup_callback()
 
     def update_stage(self, stage: str) -> None:
         """更新阶段显示。"""
