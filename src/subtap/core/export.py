@@ -432,8 +432,8 @@ def _smart_split(
                 should_split_after = True
                 after_bt = "comma"
 
-        # Min chars check (only for non-hard boundaries)
-        if should_split_after and len(cur_text) < min_chars:
+        # Min chars check: skip soft split only if below min AND below max
+        if should_split_after and len(cur_text) < min_chars and len(cur_text) < max_chars:
             if after_bt not in ("comma", "sentence_end"):
                 should_split_after = False
 
