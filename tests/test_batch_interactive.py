@@ -13,6 +13,9 @@ from subtap.batch_interactive import (
     prompt_choice,
     prompt_int,
     prompt_bool,
+    scan_directory,
+    validate_files,
+    confirm_files,
 )
 
 
@@ -106,3 +109,44 @@ class TestRunConfigWizard:
         assert config.bilingual == "source-first"
         assert config.punctuation is True
         assert config.subtitle_language == "en"
+
+
+class TestFileSelection:
+    """Test file selection functions."""
+
+    def test_scan_directory(self, tmp_path):
+        """Test scanning directory for media files."""
+        # Create test files
+        (tmp_path / "video1.mp4").touch()
+        (tmp_path / "audio1.wav").touch()
+        (tmp_path / "audio2.mp3").touch()
+        (tmp_path / "text.txt").touch()  # Should be ignored
+
+        files = scan_directory(tmp_path)
+        assert len(files) == 3
+        assert all(f.suffix in (".mp4", ".wav", ".mp3") for f in files)
+
+    def test_validate_files(self, tmp_path):
+        """Test file validation."""
+        # Create existing and non-existing files
+        existing = tmp_path / "exists.mp4"
+        existing.touch()
+        missing = tmp_path / "missing.mp4"
+
+        valid, invalid = validate_files([existing, missing])
+        assert len(valid) == 1
+        assert len(invalid) == 1
+        assert valid[0] == existing
+        assert invalid[0] == missing
+
+    def test_confirm_files(self):
+        """Test file confirmation prompt."""
+        files = [Path("a.mp4"), Path("b.wav"), Path("c.mp3")]
+
+        # User confirms
+        with patch("builtins.input", return_value="y"):
+            assert confirm_files(files) is True
+
+        # User declines
+        with patch("builtins.input", return_value="n"):
+            assert confirm_files(files) is False

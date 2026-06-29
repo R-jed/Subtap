@@ -9,6 +9,73 @@ import typer
 
 from subtap.batch_config import BatchConfig, load_batch_config, save_batch_config
 
+MEDIA_EXTENSIONS = {".mp3", ".mp4", ".wav", ".mkv", ".avi", ".mov", ".flac", ".m4a", ".aac"}
+
+
+def scan_directory(directory: Path) -> list[Path]:
+    """Scan directory for media files."""
+    files = []
+    for f in sorted(directory.iterdir()):
+        if f.is_file() and f.suffix.lower() in MEDIA_EXTENSIONS:
+            files.append(f)
+    return files
+
+
+def validate_files(files: list[Path]) -> tuple[list[Path], list[Path]]:
+    """Validate files exist."""
+    valid = []
+    invalid = []
+    for f in files:
+        if f.exists():
+            valid.append(f)
+        else:
+            invalid.append(f)
+    return valid, invalid
+
+
+def confirm_files(files: list[Path]) -> bool:
+    """Show file list and ask for confirmation."""
+    typer.echo(f"\n▸ 扫描到 {len(files)} 个文件：")
+    for i, f in enumerate(files, 1):
+        typer.echo(f"  {i}. {f.name}")
+
+    choice = input("\n▸ 确认开始处理？[Y/n]: ").strip().lower()
+    return choice in ("", "y", "yes", "是")
+
+
+def collect_files(
+    args: list[str] | None = None,
+    directory: str | None = None,
+) -> list[Path]:
+    """Collect files from arguments or directory."""
+    files = []
+
+    # From arguments (drag-and-drop or manual paths)
+    if args:
+        for arg in args:
+            p = Path(arg)
+            if p.is_file():
+                files.append(p)
+            elif p.is_dir():
+                files.extend(scan_directory(p))
+
+    # From directory option
+    if directory:
+        dir_path = Path(directory)
+        if dir_path.is_dir():
+            files.extend(scan_directory(dir_path))
+
+    # Deduplicate
+    seen = set()
+    unique = []
+    for f in files:
+        resolved = f.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            unique.append(f)
+
+    return unique
+
 
 def prompt_choice(
     label: str,
