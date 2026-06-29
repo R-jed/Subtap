@@ -287,6 +287,28 @@ def test_so_yi_not_split_realistic():
         assert not line["text"].endswith("所"), f"'所以' was split: {result}"
 
 
+def test_conjunction_fragment_merged():
+    """连词碎片（所以/并且/现在/同时）应合并到相邻行，不被 ends_punct 阻断。"""
+    words = [
+        {"word": "这", "start_sec": 0.0, "end_sec": 0.2},
+        {"word": "个", "start_sec": 0.2, "end_sec": 0.4},
+        {"word": "问", "start_sec": 0.4, "end_sec": 0.6},
+        {"word": "题", "start_sec": 0.6, "end_sec": 0.8},
+        {"word": "，", "start_sec": 0.8, "end_sec": 0.8},
+        # pause gap 0.5s
+        {"word": "所", "start_sec": 1.3, "end_sec": 1.5},
+        {"word": "以", "start_sec": 1.5, "end_sec": 1.7},
+        {"word": "我", "start_sec": 1.8, "end_sec": 2.0},
+        {"word": "们", "start_sec": 2.0, "end_sec": 2.2},
+        {"word": "要", "start_sec": 2.2, "end_sec": 2.4},
+        {"word": "做", "start_sec": 2.4, "end_sec": 2.6},
+    ]
+    result = _smart_split(words, "这个问题，所以我们要做", max_chars=25)
+    # "所以" 不应独立成行
+    for line in result:
+        assert line["text"].strip() != "所以", f"'所以' 不应独立成行: {result}"
+
+
 def test_comma_split_when_line_full():
     """逗号 + 当前行已满时断句。"""
     words = [
