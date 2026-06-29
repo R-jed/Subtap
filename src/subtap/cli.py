@@ -1065,7 +1065,7 @@ def run(
         from subtap.core.report import format_performance_summary
 
         output_dir.mkdir(parents=True, exist_ok=True)
-        report_path = output_dir / "report.md"
+        report_path = work_dir / "report.md"
         report_path.write_text(
             "# Subtap 运行报告\n\n"
             "## 对齐状态\n\n"
@@ -1134,7 +1134,7 @@ def run(
         manual_samples = pick_manual_review_segments(
             subtitles, slow_chunks=performance_metrics["slow_chunks"]
         )
-        report_path = output_dir / "report.md"
+        report_path = work_dir / "report.md"
         if report_path.exists():
             report_path.write_text(
                 report_path.read_text(encoding="utf-8")
