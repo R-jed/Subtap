@@ -193,7 +193,10 @@ def _smart_split(
 
     # 1-2 character conjunctions that should move to next line if at line end.
     # Subset of _CONJ_STARTERS — only those that make sense as trailing words.
-    _CONJ_ENDINGS = {"但是", "所以", "因为", "而且", "不过", "可是", "然后", "或者", "于是", "因此"}
+    _CONJ_ENDINGS = {
+        "但是", "所以", "因为", "而且", "不过", "可是", "然后", "或者", "于是", "因此",
+        "因", "则", "但", "所", "以", "才", "会", "又", "也",
+    }
 
     # --- Step 1: Mark phrase boundaries ---
     marked_words = mark_phrase_boundaries(words)

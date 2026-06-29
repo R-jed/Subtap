@@ -343,3 +343,37 @@ def test_time_from_word_timestamps():
     assert result[0]["end_sec"] == 1.4
     assert result[1]["start_sec"] == 2.0
     assert result[1]["end_sec"] == 2.4
+
+
+def test_single_conjunction_stripped_from_line_end():
+    """单字连词（因/则/但/所/以）应从行尾剥离。
+
+    模拟 #209 场景: pause 在单字连词之后触发拆分，使连词落在行尾。
+    当前 _CONJ_ENDINGS 只有双字连词，单字连词如 '但' 不会被剥离。
+    """
+    words = [
+        {"word": "这", "start_sec": 0.0, "end_sec": 0.2},
+        {"word": "台", "start_sec": 0.2, "end_sec": 0.4},
+        {"word": "相", "start_sec": 0.4, "end_sec": 0.6},
+        {"word": "机", "start_sec": 0.6, "end_sec": 0.8},
+        {"word": "很", "start_sec": 0.8, "end_sec": 1.0},
+        {"word": "好", "start_sec": 1.0, "end_sec": 1.2},
+        {"word": "用", "start_sec": 1.2, "end_sec": 1.4},
+        {"word": "但", "start_sec": 1.4, "end_sec": 1.6},
+        # pause gap 1.0s > 0.3s threshold → triggers split after "但"
+        {"word": "价", "start_sec": 2.6, "end_sec": 2.8},
+        {"word": "格", "start_sec": 2.8, "end_sec": 3.0},
+        {"word": "太", "start_sec": 3.0, "end_sec": 3.2},
+        {"word": "贵", "start_sec": 3.2, "end_sec": 3.4},
+    ]
+    result = _smart_split(
+        words, "这台相机很好用但价格太贵",
+        max_chars=20, min_chars=3, pause_threshold=0.3,
+    )
+    total = "".join(r["text"] for r in result)
+    assert total == "这台相机很好用但价格太贵"
+    assert len(result) >= 2, f"应有拆分，但只有 {len(result)} 行: {result}"
+    # "但" 不应留在行尾，应被剥离到下一行开头
+    for line in result[:-1]:
+        txt = line["text"]
+        assert not txt.endswith("但"), f"行尾不应有孤立的 '但': {txt}"
