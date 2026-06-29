@@ -26,25 +26,8 @@ _UNIT_MAP = {
     "万": 10000, "亿": 100000000,
 }
 
-# 概数后缀：数字 + 这些词 = 不转换
-_APPROX_SUFFIXES = set("多余左右上下来")
-
 # 成语/复合词保护：这些词中的数字不转换
 _IDIOMS = {"百万富翁", "万元户", "万元", "亿元", "十亿", "百亿", "千亿", "万亿"}
-
-
-def _is_approx_context(text: str, match_start: int, match_end: int) -> bool:
-    """Check if the matched number is in an approximate context."""
-    # Check up to 3 chars after match for suffix (skip units like 元/块/个)
-    for offset in range(1, 4):
-        if match_end + offset <= len(text):
-            ch = text[match_end + offset - 1]
-            if ch in _APPROX_SUFFIXES:
-                return True
-            # Stop if we hit a non-unit char that's not the suffix
-            if ch not in _UNIT_MAP and ch not in _NUM_MAP and ch not in set("元块个只台"):
-                break
-    return False
 
 
 def _is_idiom(text: str, match_start: int, match_end: int) -> bool:
