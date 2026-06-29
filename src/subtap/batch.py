@@ -146,8 +146,13 @@ def build_manifest(
     mode: str,
     items: list[dict[str, Any]],
     params: dict[str, Any] | None = None,
+    created_at: str | None = None,
 ) -> dict[str, Any]:
-    """Build final batch manifest."""
+    """Build final batch manifest.
+
+    Args:
+        created_at: 首次创建时间，后续调用应传入原始值以保留任务真正开始时间
+    """
     total = len(items)
     succeeded = sum(1 for i in items if i.get("status") == "succeeded")
     failed = sum(1 for i in items if i.get("status") == "failed")
@@ -162,7 +167,7 @@ def build_manifest(
         output_dir=str(output_dir),
         mode=mode,
         params=params or {},
-        created_at=datetime.now(timezone.utc).isoformat(),
+        created_at=created_at or datetime.now(timezone.utc).isoformat(),
         items=items,
     )
     return manifest.to_dict()
@@ -191,8 +196,13 @@ def write_manifest(path: Path, payload: dict[str, Any]) -> None:
 
 
 def load_manifest(path: Path) -> dict[str, Any]:
-    """Load manifest JSON."""
-    return json.loads(path.read_text(encoding="utf-8"))
+    """Load manifest JSON with version validation."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if data.get("version") != 2:
+        raise ValueError(
+            f"不支持的 manifest 版本：{data.get('version')}，需要 v2"
+        )
+    return data
 
 
 def get_pending_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -211,9 +221,3 @@ def get_failed_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
-def get_interrupted_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Get items that were interrupted."""
-    return [
-        item for item in items
-        if item.get("status") == "interrupted"
-    ]
