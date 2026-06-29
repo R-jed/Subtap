@@ -45,6 +45,8 @@ def test_plain_runner_no_align_skips_align_and_writes_draft(tmp_path):
                 return {"segment_count": 1}
             if stage == "clean":
                 return {"segment_count": 1}
+            if stage == "hotword":
+                return {"replaced": 0, "total": 1}
             if stage == "segment":
                 return {"sentence_count": 1}
             if stage == "align":
@@ -98,6 +100,8 @@ def test_plain_runner_default_runs_align(tmp_path, monkeypatch):
                 return {"segment_count": 1}
             if stage == "clean":
                 return {"segment_count": 1}
+            if stage == "hotword":
+                return {"replaced": 0, "total": 1}
             if stage == "segment":
                 return {"sentence_count": 1}
             if stage == "align":
