@@ -22,6 +22,20 @@ _PUNCT_MAP = str.maketrans(
 # All punctuation (both half-width and full-width) for stripping
 _ALL_PUNCT_RE = re.compile(r"[，。？！、；：“”‘’（）《》,.?!;:\"'()\[\]{}\-—…·]")
 
+# Trailing words that should not appear at line end
+_TRAILING_WORDS = {
+    # 连词（双字）
+    "但是", "所以", "因为", "而且", "不过", "可是", "然后", "或者", "于是", "因此", "虽然",
+    # 单字连词
+    "因", "则", "但", "所", "以", "才", "会", "又", "也",
+    # 语气词
+    "呃", "呢", "啊", "呀", "吧", "嘛", "哦", "嗯", "哈",
+    # 代词/主语
+    "我们", "它们", "它能", "它还", "他还", "她还",
+    # 指示词
+    "这个", "那个", "这些", "那些", "那这", "那还",
+}
+
 
 def _normalize_punct(text: str, language: str = "zh") -> str:
     """Normalize punctuation by language.
@@ -231,23 +245,9 @@ def _smart_split(
     )
 
     # --- Step 3: Greedy split using clause boundaries ---
-    # Trailing words that should not be at line end
-    _TRAILING_WORDS = {
-        # 连词（双字）
-        "但是", "所以", "因为", "而且", "不过", "可是", "然后", "或者", "于是", "因此", "虽然",
-        # 单字连词
-        "因", "则", "但", "所", "以", "才", "会", "又", "也",
-        # 语气词
-        "呃", "呢", "啊", "呀", "吧", "嘛", "哦", "嗯", "哈",
-        # 代词/主语
-        "我们", "它们", "它能", "它还", "他还", "她还",
-        # 指示词
-        "这个", "那个", "这些", "那些", "那这", "那还",
-    }
-
+    cur_text = ""
     lines: list[dict] = []
     cur_words: list[dict] = []
-    cur_text = ""
     _pending_prefix: list[dict] = []
 
     def _flush_line(words_to_flush: list[dict], text_to_flush: str, break_type: str = "other"):
