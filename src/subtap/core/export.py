@@ -278,67 +278,74 @@ def _smart_split(
                 cur_words = []
                 cur_text = ""
 
-        # Add word to current line
-        cur_words.append(w)
-        cur_text += word_text
+        # Check pause/conjunction boundaries BEFORE adding word
+        # so the pause word starts the new line (not ends the old one)
+        should_split_before = False
+        split_bt = "other"
 
-        # Check if we should split at this position
-        should_split = False
-
-        # Max chars check (exact match)
-        if len(cur_text) >= max_chars:
-            should_split = True
-
-        # Clause boundary check
         if i < len(boundaries) and boundaries[i] is not None:
             boundary_type, score = boundaries[i]
-            # Split at sentence_end boundaries (score=100) - always split
-            if boundary_type == "sentence_end":
-                should_split = True
-            # Split at comma boundaries (score=80) - always split at comma
-            elif boundary_type == "comma":
-                should_split = True
-            # Split at pause boundaries (score=60)
-            elif boundary_type == "pause" and len(cur_text) >= min_chars:
-                # Don't split if current line starts with a conjunction pair
-                # Use _CONJ_PAIRS to check first 2 chars, not single-char starters
+
+            # Pause boundary: split BEFORE this word if current line is long enough
+            if boundary_type == "pause" and cur_text and len(cur_text) >= min_chars:
                 line_starts_with_conj = any(
                     cur_text.startswith(conj) for conj in _CONJ_PAIRS
                 )
                 if not line_starts_with_conj:
-                    should_split = True
-            # Split at particle boundaries (score=50)
-            elif boundary_type == "particle" and len(cur_text) >= min_chars:
-                should_split = True
-            # For conjunction boundaries, also check pause condition
-            elif boundary_type == "conjunction" and len(cur_text) >= min_chars:
-                # Check if there's a pause before this conjunction
+                    should_split_before = True
+                    split_bt = "pause"
+
+            # Conjunction boundary: split BEFORE this word if there's a pause
+            elif boundary_type == "conjunction" and cur_text and len(cur_text) >= min_chars:
                 if i > 0:
                     gap = w["start_sec"] - words[i - 1]["end_sec"]
                     if gap >= pause_threshold:
-                        # Don't split if current line starts with a conjunction pair
                         line_starts_with_conj = any(
                             cur_text.startswith(conj) for conj in _CONJ_PAIRS
                         )
                         if not line_starts_with_conj:
-                            should_split = True
+                            should_split_before = True
+                            split_bt = "conjunction"
+
+            # Particle boundary: split BEFORE this word if line is long enough
+            elif boundary_type == "particle" and cur_text and len(cur_text) >= min_chars:
+                should_split_before = True
+                split_bt = "particle"
+
+        if should_split_before and cur_words:
+            _flush_line(cur_words, cur_text, split_bt)
+            cur_words = []
+            cur_text = ""
+
+        # Add word to current line
+        cur_words.append(w)
+        cur_text += word_text
+
+        # Check if we should split AFTER this position
+        should_split_after = False
+        after_bt = "other"
+
+        # Max chars check (exact match)
+        if len(cur_text) >= max_chars:
+            should_split_after = True
+
+        # Clause boundary check (sentence_end, comma)
+        if i < len(boundaries) and boundaries[i] is not None:
+            boundary_type, score = boundaries[i]
+            if boundary_type == "sentence_end":
+                should_split_after = True
+                after_bt = "sentence_end"
+            elif boundary_type == "comma":
+                should_split_after = True
+                after_bt = "comma"
 
         # Min chars check (only for non-hard boundaries)
-        # sentence_end and comma always split regardless of length
-        if should_split and len(cur_text) < min_chars:
-            if i < len(boundaries) and boundaries[i] is not None:
-                boundary_type, _ = boundaries[i]
-                if boundary_type not in ("comma", "sentence_end"):
-                    should_split = False
-            else:
-                should_split = False
+        if should_split_after and len(cur_text) < min_chars:
+            if after_bt not in ("comma", "sentence_end"):
+                should_split_after = False
 
-        if should_split:
-            # Pass boundary type so merge logic can distinguish hard/soft breaks
-            bt = "other"
-            if i < len(boundaries) and boundaries[i] is not None:
-                bt = boundaries[i][0]
-            _flush_line(cur_words, cur_text, bt)
+        if should_split_after:
+            _flush_line(cur_words, cur_text, after_bt)
             cur_words = []
             cur_text = ""
 
@@ -359,16 +366,18 @@ def _smart_split(
 
     # Merge very short fragments into adjacent lines
     # - ≤1 char: always merge (e.g. "的", "了")
-    # - ≤2 char: only merge into lines with no break or "other" break
-    #   (don't merge into pause/sentence_end/comma/particle breaks)
+    # - ≤2 char: merge unless previous line is a hard break
+    #   Hard breaks: sentence_end, comma (these mark real boundaries)
+    #   Soft breaks: pause, particle, conjunction, other (can merge across)
+    _HARD_BREAKS = {"sentence_end", "comma"}
     merged: list[dict] = []
     for line in lines:
         txt = line["text"]
         if merged and len(txt) <= 2:
             prev = merged[-1]
             prev_bt = prev.get("break_type")
-            # ≤1 char always merges; ≤2 char only merges into non-boundary lines
-            can_merge = len(txt) <= 1 or prev_bt in (None, "other")
+            # ≤1 char always merges; ≤2 char merges unless crossing hard break
+            can_merge = len(txt) <= 1 or prev_bt not in _HARD_BREAKS
             if can_merge and len(prev["text"]) + len(txt) <= max_chars:
                 prev["text"] += txt
                 prev["end_sec"] = line["end_sec"]
