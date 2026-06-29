@@ -80,6 +80,7 @@ def test_batch_transcribe_writes_manifest_and_keeps_failed_items(
             "--output-dir",
             str(output_dir),
             "--json",
+            "--no-confirm",
         ],
     )
 

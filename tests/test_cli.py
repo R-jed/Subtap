@@ -347,6 +347,7 @@ def test_batch_transcribe_runs_each_file(tmp_path, monkeypatch):
             "--output-dir",
             str(tmp_path / "out"),
             "--json",
+            "--no-confirm",
         ],
     )
 
