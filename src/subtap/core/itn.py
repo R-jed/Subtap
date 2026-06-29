@@ -68,10 +68,11 @@ def _is_idiom(text: str, match_start: int, match_end: int) -> bool:
 # Match number sequences:
 # 1. 2+ pure digits: 二零一五、一二三
 # 2. Digit(s) + unit(s): 十二、一万两千三百四十五、十万、三百
-# Negative lookahead: 概数后缀 (多/余/左右/上下/来)
+# No negative lookahead — numbers are always converted even before approximate suffixes
+# (一千多 → 1000多, 三百左右 → 300左右)
 _NUM_RE = re.compile(
     r"[零一二两三四五六七八九]{2,}"  # 2+ pure digits
-    r"|[零一二两三四五六七八九十百千万亿]*[十百千万亿][零一二两三四五六七八九十百千万亿]*(?![多余左右上下来])"
+    r"|[零一二两三四五六七八九十百千万亿]*[十百千万亿][零一二两三四五六七八九十百千万亿]*"
 )
 
 
@@ -202,12 +203,8 @@ def _convert_number_str(s: str) -> str:
     if all(ch in _NUM_MAP for ch in s):
         return "".join(str(_NUM_MAP[ch]) for ch in s)
 
-    # 万/亿 level: keep unit for large numbers, convert fully for small
+    # 万/亿 level: always keep unit for readability (一万两千 → 1.2万)
     if "万" in s or "亿" in s:
-        total = _parse_total(s)
-        # Small numbers with 万: convert fully (一万两千九百九十九 → 12999)
-        if "万" in s and "亿" not in s and total < 20000:
-            return str(total)
         return _convert_keep_unit(s)
 
     # 千/百/十 level: convert fully
@@ -255,9 +252,6 @@ def chinese_to_num(text: str) -> str:
     def _replace(match):
         matched = match.group()
         start, end = match.start(), match.end()
-        # Skip if in approximate context (一万多元, 三百左右)
-        if _is_approx_context(text, start, end):
-            return matched
         # Skip bare units followed by non-digit (万元, 亿元)
         if matched in ("万", "亿") and end < len(text) and text[end] not in _NUM_MAP:
             return matched
