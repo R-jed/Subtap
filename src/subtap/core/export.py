@@ -97,33 +97,53 @@ def _inject_punct(words: list[dict], text: str) -> list[dict]:
     The forced aligner strips punctuation from word-level output.
     This function restores punctuation as pseudo-words with interpolated timestamps,
     so _smart_split can use them for sentence/comma breaks.
+
+    Uses semantic matching: for each word, find its position in the original text
+    via str.find(), then insert any punctuation found in the gap before that word.
+    This handles cases where the word list is missing characters that exist in the
+    text (common with forced aligners), preventing punctuation from being placed
+    at wrong positions.
     """
     if not words or not text:
         return words
 
     result: list[dict] = []
-    word_idx = 0
-    text_idx = 0
+    text_pos = 0  # current position in original text
 
-    while text_idx < len(text) and word_idx < len(words):
-        ch = text[text_idx]
-        if ch in _PUNCT_CHARS:
-            # Interpolate timestamp between previous and next word
+    def _interpolate(prev_end: float, next_start: float) -> float:
+        return round((prev_end + next_start) / 2, 3)
+
+    for i, w in enumerate(words):
+        word = w["word"]
+        # Find where this word appears in the text, starting from current position
+        pos = text.find(word, text_pos)
+
+        if pos >= 0:
+            # Scan the gap [text_pos, pos) for punctuation
             prev_end = result[-1]["end_sec"] if result else words[0]["start_sec"]
-            next_start = words[word_idx]["start_sec"] if word_idx < len(words) else prev_end
-            t = (prev_end + next_start) / 2
-            result.append({"word": ch, "start_sec": round(t, 3), "end_sec": round(t, 3)})
-            text_idx += 1
-        elif word_idx < len(words):
-            # Consume the next word from the word list
-            result.append(words[word_idx])
-            text_idx += len(words[word_idx]["word"])
-            word_idx += 1
+            next_start = w["start_sec"]
+            for ch in text[text_pos:pos]:
+                if ch in _PUNCT_CHARS:
+                    t = _interpolate(prev_end, next_start)
+                    result.append({"word": ch, "start_sec": t, "end_sec": t})
+                    prev_end = t
+            # Add the word
+            result.append(w)
+            text_pos = pos + len(word)
         else:
-            text_idx += 1
+            # Word not found in text (shouldn't happen normally), add as-is
+            result.append(w)
 
-    # Append remaining words
-    result.extend(words[word_idx:])
+    # Scan trailing punctuation after the last matched word
+    if text_pos < len(text):
+        prev_end = result[-1]["end_sec"] if result else 0.0
+        next_start = words[-1]["end_sec"] if words else prev_end
+        for ch in text[text_pos:]:
+            if ch in _PUNCT_CHARS:
+                t = _interpolate(prev_end, next_start)
+                result.append({"word": ch, "start_sec": t, "end_sec": t})
+                prev_end = t
+
     return result
 
 
