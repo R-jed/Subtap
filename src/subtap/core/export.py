@@ -432,9 +432,8 @@ class SRTExporter(BaseExporter):
 
         # Cross-sentence fragment merge: merge ≤2 char fragments into adjacent lines
         # Only merge if:
-        #   1. Gap between lines is small (< 0.5s)
-        #   2. Previous line is longer than the fragment (avoids merging "A"+"B")
-        #   3. Combined length ≤ max_chars
+        #   1. Previous line is longer than the fragment (avoids merging "A"+"B")
+        #   2. Combined length ≤ max_chars
         merged_subs: list[dict] = []
         for sub in all_subs:
             txt = sub["text"].strip()
@@ -442,11 +441,9 @@ class SRTExporter(BaseExporter):
             if merged_subs and len(visible) <= 2:
                 prev = merged_subs[-1]
                 prev_visible = _strip_punct(prev["text"]).replace(" ", "")
-                gap = sub["start_sec"] - prev["end_sec"]
                 # Only merge into a longer line, not into another short line
                 if (len(prev_visible) > len(visible)
-                        and len(prev_visible) + len(visible) <= 25
-                        and gap < 0.5):
+                        and len(prev_visible) + len(visible) <= 25):
                     prev["text"] = prev["text"].rstrip() + txt
                     prev["end_sec"] = sub["end_sec"]
                     continue
