@@ -435,9 +435,13 @@ def _smart_split(
         blocked_by_punct = (
             len(txt) == 2 and merged and merged[-1].get("ends_punct", False)
         )
+        # Don't merge conjunction starters (但是/所以/因为...) —
+        # they belong with the NEXT clause, not the previous line.
+        blocked_by_conj = txt in _CONJ_STARTERS
         if (merged
                 and len(txt) <= 2
                 and not blocked_by_punct
+                and not blocked_by_conj
                 and len(merged[-1]["text"]) + len(txt) <= max_chars):
             merged[-1]["text"] += txt
             merged[-1]["end_sec"] = line["end_sec"]
