@@ -723,6 +723,9 @@ def run(
     subtitle_language: str = typer.Option(
         "zh", "--subtitle-language", help="字幕输出语种（zh/en/ja），影响标点规范"
     ),
+    max_chars: int = typer.Option(
+        25, "--max-chars", help="每行字幕最大字符数（10-60）", min=10, max=60
+    ),
     use_tui: bool = typer.Option(
         True, "--tui/--no-tui", help="启用 TUI 界面（默认开启）"
     ),
@@ -830,6 +833,7 @@ def run(
     config.output.timestamp = timestamp  # CLI overrides config
     config.output.subtitle_punctuation = punctuation
     config.output.subtitle_language = subtitle_language
+    config.output.max_chars = max_chars
 
     # Mode-based model override
     if mode == "quality":
