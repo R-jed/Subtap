@@ -831,6 +831,10 @@ def run(
     config.output.subtitle_punctuation = punctuation
     config.output.subtitle_language = subtitle_language
 
+    # Mode-based model override
+    if mode == "quality":
+        config.asr.model = "asr_1.7b"
+
     pipeline = Pipeline(config, work_dir=work_dir)
     pipeline.workspace.ensure_dirs()
 
