@@ -726,6 +726,9 @@ def run(
     max_chars: int = typer.Option(
         25, "--max-chars", help="每行字幕最大字符数（10-60）", min=10, max=60
     ),
+    min_chars: int = typer.Option(
+        10, "--min-chars", help="每行字幕最小字符数（4-30）", min=4, max=30
+    ),
     use_tui: bool = typer.Option(
         True, "--tui/--no-tui", help="启用 TUI 界面（默认开启）"
     ),
@@ -834,6 +837,7 @@ def run(
     config.output.subtitle_punctuation = punctuation
     config.output.subtitle_language = subtitle_language
     config.output.max_chars = max_chars
+    config.output.min_chars = min_chars
     config.output.subtitle_stem = input_path.stem
 
     # Mode-based model override

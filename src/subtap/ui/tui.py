@@ -153,6 +153,7 @@ class TUIRunner:
                     punctuation=pipeline.config.output.subtitle_punctuation,
                     language=pipeline.config.output.subtitle_language,
                     max_chars=pipeline.config.output.max_chars,
+                    min_chars=pipeline.config.output.min_chars,
                     formats=pipeline.config.output.subtitle_formats,
                     stem=pipeline.config.output.subtitle_stem,
                 )
@@ -294,6 +295,7 @@ class PlainRunner:
                     punctuation=pipeline.config.output.subtitle_punctuation,
                     language=pipeline.config.output.subtitle_language,
                     max_chars=pipeline.config.output.max_chars,
+                    min_chars=pipeline.config.output.min_chars,
                     formats=pipeline.config.output.subtitle_formats,
                     stem=pipeline.config.output.subtitle_stem,
                 )
