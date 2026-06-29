@@ -58,9 +58,9 @@ class TestHotwordEngine:
 
     def test_engine_local_mode(self, tmp_path):
         # Create glossary file
-        glossary_path = tmp_path / "hotwords_zh.tsv"
+        glossary_path = tmp_path / "hotwords_zh.txt"
         glossary_path.write_text(
-            "热词\t错词1\t错词2\t错词3\n达芬奇\t达文西\t大芬奇\t\n",
+            "达芬奇=达文西,大芬奇\n",
             encoding="utf-8",
         )
 
@@ -75,9 +75,9 @@ class TestHotwordEngine:
 
     def test_engine_hybrid_mode(self, tmp_path):
         # Create glossary file
-        glossary_path = tmp_path / "hotwords_zh.tsv"
+        glossary_path = tmp_path / "hotwords_zh.txt"
         glossary_path.write_text(
-            "热词\t错词1\t错词2\t错词3\n达芬奇\t达文西\t大芬奇\t\n",
+            "达芬奇=达文西,大芬奇\n",
             encoding="utf-8",
         )
 
