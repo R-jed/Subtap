@@ -55,10 +55,13 @@ def _normalize_punct(text: str, language: str = "zh") -> str:
 
 
 def _strip_punct(text: str) -> str:
-    """Remove all punctuation, preserving decimal points in numbers."""
+    """Remove all punctuation, preserving decimal points and ratios in numbers."""
+    # Protect decimal points (e.g., 0.6秒)
     protected = re.sub(r"(\d)\.(\d)", r"\1<DECIMAL>\2", text)
+    # Protect ratio colons (e.g., 21:9)
+    protected = re.sub(r"(\d):(\d)", r"\1<RATIO>\2", protected)
     stripped = _ALL_PUNCT_RE.sub("", protected)
-    return stripped.replace("<DECIMAL>", ".")
+    return stripped.replace("<DECIMAL>", ".").replace("<RATIO>", ":")
 def _fmt_srt_time(seconds: float) -> str:
     """Format seconds to SRT timestamp HH:MM:SS,mmm."""
     seconds = max(0.0, seconds)
