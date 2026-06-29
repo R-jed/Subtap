@@ -745,7 +745,9 @@ def run(
     from subtap.metrics.profiler import PipelineProfiler
 
     # 创建 Event Bus 和 Profiler
-    event_bus = EventBus()
+    event_log_path = output_dir / "run.log.jsonl"
+    event_log_path.unlink(missing_ok=True)
+    event_bus = EventBus(log_path=event_log_path)
     pipeline.event_bus = event_bus
     profiler = PipelineProfiler(event_bus)
     profiler.wrap_pipeline(pipeline)
@@ -1031,6 +1033,26 @@ def run(
                 indent=2,
             )
         )
+
+
+@app.command("observe")
+def observe(
+    log_path: Path = typer.Argument(..., help="pipeline 事件日志 run.log.jsonl"),
+) -> None:
+    """观察已运行或正在运行的任务事件日志。"""
+    if not log_path.exists():
+        typer.echo(f"✗ 日志文件不存在：{log_path}", err=True)
+        raise typer.Exit(1)
+
+    from subtap.ui.observer import summarize_event_log
+
+    state = summarize_event_log(log_path)
+    typer.echo("Subtap 观察者")
+    typer.echo(f"当前阶段：{state['stage']}")
+    typer.echo(f"进度：{state['progress']}%")
+    typer.echo(f"当前 Chunk：{state['chunk_id']}")
+    typer.echo(f"当前模型：{state['model']}")
+    typer.echo(f"ASR 草稿：{state['asr_drafts']}  已对齐：{state['aligned']}")
 
 
 # ── 单阶段命令 ─────────────────────────────────────────────

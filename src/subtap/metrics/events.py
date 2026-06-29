@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any, Callable
 
 
@@ -79,13 +81,14 @@ def make_pipeline_event(
 class EventBus:
     """Async event bus with queue buffer."""
 
-    def __init__(self, buffer_size: int = 100):
+    def __init__(self, buffer_size: int = 100, log_path: Path | None = None):
         self._subscribers: dict[EventType, list[Callable]] = {}
         self._queue: asyncio.Queue[PipelineEvent] = asyncio.Queue(maxsize=buffer_size)
         self._running = False
         self._stop_event = asyncio.Event()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._loop_thread_id: int | None = None
+        self._log_path = log_path
 
     def subscribe(self, event_type: EventType, callback: Callable) -> None:
         """Subscribe to an event type."""
@@ -99,10 +102,23 @@ class EventBus:
 
     def publish_nowait(self, event: PipelineEvent) -> None:
         """Publish from synchronous code without requiring a running loop."""
+        self._write_log(event)
         if self._is_running_on_other_thread():
             self._loop.call_soon_threadsafe(self._enqueue_nowait, event)
             return
         self._enqueue_nowait(event)
+
+    def _write_log(self, event: PipelineEvent) -> None:
+        if self._log_path is None:
+            return
+        self._log_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "event_type": event.event_type.value,
+            "timestamp": event.timestamp,
+            "data": event.data,
+        }
+        with self._log_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
     def _enqueue_nowait(self, event: PipelineEvent) -> None:
         """Enqueue without blocking the caller."""
