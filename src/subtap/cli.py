@@ -25,6 +25,85 @@ app = typer.Typer(
     rich_markup_mode="rich",
 )
 app.add_typer(glossary_app, name="glossary")
+
+# ── Glossary 热词命令 ──────────────────────────────────────────
+
+hotword_app = typer.Typer(help="热词管理")
+glossary_app.add_typer(hotword_app, name="hotword")
+
+
+@hotword_app.command("add")
+def hotword_add(
+    word: str = typer.Argument(..., help="热词（正确写法）"),
+    aliases: str = typer.Argument(..., help="错词（逗号分隔）"),
+    lang: str = typer.Option("zh", "--lang", "-l", help="语言"),
+) -> None:
+    """添加热词"""
+    from subtap.glossary.hotword import Hotword, HotwordGlossary, load_glossary, save_glossary
+
+    glossary_dir = Path.home() / ".subtap" / "glossary"
+    path = glossary_dir / f"hotwords_{lang}.tsv"
+    glossary = load_glossary(path, lang)
+    glossary.add(Hotword(word=word, aliases=[a.strip() for a in aliases.split(",")]))
+    save_glossary(glossary, path)
+    typer.echo(f"✓ 已添加热词：{word} = {aliases}")
+
+
+@hotword_app.command("list")
+def hotword_list(
+    lang: str = typer.Option("zh", "--lang", "-l", help="语言"),
+) -> None:
+    """查看热词"""
+    from subtap.glossary.hotword import load_glossary
+
+    glossary_dir = Path.home() / ".subtap" / "glossary"
+    path = glossary_dir / f"hotwords_{lang}.tsv"
+    glossary = load_glossary(path, lang)
+
+    if not glossary.hotwords:
+        typer.echo(f"暂无 {lang} 热词")
+        return
+
+    typer.echo(f"▸ {lang} 热词列表：")
+    for hw in glossary.hotwords:
+        aliases = ", ".join(hw.aliases)
+        typer.echo(f"  {hw.word} = {aliases}")
+
+
+@hotword_app.command("delete")
+def hotword_delete(
+    word: str = typer.Argument(..., help="热词"),
+    lang: str = typer.Option("zh", "--lang", "-l", help="语言"),
+) -> None:
+    """删除热词"""
+    from subtap.glossary.hotword import load_glossary, save_glossary
+
+    glossary_dir = Path.home() / ".subtap" / "glossary"
+    path = glossary_dir / f"hotwords_{lang}.tsv"
+    glossary = load_glossary(path, lang)
+    glossary.remove(word)
+    save_glossary(glossary, path)
+    typer.echo(f"✓ 已删除热词：{word}")
+
+
+@hotword_app.command("edit")
+def hotword_edit(
+    lang: str = typer.Option("zh", "--lang", "-l", help="语言"),
+) -> None:
+    """编辑热词（用 Numbers 打开）"""
+    import subprocess
+
+    glossary_dir = Path.home() / ".subtap" / "glossary"
+    path = glossary_dir / f"hotwords_{lang}.tsv"
+
+    if not path.exists():
+        from subtap.glossary.hotword import HotwordGlossary, save_glossary
+        save_glossary(HotwordGlossary(lang=lang), path)
+
+    subprocess.run(["open", "-a", "Numbers", str(path)])
+    typer.echo(f"✓ 已打开 {path}")
+
+
 script_app = typer.Typer(help="文稿匹配")
 app.add_typer(script_app, name="script")
 learn_app = typer.Typer(help="学习人工修正")
@@ -741,6 +820,12 @@ def run(
     ),
     timestamp: bool = typer.Option(
         True, "--timestamp/--no-timestamp", help="输出目录是否带时间戳"
+    ),
+    hotword_enabled: bool = typer.Option(
+        True, "--hotword/--no-hotword", help="启用热词替换"
+    ),
+    hotword_mode: str = typer.Option(
+        "local", "--hotword-mode", help="热词模式：local / api / hybrid"
     ),
     json_output: bool = typer.Option(False, "--json", help="输出机器可读 JSON"),
 ) -> None:
