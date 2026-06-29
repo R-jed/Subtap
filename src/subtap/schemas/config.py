@@ -115,6 +115,10 @@ class OutputConfig(BaseModel):
         default={"srt"},
         description="输出字幕格式（srt/vtt/json/tsv）",
     )
+    subtitle_stem: str = Field(
+        default="final",
+        description="输出文件名前缀（不含扩展名）",
+    )
 
 
 class MetricsConfig(BaseModel):

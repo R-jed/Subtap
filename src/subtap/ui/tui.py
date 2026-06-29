@@ -154,6 +154,7 @@ class TUIRunner:
                     language=pipeline.config.output.subtitle_language,
                     max_chars=pipeline.config.output.max_chars,
                     formats=pipeline.config.output.subtitle_formats,
+                    stem=pipeline.config.output.subtitle_stem,
                 )
             else:
                 from subtap.core.export import run_draft_export
@@ -294,6 +295,7 @@ class PlainRunner:
                     language=pipeline.config.output.subtitle_language,
                     max_chars=pipeline.config.output.max_chars,
                     formats=pipeline.config.output.subtitle_formats,
+                    stem=pipeline.config.output.subtitle_stem,
                 )
             else:
                 from subtap.core.export import run_draft_export

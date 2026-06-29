@@ -834,6 +834,7 @@ def run(
     config.output.subtitle_punctuation = punctuation
     config.output.subtitle_language = subtitle_language
     config.output.max_chars = max_chars
+    config.output.subtitle_stem = input_path.stem
 
     # Mode-based model override
     if mode == "quality":

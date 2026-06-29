@@ -690,10 +690,11 @@ def run_final_exports(
     language: str = "zh",
     max_chars: int = 25,
     formats: set[str] | None = None,
+    stem: str = "final",
 ) -> dict:
     """Export aligned subtitles to the stable final.* output contract."""
     if not aligned_jsonl.exists():
-        return run_export(aligned_jsonl, output_dir, fmt="srt", stem="final")
+        return run_export(aligned_jsonl, output_dir, fmt="srt", stem=stem)
 
     segments = load_aligned(aligned_jsonl)
     if not segments:
@@ -703,10 +704,10 @@ def run_final_exports(
         formats = {"srt", "vtt", "json", "tsv"}
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    srt_path = output_dir / "final.srt"
-    vtt_path = output_dir / "final.vtt"
-    json_path = output_dir / "final.json"
-    tsv_path = output_dir / "final.tsv"
+    srt_path = output_dir / f"{stem}.srt"
+    vtt_path = output_dir / f"{stem}.vtt"
+    json_path = output_dir / f"{stem}.json"
+    tsv_path = output_dir / f"{stem}.tsv"
 
     # Always write SRT
     srt_path.write_text(
