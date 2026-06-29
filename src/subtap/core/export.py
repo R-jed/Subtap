@@ -233,6 +233,9 @@ def _smart_split(
 ) -> list[dict]:
     """Split subtitle text using clause boundary detection.
 
+    CORE CONSTRAINT: 绝不丢字。输入的每个字都必须出现在输出中。
+    算法只做分割和移动，不做删除。
+
     Algorithm:
     1. Mark phrase boundaries via mark_phrase_boundaries()
     2. Identify clause boundaries via identify_clause_boundaries()

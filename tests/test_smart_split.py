@@ -573,3 +573,23 @@ def test_no_split_number_unit():
     # "二八毫米" 不应被拆分
     all_text = "".join(line["text"] for line in result)
     assert "二八毫米" in all_text, f"二八毫米被拆分: {result}"
+
+
+def test_no_text_loss():
+    """核心约束：断句绝不丢字。输入的每个字都必须出现在输出中。"""
+    cases = [
+        ([{"word": "做工", "start_sec": 0.0, "end_sec": 0.5},
+          {"word": "呃", "start_sec": 0.5, "end_sec": 1.0}], "做工呃"),
+        ([{"word": "塑料", "start_sec": 0.0, "end_sec": 0.5},
+          {"word": "的", "start_sec": 0.5, "end_sec": 0.6},
+          {"word": "虽然", "start_sec": 0.6, "end_sec": 1.0}], "塑料的虽然"),
+        ([{"word": "相机", "start_sec": 0.0, "end_sec": 0.5},
+          {"word": "但是", "start_sec": 0.5, "end_sec": 1.0}], "相机但是"),
+        ([{"word": "滤镜", "start_sec": 0.0, "end_sec": 0.5},
+          {"word": "它能", "start_sec": 0.5, "end_sec": 1.0},
+          {"word": "把", "start_sec": 1.0, "end_sec": 1.2}], "滤镜它能把"),
+    ]
+    for words, text in cases:
+        result = _smart_split(words, text, max_chars=25)
+        output_text = "".join(r["text"] for r in result)
+        assert output_text == text, f"丢字: 输入 {text!r}, 输出 {output_text!r}"
