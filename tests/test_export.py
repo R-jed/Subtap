@@ -362,3 +362,117 @@ def test_smart_split_filler_merge():
     result = _smart_split(words, "我觉得呃应该是", min_chars=2)
     for line in result:
         assert line["text"] != "呃"
+
+
+# ── _inject_punct tests ──
+
+
+def test_inject_punct_basic_single_char_words():
+    """单字词 + 逗号：逗号应在正确位置。"""
+    from subtap.core.export import _inject_punct
+    words = [
+        {"word": "照", "start_sec": 44.0, "end_sec": 44.2},
+        {"word": "片", "start_sec": 44.2, "end_sec": 44.5},
+        {"word": "但", "start_sec": 44.8, "end_sec": 45.0},
+        {"word": "是", "start_sec": 45.0, "end_sec": 45.1},
+        {"word": "卖", "start_sec": 45.2, "end_sec": 45.5},
+    ]
+    result = _inject_punct(words, "照片,但是卖")
+    seq = [w["word"] for w in result]
+    assert seq == ["照", "片", ",", "但", "是", "卖"]
+
+
+def test_inject_punct_multi_char_words():
+    """多字词 + 逗号。"""
+    from subtap.core.export import _inject_punct
+    words = [
+        {"word": "照片", "start_sec": 44.0, "end_sec": 44.5},
+        {"word": "但是", "start_sec": 44.8, "end_sec": 45.1},
+        {"word": "卖", "start_sec": 45.2, "end_sec": 45.5},
+    ]
+    result = _inject_punct(words, "照片,但是卖")
+    seq = [w["word"] for w in result]
+    assert seq == ["照片", ",", "但是", "卖"]
+
+
+def test_inject_punct_missing_word_in_list():
+    """词列表缺失字符时，标点应在正确位置（不被错位到后面的词之间）。
+
+    核心 bug 场景：words 缺少'片'，text='照片,但是卖'
+    逗号应在'照'之后，而不是'但'和'是'之间。
+    """
+    from subtap.core.export import _inject_punct
+    words = [
+        {"word": "照", "start_sec": 44.0, "end_sec": 44.2},
+        {"word": "但", "start_sec": 44.8, "end_sec": 45.0},
+        {"word": "是", "start_sec": 45.0, "end_sec": 45.1},
+        {"word": "卖", "start_sec": 45.2, "end_sec": 45.5},
+    ]
+    result = _inject_punct(words, "照片,但是卖")
+    seq = [w["word"] for w in result]
+    # 逗号应在'照'之后（因为'片'缺失，逗号在文本中紧跟'片'之后，
+    # 而'片'之前是'照'，所以逗号应在最后一个匹配词'照'之后）
+    assert seq == ["照", ",", "但", "是", "卖"]
+
+
+def test_inject_punct_sentence_end_punct():
+    """句末标点应正确插入。"""
+    from subtap.core.export import _inject_punct
+    words = [
+        {"word": "好", "start_sec": 1.0, "end_sec": 1.2},
+        {"word": "的", "start_sec": 1.3, "end_sec": 1.5},
+    ]
+    result = _inject_punct(words, "好的。")
+    seq = [w["word"] for w in result]
+    assert seq == ["好的", "。"] or seq == ["好", "的", "。"]
+
+
+def test_inject_punct_multiple_puncts():
+    """多个连续标点。"""
+    from subtap.core.export import _inject_punct
+    words = [
+        {"word": "哇", "start_sec": 1.0, "end_sec": 1.2},
+        {"word": "好", "start_sec": 1.5, "end_sec": 1.7},
+    ]
+    result = _inject_punct(words, "哇！好")
+    seq = [w["word"] for w in result]
+    assert seq == ["哇", "！", "好"]
+
+
+def test_inject_punct_punct_at_start():
+    """标点在文本开头。"""
+    from subtap.core.export import _inject_punct
+    words = [
+        {"word": "好", "start_sec": 1.0, "end_sec": 1.2},
+    ]
+    result = _inject_punct(words, "，好")
+    seq = [w["word"] for w in result]
+    assert seq == ["，", "好"]
+
+
+def test_inject_punct_no_punct():
+    """无标点时保持原样。"""
+    from subtap.core.export import _inject_punct
+    words = [
+        {"word": "你好", "start_sec": 1.0, "end_sec": 1.2},
+        {"word": "世界", "start_sec": 1.3, "end_sec": 1.5},
+    ]
+    result = _inject_punct(words, "你好世界")
+    seq = [w["word"] for w in result]
+    assert seq == ["你好", "世界"]
+
+
+def test_inject_punct_timestamp_interpolation():
+    """标点时间戳应在前后词之间插值。"""
+    from subtap.core.export import _inject_punct
+    words = [
+        {"word": "照", "start_sec": 44.0, "end_sec": 44.2},
+        {"word": "片", "start_sec": 44.2, "end_sec": 44.5},
+        {"word": "但", "start_sec": 44.8, "end_sec": 45.0},
+        {"word": "是", "start_sec": 45.0, "end_sec": 45.1},
+    ]
+    result = _inject_punct(words, "照片,但是")
+    comma = [w for w in result if w["word"] == ","][0]
+    # 逗号时间应在 44.5 和 44.8 之间
+    assert 44.5 <= comma["start_sec"] <= 44.8
+    assert comma["start_sec"] == comma["end_sec"]
