@@ -692,7 +692,7 @@ def run_final_exports(
         raise ValueError(f"No aligned segments found in {aligned_jsonl}")
 
     if formats is None:
-        formats = {"srt"}
+        formats = {"srt", "vtt", "json", "tsv"}
 
     output_dir.mkdir(parents=True, exist_ok=True)
     srt_path = output_dir / "final.srt"

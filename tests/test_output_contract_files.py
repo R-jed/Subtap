@@ -15,7 +15,7 @@ def test_output_contract_files(tmp_path):
     aligned_jsonl = tmp_path / "aligned.jsonl"
     aligned_jsonl.write_text(aligned.model_dump_json() + "\n", encoding="utf-8")
 
-    result = run_final_exports(aligned_jsonl, tmp_path / "latest")
+    result = run_final_exports(aligned_jsonl, tmp_path / "latest", formats={"srt", "vtt", "json", "tsv"})
 
     assert (tmp_path / "latest" / "final.srt").exists()
     assert (tmp_path / "latest" / "final.vtt").exists()
