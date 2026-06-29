@@ -553,6 +553,9 @@ class SRTExporter(BaseExporter):
                         continue
             merged_subs.append(sub)
 
+        # Fix cross-sentence word splits (e.g. "Feature" / "Beast")
+        merged_subs = _fix_split_words(merged_subs, self.max_chars)
+
         # Render SRT
         lines: list[str] = []
         for index, sub in enumerate(merged_subs, 1):
