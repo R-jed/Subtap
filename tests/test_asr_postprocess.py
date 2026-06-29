@@ -210,3 +210,56 @@ class TestFullPipeline:
     ):
         result = processor.process(sample_segments)
         assert all(isinstance(s, ASRSegment) for s in result)
+
+
+# ── Single Letter Merge ──────────────────────────────────────
+
+from subtap.core.asr import _merge_single_letters
+
+
+def test_merge_single_letters():
+    """连续单字母应合并为一个词。"""
+    words = [
+        {"word": "U", "start_sec": 0.0, "end_sec": 0.1},
+        {"word": "F", "start_sec": 0.1, "end_sec": 0.2},
+        {"word": "S", "start_sec": 0.2, "end_sec": 0.3},
+        {"word": "格", "start_sec": 0.5, "end_sec": 0.7},
+    ]
+    result = _merge_single_letters(words)
+    assert len(result) == 2
+    assert result[0]["word"] == "UFS"
+    assert result[0]["start_sec"] == 0.0
+    assert result[0]["end_sec"] == 0.3
+
+
+def test_merge_single_letters_mixed():
+    """单字母与正常词混合时只合并连续单字母。"""
+    words = [
+        {"word": "点", "start_sec": 0.0, "end_sec": 0.2},
+        {"word": "击", "start_sec": 0.2, "end_sec": 0.4},
+        {"word": "V", "start_sec": 0.5, "end_sec": 0.6},
+        {"word": "o", "start_sec": 0.6, "end_sec": 0.7},
+        {"word": "i", "start_sec": 0.7, "end_sec": 0.8},
+        {"word": "c", "start_sec": 0.8, "end_sec": 0.9},
+        {"word": "e", "start_sec": 0.9, "end_sec": 1.0},
+        {"word": "I", "start_sec": 1.0, "end_sec": 1.1},
+        {"word": "S", "start_sec": 1.1, "end_sec": 1.2},
+        {"word": "O", "start_sec": 1.2, "end_sec": 1.3},
+    ]
+    result = _merge_single_letters(words)
+    assert result[1]["word"] == "VoiceISO"
+
+
+def test_no_merge_for_normal_words():
+    """正常词不合并。"""
+    words = [
+        {"word": "你好", "start_sec": 0.0, "end_sec": 0.2},
+        {"word": "世界", "start_sec": 0.3, "end_sec": 0.5},
+    ]
+    result = _merge_single_letters(words)
+    assert len(result) == 2
+
+
+def test_empty_words():
+    """空列表返回空。"""
+    assert _merge_single_letters([]) == []
