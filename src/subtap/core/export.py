@@ -217,6 +217,7 @@ def _smart_split(
     # --- Phase 2: Post-processing ---
     lines = [l for l in lines if l["text"].strip()]
 
+    # 2a: Merge fillers and very short fragments (≤1 char) into previous
     merged: list[dict] = []
     for line in lines:
         line_text = line["text"]
@@ -229,6 +230,42 @@ def _smart_split(
             merged[-1]["end_sec"] = line["end_sec"]
             continue
         merged.append(line)
+
+    # 2b: Merge lines ending with stranded conjunctions/connectors into next line
+    _CONJUNCTIONS = set("但所是以才会又也则且而")
+    conj_merged: list[dict] = []
+    for line in merged:
+        text = line["text"]
+        if conj_merged and text:
+            prev = conj_merged[-1]
+            prev_chars = [c for c in prev["text"] if c.strip()]
+            if prev_chars and prev_chars[-1] in _CONJUNCTIONS and len(prev_chars) <= 4:
+                # Previous line is short and ends with a conjunction → merge
+                prev["text"] += text
+                prev["end_sec"] = line["end_sec"]
+                continue
+        conj_merged.append(line)
+    merged = conj_merged
+
+    # 2c: Merge remaining short lines (≤4 visible chars) into previous,
+    #     but only if combined length ≤ max_chars and previous wasn't a pause break
+    def _visible_len(s: str) -> int:
+        return len([c for c in s if c.strip()])
+
+    short_merged: list[dict] = []
+    for line in merged:
+        text = line["text"]
+        if short_merged and _visible_len(text) <= 4:
+            prev = short_merged[-1]
+            # Don't merge back into a line that was paused (valid short sentence)
+            if prev.get("break_type") == "pause":
+                pass  # keep separate
+            elif _visible_len(prev["text"]) + _visible_len(text) <= max_chars:
+                prev["text"] += text
+                prev["end_sec"] = line["end_sec"]
+                continue
+        short_merged.append(line)
+    merged = short_merged
 
     # Force-split lines exceeding max_chars at char boundaries
     final: list[dict] = []
