@@ -162,6 +162,11 @@ def run_asr(
                     )
                 )
 
+    # Merge consecutive single-letter words (e.g. "U","F","S" → "UFS")
+    for seg in segments:
+        if hasattr(seg, "words") and seg.words:
+            seg.words = _merge_single_letters(seg.words)
+
     # Write asr.jsonl
     write_asr_segments(segments, workspace.asr_jsonl)
     write_asr_drafts(
