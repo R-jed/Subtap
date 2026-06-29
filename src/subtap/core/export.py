@@ -133,7 +133,7 @@ def _smart_split(
     words: list[dict],
     text: str,
     max_chars: int = 25,
-    min_chars: int = 3,
+    min_chars: int = 10,
     pause_threshold: float = 0.2,
     start_sec: float = 0.0,
     end_sec: float = 0.0,
@@ -145,13 +145,14 @@ def _smart_split(
 
     Priority:
     1. Sentence-ending punctuation (。！？.!?) → new subtitle
-    2. Pause ≥ pause_threshold → new subtitle
+    2. Pause ≥ pause_threshold AND line ≥ min_chars → new subtitle
     3. Comma/enum + line long enough → new line
     4. Exceeds max_chars → new line (with number protection)
 
     Post-processing:
-    5. Merge filler words (呃/嗯/啊) into previous line
-    6. Merge fragment lines (≤2 chars) into previous line
+    5. Merge filler words and very short fragments
+    6. Merge stranded conjunctions/connectors
+    7. Merge tiny fragments into adjacent lines
     """
     if not words:
         return [{"text": text, "start_sec": start_sec, "end_sec": end_sec}]
@@ -160,6 +161,14 @@ def _smart_split(
     _COMMA = set("，、,;")
     _NUM_CHARS = set("零一二两三四五六七八九十百千万亿")
     _FILLERS = {"呃", "嗯", "啊", "哦", "哈", "呀", "嘛", "吧", "呢", "喂", "哎", "唉"}
+
+    # Two-char connector words that should never be split
+    _CONNECTORS_2 = {"但是", "所以", "因为", "而且", "不过", "可是", "然后", "或者",
+                     "如果", "虽然", "即使", "不仅", "而是", "于是", "因此", "所以",
+                     "那么", "这么", "怎么", "什么", "这个", "那个", "还是", "就是",
+                     "不是", "只有", "只要", "既然", "哪怕", "无论", "不管", "另外"}
+    # Single-char connectors that pair with the NEXT word
+    _CONNECTOR_START = set("但所是以才会又也则且而因如虽即无哪怕只另")
 
     # --- Phase 1: Single-pass word iteration ---
     lines: list[dict] = []
@@ -179,6 +188,14 @@ def _smart_split(
         current_words = []
         current_text = ""
 
+    def _next_starts_connector(idx: int) -> bool:
+        """Check if next word starts a connector pair (e.g., 但+是, 所+以)."""
+        if idx + 1 >= len(words):
+            return False
+        nxt = words[idx + 1]["word"]
+        pair = word_text + nxt
+        return pair in _CONNECTORS_2
+
     for i, w in enumerate(words):
         word_text = w["word"]
 
@@ -188,12 +205,12 @@ def _smart_split(
             continue
 
         # 2. Pause detection → new subtitle
-        # Skip if current line ends with 得/地 (complement/adverbial marker)
-        _DE_DI = set("得地")
+        #    Only split if line is long enough AND doesn't break connector words
         if i > 0 and current_text and len(current_text.strip()) >= min_chars:
             gap = w["start_sec"] - words[i - 1]["end_sec"]
             if gap >= pause_threshold:
-                if current_text.strip()[-1] not in _DE_DI:
+                # Don't split if current word starts a connector pair
+                if not _next_starts_connector(i):
                     _flush("pause")
 
         # 3. Max chars → new line (with number protection)
@@ -231,28 +248,55 @@ def _smart_split(
             continue
         merged.append(line)
 
-    # 2b: Merge lines ending with stranded conjunctions/connectors into next line
-    _CONJUNCTIONS = set("但所是以才会又也则且而")
-    conj_merged: list[dict] = []
-    for line in merged:
-        text = line["text"]
-        if conj_merged and text:
-            prev = conj_merged[-1]
-            prev_chars = [c for c in prev["text"] if c.strip()]
-            if prev_chars and prev_chars[-1] in _CONJUNCTIONS and len(prev_chars) <= 4:
-                # Previous line is short and ends with a conjunction → merge
-                prev["text"] += text
-                prev["end_sec"] = line["end_sec"]
-                continue
-        conj_merged.append(line)
-    merged = conj_merged
+    # 2b: Fix stranded connector chars at line boundaries
+    #     If a line ends with a connector char AND the next line starts with
+    #     its pair char (e.g., 所+以, 但+是), move the connector to the next line.
+    #     Also: if a line ends with a single connector char and is long (>4),
+    #     move it to the next line to avoid "照片但" / "是卖..." patterns.
+    _CONJUNCTIONS = set("但所是以才会又也则且而因如虽即无哪怕只另")
+    conj_fixed: list[dict] = []
+    for idx, line in enumerate(merged):
+        txt = line["text"]
+        if txt and txt[-1] in _CONJUNCTIONS:
+            # Check if next line starts with the pair char
+            if idx + 1 < len(merged):
+                nxt = merged[idx + 1]["text"]
+                pair = txt[-1] + nxt[0] if nxt else ""
+                if pair in _CONNECTORS_2:
+                    # Move last char to next line
+                    line = {**line, "text": txt[:-1]}
+                    merged[idx + 1] = {**merged[idx + 1], "text": txt[-1] + merged[idx + 1]["text"]}
+            # If line is long (>4 visible chars) and ends with connector, move it
+            if len([c for c in txt if c.strip()]) > 4 and txt[-1] in _CONJUNCTIONS:
+                if idx + 1 < len(merged):
+                    nxt_text = merged[idx + 1]["text"]
+                    moved_char = txt[-1]
+                    line = {**line, "text": txt[:-1]}
+                    merged[idx + 1] = {**merged[idx + 1], "text": moved_char + nxt_text}
+        conj_fixed.append(line)
+    merged = conj_fixed
 
-    # 2c: Merge remaining short lines (≤4 visible chars) into previous,
-    #     but only if combined length ≤ max_chars and not a hard break
+    # 2c: Merge tiny fragments (≤2 visible chars) into previous or next line
+    #     Always merge, even after hard breaks — 2-char fragments are never
+    #     meaningful subtitle lines.
     def _visible_len(s: str) -> int:
         return len([c for c in s if c.strip()])
 
     _HARD_BREAKS = {"pause", "sentence_end", "comma"}
+    tiny_merged: list[dict] = []
+    for line in merged:
+        text = line["text"]
+        if tiny_merged and _visible_len(text) <= 2:
+            prev = tiny_merged[-1]
+            if _visible_len(prev["text"]) + _visible_len(text) <= max_chars:
+                prev["text"] += text
+                prev["end_sec"] = line["end_sec"]
+                continue
+        tiny_merged.append(line)
+    merged = tiny_merged
+
+    # 2d: Merge remaining short lines (≤4 visible chars) into previous,
+    #     but only if combined length ≤ max_chars and not a hard break
     short_merged: list[dict] = []
     for line in merged:
         text = line["text"]

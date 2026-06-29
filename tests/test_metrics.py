@@ -1,8 +1,8 @@
-"""Tests for metrics system."""
+import asyncio
+import json
+import threading
 
 import pytest
-import asyncio
-import threading
 from subtap.metrics.events import EventType, PipelineEvent, EventBus
 
 
@@ -22,6 +22,26 @@ def test_pipeline_event_creation():
     assert event.event_type == EventType.STAGE_START
     assert event.data == {"stage": "asr"}
     assert event.timestamp == 1234567890.0
+
+
+def test_event_bus_writes_event_log_jsonl(tmp_path):
+    """EventBus 应把 pipeline 事件写入 JSONL，供独立观察者进程读取。"""
+    bus = EventBus(log_path=tmp_path / "run.log.jsonl")
+
+    bus.publish_nowait(
+        PipelineEvent(
+            event_type=EventType.PROGRESS,
+            data={"stage": "asr", "progress": 30},
+            timestamp=123.0,
+        )
+    )
+
+    rows = (tmp_path / "run.log.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(rows) == 1
+    payload = json.loads(rows[0])
+    assert payload["event_type"] == "progress"
+    assert payload["data"] == {"stage": "asr", "progress": 30}
+    assert payload["timestamp"] == 123.0
 
 
 def test_event_bus_subscribe():

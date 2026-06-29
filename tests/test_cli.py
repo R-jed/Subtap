@@ -412,6 +412,9 @@ def test_run_no_align_passes_align_disabled_to_runner(tmp_path, monkeypatch):
     assert metrics["alignment_enabled"] is False
     assert metrics["align_runtime_sec"] == 0
     assert metrics["external_audio_sent"] is False
+    run_log = output_dir / "run.log.jsonl"
+    assert run_log.exists()
+    assert '"event_type": "stage_start"' in run_log.read_text(encoding="utf-8")
 
 
 def test_run_enhance_off_passes_clean_off_to_pipeline(tmp_path, monkeypatch):
@@ -548,6 +551,48 @@ def test_run_mlx_tui_falls_back_to_plain_runner(tmp_path, monkeypatch):
 
     assert result.exit_code == 0
     assert "安全进度模式" in result.output
+
+
+def test_observe_command_prints_event_log_status(tmp_path):
+    """observe 命令只读 run.log.jsonl 输出当前状态。"""
+    log_path = tmp_path / "run.log.jsonl"
+    log_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "event_type": "asr_draft_ready",
+                        "timestamp": 1,
+                        "data": {
+                            "stage": "asr",
+                            "chunk_id": 0,
+                            "progress": 40,
+                            "model": "asr_0.6b-q8",
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                json.dumps(
+                    {
+                        "event_type": "alignment_ready",
+                        "timestamp": 2,
+                        "data": {"stage": "align", "subtitle_id": 1, "progress": 80},
+                    },
+                    ensure_ascii=False,
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["observe", str(log_path)])
+
+    assert result.exit_code == 0
+    clean = _strip_ansi(result.output)
+    assert "当前阶段：align" in clean
+    assert "进度：80%" in clean
+    assert "已对齐：1" in clean
 
 
 def test_run_mode_fast():
