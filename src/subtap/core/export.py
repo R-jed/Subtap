@@ -133,8 +133,8 @@ def _is_incomplete_word(tail: str, next_start: str) -> bool:
     """检查 tail 是否是不完整词，next_start 能否组成完整词"""
     if not next_start:
         return False
-    # 英文词组不拆分：仅当尾部 ≤2 字符时（避免 "Hello"+"World" 误合并）
-    if len(tail) <= 2 and (_has_latin(tail) or _has_latin(next_start[:1])):
+    # 英文词组不拆分：行尾有字母或行首有字母
+    if _has_latin(tail) or _has_latin(next_start[:1]):
         return True
     # 如果 tail + next_start 是常见断词模式
     if (tail, next_start[:1]) in _SPLIT_WORD_PATTERNS:
@@ -150,12 +150,20 @@ def _fix_split_words(lines: list[dict], max_chars: int) -> list[dict]:
     if len(lines) < 2:
         return lines
 
+    _MERGE_GAP = 0.3  # 秒：时间间隔小于此值才合并
+
     fixed = [{**lines[0]}]
     for i in range(1, len(lines)):
         prev = fixed[-1]
         curr = {**lines[i]}
         prev_text = prev["text"]
         curr_text = curr["text"]
+
+        # 只在时间间隔较小时合并（同一句话内的断词）
+        gap = curr.get("start_sec", 0) - prev.get("end_sec", 0)
+        if gap > _MERGE_GAP:
+            fixed.append(curr)
+            continue
 
         # 尝试从 prev 末尾取 1-2 个字，检查是否能和 curr 开头组成完整词
         for take in (2, 1):
