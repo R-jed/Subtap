@@ -42,7 +42,7 @@ def hotword_add(
     from subtap.glossary.hotword import Hotword, HotwordGlossary, load_glossary, save_glossary
 
     glossary_dir = Path.home() / ".subtap" / "glossary"
-    path = glossary_dir / f"hotwords_{lang}.tsv"
+    path = glossary_dir / f"hotwords_{lang}.txt"
     glossary = load_glossary(path, lang)
     glossary.add(Hotword(word=word, aliases=[a.strip() for a in aliases.split(",")]))
     save_glossary(glossary, path)
@@ -57,7 +57,7 @@ def hotword_list(
     from subtap.glossary.hotword import load_glossary
 
     glossary_dir = Path.home() / ".subtap" / "glossary"
-    path = glossary_dir / f"hotwords_{lang}.tsv"
+    path = glossary_dir / f"hotwords_{lang}.txt"
     glossary = load_glossary(path, lang)
 
     if not glossary.hotwords:
@@ -79,7 +79,7 @@ def hotword_delete(
     from subtap.glossary.hotword import load_glossary, save_glossary
 
     glossary_dir = Path.home() / ".subtap" / "glossary"
-    path = glossary_dir / f"hotwords_{lang}.tsv"
+    path = glossary_dir / f"hotwords_{lang}.txt"
     glossary = load_glossary(path, lang)
     glossary.remove(word)
     save_glossary(glossary, path)
@@ -94,7 +94,7 @@ def hotword_edit(
     import subprocess
 
     glossary_dir = Path.home() / ".subtap" / "glossary"
-    path = glossary_dir / f"hotwords_{lang}.tsv"
+    path = glossary_dir / f"hotwords_{lang}.txt"
 
     if not path.exists():
         from subtap.glossary.hotword import HotwordGlossary, save_glossary

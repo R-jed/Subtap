@@ -43,7 +43,10 @@ class HotwordEngine:
     def _load_glossary(self, lang: str) -> HotwordGlossary:
         """Load glossary for language."""
         if lang not in self._glossaries:
-            path = self.glossary_dir / f"hotwords_{lang}.tsv"
+            # Try .txt first, then .tsv
+            path = self.glossary_dir / f"hotwords_{lang}.txt"
+            if not path.exists():
+                path = self.glossary_dir / f"hotwords_{lang}.tsv"
             self._glossaries[lang] = load_glossary(path, lang)
         return self._glossaries[lang]
 

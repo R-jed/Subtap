@@ -1,4 +1,10 @@
-"""Hotword glossary management — TSV format, per-language."""
+"""Hotword glossary management — equals format, per-language.
+
+Format (one row per hotword):
+    热词=错词1,错词2,错词3
+    理光GR4=李光机亚四,理光GR IV,理光GRIV
+    GR=吉亚斯,吉奥,吉亚
+"""
 
 from __future__ import annotations
 
@@ -13,34 +19,6 @@ class Hotword:
 
     word: str
     aliases: list[str] = field(default_factory=list)
-    pronunciation: str = ""
-
-    def to_tsv_row(self) -> str:
-        """Convert to TSV row.
-
-        Format: word\talias1\talias2\talias3\tpronunciation
-        """
-        # Pad aliases to exactly 3 columns
-        padded_aliases = (self.aliases + [""] * 3)[:3]
-        parts = [self.word] + padded_aliases
-        if self.pronunciation:
-            parts.append(self.pronunciation)
-        return "\t".join(parts)
-
-    @classmethod
-    def from_tsv_row(cls, row: str) -> Hotword:
-        """Parse from TSV row.
-
-        Format: word\talias1\talias2\talias3\tpronunciation
-        """
-        parts = row.strip().split("\t")
-        if not parts:
-            return cls(word="")
-        word = parts[0]
-        # aliases are columns 1-3, pronunciation is column 4 (if exists)
-        aliases = [a.strip() for a in parts[1:4] if a.strip()]
-        pronunciation = parts[4].strip() if len(parts) > 4 else ""
-        return cls(word=word, aliases=aliases, pronunciation=pronunciation)
 
 
 class HotwordGlossary:
@@ -53,6 +31,15 @@ class HotwordGlossary:
     def add(self, hotword: Hotword) -> None:
         """Add a hotword."""
         self.hotwords.append(hotword)
+
+    def add_alias(self, word: str, alias: str) -> None:
+        """Add an alias to existing hotword or create new one."""
+        for hw in self.hotwords:
+            if hw.word == word:
+                if alias not in hw.aliases:
+                    hw.aliases.append(alias)
+                return
+        self.hotwords.append(Hotword(word=word, aliases=[alias]))
 
     def remove(self, word: str) -> None:
         """Remove a hotword by word."""
@@ -76,7 +63,10 @@ class HotwordGlossary:
 
 
 def load_glossary(path: Path, lang: str) -> HotwordGlossary:
-    """Load glossary from TSV file."""
+    """Load glossary from equals format file.
+
+    Format: 热词=错词1,错词2,错词3
+    """
     glossary = HotwordGlossary(lang=lang)
     if not path.exists():
         return glossary
@@ -86,20 +76,32 @@ def load_glossary(path: Path, lang: str) -> HotwordGlossary:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            if line.startswith("热词") or line.startswith("word"):
+            if "=" not in line:
                 continue
-            hw = Hotword.from_tsv_row(line)
-            if hw.word:
-                glossary.add(hw)
+            parts = line.split("=", 1)
+            if len(parts) == 2:
+                word = parts[0].strip()
+                aliases_str = parts[1].strip()
+                if word and aliases_str:
+                    aliases = [a.strip() for a in aliases_str.split(",") if a.strip()]
+                    for alias in aliases:
+                        glossary.add_alias(word, alias)
     except Exception:
         pass
     return glossary
 
 
 def save_glossary(glossary: HotwordGlossary, path: Path) -> None:
-    """Save glossary to TSV file."""
+    """Save glossary to equals format file.
+
+    Format: 热词=错词1,错词2,错词3
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    lines = ["热词\t错词1\t错词2\t错词3"]
+
+    lines = []
     for hw in glossary.hotwords:
-        lines.append(hw.to_tsv_row())
+        if hw.aliases:
+            aliases_str = ",".join(hw.aliases)
+            lines.append(f"{hw.word}={aliases_str}")
+
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
