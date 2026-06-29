@@ -157,6 +157,14 @@ def _fix_split_words(lines: list[dict], max_chars: int) -> list[dict]:
     return [ln for ln in fixed if ln["text"].strip()]
 
 
+def _filter_words_to_text(words: list[dict], text: str) -> list[dict]:
+    """Filter aligned words to only include those present in text."""
+    filtered = []
+    for w in words:
+        if w["word"] in text:
+            filtered.append(w)
+    return filtered if filtered else words
+
 def _inject_punct(words: list[dict], text: str) -> list[dict]:
     """Inject punctuation from original text into word list.
 
@@ -484,7 +492,7 @@ class SRTExporter(BaseExporter):
         # Collect all sub_lines from all sentences
         all_subs: list[dict] = []
         for seg in sorted_segs:
-            words_with_punct = _inject_punct(seg.words, seg.text)
+            words_with_punct = _inject_punct(_filter_words_to_text(seg.words, seg.text), seg.text)
             sub_lines = _smart_split(words_with_punct, seg.text, max_chars=25, start_sec=seg.start_sec, end_sec=seg.end_sec)
             for sub in sub_lines:
                 if sub["text"].strip():
@@ -684,7 +692,7 @@ def run_final_exports(
     vtt_lines = ["WEBVTT", ""]
     vtt_index = 0
     for seg in sorted(segments, key=lambda s: s.start_sec):
-        words_with_punct = _inject_punct(seg.words, seg.text)
+        words_with_punct = _inject_punct(_filter_words_to_text(seg.words, seg.text), seg.text)
         sub_lines = _smart_split(words_with_punct, seg.text, max_chars=25, start_sec=seg.start_sec, end_sec=seg.end_sec)
         for sub in sub_lines:
             if not sub["text"].strip():
