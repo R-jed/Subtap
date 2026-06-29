@@ -424,7 +424,7 @@ def test_inject_punct_sentence_end_punct():
     ]
     result = _inject_punct(words, "好的。")
     seq = [w["word"] for w in result]
-    assert seq == ["好的", "。"] or seq == ["好", "的", "。"]
+    assert seq == ["好", "的", "。"]
 
 
 def test_inject_punct_multiple_puncts():
