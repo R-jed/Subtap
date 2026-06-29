@@ -113,7 +113,7 @@ def _inject_punct(words: list[dict], text: str) -> list[dict]:
     def _interpolate(prev_end: float, next_start: float) -> float:
         return round((prev_end + next_start) / 2, 3)
 
-    for i, w in enumerate(words):
+    for w in words:
         word = w["word"]
         # Find where this word appears in the text, starting from current position
         pos = text.find(word, text_pos)
