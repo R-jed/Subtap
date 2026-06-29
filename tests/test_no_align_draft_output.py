@@ -85,7 +85,7 @@ def test_plain_runner_default_runs_align(tmp_path, monkeypatch):
             aligned_jsonl=work_dir / "aligned.jsonl",
         )
         config = SimpleNamespace(
-            output=SimpleNamespace(subtitle_punctuation=False, subtitle_language="zh")
+            output=SimpleNamespace(subtitle_punctuation=False, subtitle_language="zh", max_chars=25)
         )
 
         def run_stage(self, stage, **kwargs):

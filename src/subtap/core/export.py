@@ -549,6 +549,9 @@ class SRTExporter(BaseExporter):
 class ASSExporter(BaseExporter):
     """ASS subtitle exporter (minimal viable)."""
 
+    def __init__(self, **kwargs):
+        pass
+
     HEADER = (
         "[Script Info]\n"
         "Title: Subtap Export\n"
@@ -585,6 +588,9 @@ class ASSExporter(BaseExporter):
 
 class TXTExporter(BaseExporter):
     """Plain text exporter with timestamps."""
+
+    def __init__(self, **kwargs):
+        pass
 
     @property
     def extension(self) -> str:
