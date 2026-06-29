@@ -224,6 +224,57 @@ def test_merge_short_fragments():
     assert "的" in result[0]["text"]
 
 
+# ── Task 2: 行尾拖字修复 ──
+
+
+def test_no_trailing_conjunction():
+    """行尾不应出现连词"""
+    words = [
+        {"word": "相机", "start_sec": 0.0, "end_sec": 0.5},
+        {"word": "但是", "start_sec": 0.5, "end_sec": 1.0},
+        {"word": "轻便", "start_sec": 1.0, "end_sec": 1.5},
+    ]
+    result = _smart_split(words, "相机但是轻便", max_chars=10)
+    for line in result:
+        assert not line["text"].endswith("但是"), f"行尾出现连词: {line['text']}"
+
+
+def test_no_trailing_pronoun():
+    """行尾不应出现代词（我们/它能/它还）"""
+    words = [
+        {"word": "愿意买呢", "start_sec": 0.0, "end_sec": 1.0},
+        {"word": "我们", "start_sec": 1.0, "end_sec": 1.5},
+        {"word": "这次", "start_sec": 1.5, "end_sec": 2.0},
+    ]
+    result = _smart_split(words, "愿意买呢我们这次", max_chars=10)
+    for line in result:
+        assert not line["text"].endswith("我们"), f"行尾出现代词: {line['text']}"
+
+
+def test_no_trailing_particle():
+    """行尾不应出现语气词（呃/呢/啊/呀）"""
+    words = [
+        {"word": "做工", "start_sec": 0.0, "end_sec": 0.5},
+        {"word": "呃", "start_sec": 0.5, "end_sec": 0.8},
+        {"word": "我觉得", "start_sec": 0.8, "end_sec": 1.5},
+    ]
+    result = _smart_split(words, "做工呃我觉得", max_chars=10)
+    for line in result:
+        assert not line["text"].endswith("呃"), f"行尾出现语气词: {line['text']}"
+
+
+def test_no_trailing_demonstrative():
+    """行尾不应出现指示词（这个/那个/那这）"""
+    words = [
+        {"word": "单品", "start_sec": 0.0, "end_sec": 0.5},
+        {"word": "这个", "start_sec": 0.5, "end_sec": 1.0},
+        {"word": "iPhonePocket", "start_sec": 1.0, "end_sec": 2.0},
+    ]
+    result = _smart_split(words, "单品这个iPhonePocket", max_chars=15)
+    for line in result:
+        assert not line["text"].endswith("这个"), f"行尾出现指示词: {line['text']}"
+
+
 def test_conjunction_not_at_line_end():
     """验收标准 (Task 3c-1): '但是' 不应留在行尾，应移到下一行开头。
 

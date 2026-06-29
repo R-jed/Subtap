@@ -182,10 +182,18 @@ def _smart_split(
     )
 
     # --- Step 3: Greedy split using clause boundaries ---
-    # Conjunction endings that should not be at line end
-    _CONJ_ENDINGS = {
-        "但是", "所以", "因为", "而且", "不过", "可是", "然后", "或者", "于是", "因此",
+    # Trailing words that should not be at line end
+    _TRAILING_WORDS = {
+        # 连词（双字）
+        "但是", "所以", "因为", "而且", "不过", "可是", "然后", "或者", "于是", "因此", "虽然",
+        # 单字连词
         "因", "则", "但", "所", "以", "才", "会", "又", "也",
+        # 语气词
+        "呃", "呢", "啊", "呀", "吧", "嘛", "哦", "嗯", "哈",
+        # 代词/主语
+        "我们", "它们", "它能", "它还", "他还", "她还",
+        # 指示词
+        "这个", "那个", "这些", "那些", "那这", "那还",
     }
 
     lines: list[dict] = []
@@ -194,12 +202,12 @@ def _smart_split(
     _pending_prefix: list[dict] = []
 
     def _flush_line(words_to_flush: list[dict], text_to_flush: str, break_type: str = "other"):
-        """Flush a line, stripping trailing conjunctions."""
+        """Flush a line, stripping trailing words."""
         if not words_to_flush:
             return
-        # Strip trailing conjunction (e.g. "但是") from line end
+        # Strip trailing words (e.g. "但是", "这个") from line end
         for clen in (2, 1):
-            if len(text_to_flush) > clen and text_to_flush[-clen:] in _CONJ_ENDINGS:
+            if len(text_to_flush) > clen and text_to_flush[-clen:] in _TRAILING_WORDS:
                 # Move conjunction to pending prefix
                 stripped_words = words_to_flush[-clen:]
                 remaining_words = words_to_flush[:-clen]
