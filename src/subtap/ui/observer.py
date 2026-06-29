@@ -6,6 +6,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+from textual.app import App, ComposeResult
+from textual.widgets import Footer, Header, Static
+
 
 def iter_event_log(log_path: Path) -> list[dict[str, Any]]:
     """Read run.log.jsonl rows that were fully written."""
@@ -48,3 +51,42 @@ def summarize_event_log(log_path: Path) -> dict[str, Any]:
         if event_type == "alignment_ready":
             state["aligned"] += 1
     return state
+
+
+class ObserverDashboard(App):
+    """Textual 观察者：只读 run.log.jsonl，不执行 pipeline。"""
+
+    def __init__(self, log_path: Path, process, refresh_interval: float = 1.0):
+        super().__init__()
+        self.log_path = log_path
+        self.process = process
+        self.refresh_interval = refresh_interval
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield Static(self.build_status_text(), id="status")
+        yield Footer()
+
+    async def on_mount(self) -> None:
+        self.set_interval(self.refresh_interval, self.refresh_from_log)
+        self.refresh_from_log()
+
+    def build_status_text(self) -> str:
+        state = summarize_event_log(self.log_path)
+        return (
+            "Subtap 观察者进程\n"
+            f"当前阶段：{state['stage']}\n"
+            f"进度：{state['progress']}%\n"
+            f"当前 Chunk：{state['chunk_id']}\n"
+            f"当前模型：{state['model']}\n"
+            f"ASR 草稿：{state['asr_drafts']}  已对齐：{state['aligned']}\n"
+            "隐私：观察者只读取本地日志，不接触音频和模型推理"
+        )
+
+    def refresh_from_log(self) -> None:
+        try:
+            self.query_one("#status", Static).update(self.build_status_text())
+        except Exception:
+            return
+        if self.process.poll() is not None:
+            self.exit()

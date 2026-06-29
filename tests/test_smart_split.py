@@ -19,21 +19,26 @@ def test_split_by_sentence_ending_punctuation():
 
 
 def test_split_by_pause():
-    """停顿 > threshold 时断句。"""
+    """停顿 > threshold 且行长度 ≥ min_chars 时断句。"""
     words = [
         {"word": "这", "start_sec": 0.0, "end_sec": 0.2},
         {"word": "台", "start_sec": 0.2, "end_sec": 0.4},
         {"word": "相", "start_sec": 0.4, "end_sec": 0.6},
         {"word": "机", "start_sec": 0.6, "end_sec": 0.8},
-        # 0.8s → 1.3s 间隔 0.5s > 0.3s 阈值
-        {"word": "从", "start_sec": 1.3, "end_sec": 1.5},
-        {"word": "2015", "start_sec": 1.5, "end_sec": 2.0},
-        {"word": "年", "start_sec": 2.0, "end_sec": 2.2},
+        {"word": "从", "start_sec": 0.8, "end_sec": 1.0},
+        {"word": "2015", "start_sec": 1.0, "end_sec": 1.5},
+        {"word": "年", "start_sec": 1.5, "end_sec": 1.7},
+        {"word": "发", "start_sec": 1.7, "end_sec": 1.9},
+        {"word": "布", "start_sec": 1.9, "end_sec": 2.1},
+        # 2.1s → 2.6s 间隔 0.5s > 0.3s 阈值
+        {"word": "到", "start_sec": 2.6, "end_sec": 2.8},
+        {"word": "今", "start_sec": 2.8, "end_sec": 3.0},
+        {"word": "天", "start_sec": 3.0, "end_sec": 3.2},
     ]
-    result = _smart_split(words, "这台相机从2015年", max_chars=20, pause_threshold=0.3)
+    result = _smart_split(words, "这台相机从2015年发布到今天", max_chars=20, pause_threshold=0.3)
     assert len(result) == 2
-    assert "相机" in result[0]["text"]
-    assert "从" in result[1]["text"]
+    assert "发布" in result[0]["text"]
+    assert "今天" in result[1]["text"]
 
 
 def test_split_by_max_chars():
