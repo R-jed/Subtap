@@ -90,7 +90,7 @@ def load_asr_draft(asr_jsonl: Path) -> list[ASRSegment]:
     return segments
 
 
-_PUNCT_CHARS = set("，。？！、；：""''（）《》,.?!;:\"'()[]{}\-—…·")
+_PUNCT_CHARS = set("，。？！、；：""''（）《》,.?!;:\"'()[]{}\\-—…·")
 
 
 def _inject_punct(words: list[dict], text: str) -> list[dict]:
