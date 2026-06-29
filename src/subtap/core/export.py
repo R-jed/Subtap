@@ -423,9 +423,14 @@ def _smart_split(
         cur_text = "".join(x["word"] for x in cur_words)
         _pending_prefix = []
 
-    # Flush remaining words
+    # Flush remaining words (bypass trailing-word strip to avoid data loss)
     if cur_words:
-        _flush_line(cur_words, cur_text)
+        lines.append({
+            "text": cur_text,
+            "start_sec": cur_words[0]["start_sec"],
+            "end_sec": cur_words[-1]["end_sec"],
+            "break_type": "end",
+        })
 
     # Filter empty lines
     lines = [ln for ln in lines if ln["text"].strip()]
