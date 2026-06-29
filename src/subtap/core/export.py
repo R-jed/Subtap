@@ -429,11 +429,18 @@ def _smart_split(
     # at punctuation (ends_punct=True) — that means the split was intentional
     # (sentence/comma break), and the short line (e.g. "世界", "一直") is a
     # legitimate new subtitle. 1-char fragments always merge (original behavior).
+    _CONJ_FRAGMENTS = {
+        "所以", "并且", "现在", "同时", "但是", "因为", "而且", "不过",
+        "可是", "然后", "或者", "于是", "因此", "如果", "虽然",
+    }
     merged: list[dict] = []
     for line in lines:
         txt = line["text"]
         blocked_by_punct = (
-            len(txt) == 2 and merged and merged[-1].get("ends_punct", False)
+            len(txt) == 2
+            and merged
+            and merged[-1].get("ends_punct", False)
+            and txt not in _CONJ_FRAGMENTS
         )
         # Don't merge conjunction starters (但是/所以/因为...) —
         # they belong with the NEXT clause, not the previous line.
