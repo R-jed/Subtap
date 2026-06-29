@@ -163,7 +163,12 @@ class Pipeline:
         from subtap.core.export import run_export
 
         out = Path(output_dir) if output_dir else self.workspace.root / "output"
-        result = run_export(self.workspace.aligned_jsonl, out, fmt=fmt, stem=stem)
+        result = run_export(
+            self.workspace.aligned_jsonl, out, fmt=fmt, stem=stem,
+            max_chars=self.config.output.max_chars,
+            punctuation=self.config.output.subtitle_punctuation,
+            language=self.config.output.subtitle_language,
+        )
         return {
             "output_path": result["output_path"],
             "format": result["format"],

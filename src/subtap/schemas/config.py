@@ -105,6 +105,12 @@ class OutputConfig(BaseModel):
         default="zh",
         description="字幕输出语种（zh/en/ja），影响标点全角/半角规范",
     )
+    max_chars: int = Field(
+        default=25,
+        description="每行字幕最大字符数（中文字符计1）",
+        ge=10,
+        le=60,
+    )
 
 
 class MetricsConfig(BaseModel):

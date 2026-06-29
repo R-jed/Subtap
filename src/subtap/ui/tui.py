@@ -152,6 +152,7 @@ class TUIRunner:
                     output_dir,
                     punctuation=pipeline.config.output.subtitle_punctuation,
                     language=pipeline.config.output.subtitle_language,
+                    max_chars=pipeline.config.output.max_chars,
                 )
             else:
                 from subtap.core.export import run_draft_export
@@ -290,6 +291,7 @@ class PlainRunner:
                     output_dir,
                     punctuation=pipeline.config.output.subtitle_punctuation,
                     language=pipeline.config.output.subtitle_language,
+                    max_chars=pipeline.config.output.max_chars,
                 )
             else:
                 from subtap.core.export import run_draft_export

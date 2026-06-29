@@ -480,9 +480,10 @@ class BaseExporter(ABC):
 class SRTExporter(BaseExporter):
     """SRT subtitle exporter."""
 
-    def __init__(self, punctuation: bool = False, language: str = "zh"):
+    def __init__(self, punctuation: bool = False, language: str = "zh", max_chars: int = 25):
         self.punctuation = punctuation
         self.language = language
+        self.max_chars = max_chars
 
     @property
     def extension(self) -> str:
@@ -494,7 +495,7 @@ class SRTExporter(BaseExporter):
         all_subs: list[dict] = []
         for seg in sorted_segs:
             words_with_punct = _inject_punct(_filter_words_to_text(seg.words, seg.text), seg.text)
-            sub_lines = _smart_split(words_with_punct, seg.text, max_chars=25, start_sec=seg.start_sec, end_sec=seg.end_sec)
+            sub_lines = _smart_split(words_with_punct, seg.text, max_chars=max_chars, start_sec=seg.start_sec, end_sec=seg.end_sec)
             for sub in sub_lines:
                 if sub["text"].strip():
                     all_subs.append(sub)
@@ -612,6 +613,9 @@ def run_export(
     output_dir: Path,
     fmt: str = "srt",
     stem: str = "output",
+    max_chars: int = 25,
+    punctuation: bool = False,
+    language: str = "zh",
 ) -> dict:
     """Export aligned.jsonl to subtitle file.
 
@@ -634,7 +638,7 @@ def run_export(
     if not segments:
         raise ValueError(f"No aligned segments found in {aligned_jsonl}")
 
-    exporter = exporter_cls()
+    exporter = exporter_cls(punctuation=punctuation, language=language, max_chars=max_chars)
     output_path = output_dir / f"{stem}.{exporter.extension}"
     exporter.export(segments, output_path)
 
@@ -670,6 +674,7 @@ def run_final_exports(
     output_dir: Path,
     punctuation: bool = False,
     language: str = "zh",
+    max_chars: int = 25,
 ) -> dict:
     """Export aligned subtitles to the stable final.* output contract."""
     if not aligned_jsonl.exists():
@@ -686,7 +691,7 @@ def run_final_exports(
     tsv_path = output_dir / "final.tsv"
 
     srt_path.write_text(
-        SRTExporter(punctuation=punctuation, language=language).render(segments),
+        SRTExporter(punctuation=punctuation, language=language, max_chars=max_chars).render(segments),
         encoding="utf-8",
     )
 
@@ -694,7 +699,7 @@ def run_final_exports(
     vtt_index = 0
     for seg in sorted(segments, key=lambda s: s.start_sec):
         words_with_punct = _inject_punct(_filter_words_to_text(seg.words, seg.text), seg.text)
-        sub_lines = _smart_split(words_with_punct, seg.text, max_chars=25, start_sec=seg.start_sec, end_sec=seg.end_sec)
+        sub_lines = _smart_split(words_with_punct, seg.text, max_chars=max_chars, start_sec=seg.start_sec, end_sec=seg.end_sec)
         for sub in sub_lines:
             if not sub["text"].strip():
                 continue
