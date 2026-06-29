@@ -166,6 +166,7 @@ class Pipeline:
         result = run_export(
             self.workspace.aligned_jsonl, out, fmt=fmt, stem=stem,
             max_chars=self.config.output.max_chars,
+            min_chars=self.config.output.min_chars,
             punctuation=self.config.output.subtitle_punctuation,
             language=self.config.output.subtitle_language,
         )
