@@ -19,8 +19,9 @@ def test_decimal():
 
 
 def test_large_number():
-    """大数字。"""
-    assert chinese_to_num("一万两千三百四十五") == "1.2345万"
+    """大数字：万级+千级尾数≥1000时转全数字。"""
+    assert chinese_to_num("一万两千三百四十五") == "12345"
+    assert chinese_to_num("一万两千九百九十九") == "12999"
 
 
 def test_mixed_text():
@@ -52,6 +53,8 @@ def test_large_number_combo():
 def test_large_number_wan():
     """万级：十二万。"""
     assert chinese_to_num("十二万") == "12万"
+    # 万级+千级尾数为整千时保留万单位
+    assert chinese_to_num("一万五千") == "1.5万"
 
 
 def test_single_digit_not_converted():
