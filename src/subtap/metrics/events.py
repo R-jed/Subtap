@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -83,6 +84,8 @@ class EventBus:
         self._queue: asyncio.Queue[PipelineEvent] = asyncio.Queue(maxsize=buffer_size)
         self._running = False
         self._stop_event = asyncio.Event()
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._loop_thread_id: int | None = None
 
     def subscribe(self, event_type: EventType, callback: Callable) -> None:
         """Subscribe to an event type."""
@@ -96,23 +99,44 @@ class EventBus:
 
     def publish_nowait(self, event: PipelineEvent) -> None:
         """Publish from synchronous code without requiring a running loop."""
+        if self._is_running_on_other_thread():
+            self._loop.call_soon_threadsafe(self._enqueue_nowait, event)
+            return
+        self._enqueue_nowait(event)
+
+    def _enqueue_nowait(self, event: PipelineEvent) -> None:
+        """Enqueue without blocking the caller."""
         try:
             self._queue.put_nowait(event)
         except asyncio.QueueFull:
             pass  # 丢弃新事件以防止阻塞
 
+    def _is_running_on_other_thread(self) -> bool:
+        return (
+            self._loop is not None
+            and self._loop.is_running()
+            and self._loop_thread_id is not None
+            and threading.get_ident() != self._loop_thread_id
+        )
+
     async def start(self) -> None:
         """Start event processing loop."""
         self._running = True
+        self._loop = asyncio.get_running_loop()
+        self._loop_thread_id = threading.get_ident()
         self._stop_event.clear()
-        while self._running:
-            try:
-                event = await asyncio.wait_for(self._queue.get(), timeout=0.1)
-                await self._dispatch(event)
-            except asyncio.TimeoutError:
-                continue
-            except asyncio.CancelledError:
-                break
+        try:
+            while self._running:
+                try:
+                    event = await asyncio.wait_for(self._queue.get(), timeout=0.1)
+                    await self._dispatch(event)
+                except asyncio.TimeoutError:
+                    continue
+                except asyncio.CancelledError:
+                    break
+        finally:
+            self._loop = None
+            self._loop_thread_id = None
 
     async def _dispatch(self, event: PipelineEvent) -> None:
         """Dispatch event to subscribers."""

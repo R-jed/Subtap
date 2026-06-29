@@ -2,6 +2,7 @@
 
 import pytest
 import asyncio
+import threading
 from subtap.metrics.events import EventType, PipelineEvent, EventBus
 
 
@@ -83,6 +84,47 @@ async def test_event_bus_publish():
 
     assert len(received) == 1
     assert received[0].data == {"stage": "asr"}
+
+
+@pytest.mark.asyncio
+async def test_event_bus_publish_from_worker_thread_uses_loop_threadsafe(monkeypatch):
+    """TUI 主循环消费事件时，后台推理线程投递事件必须走线程安全入口。"""
+    bus = EventBus()
+    received = []
+    scheduled = []
+    loop = asyncio.get_running_loop()
+    original_call_soon_threadsafe = loop.call_soon_threadsafe
+
+    def handler(event):
+        received.append(event)
+
+    def spy_call_soon_threadsafe(callback, *args, context=None):
+        scheduled.append((callback, args))
+        if context is None:
+            return original_call_soon_threadsafe(callback, *args)
+        return original_call_soon_threadsafe(callback, *args, context=context)
+
+    monkeypatch.setattr(loop, "call_soon_threadsafe", spy_call_soon_threadsafe)
+    bus.subscribe(EventType.PROGRESS, handler)
+    task = asyncio.create_task(bus.start())
+    await asyncio.sleep(0)
+
+    event = PipelineEvent(event_type=EventType.PROGRESS, data={"progress": 30})
+    worker = threading.Thread(target=bus.publish_nowait, args=(event,))
+    worker.start()
+    worker.join(timeout=1)
+
+    for _ in range(20):
+        if received:
+            break
+        await asyncio.sleep(0.01)
+
+    bus.stop()
+    await task
+
+    assert scheduled
+    assert len(received) == 1
+    assert received[0].data == {"progress": 30}
 
 
 @pytest.mark.asyncio
