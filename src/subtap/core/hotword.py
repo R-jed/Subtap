@@ -35,10 +35,10 @@ def run_hotword(
     # Apply hotword replacement
     replaced_count = 0
     for seg in segments:
-        original = seg.get("text", "")
+        original = seg.get("cleaned_text", "")
         corrected = engine.process(original, lang=lang)
         if corrected != original:
-            seg["text"] = corrected
+            seg["cleaned_text"] = corrected
             replaced_count += 1
 
     # Write back
