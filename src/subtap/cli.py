@@ -803,7 +803,7 @@ def run(
         typer.echo("⚠ 增强模式为 api，字幕文本将发送到外部 LLM API（音频不会发送）")
 
     if use_tui and not observer_child:
-        event_log_path = output_dir / "run.log.jsonl"
+        event_log_path = work_dir / "run.log.jsonl"
         event_log_path.unlink(missing_ok=True)
         command = _build_observer_child_command(
             input_path=input_path,
@@ -1036,7 +1036,7 @@ def run(
 
             # Write report
             output_dir.mkdir(parents=True, exist_ok=True)
-            report_path = output_dir / "report.md"
+            report_path = work_dir / "report.md"
             report_path.write_text(report_content, encoding="utf-8")
             if not json_output:
                 typer.echo(f"\n▸ 质量报告：{report_path}")
@@ -1051,7 +1051,7 @@ def run(
                 "timings": timings,
                 "error_count": quality_report.error_count,
             }
-            debug_path = output_dir / "debug.json"
+            debug_path = work_dir / "debug.json"
             debug_path.write_text(
                 json.dumps(debug_data, indent=2, ensure_ascii=False),
                 encoding="utf-8",
@@ -1099,7 +1099,7 @@ def run(
     metrics_payload = performance_metrics | {
         "output_contract": "final" if align_enabled else "draft"
     }
-    (output_dir / "metrics.json").write_text(
+    (work_dir / "metrics.json").write_text(
         json.dumps(metrics_payload, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
@@ -1119,9 +1119,9 @@ def run(
                 output_dir / "final.tsv",
                 output_dir / "draft.srt",
                 output_dir / "draft.json",
-                output_dir / "report.md",
-                output_dir / "metrics.json",
-                output_dir / "run.log.jsonl",
+                work_dir / "report.md",
+                work_dir / "metrics.json",
+                work_dir / "run.log.jsonl",
             ]
             if path.exists()
         ]
@@ -1157,8 +1157,8 @@ def run(
                     "output_dir": str(output_dir),
                     "output_path": str(output_path),
                     "alignment_enabled": align_enabled,
-                    "report_path": str(output_dir / "report.md"),
-                    "debug_path": str(output_dir / "debug.json"),
+                    "report_path": str(work_dir / "report.md"),
+                    "debug_path": str(work_dir / "debug.json"),
                     "timings": timings,
                 },
                 ensure_ascii=False,
