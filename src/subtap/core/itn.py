@@ -81,6 +81,9 @@ _APPROX_RE = re.compile(
 # 小数点缺失模式：0开头的数字 + 时间/度量单位
 _DECIMAL_DOT_RE = re.compile(r"(?<!\d)0(\d+)(秒|分|米|克|斤|两|元|块|度)")
 
+# 比例号模式：数字 + 比 + 数字（如 三十二比九 → 32:9）
+_RATIO_RE = re.compile(r"(\d+|[一二两三四五六七八九十百千万亿]+)比(\d+|[一二两三四五六七八九十百千万亿]+)")
+
 
 def _is_idiom(text: str, match_start: int, match_end: int) -> bool:
     """Check if the matched number is part of an idiom/compound word."""
@@ -281,6 +284,30 @@ def chinese_to_num(text: str) -> str:
         return text
 
     # Handle 小数点缺失: 06秒 → 0.6秒
+    # 比例号：X比Y → X:Y
+    def _cn_to_arabic(s):
+        """中文数字/阿拉伯数字混合 → 纯阿拉伯"""
+        if s.isdigit():
+            return s
+        # 检查是否全是中文数字字符
+        cn_chars = set("零一二两三四五六七八九十百千万亿")
+        if all(c in cn_chars for c in s):
+            return str(_parse_total(s))
+        # 混合情况：逐字转换
+        result = []
+        for ch in s:
+            if ch in _NUM_MAP:
+                result.append(str(_NUM_MAP[ch]))
+            else:
+                result.append(ch)
+        return "".join(result) if result else s
+
+    def _ratio_repl(m):
+        left = _cn_to_arabic(m.group(1))
+        right = _cn_to_arabic(m.group(2))
+        return f"{left}:{right}"
+    text = _RATIO_RE.sub(_ratio_repl, text)
+
     text = _DECIMAL_DOT_RE.sub(
         lambda m: "0." + m.group(1) + m.group(2),
         text,
