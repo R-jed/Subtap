@@ -731,6 +731,7 @@ def _run_pipeline_safely(
     fmt: str,
     enhance: str = "local",
     align_enabled: bool = True,
+    hotword_enabled: bool = True,
 ) -> dict:
     """在线程中安全运行 pipeline，不涉及 UI 操作。"""
     from subtap.ui.tui import TUIRunner
@@ -743,6 +744,7 @@ def _run_pipeline_safely(
         fmt=fmt,
         enhance=enhance,
         align_enabled=align_enabled,
+        hotword_enabled=hotword_enabled,
     )
 
 
@@ -1005,6 +1007,7 @@ def run(
                     fmt,
                     enhance,
                     align_enabled,
+                    hotword_enabled,
                 )
                 _exit_dashboard_when_pipeline_done(future, dashboard)
 
@@ -1041,6 +1044,7 @@ def run(
                         fmt=fmt,
                         enhance=enhance,
                         align_enabled=align_enabled,
+                        hotword_enabled=hotword_enabled,
                     )
             else:
                 result = runner.run_pipeline(
@@ -1050,6 +1054,7 @@ def run(
                     fmt=fmt,
                     enhance=enhance,
                     align_enabled=align_enabled,
+                    hotword_enabled=hotword_enabled,
                 )
             timings = result.get("timings", {})
         except SystemExit:
@@ -1608,6 +1613,7 @@ def batch_transcribe(
                         item_output_dir,
                         enhance=enhance,
                         align_enabled=not no_align,
+                        hotword_enabled=True,
                     )
             else:
                 meta = runner.run_pipeline(
@@ -1616,6 +1622,7 @@ def batch_transcribe(
                     item_output_dir,
                     enhance=enhance,
                     align_enabled=not no_align,
+                    hotword_enabled=True,
                 )
 
             # 记录成功
