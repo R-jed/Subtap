@@ -180,6 +180,16 @@ def _smart_split(
     _COMMA_PUNCT = set("，、,;")
     _NUM_CHARS = set("零一二两三四五六七八九十百千万亿")
 
+    # Conjunction words that should not be split from their following clause.
+    # When a line starts with one of these, pause-based splits are suppressed
+    # to avoid orphaning the conjunction at the end of the previous line.
+    _CONJ_STARTERS = {
+        "但是", "所以", "因为", "而且", "不过", "可是", "然后", "或者",
+        "如果", "虽然", "即使", "不仅", "而是", "于是", "因此", "那么",
+        "这么", "怎么", "什么", "这个", "那个", "还是", "就是", "不是",
+        "只有", "只要", "既然", "哪怕", "无论", "不管", "另外",
+    }
+
     # --- Step 1: Mark phrase boundaries ---
     marked_words = mark_phrase_boundaries(words)
     _phrase_roles: dict[int, str | None] = {
@@ -199,12 +209,18 @@ def _smart_split(
             "ends_punct": ends_punct,
         })
 
-    def _find_best_break(cur_words: list[dict]) -> int:
+    def _find_best_break(cur_words: list[dict], next_word: dict | None = None) -> int:
         """Find the best break position using phrase-role scoring.
 
         Returns the position after which to break (0-indexed in cur_words).
         Handles number-sequence protection: skips positions inside number
         sequences and falls back to the start of the sequence.
+
+        Args:
+            cur_words: Words to evaluate for break points.
+            next_word: The word about to be added after cur_words.
+                If its phrase_role is "phrase_mid", the last position is
+                penalized to avoid splitting before a protected mid-phrase word.
         """
         best = -1
         best_score = -9999
@@ -256,6 +272,14 @@ def _smart_split(
             if accum >= max_chars:
                 score = max(score, 100)
 
+            # Lookahead: if breaking here means the next word (first word after
+            # this chunk) is a phrase_mid, penalize this position to prevent
+            # splitting a phrase across lines (e.g. 所/以 split).
+            if pos == n - 1 and next_word is not None:
+                next_role = next_word.get("phrase_role")
+                if next_role == "phrase_mid":
+                    score = -1000
+
             if score > best_score:
                 best_score = score
                 best = pos
@@ -299,7 +323,7 @@ def _smart_split(
                 cur_words.append(w)
                 cur_text += word_text
             else:
-                bp = _find_best_break(cur_words)
+                bp = _find_best_break(cur_words, next_word=w)
                 if 0 <= bp < len(cur_words) - 1:
                     right = cur_words[bp + 1:]
                     left = cur_words[:bp + 1]
@@ -324,13 +348,20 @@ def _smart_split(
         if i > 0 and len(cur_text) >= min_chars:
             gap = w["start_sec"] - words[i - 1]["end_sec"]
             if gap >= pause_threshold:
-                bp = _find_best_break(cur_words)
-                if 0 <= bp < len(cur_words) - 1:
-                    right = cur_words[bp + 1:]
-                    left = cur_words[:bp + 1]
-                    _flush(left, "".join(x["word"] for x in left), False)
-                    cur_words = right
-                    cur_text = "".join(x["word"] for x in right)
+                # Don't split if current line starts with a conjunction word —
+                # the conjunction should stay with its following clause, not be
+                # orphaned at the end of the previous line.
+                line_starts_with_conj = any(
+                    cur_text.startswith(conj) for conj in _CONJ_STARTERS
+                )
+                if not line_starts_with_conj:
+                    bp = _find_best_break(cur_words, next_word=w)
+                    if 0 <= bp < len(cur_words) - 1:
+                        right = cur_words[bp + 1:]
+                        left = cur_words[:bp + 1]
+                        _flush(left, "".join(x["word"] for x in left), False)
+                        cur_words = right
+                        cur_text = "".join(x["word"] for x in right)
 
     _flush(cur_words, cur_text, False)
 
@@ -338,13 +369,21 @@ def _smart_split(
     lines = [ln for ln in lines if ln["text"].strip()]
 
     # --- Step 3: Merge very short fragments ---
-    # Merge <=1 char fragments into previous line to avoid standalone single-char lines.
-    # Don't merge >=2 char fragments to preserve sentence boundaries.
+    # Merge <=2 char fragments into the previous line to avoid standalone short
+    # lines (e.g. "我们", "那还" should not be their own subtitle line).
+    # Exception for 2-char fragments: don't merge if the previous line was split
+    # at punctuation (ends_punct=True) — that means the split was intentional
+    # (sentence/comma break), and the short line (e.g. "世界", "一直") is a
+    # legitimate new subtitle. 1-char fragments always merge (original behavior).
     merged: list[dict] = []
     for line in lines:
         txt = line["text"]
+        blocked_by_punct = (
+            len(txt) == 2 and merged and merged[-1].get("ends_punct", False)
+        )
         if (merged
-                and len(txt) <= 1
+                and len(txt) <= 2
+                and not blocked_by_punct
                 and len(merged[-1]["text"]) + len(txt) <= max_chars):
             merged[-1]["text"] += txt
             merged[-1]["end_sec"] = line["end_sec"]

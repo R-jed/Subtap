@@ -143,6 +143,71 @@ def test_split_by_max_chars():
         assert len(line["text"]) <= 20
 
 
+# ── Task 3b acceptance criteria ──
+
+
+def test_so_yi_not_split():
+    """验收标准 1: '搭配镜头比它大了这么多所以是比它好的' — '所以' 不被拆开。"""
+    text = "搭配镜头比它大了这么多所以是比它好的"
+    words = [
+        {"word": ch, "start_sec": i * 0.15, "end_sec": (i + 1) * 0.15}
+        for i, ch in enumerate(text)
+    ]
+    result = _smart_split(words, text, max_chars=15)
+    total = "".join(r["text"] for r in result)
+    assert total == text
+    # "所以" should not be split across lines
+    for line in result:
+        # No line should end with "所" alone (without "以" following)
+        assert not line["text"].endswith("所"), f"'所以' was split: {result}"
+
+
+def test_wo_men_merged():
+    """验收标准 2: '我们' 不独立成行（合并到相邻行）。
+
+    Scenario: pause-based split creates "我们" as a 2-char orphan fragment.
+    With <=2 merge, it should be merged back into the previous line.
+    """
+    words = [
+        {"word": "这", "start_sec": 0.0, "end_sec": 0.2},
+        {"word": "台", "start_sec": 0.2, "end_sec": 0.4},
+        {"word": "相", "start_sec": 0.4, "end_sec": 0.6},
+        {"word": "机", "start_sec": 0.6, "end_sec": 0.8},
+        # pause > 0.2 threshold → triggers split
+        {"word": "我", "start_sec": 1.2, "end_sec": 1.3},
+        {"word": "们", "start_sec": 1.3, "end_sec": 1.4},
+    ]
+    result = _smart_split(words, "这台相机我们", max_chars=20, min_chars=3)
+    total = "".join(r["text"] for r in result)
+    assert total == "这台相机我们"
+    # "我们" should NOT be a standalone line (merged back into previous)
+    for line in result:
+        assert line["text"] != "我们", f"'我们' is standalone: {result}"
+
+
+def test_na_hai_merged():
+    """验收标准 3: '那还' 不独立成行（合并到相邻行）。
+
+    Scenario: pause-based split creates "那还" as a 2-char orphan fragment.
+    With <=2 merge, it should be merged back into the previous line.
+    """
+    words = [
+        {"word": "这", "start_sec": 0.0, "end_sec": 0.2},
+        {"word": "台", "start_sec": 0.2, "end_sec": 0.4},
+        {"word": "相", "start_sec": 0.4, "end_sec": 0.6},
+        {"word": "机", "start_sec": 0.6, "end_sec": 0.8},
+        # pause > 0.2 threshold → triggers split
+        {"word": "那", "start_sec": 1.2, "end_sec": 1.3},
+        {"word": "还", "start_sec": 1.3, "end_sec": 1.4},
+    ]
+    result = _smart_split(words, "这台相机那还", max_chars=20, min_chars=3)
+    total = "".join(r["text"] for r in result)
+    assert total == "这台相机那还"
+    # "那还" should NOT be a standalone line (merged back into previous)
+    for line in result:
+        assert line["text"] != "那还", f"'那还' is standalone: {result}"
+
+
 def test_merge_short_fragments():
     """短碎片（< min_chars）合并到相邻行。"""
     words = [
