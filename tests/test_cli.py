@@ -395,6 +395,8 @@ def test_run_no_align_passes_align_disabled_to_runner(tmp_path, monkeypatch):
                 return {"segment_count": 1}
             if stage == "clean":
                 return {"segment_count": 1}
+            if stage == "hotword":
+                return {"replaced": 0, "total": 1}
             if stage == "segment":
                 return {"sentence_count": 1}
             if stage == "align":
@@ -475,6 +477,8 @@ def test_run_enhance_off_passes_clean_off_to_pipeline(tmp_path, monkeypatch):
             if stage == "clean":
                 clean_kwargs.append(kwargs)
                 return {"segment_count": 1}
+            if stage == "hotword":
+                return {"replaced": 0, "total": 1}
             if stage == "segment":
                 return {"sentence_count": 1}
             if stage == "align":
