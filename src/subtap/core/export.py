@@ -53,11 +53,12 @@ def _normalize_punct(text: str, language: str = "zh") -> str:
     return text.translate(_EN_PUNCT_MAP)
 
 
+
 def _strip_punct(text: str) -> str:
-    """Remove all punctuation from text."""
-    return _ALL_PUNCT_RE.sub("", text)
-
-
+    """Remove all punctuation, preserving decimal points in numbers."""
+    protected = re.sub(r"(\d)\.(\d)", r"\1<DECIMAL>\2", text)
+    stripped = _ALL_PUNCT_RE.sub("", protected)
+    return stripped.replace("<DECIMAL>", ".")
 def _fmt_srt_time(seconds: float) -> str:
     """Format seconds to SRT timestamp HH:MM:SS,mmm."""
     h = int(seconds // 3600)
