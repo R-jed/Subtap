@@ -547,7 +547,7 @@ class SRTExporter(BaseExporter):
                 prev_visible = _strip_punct(prev["text"]).replace(" ", "")
                 # Only merge into a longer line, not into another short line
                 if (len(prev_visible) > len(visible)
-                        and len(prev_visible) + len(visible) <= 25):
+                        and len(prev_visible) + len(visible) <= self.max_chars):
                     # Check: would merge create trailing word at line end?
                     merged_text = prev["text"].rstrip() + txt
                     merged_stripped = _strip_punct(merged_text).replace(" ", "")
