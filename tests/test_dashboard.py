@@ -1,5 +1,9 @@
 """Tests for dashboard system."""
 
+import inspect
+
+import pytest
+
 from subtap.metrics.events import EventBus, EventType, PipelineEvent
 from subtap.ui.event_bridge import EventBridge
 
@@ -25,6 +29,28 @@ def test_dashboard_stage_cn_mapping():
     assert STAGE_CN["asr"] == "语音识别"
     assert STAGE_CN["clean"] == "文本优化"
     assert STAGE_CN["align"] == "字幕对齐"
+
+
+@pytest.mark.asyncio
+async def test_dashboard_runs_startup_callback_on_mount(monkeypatch):
+    """Textual mount 后再启动 pipeline，避免和 App 初始化抢事件循环。"""
+    from subtap.metrics.profiler import PipelineProfiler
+    from subtap.ui.dashboard import PipelineDashboard
+
+    bus = EventBus()
+    dashboard = PipelineDashboard(bus, PipelineProfiler(bus))
+    called = []
+
+    def fake_run_worker(work, *args, **kwargs):
+        if inspect.iscoroutine(work):
+            work.close()
+
+    dashboard.set_startup_callback(lambda: called.append(True))
+    monkeypatch.setattr(dashboard, "run_worker", fake_run_worker)
+
+    await dashboard.on_mount()
+
+    assert called == [True]
 
 
 def test_event_bridge_init():
