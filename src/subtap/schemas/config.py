@@ -111,6 +111,10 @@ class OutputConfig(BaseModel):
         ge=10,
         le=60,
     )
+    subtitle_formats: set[str] = Field(
+        default={"srt"},
+        description="输出字幕格式（srt/vtt/json/tsv）",
+    )
 
 
 class MetricsConfig(BaseModel):
