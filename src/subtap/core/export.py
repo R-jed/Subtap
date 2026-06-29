@@ -129,12 +129,12 @@ def _has_latin(s: str) -> bool:
     return any("A" <= c <= "Z" or "a" <= c <= "z" for c in s)
 
 
-def _is_incomplete_word(tail: str, next_start: str) -> bool:
+def _is_incomplete_word(tail: str, next_start: str, cross_sentence: bool = False) -> bool:
     """检查 tail 是否是不完整词，next_start 能否组成完整词"""
     if not next_start:
         return False
-    # 英文词组不拆分：仅短尾（≤2字符）时触发，避免 "Hello"+"World" 误合并
-    if len(tail) <= 2 and (_has_latin(tail) or _has_latin(next_start[:1])):
+    # 英文词组不拆分：跨句时不合并（避免 "Hello"+"World" 误合并）
+    if not cross_sentence and (_has_latin(tail) or _has_latin(next_start[:1])):
         return True
     # 如果 tail + next_start 是常见断词模式
     if (tail, next_start[:1]) in _SPLIT_WORD_PATTERNS:
@@ -145,7 +145,7 @@ def _is_incomplete_word(tail: str, next_start: str) -> bool:
     return False
 
 
-def _fix_split_words(lines: list[dict], max_chars: int) -> list[dict]:
+def _fix_split_words(lines: list[dict], max_chars: int, cross_sentence: bool = False) -> list[dict]:
     """修复跨行断词：如果行尾是不完整词，移到下一行"""
     if len(lines) < 2:
         return lines
@@ -170,7 +170,7 @@ def _fix_split_words(lines: list[dict], max_chars: int) -> list[dict]:
             if len(prev_text) <= take:
                 continue
             tail = prev_text[-take:]
-            if _is_incomplete_word(tail, curr_text[:2] if len(curr_text) >= 2 else curr_text):
+            if _is_incomplete_word(tail, curr_text[:2] if len(curr_text) >= 2 else curr_text, cross_sentence=cross_sentence):
                 # 移动 tail 到 curr 开头
                 prev["text"] = prev_text[:-take]
                 curr["text"] = tail + curr_text
@@ -562,7 +562,7 @@ class SRTExporter(BaseExporter):
             merged_subs.append(sub)
 
         # Fix cross-sentence word splits (e.g. "Feature" / "Beast")
-        merged_subs = _fix_split_words(merged_subs, self.max_chars)
+        merged_subs = _fix_split_words(merged_subs, self.max_chars, cross_sentence=True)
 
         # Render SRT
         lines: list[str] = []
