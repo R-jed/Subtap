@@ -11,13 +11,14 @@ STAGE_CN: dict[str, str] = {
     "chunk": "音频切段",
     "asr": "语音识别",
     "clean": "文本清洗",
+    "hotword": "热词替换",
     "segment": "智能断句",
     "align": "时间轴对齐",
     "export": "字幕导出",
 }
 
 # Stage execution order
-STAGE_ORDER = ["prepare", "chunk", "asr", "clean", "segment", "align", "export"]
+STAGE_ORDER = ["prepare", "chunk", "asr", "clean", "hotword", "segment", "align", "export"]
 
 # Chinese status descriptions
 STATUS_CN: dict[str, str] = {
