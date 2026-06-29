@@ -163,6 +163,11 @@ def _convert_keep_unit(s: str) -> str:
         if suffix and suffix[0] in _NUM_MAP:
             rest_val = _sub_unit_parse(suffix)
             if rest_val > 0:
+                # If suffix is >= 1000, convert to full number (一万两千九百九十九 → 12999)
+                if rest_val >= 1000:
+                    total = wan_val * 10000 + rest_val
+                    return str(total)
+                # Otherwise keep unit (一万五千 → 1.5万)
                 val = wan_val + rest_val / 10000
                 val_str = f"{val:.4f}".rstrip("0").rstrip(".")
                 return f"{val_str}万"
