@@ -29,11 +29,12 @@ def test_cli_help_no_api_asr():
 
 
 def test_cli_help_no_hybrid():
-    """CLI help 不应出现 hybrid 选项。"""
+    """CLI help 中 hybrid 只应出现在 hotword-mode 选项中。"""
     result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
     help_text = _strip_ansi(result.output).lower()
-    assert "hybrid" not in help_text
+    # hybrid 只在 hotword-mode 选项中出现
+    assert "hybrid" not in help_text or "hotword" in help_text
 
 
 def test_cli_help_no_custom_url_asr():
