@@ -222,12 +222,13 @@ def _smart_split(
             return
         # Strip trailing conjunction (e.g. "但是") from line end;
         # it will be prepended to the next line via _pending_prefix.
-        if not ends_punct:
-            cur_words, cur_text, stripped = _strip_trailing_conjunction(
-                cur_words, cur_text
-            )
-            if stripped:
-                _pending_prefix.extend(stripped)
+        # Always strip, even after punctuation — aligner may assign
+        # conjunction words to the wrong sentence boundary.
+        cur_words, cur_text, stripped = _strip_trailing_conjunction(
+            cur_words, cur_text
+        )
+        if stripped:
+            _pending_prefix.extend(stripped)
         if not cur_words or not cur_text:
             return
         lines.append({
