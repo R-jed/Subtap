@@ -6,7 +6,9 @@ import json
 import os
 import platform
 import shutil
+import subprocess
 import sys
+import time
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -548,6 +550,107 @@ def setup(
 # ── Run 命令 ───────────────────────────────────────────────
 
 
+def _build_observer_child_command(
+    *,
+    input_path: Path,
+    work_dir: Path,
+    output_dir: Path,
+    fmt: str,
+    mode: str,
+    enhance: str,
+    local_only: bool,
+    translate_to: str | None,
+    bilingual: str,
+    align_enabled: bool,
+    punctuation: bool,
+    subtitle_language: str,
+    no_git_check: bool,
+    no_cleanroom: bool,
+    timestamp: bool,
+) -> list[str]:
+    command = [
+        sys.executable,
+        "-m",
+        "subtap.cli",
+        "run",
+        str(input_path),
+        "--work-dir",
+        str(work_dir),
+        "--output-dir",
+        str(output_dir),
+        "--format",
+        fmt,
+        "--mode",
+        mode,
+        "--enhance",
+        enhance,
+        "--bilingual",
+        bilingual,
+        "--subtitle-language",
+        subtitle_language,
+        "--no-tui",
+        "--observer-child",
+    ]
+    if local_only:
+        command.append("--local-only")
+    if translate_to:
+        command.extend(["--translate-to", translate_to])
+    if not align_enabled:
+        command.append("--no-align")
+    if punctuation:
+        command.append("--punctuation")
+    if no_git_check:
+        command.append("--no-git-check")
+    if no_cleanroom:
+        command.append("--no-cleanroom")
+    if not timestamp:
+        command.append("--no-timestamp")
+    return command
+
+
+def _print_observer_state(log_path: Path) -> None:
+    from subtap.ui.observer import summarize_event_log
+
+    state = summarize_event_log(log_path)
+    typer.echo(
+        "▸ "
+        f"阶段：{state['stage']}  "
+        f"进度：{state['progress']}%  "
+        f"Chunk：{state['chunk_id']}  "
+        f"模型：{state['model']}  "
+        f"草稿：{state['asr_drafts']}  "
+        f"已对齐：{state['aligned']}"
+    )
+
+
+def _run_observer_parent(
+    command: list[str], log_path: Path, refresh_interval: float = 1.0
+) -> None:
+    """父进程只观察日志；推理在子进程内执行。"""
+    from subtap.ui.observer import summarize_event_log
+
+    output_dir = log_path.parent
+    output_dir.mkdir(parents=True, exist_ok=True)
+    stdout_path = output_dir / "child.stdout.log"
+    stderr_path = output_dir / "child.stderr.log"
+    with stdout_path.open("w", encoding="utf-8") as stdout, stderr_path.open(
+        "w", encoding="utf-8"
+    ) as stderr:
+        process = subprocess.Popen(command, stdout=stdout, stderr=stderr)
+        last_state = ""
+        while process.poll() is None:
+            state = json.dumps(summarize_event_log(log_path), ensure_ascii=False)
+            if state != last_state:
+                _print_observer_state(log_path)
+                last_state = state
+            time.sleep(refresh_interval)
+
+    _print_observer_state(log_path)
+    if process.returncode:
+        typer.echo(f"✗ 子进程处理失败，错误日志：{stderr_path}", err=True)
+        raise typer.Exit(process.returncode)
+
+
 def _run_pipeline_safely(
     pipeline,
     input_path: Path,
@@ -630,6 +733,7 @@ def run(
     use_tui: bool = typer.Option(
         True, "--tui/--no-tui", help="启用 TUI 界面（默认开启）"
     ),
+    observer_child: bool = typer.Option(False, "--observer-child", hidden=True),
     no_git_check: bool = typer.Option(
         False, "--no-git-check", help="跳过 Git 状态检查"
     ),
@@ -701,6 +805,33 @@ def run(
 
     if enhance == "api":
         typer.echo("⚠ 增强模式为 api，字幕文本将发送到外部 LLM API（音频不会发送）")
+
+    if use_tui and not observer_child:
+        event_log_path = output_dir / "run.log.jsonl"
+        event_log_path.unlink(missing_ok=True)
+        command = _build_observer_child_command(
+            input_path=input_path,
+            work_dir=work_dir,
+            output_dir=output_dir,
+            fmt=fmt,
+            mode=mode,
+            enhance=enhance,
+            local_only=local_only,
+            translate_to=translate_to,
+            bilingual=bilingual,
+            align_enabled=align_enabled,
+            punctuation=punctuation,
+            subtitle_language=subtitle_language,
+            no_git_check=no_git_check,
+            no_cleanroom=no_cleanroom,
+            timestamp=timestamp,
+        )
+        typer.echo("▸ TUI 观察者进程已启动，推理将在独立子进程执行")
+        _run_observer_parent(command, event_log_path)
+        return
+
+    if observer_child:
+        use_tui = False
 
     config = load_config(Path.home() / ".subtap" / "config.yaml")
     config.output.timestamp = timestamp  # CLI overrides config
