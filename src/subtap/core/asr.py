@@ -174,3 +174,57 @@ def run_asr(
     )
 
     return {"segment_count": len(segments)}
+
+
+def _merge_single_letters(words: list[dict]) -> list[dict]:
+    """Merge consecutive single-character words into one word.
+
+    ASR sometimes splits acronyms like "UFS" into ["U", "F", "S"].
+    This function merges them back while preserving timestamps.
+    Merges all single-character words (both ASCII and CJK) when they are temporally adjacent.
+    """
+    if not words:
+        return words
+
+    result = []
+    buffer = ""
+    buffer_start = 0.0
+    buffer_end = 0.0
+
+    for w in words:
+        word_text = w["word"]
+        if len(word_text) == 1:
+            # Check if temporally adjacent to buffer
+            if buffer and abs(w["start_sec"] - buffer_end) < 0.05:
+                # Adjacent, continue buffering
+                buffer += word_text
+                buffer_end = w["end_sec"]
+            else:
+                # Not adjacent, flush buffer and start new
+                if buffer:
+                    result.append({
+                        "word": buffer,
+                        "start_sec": buffer_start,
+                        "end_sec": buffer_end,
+                    })
+                buffer = word_text
+                buffer_start = w["start_sec"]
+                buffer_end = w["end_sec"]
+        else:
+            if buffer:
+                result.append({
+                    "word": buffer,
+                    "start_sec": buffer_start,
+                    "end_sec": buffer_end,
+                })
+                buffer = ""
+            result.append(w)
+
+    if buffer:
+        result.append({
+            "word": buffer,
+            "start_sec": buffer_start,
+            "end_sec": buffer_end,
+        })
+
+    return result
