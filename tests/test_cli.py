@@ -484,57 +484,19 @@ def test_run_enhance_off_passes_clean_off_to_pipeline(tmp_path, monkeypatch):
     assert clean_kwargs == [{"llm_backend": "off"}]
 
 
-def test_run_mlx_tui_falls_back_to_plain_runner(tmp_path, monkeypatch):
-    """MLX ASR 与 Textual 同进程冲突时，应自动切到安全进度模式。"""
+def test_run_tui_starts_observer_child_process(tmp_path, monkeypatch):
+    """默认 TUI 只做观察者，推理必须放到 --observer-child 子进程。"""
 
-    class FakePipeline:
-        def __init__(self, _config, work_dir):
-            self.config = _config
+    child_calls = []
 
-            class Workspace:
-                root = work_dir
-                asr_jsonl = work_dir / "asr" / "asr.jsonl"
-                aligned_jsonl = work_dir / "aligned.jsonl"
+    def fake_observer_parent(command, log_path):
+        child_calls.append((command, log_path))
 
-                def ensure_dirs(self):
-                    self.root.mkdir(parents=True, exist_ok=True)
-
-            self.workspace = Workspace()
-
-        def run_stage(self, stage, **_kwargs):
-            if stage == "prepare":
-                return {"media_info": {"duration": 1.0, "sample_rate": 16000}}
-            if stage == "chunk":
-                return {"chunk_count": 1}
-            if stage == "asr":
-                self.workspace.asr_jsonl.parent.mkdir(parents=True, exist_ok=True)
-                self.workspace.asr_jsonl.write_text(
-                    '{"chunk_id":0,"segment_id":0,"start_sec":0.0,'
-                    '"end_sec":1.0,"text":"hello","confidence":null}\n',
-                    encoding="utf-8",
-                )
-                return {"segment_count": 1}
-            if stage == "clean":
-                return {"segment_count": 1}
-            if stage == "segment":
-                return {"sentence_count": 1}
-            if stage == "align":
-                raise AssertionError("--no-align must not run align")
-            raise AssertionError(stage)
-
-    def fail_dashboard(*_args, **_kwargs):
-        raise AssertionError("MLX ASR should not enter Textual dashboard")
-
-    config = SimpleNamespace(
-        asr=SimpleNamespace(backend="mlx-qwen-asr"),
-        output=SimpleNamespace(timestamp=True),
-    )
-    monkeypatch.setattr("subtap.core.pipeline.Pipeline", FakePipeline)
-    monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
-    monkeypatch.setattr("subtap.ui.dashboard.PipelineDashboard", fail_dashboard)
+    monkeypatch.setattr("subtap.cli._run_observer_parent", fake_observer_parent)
 
     input_path = tmp_path / "input.wav"
     input_path.write_bytes(b"data")
+    output_dir = tmp_path / "out"
 
     result = runner.invoke(
         app,
@@ -545,12 +507,18 @@ def test_run_mlx_tui_falls_back_to_plain_runner(tmp_path, monkeypatch):
             "--no-cleanroom",
             "--no-align",
             "--output-dir",
-            str(tmp_path / "out"),
+            str(output_dir),
         ],
     )
 
     assert result.exit_code == 0
-    assert "安全进度模式" in result.output
+    assert child_calls
+    command, log_path = child_calls[0]
+    assert "--observer-child" in command
+    assert "--no-tui" in command
+    assert "--no-align" in command
+    assert log_path == output_dir / "run.log.jsonl"
+    assert "观察者进程" in result.output
 
 
 def test_observe_command_prints_event_log_status(tmp_path):
