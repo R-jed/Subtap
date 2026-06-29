@@ -61,6 +61,7 @@ def _strip_punct(text: str) -> str:
     return stripped.replace("<DECIMAL>", ".")
 def _fmt_srt_time(seconds: float) -> str:
     """Format seconds to SRT timestamp HH:MM:SS,mmm."""
+    seconds = max(0.0, seconds)
     h = int(seconds // 3600)
     m = int((seconds % 3600) // 60)
     s = int(seconds % 60)
@@ -70,6 +71,7 @@ def _fmt_srt_time(seconds: float) -> str:
 
 def _fmt_ass_time(seconds: float) -> str:
     """Format seconds to ASS timestamp H:MM:SS.cc."""
+    seconds = max(0.0, seconds)
     h = int(seconds // 3600)
     m = int((seconds % 3600) // 60)
     s = int(seconds % 60)
