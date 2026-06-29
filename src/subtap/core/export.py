@@ -562,6 +562,23 @@ class SRTExporter(BaseExporter):
                         continue
             merged_subs.append(sub)
 
+        # Merge standalone trailing words into the next line
+        final_subs: list[dict] = []
+        for i, sub in enumerate(merged_subs):
+            txt = sub["text"].strip()
+            visible = _strip_punct(txt).replace(" ", "")
+            # If this is a standalone trailing word and next line exists
+            if visible in _TRAILING_WORDS and i + 1 < len(merged_subs):
+                nxt = merged_subs[i + 1]
+                nxt_visible = _strip_punct(nxt["text"]).replace(" ", "")
+                if len(visible) + len(nxt_visible) <= self.max_chars:
+                    # Prepend trailing word to next line
+                    nxt["text"] = txt + nxt["text"]
+                    nxt["start_sec"] = sub["start_sec"]
+                    continue
+            final_subs.append(sub)
+        merged_subs = final_subs
+
         # Fix cross-sentence word splits (e.g. "Feature" / "Beast")
         merged_subs = _fix_split_words(merged_subs, self.max_chars, cross_sentence=True)
 
