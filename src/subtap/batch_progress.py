@@ -109,12 +109,15 @@ class JsonProgressWriter:
     def __init__(self, output: TextIO | None = None):
         self.output = output or sys.stdout
 
-    def write_start(self, total: int, mode: str) -> None:
-        self._write({
+    def write_start(self, total: int, mode: str, created_at: str = "") -> None:
+        data = {
             "type": "start",
             "total": total,
             "mode": mode,
-        })
+        }
+        if created_at:
+            data["created_at"] = created_at
+        self._write(data)
 
     def write_item_start(self, index: int, filename: str) -> None:
         self._write({

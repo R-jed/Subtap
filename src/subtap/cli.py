@@ -1227,7 +1227,7 @@ def batch_transcribe(
     ),
     no_align: bool = typer.Option(False, "--no-align", help="跳过对齐阶段"),
     concurrency: int = typer.Option(
-        1, "--concurrency", "-c", help="并发处理数（最大 4）", min=1, max=4
+        1, "--concurrency", "-c", help="并发处理数（最大 4）（尚未实现）", min=1, max=4, hidden=True
     ),
     resume: Path | None = typer.Option(
         None, "--resume", help="恢复中断的任务（传入 manifest.json 路径）"
@@ -1325,13 +1325,19 @@ def batch_transcribe(
             typer.echo("✓ 没有需要处理的文件")
             return
 
-        # 重置待处理项状态
+        # 重置待处理项状态并清理 work/ 目录
+        import shutil
+
         for item in items_to_process:
             item["status"] = "pending"
             item["error"] = ""
             for stage in item.get("stages", {}).values():
                 if isinstance(stage, dict):
                     stage["status"] = "pending"
+            # I4 fix: 清理失败/中断文件的 work/ 目录，防止读到脏数据
+            work_dir = Path(item["output_dir"]) / "work"
+            if work_dir.exists():
+                shutil.rmtree(work_dir)
 
         items = manifest["items"]
     else:
@@ -1364,17 +1370,25 @@ def batch_transcribe(
     abort_controller.install_signal_handler()
 
     # ── 初始化进度显示 ──────────────────────────────────────
+    # I2 fix: 记录任务真正开始时间，后续调用复用
+    from datetime import timezone
+
+    task_created_at = datetime.now(timezone.utc).isoformat()
+
     json_writer = JsonProgressWriter() if json_output else None
     total = len(items)
     manifest_path = output_dir / "manifest.json"
 
     if json_writer:
-        json_writer.write_start(total, mode)
+        json_writer.write_start(total, mode, created_at=task_created_at)
     else:
         print_progress_header(total, mode)
 
     # ── 写入初始 manifest ──────────────────────────────────────
-    write_manifest(manifest_path, build_manifest(output_dir, mode, items, params))
+    write_manifest(
+        manifest_path,
+        build_manifest(output_dir, mode, items, params, created_at=task_created_at),
+    )
 
     # ── 处理文件 ──────────────────────────────────────────────
     start_time = time.time()
@@ -1406,31 +1420,25 @@ def batch_transcribe(
             else:
                 print_progress_item(index, total, filename, "failed")
             write_manifest(
-                manifest_path, build_manifest(output_dir, mode, items, params)
+                manifest_path, build_manifest(output_dir, mode, items, params, created_at=task_created_at)
             )
             continue
 
         # 开始处理
         item["status"] = "running"
-        item["stages"] = {
-            s: {"status": "pending"}
-            for s in [
-                "prepare",
-                "chunk",
-                "asr",
-                "clean",
-                "segment",
-                "align",
-                "export",
-            ]
-        }
+        from subtap.batch import PIPELINE_STAGES
+
+        item["stages"] = {s: {"status": "pending"} for s in PIPELINE_STAGES}
 
         if json_writer:
             json_writer.write_item_start(index, filename)
         else:
             print_progress_item(index, total, filename, "running")
 
-        write_manifest(manifest_path, build_manifest(output_dir, mode, items, params))
+        write_manifest(manifest_path, build_manifest(output_dir, mode, items, params, created_at=task_created_at))
+
+        # C1 fix: stage_start 移到 try 之前，防止 UnboundLocalError
+        stage_start = time.time()
 
         try:
             # 配置 Pipeline
@@ -1449,7 +1457,6 @@ def batch_transcribe(
             pipeline.workspace.ensure_dirs()
 
             # 运行 Pipeline
-            stage_start = time.time()
             runner = PlainRunner()
 
             if json_output:
@@ -1516,7 +1523,7 @@ def batch_transcribe(
             else:
                 print_progress_item(index, total, filename, "failed")
 
-        write_manifest(manifest_path, build_manifest(output_dir, mode, items, params))
+        write_manifest(manifest_path, build_manifest(output_dir, mode, items, params, created_at=task_created_at))
 
     # ── 完成 ──────────────────────────────────────────────────
     total_duration = time.time() - start_time
@@ -1524,7 +1531,7 @@ def batch_transcribe(
     abort_controller.cleanup()
 
     # 更新完成时间
-    manifest = build_manifest(output_dir, mode, items, params)
+    manifest = build_manifest(output_dir, mode, items, params, created_at=task_created_at)
     manifest["completed_at"] = datetime.now(timezone.utc).isoformat()
     manifest["duration"] = total_duration
     write_manifest(manifest_path, manifest)
