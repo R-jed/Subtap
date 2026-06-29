@@ -773,6 +773,7 @@ def run_final_exports(
         "output_path": str(srt_path),
         "outputs": outputs,
         "segment_count": len(segments),
+        "output_contract": "final",
     }
 
 
