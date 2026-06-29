@@ -204,7 +204,8 @@ def _smart_split(
 
         # 2. Pause detection → new subtitle
         #    Split on real pauses unless that would break connector words.
-        if i > 0 and current_text:
+        #    Only split if current line is long enough (≥ min_chars).
+        if i > 0 and current_text and len(current_text.strip()) >= min_chars:
             gap = w["start_sec"] - words[i - 1]["end_sec"]
             if gap >= pause_threshold:
                 # Don't split if current word starts a connector pair
