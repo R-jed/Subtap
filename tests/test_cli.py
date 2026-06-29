@@ -296,9 +296,11 @@ def test_batch_transcribe_runs_each_file(tmp_path, monkeypatch):
     calls = []
 
     class FakeRunner:
-        def run_pipeline(self, pipeline, input_path, output_dir, fmt="srt"):
+        def run_pipeline(
+            self, pipeline, input_path, output_dir, fmt="srt", enhance="local", align_enabled=True
+        ):
             calls.append((pipeline.work_dir, input_path, output_dir, fmt))
-            return {"output_dir": str(output_dir), "format": fmt}
+            return {"output_dir": str(output_dir), "format": fmt, "timings": {"asr": 1.0}}
 
     class FakePipeline:
         def __init__(self, _config, work_dir):
@@ -312,9 +314,25 @@ def test_batch_transcribe_runs_each_file(tmp_path, monkeypatch):
 
     monkeypatch.setattr("subtap.ui.tui.PlainRunner", FakeRunner)
     monkeypatch.setattr("subtap.core.pipeline.Pipeline", FakePipeline)
-    monkeypatch.setattr(
-        "subtap.schemas.config.load_config", lambda _: SimpleNamespace()
-    )
+
+    def _mock_config(_):
+        c = SimpleNamespace()
+        c.output = SimpleNamespace()
+        c.output.timestamp = True
+        c.output.subtitle_punctuation = False
+        c.output.subtitle_language = "zh"
+        c.output.max_chars = 25
+        c.output.min_chars = 10
+        c.output.subtitle_stem = "test"
+        c.asr = SimpleNamespace()
+        c.asr.model = "asr_0.6b"
+        c.asr.quantization = "q8"
+        c.align = SimpleNamespace()
+        c.align.model = "aligner"
+        c.align.quantization = "q8"
+        return c
+
+    monkeypatch.setattr("subtap.schemas.config.load_config", _mock_config)
     one = tmp_path / "one.wav"
     two = tmp_path / "two.wav"
     one.write_bytes(b"1")
@@ -333,13 +351,16 @@ def test_batch_transcribe_runs_each_file(tmp_path, monkeypatch):
     )
 
     assert result.exit_code == 0
-    data = json.loads(_strip_ansi(result.output))
+    # JSON Lines output: last line is the "complete" event
+    lines = _strip_ansi(result.output).strip().split("\n")
+    data = json.loads(lines[-1])
+    assert data["type"] == "complete"
     assert data["ok"] is True
-    assert len(data["items"]) == 2
+    assert data["succeeded"] == 2
     assert len(calls) == 2
-    assert calls[0][0] == tmp_path / "out" / one.stem / "work"
-    assert calls[0][2] == tmp_path / "out" / one.stem
-    assert calls[1][2] == tmp_path / "out" / two.stem
+    assert calls[0][0] == tmp_path / "out" / "one_wav" / "work"
+    assert calls[0][2] == tmp_path / "out" / "one_wav"
+    assert calls[1][2] == tmp_path / "out" / "two_wav"
 
 
 def test_run_no_align_passes_align_disabled_to_runner(tmp_path, monkeypatch):
