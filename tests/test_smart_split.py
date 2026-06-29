@@ -3,6 +3,96 @@
 from subtap.core.export import _smart_split
 
 
+# ── Acceptance criteria tests (Task 3) ──
+
+
+def test_de_structure_protection():
+    """验收标准 1: '它实际市场售价都已经到万元' 不被拆开（的字结构保护）。"""
+    text = "它实际市场售价都已经到万元"
+    words = [
+        {"word": ch, "start_sec": i * 0.2, "end_sec": (i + 1) * 0.2}
+        for i, ch in enumerate(text)
+    ]
+    result = _smart_split(words, text, max_chars=25)
+    # Should be a single line (all words in one phrase)
+    assert len(result) == 1
+    assert result[0]["text"] == text
+
+
+def test_conjunction_pair_protection_1():
+    """验收标准 2: '但是它一点都不便宜' 不被拆开（关联词对保护）。"""
+    text = "但是它一点都不便宜"
+    words = [
+        {"word": ch, "start_sec": i * 0.2, "end_sec": (i + 1) * 0.2}
+        for i, ch in enumerate(text)
+    ]
+    result = _smart_split(words, text, max_chars=25)
+    assert len(result) == 1
+    assert result[0]["text"] == text
+
+
+def test_conjunction_pair_protection_2():
+    """验收标准 3: '所以这台吉亚斯为什么这么贵' 不被拆开（关联词对保护）。"""
+    text = "所以这台吉亚斯为什么这么贵"
+    words = [
+        {"word": ch, "start_sec": i * 0.2, "end_sec": (i + 1) * 0.2}
+        for i, ch in enumerate(text)
+    ]
+    result = _smart_split(words, text, max_chars=25)
+    assert len(result) == 1
+    assert result[0]["text"] == text
+
+
+def test_particle_break_after_le():
+    """验收标准 4: '了很难原价买到' 中 '了' 是语气词，之后可断。"""
+    text = "了很难原价买到"
+    words = [
+        {"word": ch, "start_sec": i * 0.2, "end_sec": (i + 1) * 0.2}
+        for i, ch in enumerate(text)
+    ]
+    # With small max_chars, "了" (particle) should be a preferred break point
+    result = _smart_split(words, text, max_chars=5)
+    # "了" should be in the first line (not isolated)
+    assert result[0]["text"].startswith("了")
+    # Total text should be preserved
+    total = "".join(r["text"] for r in result)
+    assert total == text
+
+
+def test_max_chars_force_split():
+    """验收标准 5: 超过 max_chars 的行仍能被正确切分。"""
+    text = "这是一段很长的文本需要被正确切分不能超过限制"
+    words = [
+        {"word": ch, "start_sec": i * 0.2, "end_sec": (i + 1) * 0.2}
+        for i, ch in enumerate(text)
+    ]
+    result = _smart_split(words, text, max_chars=10)
+    assert len(result) >= 2
+    for line in result:
+        assert len(line["text"]) <= 10
+    # Total text preserved
+    total = "".join(r["text"] for r in result)
+    assert total == text
+
+
+def test_output_format_unchanged():
+    """输出格式不变: list[dict] with text/start_sec/end_sec."""
+    words = [
+        {"word": "你", "start_sec": 1.0, "end_sec": 1.2},
+        {"word": "好", "start_sec": 1.2, "end_sec": 1.4},
+    ]
+    result = _smart_split(words, "你好", max_chars=20)
+    assert isinstance(result, list)
+    assert len(result) >= 1
+    for line in result:
+        assert "text" in line
+        assert "start_sec" in line
+        assert "end_sec" in line
+        assert isinstance(line["text"], str)
+        assert isinstance(line["start_sec"], float)
+        assert isinstance(line["end_sec"], float)
+
+
 def test_split_by_sentence_ending_punctuation():
     """句号/问号/叹号强制断句。"""
     words = [
