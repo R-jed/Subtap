@@ -519,3 +519,72 @@ class TestCLIRunCleanup:
         assert work_dir.exists(), "工作目录应该存在"
         chunk_wavs = list(chunks_dir.glob("chunk_*.wav"))
         assert len(chunk_wavs) == 0, "chunk WAV 文件应该被 pipeline.cleanup() 清理"
+
+
+class TestCleanCommand:
+    """测试 CLI clean 命令。"""
+
+    def test_clean_default_removes_temp_files(self, tmp_path: Path) -> None:
+        """subtap clean 应默认移除 L1 临时文件。"""
+        from typer.testing import CliRunner
+        from subtap.cli import app
+
+        runner = CliRunner()
+
+        # 创建包含临时文件的工作区
+        chunks_dir = tmp_path / "chunks"
+        chunks_dir.mkdir()
+        (chunks_dir / "chunk_0000.wav").write_bytes(b"fake wav")
+
+        # 运行 clean 命令
+        result = runner.invoke(app, ["clean", str(tmp_path)])
+
+        # 验证临时文件已移除
+        assert not (tmp_path / "chunks" / "chunk_0000.wav").exists()
+
+    def test_clean_all_removes_intermediate_files(self, tmp_path: Path) -> None:
+        """subtap clean --all 应移除 L1 + L2 文件。"""
+        from typer.testing import CliRunner
+        from subtap.cli import app
+
+        runner = CliRunner()
+
+        # 创建包含中间文件的工作区
+        (tmp_path / "cleaned.jsonl").write_text('{"text": "hello"}\n')
+        (tmp_path / "sentences.jsonl").write_text('{"text": "hello"}\n')
+        (tmp_path / "aligned.jsonl").write_text('{"text": "hello"}\n')
+
+        # 运行 clean 命令（带 --all 参数）
+        result = runner.invoke(app, ["clean", str(tmp_path), "--all"])
+
+        # 验证中间文件已移除
+        assert not (tmp_path / "cleaned.jsonl").exists()
+        assert not (tmp_path / "sentences.jsonl").exists()
+
+        # 验证输出文件被保留
+        assert (tmp_path / "aligned.jsonl").exists()
+
+    def test_clean_preserves_output_files(self, tmp_path: Path) -> None:
+        """subtap clean 应永不移除输出文件。"""
+        from typer.testing import CliRunner
+        from subtap.cli import app
+
+        runner = CliRunner()
+
+        # 创建包含输出文件的工作区
+        (tmp_path / "aligned.jsonl").write_text('{"text": "hello"}\n')
+        (tmp_path / "report.md").write_text("# Report\n")
+        (tmp_path / "metrics.json").write_text('{}\n')
+
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        (output_dir / "test.srt").write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n")
+
+        # 运行 clean 命令（带 --all 参数）
+        result = runner.invoke(app, ["clean", str(tmp_path), "--all"])
+
+        # 验证输出文件被保留
+        assert (tmp_path / "aligned.jsonl").exists()
+        assert (tmp_path / "report.md").exists()
+        assert (tmp_path / "metrics.json").exists()
+        assert (output_dir / "test.srt").exists()

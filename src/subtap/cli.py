@@ -2533,5 +2533,44 @@ def models_remove(
         raise typer.Exit(1)
 
 
+@app.command("clean")
+def clean_workspace(
+    work_dir: Path = typer.Argument(..., help="工作目录路径"),
+    all: bool = typer.Option(False, "--all", "-a", help="清理所有中间文件（L1 + L2）"),
+) -> None:
+    """清理工作区文件。
+
+    默认只清理临时文件（L1）：
+    - chunk WAV 文件
+    - source WAV 文件
+    - 系统文件（.DS_Store 等）
+
+    使用 --all 清理所有中间文件（L1 + L2）：
+    - 上述所有文件
+    - asr.jsonl
+    - cleaned.jsonl
+    - sentences.jsonl
+
+    永远不会清理：
+    - aligned.jsonl（用户输出）
+    - report.md, metrics.json（用户输出）
+    - output/ 目录（用户输出）
+    """
+    from subtap.engine.cleanroom import Cleanroom
+
+    if not work_dir.exists():
+        typer.echo(f"✗ 工作目录不存在：{work_dir}", err=True)
+        raise typer.Exit(1)
+
+    cleanroom = Cleanroom(work_dir)
+
+    if all:
+        result = cleanroom.clean_all()
+        typer.echo(f"✓ 已清理所有临时和中间文件：{result['cleaned_count']} 个")
+    else:
+        result = cleanroom.clean_temp_files()
+        typer.echo(f"✓ 已清理临时文件：{result['cleaned_count']} 个")
+
+
 if __name__ == "__main__":
     app()
