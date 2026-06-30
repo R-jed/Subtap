@@ -741,6 +741,7 @@ def _run_pipeline_safely(
     hotword_enabled: bool = True,
     translate_to: str | None = None,
     bilingual: str = "off",
+    hotword_mode: str = "local",
 ) -> dict:
     """在线程中安全运行 pipeline，不涉及 UI 操作。"""
     from subtap.ui.tui import TUIRunner
@@ -756,6 +757,7 @@ def _run_pipeline_safely(
         hotword_enabled=hotword_enabled,
         translate_to=translate_to,
         bilingual=bilingual,
+        hotword_mode=hotword_mode,
     )
 
 
@@ -1023,6 +1025,7 @@ def run(
                     hotword_enabled,
                     translate_to,
                     bilingual,
+                    hotword_mode,
                 )
                 _exit_dashboard_when_pipeline_done(future, dashboard)
 
@@ -1062,6 +1065,7 @@ def run(
                         hotword_enabled=hotword_enabled,
                         translate_to=translate_to,
                         bilingual=bilingual,
+                        hotword_mode=hotword_mode,
                     )
             else:
                 result = runner.run_pipeline(
@@ -1074,6 +1078,7 @@ def run(
                     hotword_enabled=hotword_enabled,
                     translate_to=translate_to,
                     bilingual=bilingual,
+                    hotword_mode=hotword_mode,
                 )
             timings = result.get("timings", {})
         except SystemExit:

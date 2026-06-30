@@ -763,6 +763,8 @@ class TXTExporter(BaseExporter):
     """Plain text exporter with timestamps."""
 
     def __init__(self, **kwargs):
+        # TXTExporter 不需要 punctuation/language/max_chars/min_chars 等配置
+        # 接受 kwargs 是为了与 run_export() 的统一调用接口保持一致
         pass
 
     @property
