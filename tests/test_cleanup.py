@@ -474,7 +474,7 @@ class TestBatchCleanup:
         output_dir = tmp_path / "output"
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # 模拟 PlainRunner.run_pipeline 返回成功结果
+        # 模拟 RichRunner.run_pipeline 返回成功结果
         mock_result = {
             "timings": {"prepare": 0.1, "chunk": 0.2},
             "output_path": str(output_dir / "batch.srt"),
@@ -484,7 +484,7 @@ class TestBatchCleanup:
         cleanup_called = []
         original_clean = None
 
-        with patch("subtap.ui.tui.PlainRunner") as mock_runner_class:
+        with patch("subtap.ui.tui.RichRunner") as mock_runner_class:
             mock_runner = MagicMock()
             mock_runner.run_pipeline.return_value = mock_result
             mock_runner_class.return_value = mock_runner
@@ -535,8 +535,8 @@ class TestBatchCleanup:
         output_dir = tmp_path / "output"
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # 模拟 PlainRunner.run_pipeline 抛出异常
-        with patch("subtap.ui.tui.PlainRunner") as mock_runner_class:
+        # 模拟 RichRunner.run_pipeline 抛出异常
+        with patch("subtap.ui.tui.RichRunner") as mock_runner_class:
             mock_runner = MagicMock()
             mock_runner.run_pipeline.side_effect = RuntimeError("模拟处理失败")
             mock_runner_class.return_value = mock_runner
@@ -587,7 +587,7 @@ class TestCLIRunCleanup:
         audio_file = tmp_path / "test.wav"
         audio_file.write_bytes(b"fake wav")
 
-        # 模拟 PlainRunner 成功执行并创建临时文件
+        # 模拟 RichRunner 成功执行并创建临时文件
         work_dir = tmp_path / "work"
         work_dir.mkdir(parents=True, exist_ok=True)
         chunks_dir = work_dir / "chunks"
@@ -598,13 +598,13 @@ class TestCLIRunCleanup:
         (chunks_dir / "chunk_0001.wav").write_bytes(b"fake chunk wav")
         (chunks_dir / "chunks.jsonl").write_text('{"chunk_id": 0}\n')
 
-        # 模拟 PlainRunner.run_pipeline 返回成功结果
+        # 模拟 RichRunner.run_pipeline 返回成功结果
         mock_result = {
             "timings": {"prepare": 0.1, "chunk": 0.2},
             "output_path": str(tmp_path / "output" / "draft.srt"),
         }
 
-        with patch("subtap.ui.tui.PlainRunner") as mock_runner_class:
+        with patch("subtap.ui.tui.RichRunner") as mock_runner_class:
             mock_runner = MagicMock()
             mock_runner.run_pipeline.return_value = mock_result
             mock_runner_class.return_value = mock_runner
@@ -619,7 +619,6 @@ class TestCLIRunCleanup:
                     str(work_dir),
                     "-o",
                     str(tmp_path / "output"),
-                    "--no-tui",
                     "--no-align",
                     "--no-cleanroom",
                     "--no-git-check",

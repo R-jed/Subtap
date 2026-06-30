@@ -318,7 +318,6 @@ def test_cli_run_with_enhance_flag(tmp_path: Path, monkeypatch):
             str(fake_input),
             "-w",
             str(tmp_path / "work"),
-            "--no-tui",
             "--enhance",
             "local",
         ],

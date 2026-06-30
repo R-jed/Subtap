@@ -47,7 +47,7 @@ def test_run_local_only_blocks_translation(tmp_path):
 
     result = runner.invoke(
         app,
-        ["run", str(media), "--local-only", "--translate-to", "en", "--no-tui"],
+        ["run", str(media), "--local-only", "--translate-to", "en"],
     )
 
     assert result.exit_code == 1

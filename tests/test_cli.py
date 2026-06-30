@@ -19,32 +19,6 @@ def _strip_ansi(text: str) -> str:
     return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 
-def test_dashboard_exits_when_pipeline_future_finishes():
-    """后台 pipeline 完成时，TUI dashboard 必须主动退出。"""
-    from subtap.cli import _exit_dashboard_when_pipeline_done
-
-    future = Future()
-
-    class FakeDashboard:
-        def __init__(self):
-            self.call_from_thread_called = False
-            self.exited = False
-
-        def call_from_thread(self, callback):
-            self.call_from_thread_called = True
-            callback()
-
-        def exit(self):
-            self.exited = True
-
-    dashboard = FakeDashboard()
-    _exit_dashboard_when_pipeline_done(future, dashboard)
-    future.set_result({"timings": {}})
-
-    assert dashboard.call_from_thread_called is True
-    assert dashboard.exited is True
-
-
 def _patch_stage_pipeline(monkeypatch, stage_name: str):
     """Patch Pipeline so CLI stage tests only cover CLI file routing."""
     config = SimpleNamespace(
@@ -323,7 +297,7 @@ def test_batch_transcribe_runs_each_file(tmp_path, monkeypatch):
 
             self.workspace = Workspace()
 
-    monkeypatch.setattr("subtap.ui.tui.PlainRunner", FakeRunner)
+    monkeypatch.setattr("subtap.ui.tui.RichRunner", FakeRunner)
     monkeypatch.setattr("subtap.core.pipeline.Pipeline", FakePipeline)
 
     def _mock_config(_):
@@ -434,7 +408,6 @@ def test_run_no_align_passes_align_disabled_to_runner(tmp_path, monkeypatch):
         [
             "run",
             str(input_path),
-            "--no-tui",
             "--no-git-check",
             "--no-cleanroom",
             "--no-align",
@@ -523,7 +496,6 @@ def test_run_enhance_off_passes_clean_off_to_pipeline(tmp_path, monkeypatch):
             str(input_path),
             "--enhance",
             "off",
-            "--no-tui",
             "--no-git-check",
             "--no-cleanroom",
             "--no-align",
@@ -533,48 +505,10 @@ def test_run_enhance_off_passes_clean_off_to_pipeline(tmp_path, monkeypatch):
     )
 
     assert result.exit_code == 0
-    assert clean_kwargs == [
-        {"enhance_mode": "off", "hotword_enabled": True, "hotword_mode": "local"}
-    ]
-
-
-def test_run_tui_starts_observer_child_process(tmp_path, monkeypatch):
-    """默认 TUI 只做观察者，推理必须放到 --observer-child 子进程。"""
-
-    child_calls = []
-
-    def fake_observer_parent(command, log_path):
-        child_calls.append((command, log_path))
-
-    monkeypatch.setattr("subtap.cli._run_observer_parent", fake_observer_parent)
-
-    input_path = tmp_path / "input.wav"
-    input_path.write_bytes(b"data")
-    output_dir = tmp_path / "out"
-
-    result = runner.invoke(
-        app,
-        [
-            "run",
-            str(input_path),
-            "--no-git-check",
-            "--no-cleanroom",
-            "--no-align",
-            "--output-dir",
-            str(output_dir),
-            "--work-dir",
-            str(tmp_path / "work"),
-        ],
-    )
-
-    assert result.exit_code == 0
-    assert child_calls
-    command, log_path = child_calls[0]
-    assert "--observer-child" in command
-    assert "--no-tui" in command
-    assert "--no-align" in command
-    assert log_path == tmp_path / "work" / "run.log.jsonl"
-    assert "观察者进程" in result.output
+    assert clean_kwargs[0]["enhance_mode"] == "off"
+    assert clean_kwargs[0]["hotword_enabled"] is True
+    assert clean_kwargs[0]["hotword_mode"] == "local"
+    assert "hotword_glossary_dir" in clean_kwargs[0]
 
 
 def test_observe_command_prints_event_log_status(tmp_path):
@@ -619,40 +553,6 @@ def test_observe_command_prints_event_log_status(tmp_path):
     assert "已对齐：1" in clean
 
 
-def test_observer_parent_runs_textual_dashboard(tmp_path, monkeypatch):
-    """父进程启动子进程后，应进入 Textual 观察者 Dashboard。"""
-    from subtap.cli import _run_observer_parent
-
-    calls = []
-
-    class FakeProcess:
-        returncode = 0
-
-        def poll(self):
-            return 0
-
-    class FakePopen:
-        def __new__(cls, command, stdout, stderr):
-            calls.append(("popen", command, bool(stdout), bool(stderr)))
-            return FakeProcess()
-
-    class FakeDashboard:
-        def __init__(self, log_path, process):
-            calls.append(("dashboard", log_path, process))
-
-        def run(self):
-            calls.append(("run",))
-
-    monkeypatch.setattr("subtap.cli.subprocess.Popen", FakePopen)
-    monkeypatch.setattr("subtap.ui.observer.ObserverDashboard", FakeDashboard)
-
-    log_path = tmp_path / "run.log.jsonl"
-    _run_observer_parent(["subtap", "run"], log_path)
-
-    assert calls[0][0] == "popen"
-    assert calls[1][0] == "dashboard"
-    assert calls[1][1] == log_path
-    assert calls[2] == ("run",)
 
 
 def test_run_mode_fast():
@@ -1240,71 +1140,3 @@ def test_apply_cli_overrides_preserves_when_none():
     assert config.llm_hotword is True
 
 
-def test_run_pipeline_safely_passes_llm_proofread_to_config():
-    """_run_pipeline_safely 应将 llm_proofread 传递到 config"""
-    from pathlib import Path
-    from types import SimpleNamespace
-    from unittest.mock import patch
-
-    from subtap.schemas.config import SubtapConfig
-
-    config = SubtapConfig()
-    config.llm_proofread = None
-    config.llm_hotword = False
-
-    class FakeRunner:
-        def run_pipeline(self, *args, **kwargs):
-            return {"timings": {}, "output_dir": "/tmp/out"}
-
-    pipeline = SimpleNamespace(config=config)
-
-    with patch("subtap.ui.tui.TUIRunner", return_value=FakeRunner()):
-        from subtap.cli import _run_pipeline_safely
-
-        _run_pipeline_safely(
-            pipeline,
-            input_path=Path("/tmp/test.wav"),
-            output_dir=Path("/tmp/out"),
-            mode="fast",
-            fmt="srt",
-            llm_proofread=True,
-            llm_hotword=True,
-        )
-
-    # 验证 config 被更新
-    assert config.llm_proofread is True
-    assert config.llm_hotword is True
-
-
-def test_run_pipeline_safely_preserves_config_when_params_not_given():
-    """_run_pipeline_safely 不传参时应保留 config 原值"""
-    from pathlib import Path
-    from types import SimpleNamespace
-    from unittest.mock import patch
-
-    from subtap.schemas.config import SubtapConfig
-
-    config = SubtapConfig()
-    config.llm_proofread = True
-    config.llm_hotword = True
-
-    class FakeRunner:
-        def run_pipeline(self, *args, **kwargs):
-            return {"timings": {}, "output_dir": "/tmp/out"}
-
-    pipeline = SimpleNamespace(config=config)
-
-    with patch("subtap.ui.tui.TUIRunner", return_value=FakeRunner()):
-        from subtap.cli import _run_pipeline_safely
-
-        _run_pipeline_safely(
-            pipeline,
-            input_path=Path("/tmp/test.wav"),
-            output_dir=Path("/tmp/out"),
-            mode="fast",
-            fmt="srt",
-        )
-
-    # config 原值应保留
-    assert config.llm_proofread is True
-    assert config.llm_hotword is True

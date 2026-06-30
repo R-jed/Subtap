@@ -673,113 +673,6 @@ def setup(
 # ── Run 命令 ───────────────────────────────────────────────
 
 
-def _build_observer_child_command(
-    *,
-    input_path: Path,
-    work_dir: Path,
-    output_dir: Path,
-    fmt: str,
-    mode: str,
-    enhance: str,
-    local_only: bool,
-    translate_to: str | None,
-    bilingual: str,
-    align_enabled: bool,
-    punctuation: bool,
-    subtitle_language: str,
-    no_git_check: bool,
-    no_cleanroom: bool,
-    timestamp: bool,
-    script: str | None = None,
-    script_mode: str = "follow_script",
-    llm_proofread: bool | None = None,
-    llm_hotword: bool | None = None,
-) -> list[str]:
-    command = [
-        sys.executable,
-        "-m",
-        "subtap.cli",
-        "run",
-        str(input_path),
-        "--work-dir",
-        str(work_dir),
-        "--output-dir",
-        str(output_dir),
-        "--format",
-        fmt,
-        "--mode",
-        mode,
-        "--enhance",
-        enhance,
-        "--bilingual",
-        bilingual,
-        "--subtitle-language",
-        subtitle_language,
-        "--no-tui",
-        "--observer-child",
-    ]
-    if local_only:
-        command.append("--local-only")
-    if translate_to:
-        command.extend(["--translate-to", translate_to])
-    if not align_enabled:
-        command.append("--no-align")
-    if punctuation:
-        command.append("--punctuation")
-    if no_git_check:
-        command.append("--no-git-check")
-    if no_cleanroom:
-        command.append("--no-cleanroom")
-    if not timestamp:
-        command.append("--no-timestamp")
-    if script:
-        command.extend(["--script", script])
-        command.extend(["--script-mode", script_mode])
-    if llm_proofread is not None:
-        command.append("--llm-proofread" if llm_proofread else "--no-llm-proofread")
-    if llm_hotword is not None:
-        command.append("--llm-hotword" if llm_hotword else "--no-llm-hotword")
-    return command
-
-
-def _print_observer_state(log_path: Path) -> None:
-    from subtap.ui.observer import summarize_event_log
-
-    state = summarize_event_log(log_path)
-    typer.echo(
-        "▸ "
-        f"阶段：{state['stage']}  "
-        f"进度：{state['progress']}%  "
-        f"Chunk：{state['chunk_id']}  "
-        f"模型：{state['model']}  "
-        f"草稿：{state['asr_drafts']}  "
-        f"已对齐：{state['aligned']}"
-    )
-
-
-def _run_observer_parent(
-    command: list[str], log_path: Path, refresh_interval: float = 1.0
-) -> None:
-    """父进程只观察日志；推理在子进程内执行。"""
-    from subtap.ui.observer import ObserverDashboard
-
-    output_dir = log_path.parent
-    output_dir.mkdir(parents=True, exist_ok=True)
-    stdout_path = output_dir / "child.stdout.log"
-    stderr_path = output_dir / "child.stderr.log"
-    with (
-        stdout_path.open("w", encoding="utf-8") as stdout,
-        stderr_path.open("w", encoding="utf-8") as stderr,
-    ):
-        process = subprocess.Popen(command, stdout=stdout, stderr=stderr)
-        ObserverDashboard(log_path, process).run()
-
-    _print_observer_state(log_path)
-    if process.returncode:
-        typer.echo(f"✗ 子进程处理失败，错误日志：{stderr_path}", err=True)
-        raise typer.Exit(process.returncode)
-
-
 def _apply_cli_overrides(
     config,
     llm_proofread: bool | None = None,
@@ -792,54 +685,6 @@ def _apply_cli_overrides(
         config.llm_hotword = llm_hotword
 
 
-def _run_pipeline_safely(
-    pipeline,
-    input_path: Path,
-    output_dir: Path,
-    mode: str,
-    fmt: str,
-    enhance: str = "local",
-    align_enabled: bool = True,
-    hotword_enabled: bool = True,
-    translate_to: str | None = None,
-    bilingual: str = "off",
-    hotword_mode: str = "local",
-    llm_proofread: bool | None = None,
-    llm_hotword: bool | None = None,
-) -> dict:
-    """在线程中安全运行 pipeline，不涉及 UI 操作。"""
-    from subtap.ui.tui import TUIRunner
-
-    _apply_cli_overrides(pipeline.config, llm_proofread, llm_hotword)
-
-    runner = TUIRunner(use_tui=False, mode=mode)
-    return runner.run_pipeline(
-        pipeline,
-        input_path,
-        output_dir,
-        fmt=fmt,
-        enhance=enhance,
-        align_enabled=align_enabled,
-        hotword_enabled=hotword_enabled,
-        translate_to=translate_to,
-        bilingual=bilingual,
-        hotword_mode=hotword_mode,
-    )
-
-
-def _exit_dashboard_when_pipeline_done(future, dashboard) -> None:
-    """后台 pipeline 结束时退出 Textual dashboard。"""
-
-    def _exit(_future):
-        try:
-            dashboard.call_from_thread(dashboard.exit)
-        except Exception:
-            try:
-                dashboard.exit()
-            except Exception:
-                pass
-
-    future.add_done_callback(_exit)
 
 
 @app.command()
@@ -889,10 +734,6 @@ def run(
     min_chars: int = typer.Option(
         10, "--min-chars", help="每行字幕最小字符数（4-30）", min=4, max=30
     ),
-    use_tui: bool = typer.Option(
-        True, "--tui/--no-tui", help="启用 TUI 界面（默认开启）"
-    ),
-    observer_child: bool = typer.Option(False, "--observer-child", hidden=True),
     no_git_check: bool = typer.Option(
         False, "--no-git-check", help="跳过 Git 状态检查"
     ),
@@ -952,10 +793,6 @@ def run(
     from subtap.schemas.config import load_config
     from subtap.core.pipeline import Pipeline
 
-    if json_output and use_tui:
-        typer.echo("✗ --json 需要同时使用 --no-tui", err=True)
-        raise typer.Exit(1)
-
     if not input_path.exists():
         typer.echo(f"✗ 错误：文件未找到 {input_path}", err=True)
         raise typer.Exit(1)
@@ -986,37 +823,6 @@ def run(
 
     if enhance == "api":
         typer.echo("⚠ 增强模式为 api，字幕文本将发送到外部 LLM API（音频不会发送）")
-
-    if use_tui and not observer_child:
-        event_log_path = work_dir / "run.log.jsonl"
-        event_log_path.unlink(missing_ok=True)
-        command = _build_observer_child_command(
-            input_path=input_path,
-            work_dir=work_dir,
-            output_dir=output_dir,
-            fmt=fmt,
-            mode=mode,
-            enhance=enhance,
-            local_only=local_only,
-            translate_to=translate_to,
-            bilingual=bilingual,
-            align_enabled=align_enabled,
-            punctuation=punctuation,
-            subtitle_language=subtitle_language,
-            no_git_check=no_git_check,
-            no_cleanroom=no_cleanroom,
-            timestamp=timestamp,
-            script=script,
-            script_mode=script_mode,
-            llm_proofread=llm_proofread,
-            llm_hotword=llm_hotword,
-        )
-        typer.echo("▸ TUI 观察者进程已启动，推理将在独立子进程执行")
-        _run_observer_parent(command, event_log_path)
-        return
-
-    if observer_child:
-        use_tui = False
 
     config = load_config(Path.home() / ".subtap" / "config.yaml")
     check_first_run_wizard(config)
@@ -1081,89 +887,16 @@ def run(
     profiler = PipelineProfiler(event_bus)
     profiler.wrap_pipeline(pipeline)
 
-    if use_tui and getattr(config.asr, "backend", "") == "mlx-qwen-asr":
-        typer.echo(
-            "⚠ MLX/Metal 推理与 Textual 实时界面存在兼容风险，已切换为安全进度模式"
-        )
-        use_tui = False
+    from subtap.ui.tui import RichRunner
 
-    if use_tui:
-        from concurrent.futures import ThreadPoolExecutor
-        from subtap.ui.dashboard import PipelineDashboard
-        from subtap.ui.event_bridge import EventBridge
+    _apply_cli_overrides(config, llm_proofread, llm_hotword)
 
-        dashboard = PipelineDashboard(event_bus, profiler)
-        bridge = EventBridge(event_bus, dashboard)
-        bridge.connect()
+    runner = RichRunner()
 
-        # 使用 ThreadPoolExecutor 管理线程生命周期
-        timings = {}
-        pipeline_error = None
-
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = None
-
-            def _start_pipeline():
-                nonlocal future
-                future = executor.submit(
-                    _run_pipeline_safely,
-                    pipeline,
-                    input_path,
-                    output_dir,
-                    mode,
-                    fmt,
-                    enhance,
-                    align_enabled,
-                    hotword_enabled,
-                    translate_to,
-                    bilingual,
-                    hotword_mode,
-                    llm_proofread,
-                    llm_hotword,
-                )
-                _exit_dashboard_when_pipeline_done(future, dashboard)
-
-            dashboard.set_startup_callback(_start_pipeline)
-
-            # 运行 dashboard（它会启动 async loop 处理事件）
-            dashboard.run()
-
-            # 获取结果（future.result() 会阻塞直到完成）
-            try:
-                if future is None:
-                    raise RuntimeError("TUI 未能启动处理任务")
-                result = future.result(timeout=300)
-                timings = result.get("timings", {})
-            except Exception as e:
-                pipeline_error = e
-
-        if pipeline_error:
-            typer.echo(f"\n✗ 处理失败：{pipeline_error}", err=True)
-            raise typer.Exit(1)
-    else:
-        from subtap.ui.tui import PlainRunner
-
-        _apply_cli_overrides(config, llm_proofread, llm_hotword)
-
-        runner = PlainRunner()
-
-        timings = {}
-        try:
-            if json_output:
-                with redirect_stdout(StringIO()):
-                    result = runner.run_pipeline(
-                        pipeline,
-                        input_path,
-                        output_dir,
-                        fmt=fmt,
-                        enhance=enhance,
-                        align_enabled=align_enabled,
-                        hotword_enabled=hotword_enabled,
-                        translate_to=translate_to,
-                        bilingual=bilingual,
-                        hotword_mode=hotword_mode,
-                    )
-            else:
+    timings = {}
+    try:
+        if json_output:
+            with redirect_stdout(StringIO()):
                 result = runner.run_pipeline(
                     pipeline,
                     input_path,
@@ -1176,12 +909,25 @@ def run(
                     bilingual=bilingual,
                     hotword_mode=hotword_mode,
                 )
-            timings = result.get("timings", {})
-        except SystemExit:
-            raise
-        except Exception as e:
-            typer.echo(f"\n✗ 处理失败：{e}", err=True)
-            raise typer.Exit(1)
+        else:
+            result = runner.run_pipeline(
+                pipeline,
+                input_path,
+                output_dir,
+                fmt=fmt,
+                enhance=enhance,
+                align_enabled=align_enabled,
+                hotword_enabled=hotword_enabled,
+                translate_to=translate_to,
+                bilingual=bilingual,
+                hotword_mode=hotword_mode,
+            )
+        timings = result.get("timings", {})
+    except SystemExit:
+        raise
+    except Exception as e:
+        typer.echo(f"\n✗ 处理失败：{e}", err=True)
+        raise typer.Exit(1)
 
     # Pipeline 执行成功后清理 L1 临时文件
     pipeline.cleanup()
@@ -1495,7 +1241,7 @@ def batch_transcribe(
     )
     from subtap.core.pipeline import Pipeline
     from subtap.schemas.config import load_config
-    from subtap.ui.tui import PlainRunner
+    from subtap.ui.tui import RichRunner
 
     # ── 参数冲突检查 ──────────────────────────────────────────
     if resume and retry_failed:
@@ -1734,7 +1480,7 @@ def batch_transcribe(
             pipeline.workspace.ensure_dirs()
 
             # 运行 Pipeline
-            runner = PlainRunner()
+            runner = RichRunner()
 
             if json_output:
                 with redirect_stdout(StringIO()):
@@ -2265,13 +2011,9 @@ def demo(
     pipeline = Pipeline(config, work_dir=Path("./demo_work"))
     pipeline.workspace.ensure_dirs()
 
-    from subtap.ui.tui import PlainRunner, TUIRunner
+    from subtap.ui.tui import RichRunner
 
-    runner: PlainRunner | TUIRunner
-    if skip_tui:
-        runner = PlainRunner()
-    else:
-        runner = TUIRunner(use_tui=True)
+    runner = RichRunner()
 
     try:
         runner.run_pipeline(

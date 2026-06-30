@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from subtap.ui.tui import PlainRunner
+from subtap.ui.tui import RichRunner
 
 
 class FakeWorkspace:
@@ -62,7 +62,7 @@ def test_plain_runner_passes_translate_and_bilingual(monkeypatch, tmp_path):
 
     monkeypatch.setattr("subtap.core.export.run_final_exports", fake_final_exports)
 
-    PlainRunner().run_pipeline(
+    RichRunner().run_pipeline(
         pipeline,
         tmp_path / "input.mp3",
         tmp_path / "output",
