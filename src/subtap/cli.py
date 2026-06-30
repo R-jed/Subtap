@@ -2566,10 +2566,12 @@ def clean_workspace(
 
     if all:
         result = cleanroom.clean_all()
-        typer.echo(f"✓ 已清理所有临时和中间文件：{result['cleaned_count']} 个")
     else:
         result = cleanroom.clean_temp_files()
-        typer.echo(f"✓ 已清理临时文件：{result['cleaned_count']} 个")
+
+    # 使用 format_summary() 显示清理结果
+    summary = cleanroom.format_summary(result)
+    typer.echo(summary)
 
 
 if __name__ == "__main__":
