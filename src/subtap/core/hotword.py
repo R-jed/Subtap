@@ -35,14 +35,16 @@ def run_hotword(
 
     # Apply hotword replacement on aligned text
     # Preserve original text in "aligned_text" for word-level timing matching
-    # Export stage uses aligned_text for _filter_words_to_text, text for display
+    # Store replacement pairs for post-split application in exporter
     replaced_count = 0
     for seg in segments:
         original = seg.get("text", "")
         corrected = engine.process(original, lang=lang)
         if corrected != original:
+            replacements = engine.get_applied_replacements(original, lang=lang)
             seg["aligned_text"] = original  # preserve for word filtering
             seg["text"] = corrected
+            seg["hotword_replacements"] = replacements  # for post-split application
             replaced_count += 1
 
     # Write back

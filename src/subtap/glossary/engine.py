@@ -65,6 +65,21 @@ class HotwordEngine:
 
         return text
 
+    def get_applied_replacements(self, text: str, lang: str = "zh") -> dict[str, str]:
+        """Get the replacement pairs that would be applied to text.
+
+        Returns dict of {alias: word} for aliases found in text.
+        """
+        glossary = self._load_glossary(lang)
+        aliases = glossary.get_all_aliases()
+        result = {}
+        sorted_aliases = sorted(aliases.keys(), key=len, reverse=True)
+        for alias in sorted_aliases:
+            word = aliases[alias]
+            if alias in text and alias != word:
+                result[alias] = word
+        return result
+
     def process_batch(self, texts: list[str], lang: str = "zh") -> list[str]:
         """Process multiple texts."""
         return [self.process(text, lang) for text in texts]
