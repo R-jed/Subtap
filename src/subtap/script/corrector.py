@@ -55,7 +55,6 @@ def correct_segments(
     segments: list[dict],
     align_ops: list[AlignOp],
     ref_lines: list[str],
-    mode: str = "follow_script",
 ) -> tuple[list[dict], int]:
     """Correct segments based on alignment operations.
 
@@ -63,7 +62,6 @@ def correct_segments(
         segments: ASR segments (list of dicts with text, start_sec, end_sec).
         align_ops: Alignment operations from aligner.
         ref_lines: Reference manuscript lines.
-        mode: "follow_script" or "correct_only".
 
     Returns:
         Tuple of (corrected segments list, skipped count).
