@@ -7,6 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from helpers import MockLLMBackend
+
 from subtap.core.clean import run_clean
 from subtap.core.replacement import apply_replacements
 from subtap.core.workspace import Workspace
@@ -442,30 +444,6 @@ def test_cli_clean_runnable(test_config: SubtapConfig, tmp_path: Path, monkeypat
 
 
 # ── Independent LLM config tests ──
-
-
-class MockLLMBackend:
-    """Mock LLM backend that tracks which methods were called."""
-
-    def __init__(self):
-        self.select_suspicious_segments_called = False
-        self.repair_segments_called = False
-        self.replace_hotwords_called = False
-        self._selected_ids = []
-
-    def select_suspicious_segments(self, segments):
-        self.select_suspicious_segments_called = True
-        # Return some IDs to trigger repair
-        self._selected_ids = [0] if segments else []
-        return self._selected_ids
-
-    def repair_segments(self, segments):
-        self.repair_segments_called = True
-        return {s["i"]: s["t"] + " [fixed]" for s in segments}
-
-    def replace_hotwords(self, segments, hotword_payload):
-        self.replace_hotwords_called = True
-        return {s["i"]: s["t"] + " [hotword]" for s in segments}
 
 
 @pytest.fixture
