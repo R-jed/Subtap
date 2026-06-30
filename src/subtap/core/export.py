@@ -446,7 +446,9 @@ def _smart_split(
         split_bt = "other"
 
         if i < len(boundaries) and boundaries[i] is not None:
-            boundary_type, score = boundaries[i]
+            b = boundaries[i]
+            assert b is not None
+            boundary_type, score = b
 
             # Pause boundary: split BEFORE this word if current line is long enough
             if boundary_type == "pause" and cur_text and len(cur_text) >= min_chars:
@@ -499,7 +501,9 @@ def _smart_split(
 
         # Clause boundary check (sentence_end, comma)
         if i < len(boundaries) and boundaries[i] is not None:
-            boundary_type, score = boundaries[i]
+            b = boundaries[i]
+            assert b is not None
+            boundary_type, score = b
             if boundary_type == "sentence_end":
                 should_split_after = True
                 after_bt = "sentence_end"
@@ -583,6 +587,18 @@ def _smart_split(
 class BaseExporter(ABC):
     """Base class for subtitle exporters."""
 
+    def __init__(
+        self,
+        punctuation: bool = False,
+        language: str = "zh",
+        max_chars: int = 25,
+        min_chars: int = 10,
+    ):
+        self.punctuation = punctuation
+        self.language = language
+        self.max_chars = max_chars
+        self.min_chars = min_chars
+
     @property
     @abstractmethod
     def extension(self) -> str:
@@ -602,18 +618,6 @@ class BaseExporter(ABC):
 
 class SRTExporter(BaseExporter):
     """SRT subtitle exporter."""
-
-    def __init__(
-        self,
-        punctuation: bool = False,
-        language: str = "zh",
-        max_chars: int = 25,
-        min_chars: int = 10,
-    ):
-        self.punctuation = punctuation
-        self.language = language
-        self.max_chars = max_chars
-        self.min_chars = min_chars
 
     @property
     def extension(self) -> str:
@@ -723,7 +727,7 @@ class ASSExporter(BaseExporter):
     """ASS subtitle exporter (minimal viable)."""
 
     def __init__(self, **kwargs):
-        pass
+        super().__init__(**kwargs)
 
     HEADER = (
         "[Script Info]\n"
@@ -763,7 +767,7 @@ class TXTExporter(BaseExporter):
     """Plain text exporter with timestamps."""
 
     def __init__(self, **kwargs):
-        pass
+        super().__init__(**kwargs)
 
     @property
     def extension(self) -> str:

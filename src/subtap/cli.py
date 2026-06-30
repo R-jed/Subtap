@@ -1213,7 +1213,7 @@ def run(
 
     try:
         from subtap.core.report import format_output_contract_summary
-        from subtap.output.contract import write_contract_artifacts
+        from subtap.output.contract import write_contract_artifacts  # type: ignore[import-untyped]
         from subtap.quality.sample_picker import pick_manual_review_segments
 
         write_contract_artifacts(work_dir, output_dir, quality=quality_payload)
@@ -1475,6 +1475,7 @@ def batch_transcribe(
     # ── 恢复或重试模式 ──────────────────────────────────────
     if resume or retry_failed:
         manifest_path = resume or retry_failed
+        assert manifest_path is not None
         if not manifest_path.exists():
             typer.echo(f"✗ manifest 文件不存在：{manifest_path}", err=True)
             raise typer.Exit(1)
