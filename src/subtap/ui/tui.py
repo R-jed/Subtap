@@ -298,7 +298,9 @@ class PlainRunner:
             _echo(f"  ✓ {r['sentence_count']} 句")
 
             # 文稿匹配（可选）
+            t = time.time()
             script_result = pipeline.run_stage("script_match")
+            self.timings["script_match"] = time.time() - t
             if not script_result.get("skipped"):
                 msg = script_result.get("message", "")
                 _echo(f"  ✓ {msg}")
