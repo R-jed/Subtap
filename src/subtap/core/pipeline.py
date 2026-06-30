@@ -188,6 +188,9 @@ class Pipeline:
 
     def cleanup(self) -> dict[str, Any]:
         """清理 L1 临时文件。"""
+        if not self.config.cleanup.auto_cleanup:
+            return {"cleaned_count": 0, "cleaned_files": [], "is_clean": True}
+
         from subtap.engine.cleanroom import Cleanroom
         cleanroom = Cleanroom(self.workspace.root)
-        return cleanroom.clean_temp_files()
+        return cleanroom.clean_temp_files(exclude_chunks=self.config.cleanup.keep_chunks)

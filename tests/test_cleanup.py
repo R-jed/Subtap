@@ -342,6 +342,61 @@ class TestCleanupSummary:
         assert "event.log.jsonl" in summary or "损坏" in summary
 
 
+class TestCleanupIntegration:
+    """测试 CleanupConfig 集成到 Pipeline 和 Cleanroom。"""
+
+    def test_auto_cleanup_disabled(self, tmp_path: Path) -> None:
+        """auto_cleanup=False 时 Pipeline 不应执行清理。"""
+        from subtap.core.pipeline import Pipeline
+        from subtap.schemas.config import SubtapConfig, CleanupConfig
+
+        chunks_dir = tmp_path / "chunks"
+        chunks_dir.mkdir()
+        (chunks_dir / "chunk_0000.wav").write_bytes(b"fake wav")
+
+        config = SubtapConfig(cleanup=CleanupConfig(auto_cleanup=False))
+        pipeline = Pipeline(config, work_dir=tmp_path)
+        pipeline.cleanup()
+
+        assert (tmp_path / "chunks" / "chunk_0000.wav").exists()
+
+    def test_keep_chunks_enabled(self, tmp_path: Path) -> None:
+        """keep_chunks=True 时 Pipeline 应保留 chunk WAV 文件。"""
+        from subtap.core.pipeline import Pipeline
+        from subtap.schemas.config import SubtapConfig, CleanupConfig
+
+        chunks_dir = tmp_path / "chunks"
+        chunks_dir.mkdir()
+        (chunks_dir / "chunk_0000.wav").write_bytes(b"fake wav")
+
+        config = SubtapConfig(cleanup=CleanupConfig(keep_chunks=True))
+        pipeline = Pipeline(config, work_dir=tmp_path)
+        pipeline.cleanup()
+
+        assert (tmp_path / "chunks" / "chunk_0000.wav").exists()
+
+    def test_default_cleanup_removes_all(self, tmp_path: Path) -> None:
+        """默认配置（auto_cleanup=True, keep_chunks=False）应清理所有 L1 文件。"""
+        from subtap.core.pipeline import Pipeline
+        from subtap.schemas.config import SubtapConfig, CleanupConfig
+
+        chunks_dir = tmp_path / "chunks"
+        chunks_dir.mkdir()
+        (chunks_dir / "chunk_0000.wav").write_bytes(b"fake wav")
+
+        audio_dir = tmp_path / "audio"
+        audio_dir.mkdir()
+        (audio_dir / "source.wav").write_bytes(b"fake wav")
+
+        config = SubtapConfig(cleanup=CleanupConfig())
+        pipeline = Pipeline(config, work_dir=tmp_path)
+        result = pipeline.cleanup()
+
+        assert not (tmp_path / "chunks" / "chunk_0000.wav").exists()
+        assert not (tmp_path / "audio" / "source.wav").exists()
+        assert result["cleaned_count"] >= 2
+
+
 class TestPipelineCleanup:
     """测试 Pipeline 的 cleanup 方法。"""
 
