@@ -1792,11 +1792,7 @@ def script_match(
     ),
 ) -> None:
     """按顺序用文稿替换已有时间轴文本。"""
-    from subtap.script.match import (
-        build_match_report,
-        format_script,
-        match_script_lines,
-    )
+    from subtap.script.match import match_script_lines
 
     if not timeline.exists():
         typer.echo(f"✗ 时间轴文件不存在：{timeline}", err=True)
@@ -1810,24 +1806,32 @@ def script_match(
         for line in timeline.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    lines = format_script(script.read_text(encoding="utf-8"))
-    mode = "follow_script" if follow_script_lines else "keep_subtitle"
-    matched = match_script_lines(segments, lines, mode=mode)
+    script_text = script.read_text(encoding="utf-8")
+    mode = "follow_script" if follow_script_lines else "correct_only"
+    matched, report = match_script_lines(segments, script_text, mode=mode)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
         "\n".join(json.dumps(item, ensure_ascii=False) for item in matched) + "\n",
         encoding="utf-8",
     )
     report_path = output.with_name("matched_report.md")
-    report_path.write_text(
-        build_match_report(
-            segments_total=len(segments),
-            script_lines_total=len(lines),
-            output_total=len(matched),
-            mode=mode,
-        ),
-        encoding="utf-8",
-    )
+    report_lines = [
+        "# 文稿匹配报告",
+        "",
+        f"- 匹配模式：{mode}",
+        f"- 已匹配：{report.matched}",
+        f"- 已纠错：{report.corrected}",
+        f"- 跳过：{report.skipped}",
+        f"- 输出条数：{len(matched)}",
+        "",
+        report.message,
+    ]
+    if report.warnings:
+        report_lines.append("")
+        report_lines.append("## 警告")
+        for w in report.warnings:
+            report_lines.append(f"- {w}")
+    report_path.write_text("\n".join(report_lines) + "\n", encoding="utf-8")
     typer.echo(f"✓ 已输出：{output}")
     typer.echo(f"▸ 文稿匹配报告：{report_path}")
 
@@ -1837,7 +1841,7 @@ def script_format(
     script: Path = typer.Option(..., "--script", help="文稿文本文件"),
 ) -> None:
     """清理文稿空行、标题和备注后输出到终端。"""
-    from subtap.script.match import format_script
+    from subtap.script.formatter import format_script
 
     if not script.exists():
         typer.echo(f"✗ 文稿文件不存在：{script}", err=True)
