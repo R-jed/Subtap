@@ -119,8 +119,9 @@ class TUIRunner:
                 self.progress.print_stage_result(self.state, result)
 
             # Stage 5.5: script_match (optional)
+            stage_start = time.time()
             script_result = pipeline.run_stage("script_match")
-            self.timings["script_match"] = 0.0
+            self.timings["script_match"] = time.time() - stage_start
             if not script_result.get("skipped"):
                 if self.use_tui:
                     self.progress.print_stage_result(self.state, script_result)
