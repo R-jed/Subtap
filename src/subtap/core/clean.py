@@ -75,6 +75,9 @@ def local_clean_text(
         text = _ALL_PUNCT_RE.sub(" ", text)
         text = re.sub(r"\s+", " ", text).strip()
 
+    # 5b. Fix decimal points corrupted by punctuation normalization (0。6 → 0.6)
+    text = re.sub(r"(\d)。(\d)", r"\1.\2", text)
+
     # 6. Normalize case (English sentences first letter capitalized)
     if language in ("en",):
         text = _capitalize_sentences(text)
@@ -248,8 +251,8 @@ def run_clean(
                 selected = [item for item in llm_segments if item["i"] in suspicious_ids]
                 _apply_text_updates(replaced, llm.repair_segments(selected))
 
-        # AI 热词替换
-        if llm_hotword and hotword_payload:
+        # AI 热词替换（本地热词为空时，AI 自主发现领域专有名词）
+        if llm_hotword:
             _apply_text_updates(
                 replaced,
                 llm.replace_hotwords(_segments_for_llm(replaced), hotword_payload),
