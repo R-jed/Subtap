@@ -1063,6 +1063,9 @@ def run(
             typer.echo(f"\n✗ 处理失败：{e}", err=True)
             raise typer.Exit(1)
 
+    # Pipeline 执行成功后清理 L1 临时文件
+    pipeline.cleanup()
+
     def _count_jsonl(path: Path) -> int:
         if not path.exists():
             return 0
