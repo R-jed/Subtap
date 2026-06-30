@@ -36,8 +36,7 @@ def correct_text(asr_text: str, ref_text: str) -> CorrectionResult:
     if sim >= CORRECTION_THRESHOLD and asr_text != ref_text:
         edit_ops = Levenshtein.editops(asr_text, ref_text)
         changes: list[tuple[str, int, int]] = [
-            (str(op), int(src_pos), int(dst_pos))
-            for op, src_pos, dst_pos in edit_ops
+            (str(op), int(src_pos), int(dst_pos)) for op, src_pos, dst_pos in edit_ops
         ]
         return CorrectionResult(
             original=asr_text,
