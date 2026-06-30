@@ -4,50 +4,12 @@ from __future__ import annotations
 
 import pytest
 
+from helpers import MockLLMBackend
 from subtap.core.pipeline import Pipeline
 from subtap.core.workspace import Workspace
 from subtap.schemas.config import SubtapConfig
 from subtap.schemas.glossary import Glossary, GlossaryTerm
 from subtap.schemas.models import AlignedSegment, ASRSegment
-
-
-# ── Mock backends ──
-
-
-class MockLLMBackend:
-    """Mock LLM backend that tracks which methods were called."""
-
-    def __init__(self):
-        self.select_suspicious_segments_called = False
-        self.repair_segments_called = False
-        self.replace_hotwords_called = False
-        self.translate_srt_called = False
-
-    def select_suspicious_segments(self, segments):
-        self.select_suspicious_segments_called = True
-        return [0] if segments else []
-
-    def repair_segments(self, segments):
-        self.repair_segments_called = True
-        return {s["i"]: s["t"] + " [fixed]" for s in segments}
-
-    def replace_hotwords(self, segments, hotword_payload):
-        self.replace_hotwords_called = True
-        return {s["i"]: s["t"] + " [hotword]" for s in segments}
-
-    def translate_srt(self, srt_text, target_language):
-        self.translate_srt_called = True
-        # 返回格式正确的翻译 SRT
-        lines = srt_text.strip().split("\n")
-        translated_lines = []
-        for line in lines:
-            if "-->" in line or line.strip().isdigit():
-                translated_lines.append(line)
-            elif line.strip():
-                translated_lines.append(f"[translated] {line}")
-            else:
-                translated_lines.append(line)
-        return "\n".join(translated_lines)
 
 
 # ── Helpers ──
@@ -192,3 +154,41 @@ def test_full_pipeline_with_translation(tmp_path):
 
     assert result["success"] is True
     assert mock_llm.translate_srt_called is True
+
+
+def test_full_pipeline_with_both_llm_features(tmp_path):
+    """完整 pipeline 测试：同时开启 AI 校对和热词替换。"""
+    config, workspace = prepare_test_audio(tmp_path)
+
+    config.llm_proofread = True
+    config.llm_hotword = True
+    config.translate_to = ""
+
+    mock_llm = MockLLMBackend()
+    mock_glossary = Glossary(
+        terms=[GlossaryTerm(canonical="test", aliases=["Test"])]
+    )
+
+    with pytest.MonkeyPatch.context() as m:
+        m.setattr("subtap.core.clean.get_llm_backend", lambda *a, **k: mock_llm)
+        m.setattr("subtap.core.clean.load_glossary", lambda *a, **k: mock_glossary)
+        result = run_pipeline(config, workspace)
+
+    assert result["success"] is True
+    assert mock_llm.select_suspicious_segments_called is True
+    assert mock_llm.repair_segments_called is True
+    assert mock_llm.replace_hotwords_called is True
+
+
+def test_full_pipeline_with_llm_disabled(tmp_path):
+    """完整 pipeline 测试：LLM 全部关闭，无翻译。"""
+    config, workspace = prepare_test_audio(tmp_path)
+
+    config.llm_proofread = False
+    config.llm_hotword = False
+    config.translate_to = ""
+
+    # 不需要 mock LLM——不应被调用
+    result = run_pipeline(config, workspace)
+
+    assert result["success"] is True
