@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
-from subtap.cli import app
+from subtap.cli import app, check_first_run_wizard
 
 runner = CliRunner()
 
@@ -1080,10 +1080,10 @@ def test_first_run_wizard_prompts_when_llm_proofread_not_set(monkeypatch):
     )
     config.llm_proofread = None
 
+    # 模拟环境变量存在
+    monkeypatch.setenv("TEST_KEY", "test-value")
     # 模拟用户输入 "y"
     monkeypatch.setattr("builtins.input", lambda _: "y")
-
-    from subtap.cli import check_first_run_wizard
 
     result = check_first_run_wizard(config)
     assert result is True
@@ -1099,10 +1099,48 @@ def test_first_run_wizard_prompts_user_declines(monkeypatch):
     )
     config.llm_proofread = None
 
+    # 模拟环境变量存在
+    monkeypatch.setenv("TEST_KEY", "test-value")
     # 模拟用户输入 "n"
     monkeypatch.setattr("builtins.input", lambda _: "n")
 
-    from subtap.cli import check_first_run_wizard
+    result = check_first_run_wizard(config)
+    assert result is True
+    assert config.llm_proofread is False
+
+
+def test_first_run_wizard_accepts_empty_input(monkeypatch):
+    """首次运行向导应接受空输入（直接回车）"""
+    from subtap.schemas.config import RemoteAPIConfig, SubtapConfig
+
+    config = SubtapConfig(
+        remote_api=RemoteAPIConfig(base_url="http://test.com", api_key_env="TEST_KEY")
+    )
+    config.llm_proofread = None
+
+    # 模拟环境变量存在
+    monkeypatch.setenv("TEST_KEY", "test-value")
+    # 模拟用户直接回车
+    monkeypatch.setattr("builtins.input", lambda _: "")
+
+    result = check_first_run_wizard(config)
+    assert result is True
+    assert config.llm_proofread is True
+
+
+def test_first_run_wizard_rejects_no_input(monkeypatch):
+    """首次运行向导应拒绝 'no' 输入"""
+    from subtap.schemas.config import RemoteAPIConfig, SubtapConfig
+
+    config = SubtapConfig(
+        remote_api=RemoteAPIConfig(base_url="http://test.com", api_key_env="TEST_KEY")
+    )
+    config.llm_proofread = None
+
+    # 模拟环境变量存在
+    monkeypatch.setenv("TEST_KEY", "test-value")
+    # 模拟用户输入 "no"
+    monkeypatch.setattr("builtins.input", lambda _: "no")
 
     result = check_first_run_wizard(config)
     assert result is True
@@ -1116,8 +1154,6 @@ def test_first_run_wizard_skips_when_llm_proofread_set():
     config = SubtapConfig()
     config.llm_proofread = True
 
-    from subtap.cli import check_first_run_wizard
-
     result = check_first_run_wizard(config)
     assert result is False  # 未触发向导
 
@@ -1129,7 +1165,21 @@ def test_first_run_wizard_skips_when_no_api_config():
     config = SubtapConfig()
     config.llm_proofread = None
 
-    from subtap.cli import check_first_run_wizard
+    result = check_first_run_wizard(config)
+    assert result is False  # 未触发向导
+
+
+def test_first_run_wizard_skips_when_env_var_not_set(monkeypatch):
+    """首次运行向导应在环境变量未设置时跳过"""
+    from subtap.schemas.config import RemoteAPIConfig, SubtapConfig
+
+    config = SubtapConfig(
+        remote_api=RemoteAPIConfig(base_url="http://test.com", api_key_env="TEST_KEY")
+    )
+    config.llm_proofread = None
+
+    # 确保环境变量不存在
+    monkeypatch.delenv("TEST_KEY", raising=False)
 
     result = check_first_run_wizard(config)
     assert result is False  # 未触发向导
