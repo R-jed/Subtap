@@ -15,11 +15,12 @@ def run_hotword(
     mode: str = "local",
     lang: str = "zh",
 ) -> dict:
-    """Run hotword replacement on cleaned segments.
+    """Run hotword replacement on aligned segments (post-alignment).
 
-    Reads cleaned.jsonl, applies hotword replacement, writes back.
+    Reads aligned.jsonl, applies hotword replacement on text field,
+    writes back. Preserves word-level timestamps.
     """
-    input_path = workspace.cleaned_jsonl
+    input_path = workspace.aligned_jsonl
     if not input_path.exists():
         return {"replaced": 0, "total": 0}
 
@@ -32,13 +33,14 @@ def run_hotword(
             if line.strip():
                 segments.append(json.loads(line))
 
-    # Apply hotword replacement
+    # Apply hotword replacement on aligned text
+    # aligned.jsonl uses "text" field (not "cleaned_text")
     replaced_count = 0
     for seg in segments:
-        original = seg.get("cleaned_text", "")
+        original = seg.get("text", "")
         corrected = engine.process(original, lang=lang)
         if corrected != original:
-            seg["cleaned_text"] = corrected
+            seg["text"] = corrected
             replaced_count += 1
 
     # Write back

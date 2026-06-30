@@ -106,22 +106,7 @@ class TUIRunner:
             if self.use_tui:
                 self.progress.print_stage_result(self.state, result)
 
-            # Stage 5: hotword
-            if hotword_enabled:
-                self.state.update(stage="hotword", status="processing", progress=0)
-                if self.use_tui:
-                    self.progress.print_stage_start(self.state)
-
-                stage_start = time.time()
-                result = pipeline.run_stage("hotword")
-                self.timings["hotword"] = time.time() - stage_start
-                self.state.update(progress=100, status="completed")
-                if self.use_tui:
-                    self.progress.print_stage_result(self.state, result)
-            else:
-                self.timings["hotword"] = 0.0
-
-            # Stage 6: segment
+            # Stage 5: segment
             self.state.update(stage="segment", status="processing", progress=0)
             if self.use_tui:
                 self.progress.print_stage_start(self.state)
@@ -154,7 +139,22 @@ class TUIRunner:
             else:
                 self.timings["align"] = 0.0
 
-            # Stage 7: export
+            # Stage 7: hotword (after align, text-only replacement)
+            if hotword_enabled:
+                self.state.update(stage="hotword", status="processing", progress=0)
+                if self.use_tui:
+                    self.progress.print_stage_start(self.state)
+
+                stage_start = time.time()
+                result = pipeline.run_stage("hotword")
+                self.timings["hotword"] = time.time() - stage_start
+                self.state.update(progress=100, status="completed")
+                if self.use_tui:
+                    self.progress.print_stage_result(self.state, result)
+            else:
+                self.timings["hotword"] = 0.0
+
+            # Stage 8: export
             self.state.update(stage="export", status="processing", progress=0)
             if self.use_tui:
                 self.progress.print_stage_start(self.state)
@@ -284,31 +284,31 @@ class PlainRunner:
             self.timings["clean"] = time.time() - t
             _echo(f"  ✓ {r['segment_count']} 条")
 
-            if hotword_enabled:
-                _echo("▸ [5/8] 热词替换...")
-                t = time.time()
-                r = pipeline.run_stage("hotword")
-                self.timings["hotword"] = time.time() - t
-                _echo(f"  ✓ 替换 {r['replaced']}/{r['total']} 条")
-            else:
-                self.timings["hotword"] = 0.0
-
-            _echo("▸ [6/8] 智能断句...")
+            _echo("▸ [5/8] 智能断句...")
             t = time.time()
             r = pipeline.run_stage("segment")
             self.timings["segment"] = time.time() - t
             _echo(f"  ✓ {r['sentence_count']} 句")
 
             if align_enabled:
-                _echo("▸ [7/8] 时间轴对齐...")
+                _echo("▸ [6/8] 时间轴对齐...")
                 t = time.time()
                 r = pipeline.run_stage("align")
                 self.timings["align"] = time.time() - t
                 _echo(f"  ✓ {r['aligned_count']} 条")
             else:
                 self.timings["align"] = 0.0
-                _echo("▸ [7/8] 时间轴对齐（已关闭）...")
+                _echo("▸ [6/8] 时间轴对齐（已关闭）...")
                 _echo("  ⚠ 未精对齐，仅生成 draft 粗剪预览")
+
+            if hotword_enabled:
+                _echo("▸ [7/8] 热词替换...")
+                t = time.time()
+                r = pipeline.run_stage("hotword")
+                self.timings["hotword"] = time.time() - t
+                _echo(f"  ✓ 替换 {r['replaced']}/{r['total']} 条")
+            else:
+                self.timings["hotword"] = 0.0
 
             _echo(f"▸ [8/8] 字幕导出 ({fmt.upper()})...")
             t = time.time()
