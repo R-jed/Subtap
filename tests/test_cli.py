@@ -1088,6 +1088,7 @@ def test_first_run_wizard_prompts_when_llm_proofread_not_set(monkeypatch):
     result = check_first_run_wizard(config)
     assert result is True
     assert config.llm_proofread is True
+    assert config.llm_hotword is True
 
 
 def test_first_run_wizard_prompts_user_declines(monkeypatch):
@@ -1107,6 +1108,7 @@ def test_first_run_wizard_prompts_user_declines(monkeypatch):
     result = check_first_run_wizard(config)
     assert result is True
     assert config.llm_proofread is False
+    assert config.llm_hotword is False
 
 
 def test_first_run_wizard_accepts_empty_input(monkeypatch):
@@ -1126,6 +1128,25 @@ def test_first_run_wizard_accepts_empty_input(monkeypatch):
     result = check_first_run_wizard(config)
     assert result is True
     assert config.llm_proofread is True
+    assert config.llm_hotword is True
+
+
+def test_first_run_wizard_accepts_yes_input(monkeypatch):
+    """首次运行向导应接受 'yes' 输入"""
+    from subtap.schemas.config import RemoteAPIConfig, SubtapConfig
+
+    config = SubtapConfig(
+        remote_api=RemoteAPIConfig(base_url="http://test.com", api_key_env="TEST_KEY")
+    )
+    config.llm_proofread = None
+
+    monkeypatch.setenv("TEST_KEY", "test-value")
+    monkeypatch.setattr("builtins.input", lambda _: "yes")
+
+    result = check_first_run_wizard(config)
+    assert result is True
+    assert config.llm_proofread is True
+    assert config.llm_hotword is True
 
 
 def test_first_run_wizard_rejects_no_input(monkeypatch):
@@ -1145,6 +1166,7 @@ def test_first_run_wizard_rejects_no_input(monkeypatch):
     result = check_first_run_wizard(config)
     assert result is True
     assert config.llm_proofread is False
+    assert config.llm_hotword is False
 
 
 def test_first_run_wizard_skips_when_llm_proofread_set():
@@ -1186,6 +1208,36 @@ def test_first_run_wizard_skips_when_env_var_not_set(monkeypatch):
 
 
 # ── CLI 参数传递测试 ──────────────────────────────────────────
+
+
+def test_apply_cli_overrides_sets_values():
+    """_apply_cli_overrides 应设置 config 中的 llm_proofread 和 llm_hotword"""
+    from subtap.cli import _apply_cli_overrides
+    from subtap.schemas.config import SubtapConfig
+
+    config = SubtapConfig()
+    config.llm_proofread = None
+    config.llm_hotword = None
+
+    _apply_cli_overrides(config, llm_proofread=True, llm_hotword=False)
+
+    assert config.llm_proofread is True
+    assert config.llm_hotword is False
+
+
+def test_apply_cli_overrides_preserves_when_none():
+    """_apply_cli_overrides 不传参时应保留 config 原值"""
+    from subtap.cli import _apply_cli_overrides
+    from subtap.schemas.config import SubtapConfig
+
+    config = SubtapConfig()
+    config.llm_proofread = True
+    config.llm_hotword = True
+
+    _apply_cli_overrides(config)
+
+    assert config.llm_proofread is True
+    assert config.llm_hotword is True
 
 
 def test_run_pipeline_safely_passes_llm_proofread_to_config():
