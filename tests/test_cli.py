@@ -1065,3 +1065,71 @@ def test_setup_interactive_manual_choice_continues(tmp_path, monkeypatch):
         result = runner.invoke(app, ["setup"])
         assert result.exit_code == 0
         assert "模型安装待手动完成" in _strip_ansi(result.output)
+
+
+# ── 首次运行向导测试 ──────────────────────────────────────────
+
+
+def test_first_run_wizard_prompts_when_llm_proofread_not_set(monkeypatch):
+    """首次运行向导应在 llm_proofread 未设置时提示用户"""
+    from subtap.schemas.config import RemoteAPIConfig, SubtapConfig
+
+    # 模拟 API 配置存在但 llm_proofread 未设置
+    config = SubtapConfig(
+        remote_api=RemoteAPIConfig(base_url="http://test.com", api_key_env="TEST_KEY")
+    )
+    config.llm_proofread = None
+
+    # 模拟用户输入 "y"
+    monkeypatch.setattr("builtins.input", lambda _: "y")
+
+    from subtap.cli import check_first_run_wizard
+
+    result = check_first_run_wizard(config)
+    assert result is True
+    assert config.llm_proofread is True
+
+
+def test_first_run_wizard_prompts_user_declines(monkeypatch):
+    """首次运行向导应处理用户拒绝开启 AI 校对"""
+    from subtap.schemas.config import RemoteAPIConfig, SubtapConfig
+
+    config = SubtapConfig(
+        remote_api=RemoteAPIConfig(base_url="http://test.com", api_key_env="TEST_KEY")
+    )
+    config.llm_proofread = None
+
+    # 模拟用户输入 "n"
+    monkeypatch.setattr("builtins.input", lambda _: "n")
+
+    from subtap.cli import check_first_run_wizard
+
+    result = check_first_run_wizard(config)
+    assert result is True
+    assert config.llm_proofread is False
+
+
+def test_first_run_wizard_skips_when_llm_proofread_set():
+    """首次运行向导应在 llm_proofread 已设置时跳过"""
+    from subtap.schemas.config import SubtapConfig
+
+    config = SubtapConfig()
+    config.llm_proofread = True
+
+    from subtap.cli import check_first_run_wizard
+
+    result = check_first_run_wizard(config)
+    assert result is False  # 未触发向导
+
+
+def test_first_run_wizard_skips_when_no_api_config():
+    """首次运行向导应在无 API 配置时跳过"""
+    from subtap.schemas.config import SubtapConfig
+
+    config = SubtapConfig()
+    config.llm_proofread = None
+
+    from subtap.cli import check_first_run_wizard
+
+    result = check_first_run_wizard(config)
+    assert result is False  # 未触发向导
