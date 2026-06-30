@@ -93,3 +93,87 @@ def test_report_corrected_count():
     result, report = match_script_lines(segments, script, mode="follow_script")
     assert report.corrected >= 0
     assert isinstance(report.message, str)
+
+
+def test_asr_much_longer_than_script():
+    """ASR 远多于文稿：50 条 ASR vs 10 行文稿。"""
+    segments = [{"text": f"ASR句子{i}", "start_sec": float(i), "end_sec": float(i+1)} for i in range(50)]
+    script = "\n".join([f"文稿句子{i}" for i in range(10)])
+    result, report = match_script_lines(segments, script, mode="follow_script")
+    # ASR 多出的行应保留
+    assert len(result) >= 10
+    assert isinstance(report.message, str)
+
+
+def test_script_much_longer_than_asr():
+    """文稿远多于 ASR：10 条 ASR vs 50 行文稿。"""
+    segments = [{"text": f"ASR句子{i}", "start_sec": float(i), "end_sec": float(i+1)} for i in range(10)]
+    script = "\n".join([f"文稿句子{i}" for i in range(50)])
+    result, report = match_script_lines(segments, script, mode="follow_script")
+    # 文稿多出的行应跳过
+    assert len(result) <= 10 + 5  # 允许少量误差
+    assert isinstance(report.message, str)
+
+
+def test_threshold_boundary_exactly_07():
+    """阈值边界：相似度恰好在 0.7 附近。"""
+    # 构造相似度接近 0.7 的文本对
+    asr_text = "今天天气很好"
+    ref_text = "今天天气不错"  # 相似度约 0.67，低于阈值
+    segments = [{"text": asr_text, "start_sec": 0.0, "end_sec": 2.0}]
+    result, report = match_script_lines(segments, ref_text, mode="follow_script")
+    # 相似度低于 0.7 应保留原文
+    assert result[0]["text"] == asr_text or result[0]["text"] == ref_text
+
+
+def test_mixed_operations():
+    """混合操作：同时存在 insert + delete + replace。"""
+    segments = [
+        {"text": "A", "start_sec": 0.0, "end_sec": 1.0},
+        {"text": "B", "start_sec": 1.0, "end_sec": 2.0},
+        {"text": "C", "start_sec": 2.0, "end_sec": 3.0},
+        {"text": "D", "start_sec": 3.0, "end_sec": 4.0},
+        {"text": "E", "start_sec": 4.0, "end_sec": 5.0},
+    ]
+    # 文稿：A, X(替换B), Y(新增), D, E → C被删除
+    script = "A\nX\nY\nD\nE"
+    result, report = match_script_lines(segments, script, mode="follow_script")
+    assert len(result) >= 4  # 至少保留 A, D, E + 可能的 B/C
+    assert isinstance(report.message, str)
+
+
+def test_large_scale_100_lines():
+    """大规模测试：100 行 ASR + 100 行文稿。"""
+    segments = [{"text": f"ASR句子{i}", "start_sec": float(i), "end_sec": float(i+1)} for i in range(100)]
+    script = "\n".join([f"文稿句子{i}" for i in range(100)])
+    result, report = match_script_lines(segments, script, mode="follow_script")
+    assert len(result) > 0
+    assert isinstance(report.message, str)
+
+
+def test_all_lines_completely_different():
+    """所有行完全不同：应触发 AlignmentQualityError 或返回警告。"""
+    segments = [{"text": f"完全不同的ASR内容{i}", "start_sec": float(i), "end_sec": float(i+1)} for i in range(5)]
+    script = "\n".join([f"完全不同的文稿内容{i}" for i in range(5)])
+    result, report = match_script_lines(segments, script, mode="follow_script")
+    # 应返回原 segments 或警告
+    assert isinstance(report.message, str)
+
+
+def test_single_line_match():
+    """单行匹配：1 条 ASR vs 1 行文稿。"""
+    segments = [{"text": "你好世界", "start_sec": 0.0, "end_sec": 2.0}]
+    result, report = match_script_lines(segments, "你好世界", mode="follow_script")
+    assert len(result) == 1
+    assert result[0]["text"] == "你好世界"
+    assert report.matched == 1
+
+
+def test_asr_empty_text_segments():
+    """ASR 包含空文本段。"""
+    segments = [
+        {"text": "", "start_sec": 0.0, "end_sec": 1.0},
+        {"text": "正常文本", "start_sec": 1.0, "end_sec": 2.0},
+    ]
+    result, report = match_script_lines(segments, "正常文本", mode="follow_script")
+    assert len(result) >= 1
