@@ -778,9 +778,17 @@ def _run_pipeline_safely(
     translate_to: str | None = None,
     bilingual: str = "off",
     hotword_mode: str = "local",
+    llm_proofread: bool | None = None,
+    llm_hotword: bool | None = None,
 ) -> dict:
     """在线程中安全运行 pipeline，不涉及 UI 操作。"""
     from subtap.ui.tui import TUIRunner
+
+    # 将 CLI 独立配置项写入 config，供 clean 阶段读取
+    if llm_proofread is not None:
+        pipeline.config.llm_proofread = llm_proofread
+    if llm_hotword is not None:
+        pipeline.config.llm_hotword = llm_hotword
 
     runner = TUIRunner(use_tui=False, mode=mode)
     return runner.run_pipeline(

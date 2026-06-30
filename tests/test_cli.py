@@ -1183,3 +1183,76 @@ def test_first_run_wizard_skips_when_env_var_not_set(monkeypatch):
 
     result = check_first_run_wizard(config)
     assert result is False  # 未触发向导
+
+
+# ── CLI 参数传递测试 ──────────────────────────────────────────
+
+
+def test_run_pipeline_safely_passes_llm_proofread_to_config():
+    """_run_pipeline_safely 应将 llm_proofread 传递到 config"""
+    from pathlib import Path
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from subtap.schemas.config import SubtapConfig
+
+    config = SubtapConfig()
+    config.llm_proofread = None
+    config.llm_hotword = False
+
+    class FakeRunner:
+        def run_pipeline(self, *args, **kwargs):
+            return {"timings": {}, "output_dir": "/tmp/out"}
+
+    pipeline = SimpleNamespace(config=config)
+
+    with patch("subtap.ui.tui.TUIRunner", return_value=FakeRunner()):
+        from subtap.cli import _run_pipeline_safely
+
+        _run_pipeline_safely(
+            pipeline,
+            input_path=Path("/tmp/test.wav"),
+            output_dir=Path("/tmp/out"),
+            mode="fast",
+            fmt="srt",
+            llm_proofread=True,
+            llm_hotword=True,
+        )
+
+    # 验证 config 被更新
+    assert config.llm_proofread is True
+    assert config.llm_hotword is True
+
+
+def test_run_pipeline_safely_preserves_config_when_params_not_given():
+    """_run_pipeline_safely 不传参时应保留 config 原值"""
+    from pathlib import Path
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from subtap.schemas.config import SubtapConfig
+
+    config = SubtapConfig()
+    config.llm_proofread = True
+    config.llm_hotword = True
+
+    class FakeRunner:
+        def run_pipeline(self, *args, **kwargs):
+            return {"timings": {}, "output_dir": "/tmp/out"}
+
+    pipeline = SimpleNamespace(config=config)
+
+    with patch("subtap.ui.tui.TUIRunner", return_value=FakeRunner()):
+        from subtap.cli import _run_pipeline_safely
+
+        _run_pipeline_safely(
+            pipeline,
+            input_path=Path("/tmp/test.wav"),
+            output_dir=Path("/tmp/out"),
+            mode="fast",
+            fmt="srt",
+        )
+
+    # config 原值应保留
+    assert config.llm_proofread is True
+    assert config.llm_hotword is True
