@@ -651,6 +651,8 @@ def _build_observer_child_command(
     no_git_check: bool,
     no_cleanroom: bool,
     timestamp: bool,
+    script: str | None = None,
+    script_mode: str = "follow_script",
 ) -> list[str]:
     command = [
         sys.executable,
@@ -689,6 +691,9 @@ def _build_observer_child_command(
         command.append("--no-cleanroom")
     if not timestamp:
         command.append("--no-timestamp")
+    if script:
+        command.extend(["--script", script])
+        command.extend(["--script-mode", script_mode])
     return command
 
 
@@ -924,6 +929,8 @@ def run(
             no_git_check=no_git_check,
             no_cleanroom=no_cleanroom,
             timestamp=timestamp,
+            script=script,
+            script_mode=script_mode,
         )
         typer.echo("▸ TUI 观察者进程已启动，推理将在独立子进程执行")
         _run_observer_parent(command, event_log_path)
