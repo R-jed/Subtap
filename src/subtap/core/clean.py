@@ -7,6 +7,7 @@ import unicodedata
 from pathlib import Path
 
 from subtap.backends.llm import get_llm_backend
+from subtap.core.export import _normalize_punct, _strip_punct
 from subtap.core.replacement import apply_replacements
 from subtap.schemas.config import SubtapConfig
 from subtap.schemas.glossary import Glossary, load_glossary
@@ -33,14 +34,20 @@ def write_clean_segments(segments: list[CleanSegment], output_path: Path) -> Non
             f.write(seg.model_dump_json() + "\n")
 
 
-def local_clean_text(text: str, glossary: dict | None = None) -> str:
+def local_clean_text(
+    text: str,
+    glossary: dict | None = None,
+    punctuation: bool = False,
+    language: str = "zh",
+) -> str:
     """Local rule-based text cleaning. No LLM dependency.
 
     Steps:
     1. Normalize unicode (NFKC)
     2. Normalize full-width digits to half-width
     3. Remove extra whitespace
-    4. Apply glossary replacements
+    4. Handle punctuation (normalize or strip based on config)
+    5. Apply glossary replacements
     """
     # 1. Unicode normalization
     text = unicodedata.normalize("NFKC", text)
@@ -51,7 +58,15 @@ def local_clean_text(text: str, glossary: dict | None = None) -> str:
     # 3. Remove extra spaces
     text = re.sub(r"\s+", " ", text).strip()
 
-    # 4. Glossary replacement
+    # 4. Punctuation handling
+    if punctuation:
+        # Normalize punctuation by language (zh/ja: full-width, en: half-width)
+        text = _normalize_punct(text, language)
+    else:
+        # Remove all punctuation
+        text = _strip_punct(text)
+
+    # 5. Glossary replacement
     if glossary:
         for wrong, correct in glossary.items():
             text = text.replace(wrong, correct)
@@ -142,8 +157,12 @@ def run_clean(
     replaced = apply_replacements(segments, glossary)
 
     # Step 2: Local cleaning (always runs, no LLM dependency)
+    punctuation = config.output.subtitle_punctuation
+    language = config.output.subtitle_language
     for seg in replaced:
-        seg.cleaned_text = local_clean_text(seg.cleaned_text)
+        seg.cleaned_text = local_clean_text(
+            seg.cleaned_text, punctuation=punctuation, language=language
+        )
 
     # 本地热词引擎（始终在 LLM 之前运行，非 LLM 功能）
     if hotword_enabled and hotword_glossary_dir:
