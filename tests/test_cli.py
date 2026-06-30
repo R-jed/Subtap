@@ -529,7 +529,9 @@ def test_run_enhance_off_passes_clean_off_to_pipeline(tmp_path, monkeypatch):
     )
 
     assert result.exit_code == 0
-    assert clean_kwargs == [{"llm_backend": "off"}]
+    assert clean_kwargs == [
+        {"enhance_mode": "off", "hotword_enabled": True, "hotword_mode": "local"}
+    ]
 
 
 def test_run_tui_starts_observer_child_process(tmp_path, monkeypatch):
