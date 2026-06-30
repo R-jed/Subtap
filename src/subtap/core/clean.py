@@ -60,18 +60,17 @@ def local_clean_text(text: str, glossary: dict | None = None) -> str:
 
 
 def _segments_for_llm(segments: list[CleanSegment]) -> list[dict]:
-    return [{"i": seg.segment_id, "t": seg.cleaned_text} for seg in segments]
+    return [{"i": idx, "t": seg.cleaned_text} for idx, seg in enumerate(segments)]
 
 
 def _apply_text_updates(segments: list[CleanSegment], updates: dict[int, str]) -> None:
-    by_id = {seg.segment_id: seg for seg in segments}
-    for segment_id, text in updates.items():
-        if segment_id not in by_id:
-            raise ValueError(f"LLM 返回非法索引：{segment_id}")
+    for idx, text in updates.items():
+        if idx < 0 or idx >= len(segments):
+            raise ValueError(f"LLM 返回非法索引：{idx}")
         clean_text = text.strip()
         if not clean_text:
-            raise ValueError(f"LLM 返回空文本：{segment_id}")
-        by_id[segment_id].cleaned_text = clean_text
+            raise ValueError(f"LLM 返回空文本：{idx}")
+        segments[idx].cleaned_text = clean_text
 
 
 def _hotword_payload(glossary: Glossary) -> dict[str, list[str]]:
