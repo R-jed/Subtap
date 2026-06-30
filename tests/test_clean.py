@@ -182,9 +182,9 @@ replacements:
     import subtap.core.clean as clean_module
 
     original_get = clean_module.get_llm_backend
-    clean_module.get_llm_backend = lambda cfg: None  # type: ignore
+    clean_module.get_llm_backend = lambda cfg, remote_api=None: None  # type: ignore
     try:
-        result = run_clean(ws, test_config, glossary_path=str(glossary_yaml))
+        result = run_clean(ws, test_config, glossary_path=str(glossary_yaml), enhance_mode="off")
     finally:
         clean_module.get_llm_backend = original_get
 
@@ -317,9 +317,9 @@ def test_clean_jsonl_valid_schema(test_config: SubtapConfig, tmp_path: Path):
     import subtap.core.clean as clean_module
 
     original_get = clean_module.get_llm_backend
-    clean_module.get_llm_backend = lambda cfg: None  # type: ignore
+    clean_module.get_llm_backend = lambda cfg, remote_api=None: None  # type: ignore
     try:
-        run_clean(ws, test_config)
+        run_clean(ws, test_config, enhance_mode="off")
     finally:
         clean_module.get_llm_backend = original_get
 
@@ -342,10 +342,10 @@ def test_clean_stage_in_pipeline(test_config: SubtapConfig, tmp_path: Path):
     import subtap.core.clean as clean_module
 
     original_get = clean_module.get_llm_backend
-    clean_module.get_llm_backend = lambda cfg: None  # type: ignore
+    clean_module.get_llm_backend = lambda cfg, remote_api=None: None  # type: ignore
     try:
         pipeline = Pipeline(test_config, work_dir=tmp_path / "work")
-        result = pipeline.run_stage("clean")
+        result = pipeline.run_stage("clean", enhance_mode="off")
     finally:
         clean_module.get_llm_backend = original_get
 
@@ -416,7 +416,7 @@ def test_cli_clean_runnable(test_config: SubtapConfig, tmp_path: Path, monkeypat
     # Patch
     import subtap.core.clean as clean_module
 
-    monkeypatch.setattr(clean_module, "get_llm_backend", lambda cfg: None)
+    monkeypatch.setattr(clean_module, "get_llm_backend", lambda cfg, remote_api=None: None)
     import subtap.schemas.config as cfg_mod
 
     monkeypatch.setattr(cfg_mod, "load_config", lambda p: test_config)
@@ -431,7 +431,7 @@ def test_cli_clean_runnable(test_config: SubtapConfig, tmp_path: Path, monkeypat
             "-w",
             str(ws.root),
             "--llm",
-            "mock:dummy",
+            "off",
         ],
     )
     assert result.exit_code == 0
