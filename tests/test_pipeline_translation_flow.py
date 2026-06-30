@@ -43,6 +43,8 @@ class FakePipeline:
             return {"segment_count": 1}
         if stage == "segment":
             return {"sentence_count": 1}
+        if stage == "script_match":
+            return {"skipped": True}
         if stage == "align":
             return {"aligned_count": 1}
         if stage == "translate":
