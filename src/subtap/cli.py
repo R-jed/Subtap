@@ -1068,47 +1068,6 @@ def run(
         encoding="utf-8",
     )
 
-    try:
-        from subtap.core.report import format_output_contract_summary
-        from subtap.output.contract import write_contract_artifacts  # type: ignore[import-untyped]
-        from subtap.quality.sample_picker import pick_manual_review_segments
-
-        write_contract_artifacts(work_dir, output_dir, quality=quality_payload)
-        output_files = [
-            path.name
-            for path in [
-                output_dir / "final.srt",
-                output_dir / "final.vtt",
-                output_dir / "final.json",
-                output_dir / "final.tsv",
-                output_dir / "draft.srt",
-                output_dir / "draft.json",
-                work_dir / "report.md",
-                work_dir / "metrics.json",
-                work_dir / "run.log.jsonl",
-            ]
-            if path.exists()
-        ]
-        final_json = output_dir / "final.json"
-        subtitles = (
-            json.loads(final_json.read_text(encoding="utf-8"))
-            if final_json.exists()
-            else []
-        )
-        manual_samples = pick_manual_review_segments(
-            subtitles, slow_chunks=performance_metrics["slow_chunks"]
-        )
-        report_path = work_dir / "report.md"
-        if report_path.exists():
-            report_path.write_text(
-                report_path.read_text(encoding="utf-8")
-                + "\n"
-                + format_output_contract_summary(output_files, manual_samples),
-                encoding="utf-8",
-            )
-    except Exception as e:
-        if not json_output:
-            typer.echo(f"\n⚠ 输出契约补充失败：{e}", err=True)
     if json_output:
         output_path = output_dir / ("final.srt" if align_enabled else "draft.srt")
         typer.echo(
