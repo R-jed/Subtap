@@ -72,10 +72,11 @@ def test_plain_runner_passes_translate_and_bilingual(monkeypatch, tmp_path):
         hotword_enabled=True,
     )
 
-    assert (
-        "clean",
-        {"enhance_mode": "api", "hotword_enabled": True, "hotword_mode": "local"},
-    ) in pipeline.calls
+    clean_call = [c for c in pipeline.calls if c[0] == "clean"][0]
+    assert clean_call[1]["enhance_mode"] == "api"
+    assert clean_call[1]["hotword_enabled"] is True
+    assert clean_call[1]["hotword_mode"] == "local"
+    assert "hotword_glossary_dir" in clean_call[1]
     assert ("translate", {"target_language": "en"}) in pipeline.calls
     assert any(
         call[0] == "export" and call[1]["bilingual"] == "source-first"
