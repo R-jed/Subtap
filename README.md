@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Platform: macOS](https://img.shields.io/badge/platform-macOS%2013.5+-lightgrey.svg)](https://www.apple.com/macos/)
-[![Tests](https://img.shields.io/badge/tests-337%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-752%20passed-brightgreen.svg)]()
 
 **本地优先的 AI 字幕生成引擎** — 基于 MLX Qwen3 的端到端字幕工具，完全离线运行。
 
@@ -11,7 +11,8 @@
 
 ## 特性
 
-- **完整 Pipeline** — 音频标准化 → 切段 → 语音识别 → 文本清洗 → 智能断句 → 时间轴对齐 → 字幕导出
+- **完整 Pipeline** — 音频标准化 → 切段 → 语音识别 → 文本清洗 → 智能断句 → 文稿匹配（可选）→ 时间轴对齐 → 字幕导出
+- **文稿匹配** — 支持 txt/srt/md/docx/xlsx 格式文稿，智能对齐+纠错，提升转录准确率
 - **真实模型推理** — Qwen3-ASR（0.6B/1.7B）+ Qwen3-ForcedAligner，基于 Apple MLX 优化
 - **中文优先** — 全部界面和状态提示均为中文
 - **TUI 可视化** — 实时阶段进度、模型状态、执行摘要
@@ -87,13 +88,37 @@ graph LR
     B --> C[语音识别]
     C --> D[文本清洗]
     D --> E[智能断句]
-    E --> F[时间轴对齐（默认，可关闭）]
-    F --> G[字幕导出]
-    E --> H[Draft 导出（--no-align）]
+    E --> F[文稿匹配（可选）]
+    F --> G[时间轴对齐（默认，可关闭）]
+    G --> H[字幕导出]
+    E --> I[Draft 导出（--no-align）]
 ```
 
 每个阶段输出 JSONL 中间产物到 `work/` 目录，支持断点续跑。
 默认会执行 ForcedAligner 精对齐并生成 `final.*`；使用 `--no-align` 会跳过精对齐，只生成 `draft.srt` 和 `draft.json`，适合粗剪预览，不作为最终交付字幕。
+
+### 文稿匹配
+
+文稿匹配是可选阶段，用于提升转录准确率。当提供参考文稿时，系统会：
+
+1. **智能对齐** — 使用 difflib 行级序列对齐，处理 ASR 与文稿的行数差异
+2. **句内纠错** — 使用 rapidfuzz 字符级纠错，相似度 ≥ 0.7 时自动修正
+3. **自动格式化** — 去除注释（`#`、`//`、`【备注】`）、空行、合并空格
+
+**支持的文稿格式：**
+
+| 格式 | 说明 |
+|------|------|
+| `.txt` | 纯文本（推荐） |
+| `.srt` | SRT 字幕文件（自动去除序号和时间轴） |
+| `.md` | Markdown 文件（自动去除标记） |
+| `.docx` | Word 文档 |
+| `.xlsx` | Excel 文件（读取第一列） |
+
+**匹配模式：**
+
+- `follow_script`（默认）— 完整对齐+纠错，文稿行数与 ASR 行数不同时自动处理
+- `correct_only` — 只纠错不重排，适合 ASR 行数与文稿一致的场景
 
 ## CLI 命令
 
@@ -116,6 +141,12 @@ subtap run video.mp3 --translate-to en
 # 高质量模式（使用 1.7B 模型）
 subtap run video.mp3 --mode quality
 
+# 使用文稿匹配（提升转录准确率）
+subtap run video.mp3 --script 文稿.txt
+
+# 文稿匹配 + 纠错模式（只纠错，不重排）
+subtap run video.mp3 --script 文稿.txt --script-mode correct_only
+
 # 跳过精对齐，只生成 draft.srt / draft.json 粗剪预览
 subtap run video.mp3 --no-align
 
@@ -126,6 +157,12 @@ subtap demo
 subtap glossary list
 subtap glossary add --input "错词=正确词"
 subtap glossary remove 错词
+
+# 文稿匹配（独立命令）
+subtap script match -i sentences.jsonl --script 文稿.txt --mode follow_script
+
+# 文稿格式化（清理注释、空行）
+subtap script format --script 文稿.txt
 
 # 导入人工修正字幕到本地学习档案（写入前必须确认）
 subtap learn import corrected.srt --yes
@@ -178,6 +215,9 @@ subtap setup
 
 **为什么有 draft 和 final？**  
 `final.*` 只来自精对齐结果，适合交付；`draft.*` 是关闭精对齐时的粗时间轴预览。
+
+**文稿匹配有什么用？**  
+文稿匹配可以提升转录准确率。当有参考文稿时，系统会自动修正 ASR 转录中的错字、同音字、专业术语等问题。支持 txt/srt/md/docx/xlsx 格式。
 
 ## 配置
 
