@@ -163,7 +163,7 @@ def test_enhance_api_selects_and_repairs_only_suspicious_segments(
 
     run_clean(workspace, SubtapConfig(), enhance_mode="api", hotword_enabled=False)
 
-    assert llm.calls == ["select", "repair"]
+    assert llm.calls == ["select", "repair", "hotword"]
     payload = workspace.cleaned_jsonl.read_text(encoding="utf-8")
     assert "正常句子" in payload
     assert "理光 GR4" in payload
@@ -176,17 +176,18 @@ def test_enhance_api_skips_repair_when_qc_returns_empty(tmp_path, monkeypatch):
 
     run_clean(workspace, SubtapConfig(), enhance_mode="api", hotword_enabled=False)
 
-    assert llm.calls == ["select"]
+    assert llm.calls == ["select", "hotword"]
 
 
-def test_enhance_api_skips_hotwords_when_glossary_empty(tmp_path, monkeypatch):
+def test_enhance_api_runs_hotwords_when_glossary_empty(tmp_path, monkeypatch):
+    """AI 热词应在本地热词为空时自主发现领域专有名词。"""
     workspace = _workspace(tmp_path)
     llm = FakeLLM(suspicious=[], repairs={}, hotwords={1: "理光 GR4"})
     monkeypatch.setattr("subtap.core.clean.get_llm_backend", lambda *_a, **_k: llm)
 
     run_clean(workspace, SubtapConfig(), enhance_mode="api", hotword_enabled=True)
 
-    assert llm.calls == ["select"]
+    assert llm.calls == ["select", "hotword"]
 
 
 def test_enhance_api_passes_hotword_payload_when_glossary_exists(tmp_path, monkeypatch):

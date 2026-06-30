@@ -171,16 +171,35 @@ class OpenAICompatibleLLM:
     def replace_hotwords(
         self, segments: list[dict], glossary: dict | None
     ) -> dict[int, str]:
+        has_glossary = bool(glossary)
+        if has_glossary:
+            glossary_section = (
+                f"热词表（必须使用）：\n{json.dumps(glossary, ensure_ascii=False)}\n\n"
+            )
+            rules = (
+                "规则：\n"
+                "1. 严格按照热词表替换，只在上下文明确指向热词时替换。\n"
+                "2. 不确定时保持原文。\n"
+                "3. 不要翻译。\n"
+                "4. 不合并、删除、新增字幕行。\n"
+            )
+        else:
+            glossary_section = ""
+            rules = (
+                "规则：\n"
+                "1. 自主识别上下文中的品牌名、产品名、专业术语等专有名词。\n"
+                "2. 如果识别到可能是 ASR 识别错误的专有名词，根据上下文修正。\n"
+                "3. 常见 ASR 错误类型：同音字、近音字、英文品牌名音译不准。\n"
+                "4. 不确定时保持原文，不要过度修正。\n"
+                "5. 不要翻译。\n"
+                "6. 不合并、删除、新增字幕行。\n"
+            )
         prompt = (
-            "你是一个字幕热词替换助手。请根据热词表和上下文修正专有名词。\n\n"
-            "规则：\n"
-            "1. 只在上下文明确指向热词时替换。\n"
-            "2. 不确定时保持原文。\n"
-            "3. 不要翻译。\n"
-            "4. 不合并、删除、新增字幕行。\n"
-            "5. 只输出 JSON，格式严格为：\n"
+            "你是一个字幕热词替换助手。请根据上下文修正专有名词。\n\n"
+            f"{rules}"
+            "7. 只输出 JSON，格式严格为：\n"
             '{"segments":[{"i":0,"t":"替换后的字幕文本"}]}\n\n'
-            f"热词表：\n{json.dumps(glossary or {}, ensure_ascii=False)}\n\n"
+            f"{glossary_section}"
             f"待处理内容：\n{json.dumps({'segments': segments}, ensure_ascii=False)}"
         )
         content = self._chat(prompt, "你只输出 JSON，不输出解释。")
