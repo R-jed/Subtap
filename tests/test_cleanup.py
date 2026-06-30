@@ -600,6 +600,87 @@ class TestCLIRunCleanup:
         assert len(chunk_wavs) == 0, "chunk WAV 文件应该被 pipeline.cleanup() 清理"
 
 
+class TestFullIntegration:
+    """端到端集成测试：验证完整清理策略。"""
+
+    def test_end_to_end_cleanup(self, tmp_path: Path) -> None:
+        """端到端测试：运行 pipeline，验证清理行为。"""
+        from subtap.core.pipeline import Pipeline
+        from subtap.schemas.config import SubtapConfig
+
+        # 创建模拟的工作区结构
+        chunks_dir = tmp_path / "chunks"
+        chunks_dir.mkdir()
+        (chunks_dir / "chunk_0000.wav").write_bytes(b"fake wav")
+        (chunks_dir / "chunks.jsonl").write_text('{"chunk_id": 0}\n')
+
+        audio_dir = tmp_path / "audio"
+        audio_dir.mkdir()
+        (audio_dir / "source.wav").write_bytes(b"fake wav")
+
+        (tmp_path / "asr").mkdir()
+        (tmp_path / "asr" / "asr.jsonl").write_text('{"text": "hello"}\n')
+        (tmp_path / "cleaned.jsonl").write_text('{"text": "hello"}\n')
+        (tmp_path / "sentences.jsonl").write_text('{"text": "hello"}\n')
+        (tmp_path / "aligned.jsonl").write_text('{"text": "hello"}\n')
+        (tmp_path / "report.md").write_text("# Report\n")
+        (tmp_path / "metrics.json").write_text('{}\n')
+
+        # 创建 pipeline
+        config = SubtapConfig()
+        pipeline = Pipeline(config, work_dir=tmp_path)
+
+        # 运行清理
+        result = pipeline.cleanup()
+
+        # 验证 L1 临时文件已移除
+        assert not (tmp_path / "chunks" / "chunk_0000.wav").exists()
+        assert not (tmp_path / "audio" / "source.wav").exists()
+
+        # 验证 L2 中间文件被保留
+        assert (tmp_path / "chunks" / "chunks.jsonl").exists()
+        assert (tmp_path / "asr" / "asr.jsonl").exists()
+        assert (tmp_path / "cleaned.jsonl").exists()
+        assert (tmp_path / "sentences.jsonl").exists()
+
+        # 验证 L3 输出文件被保留
+        assert (tmp_path / "aligned.jsonl").exists()
+        assert (tmp_path / "report.md").exists()
+        assert (tmp_path / "metrics.json").exists()
+
+    def test_full_cleanup_removes_intermediate(self, tmp_path: Path) -> None:
+        """全部清理应移除 L1 + L2 文件。"""
+        from subtap.engine.cleanroom import Cleanroom
+
+        # 创建包含所有类型文件的工作区
+        chunks_dir = tmp_path / "chunks"
+        chunks_dir.mkdir()
+        (chunks_dir / "chunk_0000.wav").write_bytes(b"fake wav")
+        (chunks_dir / "chunks.jsonl").write_text('{"chunk_id": 0}\n')
+
+        (tmp_path / "asr").mkdir()
+        (tmp_path / "asr" / "asr.jsonl").write_text('{"text": "hello"}\n')
+        (tmp_path / "cleaned.jsonl").write_text('{"text": "hello"}\n')
+        (tmp_path / "sentences.jsonl").write_text('{"text": "hello"}\n')
+        (tmp_path / "aligned.jsonl").write_text('{"text": "hello"}\n')
+
+        # 运行全部清理
+        cleanroom = Cleanroom(tmp_path)
+        result = cleanroom.clean_all()
+
+        # 验证 L1 已移除
+        assert not (tmp_path / "chunks" / "chunk_0000.wav").exists()
+
+        # 验证 L2 已移除
+        assert not (tmp_path / "asr" / "asr.jsonl").exists()
+        assert not (tmp_path / "cleaned.jsonl").exists()
+        assert not (tmp_path / "sentences.jsonl").exists()
+
+        # 验证 L3 被保留
+        assert (tmp_path / "aligned.jsonl").exists()
+        assert (tmp_path / "chunks" / "chunks.jsonl").exists()
+
+
 class TestCleanCommand:
     """测试 CLI clean 命令。"""
 
