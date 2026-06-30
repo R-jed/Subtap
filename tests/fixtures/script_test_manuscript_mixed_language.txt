@@ -1,0 +1,23 @@
+# 测试文稿：混合语言 + 特殊字符 + 口语化
+# 用途：测试 E10（混合语言）+ E11（特殊字符）+ E9（语气词）
+
+这台GR IV的sensor是APS-C画幅的，weight只有262g。
+开机speed是0.6秒，真的很fast！
+
+嗯，这个相机的做工我觉得还是比较plastic的。
+就是说它的做工，呃，确实有点cheap的感觉。
+
+但是！它的image quality真的very good。
+尤其是HDF版本，拍出来的照片super beautiful。
+
+价格方面，official price是8999元。
+但是market price已经到10000+了，really hard to buy。
+
+对了，它的battery life大概能拍300张左右。
+Memory card支持SD/SDHC/SDXC，这个很universal。
+
+总结一下：如果你是street photography爱好者，强烈recommend！
+但如果budget有限，可以考虑second hand的GR III。
+
+PS：这台相机的WiFi传输速度还可以，Bluetooth连接也stable。
+APP叫RICOH Image Sync，iOS和Android都support。
