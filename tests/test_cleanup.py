@@ -6,6 +6,23 @@ import pytest
 from pathlib import Path
 
 from subtap.engine.cleanroom import Cleanroom
+from subtap.schemas.config import CleanupConfig
+
+
+class TestCleanupConfig:
+    """测试 CleanupConfig 配置模型。"""
+
+    def test_default_config(self) -> None:
+        """默认清理配置应自动清理 L1。"""
+        config = CleanupConfig()
+        assert config.auto_cleanup is True
+        assert config.keep_chunks is False
+
+    def test_custom_config(self) -> None:
+        """自定义清理配置应被正确应用。"""
+        config = CleanupConfig(auto_cleanup=False, keep_chunks=True)
+        assert config.auto_cleanup is False
+        assert config.keep_chunks is True
 
 
 @pytest.fixture
