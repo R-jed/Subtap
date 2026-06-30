@@ -854,6 +854,49 @@ def _final_json_item(seg: AlignedSegment) -> dict:
     }
 
 
+def _with_translated_text(segments: list[AlignedSegment]) -> list[AlignedSegment]:
+    result: list[AlignedSegment] = []
+    for segment in segments:
+        if not segment.translated_text:
+            raise ValueError(f"缺少翻译文本：{segment.sentence_id}")
+        result.append(
+            segment.model_copy(
+                update={
+                    "text": segment.translated_text,
+                    "aligned_text": None,
+                    "hotword_replacements": None,
+                }
+            )
+        )
+    return result
+
+
+def _with_bilingual_text(
+    segments: list[AlignedSegment],
+    order: str,
+) -> list[AlignedSegment]:
+    result: list[AlignedSegment] = []
+    for segment in segments:
+        if not segment.translated_text:
+            raise ValueError(f"缺少翻译文本：{segment.sentence_id}")
+        if order == "source-first":
+            text = f"{segment.text}\n{segment.translated_text}"
+        elif order == "target-first":
+            text = f"{segment.translated_text}\n{segment.text}"
+        else:
+            raise ValueError(f"未知双语字幕顺序：{order}")
+        result.append(
+            segment.model_copy(
+                update={
+                    "text": text,
+                    "aligned_text": None,
+                    "hotword_replacements": None,
+                }
+            )
+        )
+    return result
+
+
 def run_final_exports(
     aligned_jsonl: Path,
     output_dir: Path,
@@ -863,6 +906,8 @@ def run_final_exports(
     min_chars: int = 10,
     formats: set[str] | None = None,
     stem: str = "final",
+    translate_to: str | None = None,
+    bilingual: str = "off",
 ) -> dict:
     """Export aligned subtitles to the stable final.* output contract."""
     if not aligned_jsonl.exists():
@@ -876,6 +921,21 @@ def run_final_exports(
         formats = {"srt", "vtt", "json", "tsv"}
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    export_segments = segments
+    source_path: Path | None = None
+    if translate_to:
+        if bilingual == "off":
+            export_segments = _with_translated_text(segments)
+        else:
+            export_segments = _with_bilingual_text(segments, bilingual)
+        source_path = output_dir / f"{stem}.source.srt"
+        SRTExporter(
+            punctuation=punctuation,
+            language=language,
+            max_chars=max_chars,
+            min_chars=min_chars,
+        ).export(segments, source_path)
+
     srt_path = output_dir / f"{stem}.srt"
     vtt_path = output_dir / f"{stem}.vtt"
     json_path = output_dir / f"{stem}.json"
@@ -888,7 +948,7 @@ def run_final_exports(
             language=language,
             max_chars=max_chars,
             min_chars=min_chars,
-        ).render(segments),
+        ).render(export_segments),
         encoding="utf-8",
     )
 
@@ -896,7 +956,7 @@ def run_final_exports(
     if "vtt" in formats:
         vtt_lines = ["WEBVTT", ""]
         vtt_index = 0
-        for seg in sorted(segments, key=lambda s: s.start_sec):
+        for seg in sorted(export_segments, key=lambda s: s.start_sec):
             word_filter_text = getattr(seg, "aligned_text", None) or seg.text
             words_with_punct = _inject_punct(
                 _filter_words_to_text(seg.words, word_filter_text), seg.text
@@ -936,7 +996,7 @@ def run_final_exports(
 
     # JSON (opt-in)
     if "json" in formats:
-        final_payload = [_final_json_item(seg) for seg in segments]
+        final_payload = [_final_json_item(seg) for seg in export_segments]
         json_path.write_text(
             json.dumps(final_payload, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -945,7 +1005,7 @@ def run_final_exports(
     # TSV (opt-in)
     if "tsv" in formats:
         tsv_lines = ["subtitle_id\tstart_sec\tend_sec\ttext"]
-        for seg in sorted(segments, key=lambda s: s.start_sec):
+        for seg in sorted(export_segments, key=lambda s: s.start_sec):
             text = seg.text.replace("\t", " ").replace("\n", " ")
             tsv_lines.append(
                 f"{seg.sentence_id}\t{seg.start_sec}\t{seg.end_sec}\t{text}"
@@ -966,6 +1026,8 @@ def run_final_exports(
             )
 
     outputs = [str(srt_path)]
+    if source_path:
+        outputs.append(str(source_path))
     if "vtt" in formats:
         outputs.append(str(vtt_path))
     if "json" in formats:
