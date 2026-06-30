@@ -118,6 +118,13 @@ class TUIRunner:
             if self.use_tui:
                 self.progress.print_stage_result(self.state, result)
 
+            # Stage 5.5: script_match (optional)
+            script_result = pipeline.run_stage("script_match")
+            self.timings["script_match"] = 0.0
+            if not script_result.get("skipped"):
+                if self.use_tui:
+                    self.progress.print_stage_result(self.state, script_result)
+
             # Stage 6: align
             if align_enabled:
                 self.state.update(
@@ -289,6 +296,15 @@ class PlainRunner:
             r = pipeline.run_stage("segment")
             self.timings["segment"] = time.time() - t
             _echo(f"  ✓ {r['sentence_count']} 句")
+
+            # 文稿匹配（可选）
+            script_result = pipeline.run_stage("script_match")
+            if not script_result.get("skipped"):
+                msg = script_result.get("message", "")
+                _echo(f"  ✓ {msg}")
+                if script_result.get("warnings"):
+                    for w in script_result["warnings"]:
+                        _echo(f"    ⚠ {w}")
 
             if align_enabled:
                 _echo("▸ [6/8] 时间轴对齐...")
