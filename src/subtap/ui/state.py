@@ -13,6 +13,7 @@ STAGE_CN: dict[str, str] = {
     "clean": "文本清洗",
     "hotword": "热词替换",
     "segment": "智能断句",
+    "script_match": "文稿匹配",
     "align": "时间轴对齐",
     "export": "字幕导出",
 }
@@ -24,6 +25,7 @@ STAGE_ORDER = [
     "asr",
     "clean",
     "segment",
+    "script_match",
     "align",
     "hotword",
     "export",
