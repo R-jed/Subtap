@@ -1656,6 +1656,11 @@ def batch_transcribe(
                     index, total, filename, "succeeded", duration=item["duration"]
                 )
 
+            # 成功处理后清理 L2 中间文件
+            from subtap.engine.cleanroom import Cleanroom
+            cleanroom = Cleanroom(item_output_dir / "work")
+            cleanroom.clean_intermediate_files()
+
         except Exception as e:
             item["status"] = "failed"
             item["error"] = str(e)
