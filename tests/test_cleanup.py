@@ -1,0 +1,325 @@
+"""Cleanroom 分层清理方法测试。"""
+
+from __future__ import annotations
+
+import pytest
+from pathlib import Path
+
+from subtap.engine.cleanroom import Cleanroom
+
+
+@pytest.fixture
+def tmp_work(tmp_path: Path) -> Path:
+    """创建模拟的工作区目录结构。"""
+    # 创建子目录
+    (tmp_path / "audio").mkdir()
+    (tmp_path / "chunks").mkdir()
+    (tmp_path / "asr").mkdir()
+    (tmp_path / "output").mkdir()
+    (tmp_path / "logs").mkdir()
+    return tmp_path
+
+
+@pytest.fixture
+def cleanroom(tmp_work: Path) -> Cleanroom:
+    return Cleanroom(tmp_work)
+
+
+def _create_file(path: Path, content: str = "dummy") -> Path:
+    """辅助函数：创建文件并写入内容。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content)
+    return path
+
+
+class TestCleanTempFiles:
+    """测试 L1 临时文件清理。"""
+
+    def test_removes_chunk_wav_files(self, cleanroom: Cleanroom, tmp_work: Path):
+        """应删除 chunk WAV 文件。"""
+        chunk1 = _create_file(tmp_work / "chunks" / "chunk_0001.wav")
+        chunk2 = _create_file(tmp_work / "chunks" / "chunk_0002.wav")
+        # 保留 chunks.jsonl 不被删除
+        chunks_jsonl = _create_file(tmp_work / "chunks" / "chunks.jsonl")
+
+        result = cleanroom.clean_temp_files()
+
+        assert not chunk1.exists()
+        assert not chunk2.exists()
+        assert chunks_jsonl.exists()
+        assert result["cleaned_count"] >= 2
+
+    def test_removes_source_wav(self, cleanroom: Cleanroom, tmp_work: Path):
+        """应删除 source WAV 文件。"""
+        source = _create_file(tmp_work / "audio" / "source.wav")
+
+        result = cleanroom.clean_temp_files()
+
+        assert not source.exists()
+        assert result["cleaned_count"] >= 1
+
+    def test_removes_system_files(self, cleanroom: Cleanroom, tmp_work: Path):
+        """应删除 .DS_Store、Thumbs.db 等系统文件。"""
+        ds_store = _create_file(tmp_work / "audio" / ".DS_Store")
+        thumbs = _create_file(tmp_work / "Thumbs.db")
+
+        result = cleanroom.clean_temp_files()
+
+        assert not ds_store.exists()
+        assert not thumbs.exists()
+        assert result["cleaned_count"] >= 2
+
+    def test_removes_pycache(self, cleanroom: Cleanroom, tmp_work: Path):
+        """应删除 __pycache__ 目录。"""
+        pycache = tmp_work / "chunks" / "__pycache__"
+        pycache.mkdir()
+        (pycache / "module.pyc").write_text("")
+
+        result = cleanroom.clean_temp_files()
+
+        assert not pycache.exists()
+        assert result["cleaned_count"] >= 1
+
+    def test_exclude_chunks_preserves_chunk_wav(
+        self, cleanroom: Cleanroom, tmp_work: Path
+    ):
+        """exclude_chunks=True 时保留 chunk WAV 文件。"""
+        chunk1 = _create_file(tmp_work / "chunks" / "chunk_0001.wav")
+        source = _create_file(tmp_work / "audio" / "source.wav")
+
+        result = cleanroom.clean_temp_files(exclude_chunks=True)
+
+        assert chunk1.exists(), "chunk WAV 应被保留"
+        assert not source.exists(), "source WAV 应被删除"
+
+    def test_returns_cleaned_count_and_files(self, cleanroom: Cleanroom, tmp_work: Path):
+        """返回值应包含 cleaned_count 和 cleaned_files 列表。"""
+        _create_file(tmp_work / "chunks" / "chunk_0001.wav")
+        _create_file(tmp_work / "audio" / "source.wav")
+
+        result = cleanroom.clean_temp_files()
+
+        assert "cleaned_count" in result
+        assert "cleaned_files" in result
+        assert result["cleaned_count"] == 2
+        assert len(result["cleaned_files"]) == 2
+
+    def test_does_not_delete_intermediate_files(self, cleanroom: Cleanroom, tmp_work: Path):
+        """L1 清理不应删除 L2 中间文件。"""
+        asr_jsonl = _create_file(tmp_work / "asr" / "asr.jsonl")
+        cleaned_jsonl = _create_file(tmp_work / "cleaned.jsonl")
+        sentences_jsonl = _create_file(tmp_work / "sentences.jsonl")
+
+        cleanroom.clean_temp_files()
+
+        assert asr_jsonl.exists()
+        assert cleaned_jsonl.exists()
+        assert sentences_jsonl.exists()
+
+    def test_does_not_delete_protected_files(self, cleanroom: Cleanroom, tmp_work: Path):
+        """永远不删除 aligned.jsonl、report.md、metrics.json、output/。"""
+        aligned = _create_file(tmp_work / "aligned.jsonl")
+        report = _create_file(tmp_work / "report.md")
+        metrics = _create_file(tmp_work / "metrics.json")
+        output_file = _create_file(tmp_work / "output" / "output.srt")
+
+        cleanroom.clean_temp_files()
+
+        assert aligned.exists()
+        assert report.exists()
+        assert metrics.exists()
+        assert output_file.exists()
+
+
+class TestCleanIntermediateFiles:
+    """测试 L2 中间文件清理。"""
+
+    def test_removes_asr_jsonl(self, cleanroom: Cleanroom, tmp_work: Path):
+        """应删除 asr/asr.jsonl。"""
+        asr = _create_file(tmp_work / "asr" / "asr.jsonl")
+
+        result = cleanroom.clean_intermediate_files()
+
+        assert not asr.exists()
+        assert result["cleaned_count"] >= 1
+
+    def test_removes_cleaned_jsonl(self, cleanroom: Cleanroom, tmp_work: Path):
+        """应删除 cleaned.jsonl。"""
+        cleaned = _create_file(tmp_work / "cleaned.jsonl")
+
+        result = cleanroom.clean_intermediate_files()
+
+        assert not cleaned.exists()
+
+    def test_removes_sentences_jsonl(self, cleanroom: Cleanroom, tmp_work: Path):
+        """应删除 sentences.jsonl。"""
+        sentences = _create_file(tmp_work / "sentences.jsonl")
+
+        result = cleanroom.clean_intermediate_files()
+
+        assert not sentences.exists()
+
+    def test_never_removes_aligned_jsonl(self, cleanroom: Cleanroom, tmp_work: Path):
+        """永远不删除 aligned.jsonl。"""
+        aligned = _create_file(tmp_work / "aligned.jsonl")
+
+        cleanroom.clean_intermediate_files()
+
+        assert aligned.exists()
+
+    def test_never_removes_report_and_metrics(
+        self, cleanroom: Cleanroom, tmp_work: Path
+    ):
+        """永远不删除 report.md 和 metrics.json。"""
+        report = _create_file(tmp_work / "report.md")
+        metrics = _create_file(tmp_work / "metrics.json")
+
+        cleanroom.clean_intermediate_files()
+
+        assert report.exists()
+        assert metrics.exists()
+
+    def test_never_removes_output_directory(
+        self, cleanroom: Cleanroom, tmp_work: Path
+    ):
+        """永远不删除 output/ 目录及其内容。"""
+        output_file = _create_file(tmp_work / "output" / "output.srt")
+
+        cleanroom.clean_intermediate_files()
+
+        assert output_file.exists()
+
+    def test_does_not_delete_temp_files(self, cleanroom: Cleanroom, tmp_work: Path):
+        """L2 清理不应删除 L1 临时文件。"""
+        chunk = _create_file(tmp_work / "chunks" / "chunk_0001.wav")
+        source = _create_file(tmp_work / "audio" / "source.wav")
+
+        cleanroom.clean_intermediate_files()
+
+        assert chunk.exists()
+        assert source.exists()
+
+    def test_returns_cleaned_count_and_files(
+        self, cleanroom: Cleanroom, tmp_work: Path
+    ):
+        """返回值应包含 cleaned_count 和 cleaned_files 列表。"""
+        _create_file(tmp_work / "asr" / "asr.jsonl")
+        _create_file(tmp_work / "cleaned.jsonl")
+        _create_file(tmp_work / "sentences.jsonl")
+
+        result = cleanroom.clean_intermediate_files()
+
+        assert result["cleaned_count"] == 3
+        assert len(result["cleaned_files"]) == 3
+
+    def test_removes_asr_draft_jsonl(self, cleanroom: Cleanroom, tmp_work: Path):
+        """应删除 asr/asr_draft.jsonl。"""
+        draft = _create_file(tmp_work / "asr" / "asr_draft.jsonl")
+
+        result = cleanroom.clean_intermediate_files()
+
+        assert not draft.exists()
+
+
+class TestCleanAll:
+    """测试完整清理（L1 + L2）。"""
+
+    def test_cleans_all_temp_and_intermediate(
+        self, cleanroom: Cleanroom, tmp_work: Path
+    ):
+        """clean_all 应清理所有 L1 和 L2 文件。"""
+        chunk = _create_file(tmp_work / "chunks" / "chunk_0001.wav")
+        source = _create_file(tmp_work / "audio" / "source.wav")
+        asr = _create_file(tmp_work / "asr" / "asr.jsonl")
+        cleaned = _create_file(tmp_work / "cleaned.jsonl")
+        sentences = _create_file(tmp_work / "sentences.jsonl")
+
+        result = cleanroom.clean_all()
+
+        assert not chunk.exists()
+        assert not source.exists()
+        assert not asr.exists()
+        assert not cleaned.exists()
+        assert not sentences.exists()
+        assert result["cleaned_count"] == 5
+
+    def test_never_removes_protected_files(
+        self, cleanroom: Cleanroom, tmp_work: Path
+    ):
+        """clean_all 永远不删除受保护文件。"""
+        aligned = _create_file(tmp_work / "aligned.jsonl")
+        report = _create_file(tmp_work / "report.md")
+        metrics = _create_file(tmp_work / "metrics.json")
+        output_file = _create_file(tmp_work / "output" / "output.srt")
+
+        cleanroom.clean_all()
+
+        assert aligned.exists()
+        assert report.exists()
+        assert metrics.exists()
+        assert output_file.exists()
+
+    def test_returns_combined_results(self, cleanroom: Cleanroom, tmp_work: Path):
+        """clean_all 返回合并的清理结果。"""
+        _create_file(tmp_work / "chunks" / "chunk_0001.wav")
+        _create_file(tmp_work / "audio" / "source.wav")
+        _create_file(tmp_work / "asr" / "asr.jsonl")
+        _create_file(tmp_work / "cleaned.jsonl")
+
+        result = cleanroom.clean_all()
+
+        assert "cleaned_count" in result
+        assert "cleaned_files" in result
+        assert result["cleaned_count"] == 4
+
+
+class TestCleanupSummary:
+    """测试清理结果摘要格式化。"""
+
+    def test_format_summary_with_cleaned_files(
+        self, cleanroom: Cleanroom, tmp_work: Path
+    ):
+        """应格式化包含已清理文件列表的摘要。"""
+        result = {
+            "cleaned_count": 3,
+            "cleaned_files": [
+                "chunks/chunk_0001.wav",
+                "audio/source.wav",
+                "asr/asr.jsonl",
+            ],
+            "is_clean": True,
+            "issues": [],
+        }
+
+        summary = cleanroom.format_summary(result)
+
+        assert isinstance(summary, str)
+        assert "3" in summary  # 包含数量
+        assert "chunk_0001.wav" in summary  # 包含文件名
+
+    def test_format_summary_with_zero_cleaned(self, cleanroom: Cleanroom):
+        """无文件被清理时应返回友好提示。"""
+        result = {
+            "cleaned_count": 0,
+            "cleaned_files": [],
+            "is_clean": True,
+            "issues": [],
+        }
+
+        summary = cleanroom.format_summary(result)
+
+        assert isinstance(summary, str)
+        assert "0" in summary or "无需" in summary or "干净" in summary
+
+    def test_format_summary_with_issues(self, cleanroom: Cleanroom):
+        """有问题时应包含问题描述。"""
+        result = {
+            "cleaned_count": 1,
+            "cleaned_files": ["chunks/chunk_0001.wav"],
+            "is_clean": False,
+            "issues": ["已清理损坏的 event.log.jsonl"],
+        }
+
+        summary = cleanroom.format_summary(result)
+
+        assert "event.log.jsonl" in summary or "损坏" in summary
