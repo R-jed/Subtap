@@ -865,6 +865,7 @@ def _with_translated_text(segments: list[AlignedSegment]) -> list[AlignedSegment
                     "text": segment.translated_text,
                     "aligned_text": None,
                     "hotword_replacements": None,
+                    "words": [],
                 }
             )
         )
@@ -891,6 +892,7 @@ def _with_bilingual_text(
                     "text": text,
                     "aligned_text": None,
                     "hotword_replacements": None,
+                    "words": [],
                 }
             )
         )

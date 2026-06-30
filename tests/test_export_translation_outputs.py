@@ -15,7 +15,11 @@ def _aligned(path: Path) -> None:
             text="理光 GR4 发布了",
             aligned_text="李光 GR4 发布了",
             translated_text="Ricoh GR4 was released",
-            words=[],
+            words=[
+                {"word": "李光", "start_sec": 1.0, "end_sec": 1.2},
+                {"word": "GR4", "start_sec": 1.2, "end_sec": 1.4},
+                {"word": "发布了", "start_sec": 1.4, "end_sec": 2.0},
+            ],
         )
     ]
     path.write_text(
