@@ -59,6 +59,10 @@ class Workspace:
         return self.root / "aligned.jsonl"
 
     @property
+    def script_matched_jsonl(self) -> Path:
+        return self.root / "script_matched.jsonl"
+
+    @property
     def aligned_subtitles_jsonl(self) -> Path:
         return self.root / "aligned_subtitles.jsonl"
 

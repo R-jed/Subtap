@@ -138,6 +138,14 @@ class OutputConfig(BaseModel):
         default="final",
         description="输出文件名前缀（不含扩展名）",
     )
+    script_path: str | None = Field(
+        default=None,
+        description="文稿文件路径（可选），启用文稿匹配",
+    )
+    script_mode: str = Field(
+        default="follow_script",
+        description="文稿匹配模式：follow_script | correct_only",
+    )
 
 
 class MetricsConfig(BaseModel):
