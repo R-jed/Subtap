@@ -2533,7 +2533,7 @@ def models_remove(
         raise typer.Exit(1)
 
 
-@app.command("clean")
+@app.command("cleanup")
 def clean_workspace(
     work_dir: Path = typer.Argument(..., help="工作目录路径"),
     all: bool = typer.Option(False, "--all", "-a", help="清理所有中间文件（L1 + L2）"),
