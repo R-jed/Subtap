@@ -61,7 +61,7 @@ def test_batch_transcribe_writes_manifest_and_keeps_failed_items(tmp_path, monke
 
             self.workspace = Workspace()
 
-    monkeypatch.setattr("subtap.ui.tui.PlainRunner", FakeRunner)
+    monkeypatch.setattr("subtap.ui.tui.RichRunner", FakeRunner)
     monkeypatch.setattr("subtap.core.pipeline.Pipeline", FakePipeline)
     monkeypatch.setattr(
         "subtap.schemas.config.load_config", lambda _: _make_mock_config()

@@ -6,7 +6,7 @@ import json
 from types import SimpleNamespace
 
 from subtap.schemas.models import ASRSegment
-from subtap.ui.tui import PlainRunner
+from subtap.ui.tui import RichRunner
 
 
 def test_plain_runner_no_align_skips_align_and_writes_draft(tmp_path):
@@ -55,7 +55,7 @@ def test_plain_runner_no_align_skips_align_and_writes_draft(tmp_path):
                 raise AssertionError("no-align must not run align")
             raise AssertionError(stage)
 
-    result = PlainRunner().run_pipeline(
+    result = RichRunner().run_pipeline(
         FakePipeline(),
         tmp_path / "input.wav",
         output_dir,
@@ -124,7 +124,7 @@ def test_plain_runner_default_runs_align(tmp_path, monkeypatch):
         lambda *_args, **_kwargs: {"output_path": str(output_dir / "output.srt")},
     )
 
-    result = PlainRunner().run_pipeline(
+    result = RichRunner().run_pipeline(
         FakePipeline(),
         tmp_path / "input.wav",
         output_dir,

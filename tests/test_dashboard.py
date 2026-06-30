@@ -232,15 +232,11 @@ def test_dashboard_streaming_event_refreshes_visible_panels(monkeypatch):
     assert captured["model"] == ("asr_0.6b", 1.5)
 
 
-def test_cli_run_has_tui_flag():
-    """Test CLI run command has --tui flag."""
+def test_cli_run_help():
+    """Test CLI run command help works."""
     from typer.testing import CliRunner
     from subtap.cli import app
 
     runner = CliRunner()
     result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
-    import re
-
-    clean = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
-    assert "tui" in clean

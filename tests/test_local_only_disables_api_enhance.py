@@ -45,7 +45,7 @@ def test_local_only_allows_local_enhance(tmp_path, monkeypatch):
 
     result = runner.invoke(
         app,
-        ["run", str(input_file), "--local-only", "--enhance", "local", "--no-tui"],
+        ["run", str(input_file), "--local-only", "--enhance", "local"],
     )
     output = _strip_ansi(result.output)
     assert "local-only 模式下不能使用" not in output
@@ -66,7 +66,7 @@ def test_local_only_allows_off_enhance(tmp_path, monkeypatch):
 
     result = runner.invoke(
         app,
-        ["run", str(input_file), "--local-only", "--enhance", "off", "--no-tui"],
+        ["run", str(input_file), "--local-only", "--enhance", "off"],
     )
     output = _strip_ansi(result.output)
     assert "local-only 模式下不能使用" not in output

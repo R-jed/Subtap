@@ -31,7 +31,7 @@ def test_enhance_api_shows_warning(tmp_path, monkeypatch):
 
     result = runner.invoke(
         app,
-        ["run", str(input_file), "--enhance", "api", "--no-tui"],
+        ["run", str(input_file), "--enhance", "api"],
     )
     output = _strip_ansi(result.output)
     # 应提示字幕文本将发送到外部
@@ -53,7 +53,7 @@ def test_enhance_local_no_warning(tmp_path, monkeypatch):
 
     result = runner.invoke(
         app,
-        ["run", str(input_file), "--enhance", "local", "--no-tui"],
+        ["run", str(input_file), "--enhance", "local"],
     )
     output = _strip_ansi(result.output)
     assert "外部" not in output
@@ -74,7 +74,7 @@ def test_enhance_off_no_warning(tmp_path, monkeypatch):
 
     result = runner.invoke(
         app,
-        ["run", str(input_file), "--enhance", "off", "--no-tui"],
+        ["run", str(input_file), "--enhance", "off"],
     )
     output = _strip_ansi(result.output)
     assert "外部" not in output
