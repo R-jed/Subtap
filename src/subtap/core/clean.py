@@ -9,7 +9,7 @@ from pathlib import Path
 from subtap.backends.llm import get_llm_backend
 from subtap.core.replacement import apply_replacements
 from subtap.schemas.config import SubtapConfig
-from subtap.schemas.glossary import load_glossary
+from subtap.schemas.glossary import Glossary, load_glossary
 from subtap.schemas.models import ASRSegment, CleanSegment
 from subtap.core.workspace import Workspace
 
@@ -59,12 +59,54 @@ def local_clean_text(text: str, glossary: dict | None = None) -> str:
     return text
 
 
+def _segments_for_llm(segments: list[CleanSegment]) -> list[dict]:
+    return [{"i": seg.segment_id, "t": seg.cleaned_text} for seg in segments]
+
+
+def _apply_text_updates(segments: list[CleanSegment], updates: dict[int, str]) -> None:
+    by_id = {seg.segment_id: seg for seg in segments}
+    for segment_id, text in updates.items():
+        if segment_id not in by_id:
+            raise ValueError(f"LLM 返回非法索引：{segment_id}")
+        clean_text = text.strip()
+        if not clean_text:
+            raise ValueError(f"LLM 返回空文本：{segment_id}")
+        by_id[segment_id].cleaned_text = clean_text
+
+
+def _hotword_payload(glossary: Glossary) -> dict[str, list[str]]:
+    payload: dict[str, list[str]] = {}
+
+    def add_alias(canonical: str, alias: str) -> None:
+        canonical = canonical.strip()
+        alias = alias.strip()
+        if not canonical or not alias or alias == canonical:
+            return
+        aliases = payload.setdefault(canonical, [])
+        if alias not in aliases:
+            aliases.append(alias)
+
+    for term in glossary.terms:
+        for alias in term.aliases:
+            add_alias(term.canonical, alias)
+
+    for wrong, correct in glossary.get_replacements():
+        add_alias(correct, wrong)
+
+    return payload
+
+
 def run_clean(
     workspace: Workspace,
     config: SubtapConfig,
     llm_backend_name: str | None = None,
     glossary_path: str | None = None,
     style_rules: list[str] | None = None,
+    enhance_mode: str | None = None,
+    hotword_enabled: bool = True,
+    hotword_mode: str = "local",
+    hotword_lang: str = "zh",
+    hotword_glossary_dir: str | None = None,
 ) -> dict:
     """Run clean stage: load ASR → local clean → replacement → LLM → cleaned.jsonl.
 
@@ -81,6 +123,11 @@ def run_clean(
         llm_backend_name: Override LLM backend (e.g. "ollama:qwen3-coder").
         glossary_path: Path to glossary YAML file.
         style_rules: Additional style rules for LLM.
+        enhance_mode: "off", "local", or "api".
+        hotword_enabled: Whether to run hotword replacement.
+        hotword_mode: Hotword engine mode.
+        hotword_lang: Hotword glossary language.
+        hotword_glossary_dir: Hotword glossary directory override.
 
     Returns:
         Dict with segment_count.
@@ -101,33 +148,51 @@ def run_clean(
     for seg in replaced:
         seg.cleaned_text = local_clean_text(seg.cleaned_text)
 
-    # Step 3: LLM cleaning (optional, never blocks)
     if llm_backend_name in {"off", "none", "false"}:
+        enhance_mode = "off"
+    elif enhance_mode is None:
+        enhance_mode = "local"
+
+    if enhance_mode not in {"off", "local", "api"}:
+        raise ValueError(f"未知增强模式：{enhance_mode}")
+
+    if enhance_mode == "off":
         write_clean_segments(replaced, workspace.cleaned_jsonl)
         return {"segment_count": len(replaced)}
 
-    clean_config = config.clean.model_copy()
-    if llm_backend_name:
-        clean_config.backend = llm_backend_name
+    if hotword_enabled and enhance_mode == "local" and hotword_glossary_dir:
+        from subtap.glossary.engine import HotwordEngine
 
-    try:
-        if clean_config.backend.startswith("openai:"):
-            llm = get_llm_backend(clean_config, config.remote_api)
+        engine = HotwordEngine(
+            mode=hotword_mode,
+            glossary_dir=Path(hotword_glossary_dir),
+        )
+        for seg in replaced:
+            seg.cleaned_text = engine.process(seg.cleaned_text, lang=hotword_lang)
+
+    if enhance_mode == "api":
+        clean_config = config.clean.model_copy()
+        if llm_backend_name and llm_backend_name.startswith("openai:"):
+            clean_config.backend = llm_backend_name
         else:
-            llm = get_llm_backend(clean_config)
-        if llm is not None:
-            cleaned = llm.clean_segments(
+            clean_config.backend = f"openai:{config.remote_api.model or 'gpt-4o-mini'}"
+
+        hotword_payload = _hotword_payload(glossary)
+        llm = get_llm_backend(clean_config, config.remote_api)
+        llm_segments = _segments_for_llm(replaced)
+        suspicious = llm.select_suspicious_segments(llm_segments)
+        if suspicious:
+            suspicious_ids = set(suspicious)
+            selected = [item for item in llm_segments if item["i"] in suspicious_ids]
+            _apply_text_updates(replaced, llm.repair_segments(selected))
+
+        if hotword_enabled and hotword_payload:
+            _apply_text_updates(
                 replaced,
-                glossary=glossary,
-                style_rules=style_rules or config.clean.style_rules,
+                llm.replace_hotwords(_segments_for_llm(replaced), hotword_payload),
             )
-        else:
-            cleaned = replaced
-    except (ValueError, Exception):
-        # LLM failed, use local-cleaned result
-        cleaned = replaced
 
     # Write cleaned.jsonl
-    write_clean_segments(cleaned, workspace.cleaned_jsonl)
+    write_clean_segments(replaced, workspace.cleaned_jsonl)
 
-    return {"segment_count": len(cleaned)}
+    return {"segment_count": len(replaced)}
