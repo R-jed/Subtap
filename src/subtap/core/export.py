@@ -530,7 +530,13 @@ class SRTExporter(BaseExporter):
             # Use text (post-hotword) for display
             word_filter_text = getattr(seg, 'aligned_text', None) or seg.text
             words_with_punct = _inject_punct(_filter_words_to_text(seg.words, word_filter_text), seg.text)
-            sub_lines = _smart_split(words_with_punct, seg.text, max_chars=self.max_chars, min_chars=self.min_chars, start_sec=seg.start_sec, end_sec=seg.end_sec)
+            sub_lines = _smart_split(words_with_punct, word_filter_text, max_chars=self.max_chars, min_chars=self.min_chars, start_sec=seg.start_sec, end_sec=seg.end_sec)
+            # Apply hotword replacements to each sub_line (post-split)
+            replacements = getattr(seg, 'hotword_replacements', None)
+            if replacements:
+                for sub in sub_lines:
+                    for alias, word in replacements.items():
+                        sub["text"] = sub["text"].replace(alias, word)
             for sub in sub_lines:
                 if sub["text"].strip():
                     all_subs.append(sub)
@@ -771,7 +777,13 @@ def run_final_exports(
         for seg in sorted(segments, key=lambda s: s.start_sec):
             word_filter_text = getattr(seg, 'aligned_text', None) or seg.text
             words_with_punct = _inject_punct(_filter_words_to_text(seg.words, word_filter_text), seg.text)
-            sub_lines = _smart_split(words_with_punct, seg.text, max_chars=max_chars, min_chars=min_chars, start_sec=seg.start_sec, end_sec=seg.end_sec)
+            sub_lines = _smart_split(words_with_punct, word_filter_text, max_chars=max_chars, min_chars=min_chars, start_sec=seg.start_sec, end_sec=seg.end_sec)
+            # Apply hotword replacements to each sub_line (post-split)
+            replacements = getattr(seg, 'hotword_replacements', None)
+            if replacements:
+                for sub in sub_lines:
+                    for alias, word in replacements.items():
+                        sub["text"] = sub["text"].replace(alias, word)
             for sub in sub_lines:
                 if not sub["text"].strip():
                     continue

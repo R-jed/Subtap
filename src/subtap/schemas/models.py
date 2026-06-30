@@ -76,6 +76,10 @@ class AlignedSegment(BaseModel):
         default=None,
         description="Original aligned text before hotword replacement (for word filtering)",
     )
+    hotword_replacements: dict[str, str] | None = Field(
+        default=None,
+        description="Hotword replacement pairs {alias: word} for post-split application",
+    )
     words: list[dict] = Field(
         default_factory=list,
         description="Word-level timing [{word, start_sec, end_sec}]",
