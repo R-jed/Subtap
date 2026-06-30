@@ -113,6 +113,133 @@ class Cleanroom:
             "is_clean": len(issues) == 0,
         }
 
+    # ---- 分层清理 ----
+
+    # L1 临时文件：chunk WAV、source WAV、系统文件、__pycache__
+    _L1_SYSTEM_NAMES = _CLEANABLE_NAMES
+    _L1_SYSTEM_DIRS = _CLEANABLE_DIRS
+
+    # L2 中间文件：asr.jsonl、asr_draft.jsonl、cleaned.jsonl、sentences.jsonl
+    _L2_INTERMEDIATE_FILES = [
+        "asr/asr.jsonl",
+        "asr/asr_draft.jsonl",
+        "cleaned.jsonl",
+        "sentences.jsonl",
+    ]
+
+    # 永远不清理的文件/目录
+    _PROTECTED_FILES = [
+        "aligned.jsonl",
+        "report.md",
+        "metrics.json",
+    ]
+    _PROTECTED_DIRS = ["output"]
+
+    def clean_temp_files(self, exclude_chunks: bool = False) -> dict[str, Any]:
+        """清理 L1 临时文件。
+
+        Args:
+            exclude_chunks: 为 True 时保留 chunk WAV 文件。
+
+        Returns:
+            {"cleaned_count": int, "cleaned_files": list[str]}
+        """
+        cleaned_files: list[str] = []
+
+        # chunk WAV 文件
+        if not exclude_chunks:
+            for f in self.root.glob(_CHUNK_WAV_GLOB):
+                if f.is_file():
+                    cleaned_files.append(str(f.relative_to(self.root)))
+                    f.unlink()
+
+        # source WAV
+        source = self.root / "audio" / "source.wav"
+        if source.is_file():
+            cleaned_files.append(str(source.relative_to(self.root)))
+            source.unlink()
+
+        # 系统文件
+        for name in self._L1_SYSTEM_NAMES:
+            for f in self.root.rglob(name):
+                if f.is_file():
+                    cleaned_files.append(str(f.relative_to(self.root)))
+                    f.unlink()
+
+        # __pycache__
+        for d in self.root.rglob("__pycache__"):
+            if d.is_dir():
+                import shutil
+
+                shutil.rmtree(d)
+                cleaned_files.append(str(d.relative_to(self.root)))
+
+        return {
+            "cleaned_count": len(cleaned_files),
+            "cleaned_files": cleaned_files,
+        }
+
+    def clean_intermediate_files(self) -> dict[str, Any]:
+        """清理 L2 中间文件。
+
+        永远不删除：aligned.jsonl、report.md、metrics.json、output/
+
+        Returns:
+            {"cleaned_count": int, "cleaned_files": list[str]}
+        """
+        cleaned_files: list[str] = []
+
+        for rel_path in self._L2_INTERMEDIATE_FILES:
+            f = self.root / rel_path
+            if f.is_file():
+                cleaned_files.append(rel_path)
+                f.unlink()
+
+        return {
+            "cleaned_count": len(cleaned_files),
+            "cleaned_files": cleaned_files,
+        }
+
+    def clean_all(self) -> dict[str, Any]:
+        """清理所有临时和中间文件（L1 + L2）。
+
+        永远不删除：aligned.jsonl、report.md、metrics.json、output/
+
+        Returns:
+            {"cleaned_count": int, "cleaned_files": list[str]}
+        """
+        l1 = self.clean_temp_files()
+        l2 = self.clean_intermediate_files()
+        return {
+            "cleaned_count": l1["cleaned_count"] + l2["cleaned_count"],
+            "cleaned_files": l1["cleaned_files"] + l2["cleaned_files"],
+        }
+
+    def format_summary(self, result: dict[str, Any]) -> str:
+        """格式化清理结果摘要。
+
+        Returns:
+            人类可读的清理摘要字符串。
+        """
+        count = result.get("cleaned_count", 0)
+        files = result.get("cleaned_files", [])
+        issues = result.get("issues", [])
+
+        lines: list[str] = []
+        if count == 0:
+            lines.append("工作区无需清理，已是干净状态。")
+        else:
+            lines.append(f"已清理 {count} 个文件/目录：")
+            for f in files:
+                lines.append(f"  - {f}")
+
+        if issues:
+            lines.append("问题：")
+            for issue in issues:
+                lines.append(f"  - {issue}")
+
+        return "\n".join(lines)
+
     def check_model_status(self) -> dict[str, Any]:
         """Report model availability.
 
