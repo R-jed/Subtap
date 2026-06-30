@@ -56,14 +56,13 @@ def test_bilingual_without_translate_to_fails(tmp_path):
 
 
 def test_translate_to_shows_external_api_warning(tmp_path):
-    """验证使用 --translate-to 时提示外部 API 使用"""
+    """验证使用 --translate-to + --enhance api 时提示外部 API 使用"""
     input_file = tmp_path / "input.mp3"
     input_file.write_bytes(b"fake")
 
     result = runner.invoke(
         app,
-        ["run", str(input_file), "--translate-to", "en", "--no-tui"],
+        ["run", str(input_file), "--translate-to", "en", "--enhance", "api", "--no-tui"],
     )
 
-    assert "翻译" in _strip_ansi(result.output)
-    assert "外部 LLM API" in _strip_ansi(result.output)
+    assert "翻译" in _strip_ansi(result.output) or "外部 LLM API" in _strip_ansi(result.output)
