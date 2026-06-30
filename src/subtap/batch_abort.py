@@ -42,6 +42,7 @@ class AbortController:
 
     def install_signal_handler(self) -> None:
         """Install SIGINT handler for graceful abort."""
+
         def handler(signum, frame):
             self.abort()
             # Don't exit immediately — let pipeline check flag

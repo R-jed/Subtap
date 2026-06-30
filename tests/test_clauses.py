@@ -5,8 +5,11 @@ from subtap.core.clauses import identify_clause_boundaries
 
 def _make_words(text):
     """将文本拆成单字符词列表。"""
-    return [{"word": c, "start_sec": i * 0.2, "end_sec": (i + 1) * 0.2}
-            for i, c in enumerate(text) if c.strip()]
+    return [
+        {"word": c, "start_sec": i * 0.2, "end_sec": (i + 1) * 0.2}
+        for i, c in enumerate(text)
+        if c.strip()
+    ]
 
 
 def test_sentence_end_boundary():
@@ -50,6 +53,7 @@ def test_conjunction_boundary():
 def test_protected_zone_no_boundary():
     """保护区内不标记边界。"""
     from subtap.core.phrases import mark_phrase_boundaries
+
     words = _make_words("它的传感器大")
     marked = mark_phrase_boundaries(words)
     boundaries = identify_clause_boundaries(words, marked)

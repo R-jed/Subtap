@@ -17,13 +17,25 @@ from __future__ import annotations
 import re
 
 _NUM_MAP = {
-    "零": 0, "一": 1, "二": 2, "两": 2, "三": 3,
-    "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9,
+    "零": 0,
+    "一": 1,
+    "二": 2,
+    "两": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
 }
 
 _UNIT_MAP = {
-    "十": 10, "百": 100, "千": 1000,
-    "万": 10000, "亿": 100000000,
+    "十": 10,
+    "百": 100,
+    "千": 1000,
+    "万": 10000,
+    "亿": 100000000,
 }
 
 # 成语/复合词保护：这些词中的数字不转换
@@ -37,13 +49,25 @@ _APPROX_UNITS = "[个只张条块元万千百十秒分米克斤两]"
 
 # 阿拉伯数字 → 中文数字映射（用于概数转换）
 _ARABIC_TO_CHINESE = {
-    0: "零", 1: "一", 2: "二", 3: "三", 4: "四",
-    5: "五", 6: "六", 7: "七", 8: "八", 9: "九",
+    0: "零",
+    1: "一",
+    2: "二",
+    3: "三",
+    4: "四",
+    5: "五",
+    6: "六",
+    7: "七",
+    8: "八",
+    9: "九",
 }
 
 # 大单位映射
 _MAGNITUDE_UNITS = [
-    (100000000, "亿"), (10000, "万"), (1000, "千"), (100, "百"), (10, "十"),
+    (100000000, "亿"),
+    (10000, "万"),
+    (1000, "千"),
+    (100, "百"),
+    (10, "十"),
 ]
 
 
@@ -75,14 +99,20 @@ def _arabic_to_chinese(n: int) -> str:
 # 概数模式：前缀 + 数字（阿拉伯或中文） + 量词
 # 在 _NUM_RE 之后使用，此时中文数字已转为阿拉伯数字
 _APPROX_RE = re.compile(
-    r"(" + "|".join(_APPROX_PREFIXES) + r")([\d零一二两三四五六七八九十百千万亿]+)(" + _APPROX_UNITS + r")"
+    r"("
+    + "|".join(_APPROX_PREFIXES)
+    + r")([\d零一二两三四五六七八九十百千万亿]+)("
+    + _APPROX_UNITS
+    + r")"
 )
 
 # 小数点缺失模式：0开头的数字 + 时间/度量单位
 _DECIMAL_DOT_RE = re.compile(r"(?<!\d)0(\d+)(秒|分|米|克|斤|两|元|块|度)")
 
 # 比例号模式：数字 + 比 + 数字（如 三十二比九 → 32:9）
-_RATIO_RE = re.compile(r"(\d+|[一二两三四五六七八九十百千万亿]+)比(\d+|[一二两三四五六七八九十百千万亿]+)")
+_RATIO_RE = re.compile(
+    r"(\d+|[一二两三四五六七八九十百千万亿]+)比(\d+|[一二两三四五六七八九十百千万亿]+)"
+)
 
 
 def _is_idiom(text: str, match_start: int, match_end: int) -> bool:
@@ -173,13 +203,13 @@ def _convert_keep_unit(s: str) -> str:
     if "亿" in s:
         idx = s.index("亿")
         yi_str = s[:idx]
-        rest = s[idx + 1:]
+        rest = s[idx + 1 :]
 
         # Check for 万 in remainder (亿+万 combo, e.g. "一亿两千万")
         if "万" in rest:
             widx = rest.index("万")
             wan_str = rest[:widx]
-            suffix = rest[widx + 1:]
+            suffix = rest[widx + 1 :]
         else:
             wan_str = ""
             suffix = rest
@@ -210,7 +240,7 @@ def _convert_keep_unit(s: str) -> str:
     if "万" in s:
         idx = s.index("万")
         wan_str = s[:idx]
-        suffix = s[idx + 1:]
+        suffix = s[idx + 1 :]
 
         wan_val = _sub_unit_parse(wan_str) if wan_str else 1
 
@@ -306,6 +336,7 @@ def chinese_to_num(text: str) -> str:
         left = _cn_to_arabic(m.group(1))
         right = _cn_to_arabic(m.group(2))
         return f"{left}:{right}"
+
     text = _RATIO_RE.sub(_ratio_repl, text)
 
     text = _DECIMAL_DOT_RE.sub(
@@ -345,6 +376,7 @@ def chinese_to_num(text: str) -> str:
         else:
             n = _parse_total(num_str)
         return m.group(1) + _arabic_to_chinese(n) + m.group(3)
+
     text = _APPROX_RE.sub(_approx_repl, text)
 
     return text

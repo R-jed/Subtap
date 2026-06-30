@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from subtap.core.phrases import mark_phrase_boundaries
 
-
 # 句末标点
 _SENTENCE_END = set("。！？.!?")
 # 逗号/分号
@@ -17,10 +16,37 @@ _COMMA = set("，、,;")
 _PARTICLES = set("了呢吧啊嘛吗呀哦")
 # 双字连词
 _CONJ_PAIRS = {
-    "但是", "所以", "因为", "而且", "不过", "可是", "然后", "或者",
-    "如果", "虽然", "即使", "不仅", "而是", "于是", "因此", "那么",
-    "这么", "怎么", "什么", "这个", "那个", "还是", "就是", "不是",
-    "只有", "只要", "既然", "哪怕", "无论", "不管", "另外",
+    "但是",
+    "所以",
+    "因为",
+    "而且",
+    "不过",
+    "可是",
+    "然后",
+    "或者",
+    "如果",
+    "虽然",
+    "即使",
+    "不仅",
+    "而是",
+    "于是",
+    "因此",
+    "那么",
+    "这么",
+    "怎么",
+    "什么",
+    "这个",
+    "那个",
+    "还是",
+    "就是",
+    "不是",
+    "只有",
+    "只要",
+    "既然",
+    "哪怕",
+    "无论",
+    "不管",
+    "另外",
 }
 # 连词起始字（双字连词的第一个字）
 _CONJ_STARTERS = {pair[0] for pair in _CONJ_PAIRS}
@@ -87,7 +113,9 @@ def identify_clause_boundaries(
     # 语气词后标记（在语气词之后的位置）
     for i in range(n - 1):
         if words[i]["word"] in _PARTICLES:
-            next_role = marked[i + 1].get("phrase_role") if i + 1 < len(marked) else None
+            next_role = (
+                marked[i + 1].get("phrase_role") if i + 1 < len(marked) else None
+            )
             if next_role != "phrase_mid":
                 if boundaries[i + 1] is None:
                     boundaries[i + 1] = ("particle", 50)

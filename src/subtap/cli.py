@@ -39,7 +39,12 @@ def hotword_add(
     lang: str = typer.Option("zh", "--lang", "-l", help="语言"),
 ) -> None:
     """添加热词"""
-    from subtap.glossary.hotword import Hotword, HotwordGlossary, load_glossary, save_glossary
+    from subtap.glossary.hotword import (
+        Hotword,
+        HotwordGlossary,
+        load_glossary,
+        save_glossary,
+    )
 
     glossary_dir = Path.home() / ".subtap" / "glossary"
     path = glossary_dir / f"hotwords_{lang}.txt"
@@ -98,6 +103,7 @@ def hotword_edit(
 
     if not path.exists():
         from subtap.glossary.hotword import HotwordGlossary, save_glossary
+
         save_glossary(HotwordGlossary(lang=lang), path)
 
     subprocess.run(["open", "-a", "Numbers", str(path)])
@@ -711,9 +717,10 @@ def _run_observer_parent(
     output_dir.mkdir(parents=True, exist_ok=True)
     stdout_path = output_dir / "child.stdout.log"
     stderr_path = output_dir / "child.stderr.log"
-    with stdout_path.open("w", encoding="utf-8") as stdout, stderr_path.open(
-        "w", encoding="utf-8"
-    ) as stderr:
+    with (
+        stdout_path.open("w", encoding="utf-8") as stdout,
+        stderr_path.open("w", encoding="utf-8") as stderr,
+    ):
         process = subprocess.Popen(command, stdout=stdout, stderr=stderr)
         ObserverDashboard(log_path, process).run()
 
@@ -977,7 +984,9 @@ def run(
     profiler.wrap_pipeline(pipeline)
 
     if use_tui and getattr(config.asr, "backend", "") == "mlx-qwen-asr":
-        typer.echo("⚠ MLX/Metal 推理与 Textual 实时界面存在兼容风险，已切换为安全进度模式")
+        typer.echo(
+            "⚠ MLX/Metal 推理与 Textual 实时界面存在兼容风险，已切换为安全进度模式"
+        )
         use_tui = False
 
     if use_tui:
@@ -1293,9 +1302,7 @@ def batch_transcribe(
     args: list[str] = typer.Argument(None, help="输入文件路径（支持拖入）"),
     directory: str = typer.Option(None, "--dir", "-d", help="扫描目录中的媒体文件"),
     configure: bool = typer.Option(False, "--configure", help="运行配置向导"),
-    no_confirm: bool = typer.Option(
-        False, "--no-confirm", "-y", help="跳过确认"
-    ),
+    no_confirm: bool = typer.Option(False, "--no-confirm", "-y", help="跳过确认"),
     files: str = typer.Option(None, "--files", "-f", help="输入文件，逗号分隔"),
     output_dir: Path = typer.Option(
         Path("./output"), "--output-dir", "-o", help="输出目录"
@@ -1326,7 +1333,13 @@ def batch_transcribe(
     ),
     no_align: bool | None = typer.Option(None, "--no-align", help="跳过对齐阶段"),
     concurrency: int = typer.Option(
-        1, "--concurrency", "-c", help="并发处理数（最大 4）（尚未实现）", min=1, max=4, hidden=True
+        1,
+        "--concurrency",
+        "-c",
+        help="并发处理数（最大 4）（尚未实现）",
+        min=1,
+        max=4,
+        hidden=True,
     ),
     resume: Path | None = typer.Option(
         None, "--resume", help="恢复中断的任务（传入 manifest.json 路径）"
@@ -1380,9 +1393,7 @@ def batch_transcribe(
         raise typer.Exit(1)
 
     if (resume or retry_failed) and (files or args or directory):
-        typer.echo(
-            "✗ 错误：--resume/--retry-failed 不能与输入文件同时使用", err=True
-        )
+        typer.echo("✗ 错误：--resume/--retry-failed 不能与输入文件同时使用", err=True)
         raise typer.Exit(1)
 
     # ── 配置向导 ──────────────────────────────────────────────
@@ -1571,7 +1582,10 @@ def batch_transcribe(
             else:
                 print_progress_item(index, total, filename, "failed")
             write_manifest(
-                manifest_path, build_manifest(output_dir, mode, items, params, created_at=task_created_at)
+                manifest_path,
+                build_manifest(
+                    output_dir, mode, items, params, created_at=task_created_at
+                ),
             )
             continue
 
@@ -1584,7 +1598,10 @@ def batch_transcribe(
         else:
             print_progress_item(index, total, filename, "running")
 
-        write_manifest(manifest_path, build_manifest(output_dir, mode, items, params, created_at=task_created_at))
+        write_manifest(
+            manifest_path,
+            build_manifest(output_dir, mode, items, params, created_at=task_created_at),
+        )
 
         # C1 fix: stage_start 移到 try 之前，防止 UnboundLocalError
         stage_start = time.time()
@@ -1658,6 +1675,7 @@ def batch_transcribe(
 
             # 成功处理后清理 L2 中间文件
             from subtap.engine.cleanroom import Cleanroom
+
             cleanroom = Cleanroom(item_output_dir / "work")
             cleanroom.clean_intermediate_files()
 
@@ -1668,18 +1686,22 @@ def batch_transcribe(
 
             # 标记失败的阶段
             for stage_name, stage_info in item.get("stages", {}).items():
-                if isinstance(stage_info, dict) and stage_info.get("status") == "running":
+                if (
+                    isinstance(stage_info, dict)
+                    and stage_info.get("status") == "running"
+                ):
                     stage_info["status"] = "failed"
                     stage_info["error"] = str(e)
 
             if json_writer:
-                json_writer.write_item_complete(
-                    index, filename, "failed", error=str(e)
-                )
+                json_writer.write_item_complete(index, filename, "failed", error=str(e))
             else:
                 print_progress_item(index, total, filename, "failed")
 
-        write_manifest(manifest_path, build_manifest(output_dir, mode, items, params, created_at=task_created_at))
+        write_manifest(
+            manifest_path,
+            build_manifest(output_dir, mode, items, params, created_at=task_created_at),
+        )
 
     # ── 完成 ──────────────────────────────────────────────────
     total_duration = time.time() - start_time
@@ -1687,7 +1709,9 @@ def batch_transcribe(
     abort_controller.cleanup()
 
     # 更新完成时间
-    manifest = build_manifest(output_dir, mode, items, params, created_at=task_created_at)
+    manifest = build_manifest(
+        output_dir, mode, items, params, created_at=task_created_at
+    )
     manifest["completed_at"] = datetime.now(timezone.utc).isoformat()
     manifest["duration"] = total_duration
     write_manifest(manifest_path, manifest)
