@@ -1060,6 +1060,8 @@ def run(
                         enhance=enhance,
                         align_enabled=align_enabled,
                         hotword_enabled=hotword_enabled,
+                        translate_to=translate_to,
+                        bilingual=bilingual,
                     )
             else:
                 result = runner.run_pipeline(
@@ -1070,6 +1072,8 @@ def run(
                     enhance=enhance,
                     align_enabled=align_enabled,
                     hotword_enabled=hotword_enabled,
+                    translate_to=translate_to,
+                    bilingual=bilingual,
                 )
             timings = result.get("timings", {})
         except SystemExit:
