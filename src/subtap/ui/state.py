@@ -18,7 +18,7 @@ STAGE_CN: dict[str, str] = {
 }
 
 # Stage execution order
-STAGE_ORDER = ["prepare", "chunk", "asr", "clean", "hotword", "segment", "align", "export"]
+STAGE_ORDER = ["prepare", "chunk", "asr", "clean", "segment", "align", "hotword", "export"]
 
 # Chinese status descriptions
 STATUS_CN: dict[str, str] = {

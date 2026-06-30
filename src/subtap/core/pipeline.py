@@ -17,7 +17,7 @@ class Pipeline:
     enabling resume from any checkpoint.
     """
 
-    STAGES = ["prepare", "chunk", "asr", "clean", "hotword", "segment", "align", "export"]
+    STAGES = ["prepare", "chunk", "asr", "clean", "segment", "align", "hotword", "export"]
 
     def __init__(
         self,
