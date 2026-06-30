@@ -366,3 +366,61 @@ class TestPipelineCleanup:
 
         assert (tmp_path / "cleaned.jsonl").exists()
         assert (tmp_path / "sentences.jsonl").exists()
+
+
+class TestCLIRunCleanup:
+    """测试 CLI run 命令完成后的清理行为。"""
+
+    def test_run_cleanup_removes_temp_files(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """CLI run 应在成功执行后调用 pipeline.cleanup() 清理临时文件。"""
+        from unittest.mock import MagicMock, patch
+        from typer.testing import CliRunner
+        from subtap.cli import app
+        from subtap.schemas.config import SubtapConfig
+
+        runner = CliRunner()
+        config = SubtapConfig()
+        monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
+        monkeypatch.setattr("subtap.cli.Path.home", lambda: tmp_path)
+
+        # 创建测试音频文件
+        audio_file = tmp_path / "test.wav"
+        audio_file.write_bytes(b"fake wav")
+
+        # 模拟 PlainRunner 成功执行并创建临时文件
+        work_dir = tmp_path / "work"
+        work_dir.mkdir(parents=True, exist_ok=True)
+        chunks_dir = work_dir / "chunks"
+        chunks_dir.mkdir(exist_ok=True)
+
+        # 创建模拟的 chunk WAV 文件（这些应该被 cleanup 清理）
+        (chunks_dir / "chunk_0000.wav").write_bytes(b"fake chunk wav")
+        (chunks_dir / "chunk_0001.wav").write_bytes(b"fake chunk wav")
+        (chunks_dir / "chunks.jsonl").write_text('{"chunk_id": 0}\n')
+
+        # 模拟 PlainRunner.run_pipeline 返回成功结果
+        mock_result = {
+            "timings": {"prepare": 0.1, "chunk": 0.2},
+            "output_path": str(tmp_path / "output" / "draft.srt"),
+        }
+
+        with patch("subtap.ui.tui.PlainRunner") as mock_runner_class:
+            mock_runner = MagicMock()
+            mock_runner.run_pipeline.return_value = mock_result
+            mock_runner_class.return_value = mock_runner
+
+            # 运行 pipeline（禁用 cleanroom 预检查，避免它清理文件）
+            result = runner.invoke(app, [
+                "run", str(audio_file),
+                "-w", str(work_dir),
+                "-o", str(tmp_path / "output"),
+                "--no-tui",
+                "--no-align",
+                "--no-cleanroom",
+                "--no-git-check",
+            ])
+
+        # 验证 cleanup 发生：chunk WAV 文件应该被清理
+        assert work_dir.exists(), "工作目录应该存在"
+        chunk_wavs = list(chunks_dir.glob("chunk_*.wav"))
+        assert len(chunk_wavs) == 0, "chunk WAV 文件应该被 pipeline.cleanup() 清理"
