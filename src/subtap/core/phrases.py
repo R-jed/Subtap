@@ -14,8 +14,28 @@ _PARTICLES = {"了", "呢", "吧", "啊", "嘛", "吗", "呀"}
 
 # 的字结构右扫描边界：常见副词/助动词，通常是新谓语的开始
 _DE_RIGHT_BOUNDARIES = {
-    "很", "就", "都", "才", "又", "再", "已", "曾", "还", "更", "最",
-    "太", "真", "挺", "蛮", "也", "不", "会", "能", "可", "要", "该",
+    "很",
+    "就",
+    "都",
+    "才",
+    "又",
+    "再",
+    "已",
+    "曾",
+    "还",
+    "更",
+    "最",
+    "太",
+    "真",
+    "挺",
+    "蛮",
+    "也",
+    "不",
+    "会",
+    "能",
+    "可",
+    "要",
+    "该",
 }
 
 # 标点符号
@@ -120,9 +140,7 @@ def mark_phrase_boundaries(words: list[dict]) -> list[dict]:
     return result
 
 
-def _mark_conjunction_pair(
-    result: list[dict], first: str, second: str
-) -> None:
+def _mark_conjunction_pair(result: list[dict], first: str, second: str) -> None:
     """在词列表中标记一对关联词及其间的短语。"""
     n = len(result)
     first_len = len(first)

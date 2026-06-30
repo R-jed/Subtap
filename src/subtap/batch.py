@@ -9,7 +9,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-
 PIPELINE_STAGES = ["prepare", "chunk", "asr", "clean", "segment", "align", "export"]
 
 
@@ -99,9 +98,7 @@ def load_manifest(path: Path) -> dict[str, Any]:
     """Load manifest JSON with version validation."""
     data = json.loads(path.read_text(encoding="utf-8"))
     if data.get("version") != 2:
-        raise ValueError(
-            f"不支持的 manifest 版本：{data.get('version')}，需要 v2"
-        )
+        raise ValueError(f"不支持的 manifest 版本：{data.get('version')}，需要 v2")
     return data
 
 

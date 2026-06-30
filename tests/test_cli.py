@@ -297,10 +297,21 @@ def test_batch_transcribe_runs_each_file(tmp_path, monkeypatch):
 
     class FakeRunner:
         def run_pipeline(
-            self, pipeline, input_path, output_dir, fmt="srt", enhance="local", align_enabled=True, hotword_enabled=True
+            self,
+            pipeline,
+            input_path,
+            output_dir,
+            fmt="srt",
+            enhance="local",
+            align_enabled=True,
+            hotword_enabled=True,
         ):
             calls.append((pipeline.work_dir, input_path, output_dir, fmt))
-            return {"output_dir": str(output_dir), "format": fmt, "timings": {"asr": 1.0}}
+            return {
+                "output_dir": str(output_dir),
+                "format": fmt,
+                "timings": {"asr": 1.0},
+            }
 
     class FakePipeline:
         def __init__(self, _config, work_dir):

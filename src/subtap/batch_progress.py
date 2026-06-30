@@ -102,6 +102,7 @@ def print_progress_footer(
 
 # JSON streaming output
 
+
 class JsonProgressWriter:
     """Write progress as JSON Lines."""
 
@@ -119,11 +120,13 @@ class JsonProgressWriter:
         self._write(data)
 
     def write_item_start(self, index: int, filename: str) -> None:
-        self._write({
-            "type": "item_start",
-            "index": index,
-            "file": filename,
-        })
+        self._write(
+            {
+                "type": "item_start",
+                "index": index,
+                "file": filename,
+            }
+        )
 
     def write_item_complete(
         self,
@@ -153,15 +156,17 @@ class JsonProgressWriter:
         interrupted: int,
         duration: float,
     ) -> None:
-        self._write({
-            "type": "complete",
-            "ok": ok,
-            "total": total,
-            "succeeded": succeeded,
-            "failed": failed,
-            "interrupted": interrupted,
-            "duration": round(duration, 2),
-        })
+        self._write(
+            {
+                "type": "complete",
+                "ok": ok,
+                "total": total,
+                "succeeded": succeeded,
+                "failed": failed,
+                "interrupted": interrupted,
+                "duration": round(duration, 2),
+            }
+        )
 
     def _write(self, data: dict[str, Any]) -> None:
         self.output.write(json.dumps(data, ensure_ascii=False) + "\n")

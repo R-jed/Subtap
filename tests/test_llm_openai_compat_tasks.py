@@ -86,7 +86,11 @@ def test_select_suspicious_segments_rejects_unknown_index(monkeypatch):
 def test_repair_segments_updates_only_returned_indexes(monkeypatch):
     llm, _calls = _llm(
         monkeypatch,
-        {"choices": [{"message": {"content": '{"segments":[{"i":1,"t":"理光 GR4"}]}'}}]},
+        {
+            "choices": [
+                {"message": {"content": '{"segments":[{"i":1,"t":"理光 GR4"}]}'}}
+            ]
+        },
     )
 
     result = llm.repair_segments([{"i": 1, "t": "李光机亚四"}])
@@ -117,7 +121,11 @@ def test_parse_segments_json_rejects_non_object_json(monkeypatch):
 def test_replace_hotwords_returns_updates_and_sends_glossary(monkeypatch):
     llm, calls = _llm(
         monkeypatch,
-        {"choices": [{"message": {"content": '{"segments":[{"i":0,"t":"理光 GR4"}]}'}}]},
+        {
+            "choices": [
+                {"message": {"content": '{"segments":[{"i":0,"t":"理光 GR4"}]}'}}
+            ]
+        },
     )
 
     result = llm.replace_hotwords(

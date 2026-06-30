@@ -43,10 +43,13 @@ class OpenAICompatibleLLM:
     ):
         self.model = remote_api.model if remote_api and remote_api.model else model
         if remote_api:
-            self.base_url = remote_api.base_url.rstrip("/") if remote_api.base_url else ""
+            self.base_url = (
+                remote_api.base_url.rstrip("/") if remote_api.base_url else ""
+            )
         else:
             self.base_url = (
-                base_url or os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+                base_url
+                or os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
             ).rstrip("/")
         api_key_env = remote_api.api_key_env if remote_api else "OPENAI_API_KEY"
         self.api_key = api_key or os.environ.get(api_key_env, "")
@@ -163,7 +166,9 @@ class OpenAICompatibleLLM:
         )
         return {int(item["i"]): str(item["t"]) for item in parsed}
 
-    def replace_hotwords(self, segments: list[dict], glossary: dict | None) -> dict[int, str]:
+    def replace_hotwords(
+        self, segments: list[dict], glossary: dict | None
+    ) -> dict[int, str]:
         prompt = (
             "你是一个字幕热词替换助手。请根据热词表和上下文修正专有名词。\n\n"
             "规则：\n"

@@ -250,6 +250,7 @@ def test_srt_render_filters_empty_segments():
     """SRT 渲染应过滤空文本段。"""
     from subtap.core.export import SRTExporter
     from subtap.schemas.models import AlignedSegment
+
     segs = [
         AlignedSegment(sentence_id=0, start_sec=1.0, end_sec=2.0, text="正常内容"),
         AlignedSegment(sentence_id=1, start_sec=2.0, end_sec=2.5, text=""),
@@ -266,6 +267,7 @@ def test_srt_render_filters_empty_segments():
 def test_smart_split_basic():
     """基本断句：句末标点 + 停顿 + 宽度限制。"""
     from subtap.core.export import _smart_split
+
     words = [
         {"word": "这", "start_sec": 1.0, "end_sec": 1.1},
         {"word": "是", "start_sec": 1.1, "end_sec": 1.2},
@@ -288,6 +290,7 @@ def test_smart_split_basic():
 def test_smart_split_pause_break():
     """停顿断句：停顿 > 0.3s 应产生新字幕。"""
     from subtap.core.export import _smart_split
+
     words = [
         {"word": "前", "start_sec": 1.0, "end_sec": 1.1},
         {"word": "半", "start_sec": 1.1, "end_sec": 1.2},
@@ -303,6 +306,7 @@ def test_smart_split_pause_break():
 def test_smart_split_max_chars():
     """宽度限制：超过 max_chars 应换行。"""
     from subtap.core.export import _smart_split
+
     words = [
         {"word": "这", "start_sec": 1.0, "end_sec": 1.1},
         {"word": "是", "start_sec": 1.1, "end_sec": 1.2},
@@ -327,6 +331,7 @@ def test_smart_split_max_chars():
 def test_smart_split_number_protection():
     """数字序列保护：不拆分连续数字。"""
     from subtap.core.export import _smart_split
+
     words = [
         {"word": "价", "start_sec": 1.0, "end_sec": 1.1},
         {"word": "格", "start_sec": 1.1, "end_sec": 1.2},
@@ -350,6 +355,7 @@ def test_smart_split_number_protection():
 def test_smart_split_filler_merge():
     """语气词应合并到上一行。"""
     from subtap.core.export import _smart_split
+
     words = [
         {"word": "我", "start_sec": 1.0, "end_sec": 1.1},
         {"word": "觉", "start_sec": 1.1, "end_sec": 1.2},
@@ -370,6 +376,7 @@ def test_smart_split_filler_merge():
 def test_inject_punct_basic_single_char_words():
     """单字词 + 逗号：逗号应在正确位置。"""
     from subtap.core.export import _inject_punct
+
     words = [
         {"word": "照", "start_sec": 44.0, "end_sec": 44.2},
         {"word": "片", "start_sec": 44.2, "end_sec": 44.5},
@@ -385,6 +392,7 @@ def test_inject_punct_basic_single_char_words():
 def test_inject_punct_multi_char_words():
     """多字词 + 逗号。"""
     from subtap.core.export import _inject_punct
+
     words = [
         {"word": "照片", "start_sec": 44.0, "end_sec": 44.5},
         {"word": "但是", "start_sec": 44.8, "end_sec": 45.1},
@@ -402,6 +410,7 @@ def test_inject_punct_missing_word_in_list():
     逗号应在'照'之后，而不是'但'和'是'之间。
     """
     from subtap.core.export import _inject_punct
+
     words = [
         {"word": "照", "start_sec": 44.0, "end_sec": 44.2},
         {"word": "但", "start_sec": 44.8, "end_sec": 45.0},
@@ -418,6 +427,7 @@ def test_inject_punct_missing_word_in_list():
 def test_inject_punct_sentence_end_punct():
     """句末标点应正确插入。"""
     from subtap.core.export import _inject_punct
+
     words = [
         {"word": "好", "start_sec": 1.0, "end_sec": 1.2},
         {"word": "的", "start_sec": 1.3, "end_sec": 1.5},
@@ -430,6 +440,7 @@ def test_inject_punct_sentence_end_punct():
 def test_inject_punct_multiple_puncts():
     """多个连续标点。"""
     from subtap.core.export import _inject_punct
+
     words = [
         {"word": "哇", "start_sec": 1.0, "end_sec": 1.2},
         {"word": "好", "start_sec": 1.5, "end_sec": 1.7},
@@ -442,6 +453,7 @@ def test_inject_punct_multiple_puncts():
 def test_inject_punct_punct_at_start():
     """标点在文本开头。"""
     from subtap.core.export import _inject_punct
+
     words = [
         {"word": "好", "start_sec": 1.0, "end_sec": 1.2},
     ]
@@ -453,6 +465,7 @@ def test_inject_punct_punct_at_start():
 def test_inject_punct_no_punct():
     """无标点时保持原样。"""
     from subtap.core.export import _inject_punct
+
     words = [
         {"word": "你好", "start_sec": 1.0, "end_sec": 1.2},
         {"word": "世界", "start_sec": 1.3, "end_sec": 1.5},
@@ -465,6 +478,7 @@ def test_inject_punct_no_punct():
 def test_inject_punct_timestamp_interpolation():
     """标点时间戳应在前后词之间插值。"""
     from subtap.core.export import _inject_punct
+
     words = [
         {"word": "照", "start_sec": 44.0, "end_sec": 44.2},
         {"word": "片", "start_sec": 44.2, "end_sec": 44.5},
@@ -481,6 +495,7 @@ def test_inject_punct_timestamp_interpolation():
 def test_inject_punct_missing_word_after_punct():
     """缺失词在标点之后：标点仍应在正确位置。"""
     from subtap.core.export import _inject_punct
+
     words = [
         {"word": "照", "start_sec": 44.0, "end_sec": 44.2},
         {"word": "片", "start_sec": 44.2, "end_sec": 44.5},
@@ -496,6 +511,7 @@ def test_inject_punct_missing_word_after_punct():
 def test_inject_punct_consecutive_punct():
     """连续多个标点应全部保留。"""
     from subtap.core.export import _inject_punct
+
     words = [
         {"word": "哇", "start_sec": 1.0, "end_sec": 1.2},
         {"word": "好", "start_sec": 1.5, "end_sec": 1.7},
@@ -508,6 +524,7 @@ def test_inject_punct_consecutive_punct():
 def test_inject_punct_missing_word_with_trailing_punct():
     """缺失词 + 结尾标点。"""
     from subtap.core.export import _inject_punct
+
     words = [
         {"word": "好", "start_sec": 1.0, "end_sec": 1.2},
     ]
@@ -520,4 +537,5 @@ def test_inject_punct_missing_word_with_trailing_punct():
 def test_inject_punct_empty_input():
     """空输入应返回空列表。"""
     from subtap.core.export import _inject_punct
+
     assert _inject_punct([], "") == []
