@@ -35,10 +35,11 @@ def test_observer_child_command_passes_translate_and_bilingual(tmp_path):
         timestamp=True,
     )
 
-    assert "--translate-to" in command
-    assert "en" in command
-    assert "--bilingual" in command
-    assert "target-first" in command
+    idx = command.index("--translate-to")
+    assert command[idx + 1] == "en"
+
+    idx = command.index("--bilingual")
+    assert command[idx + 1] == "target-first"
 
 
 def test_bilingual_without_translate_to_fails(tmp_path):
