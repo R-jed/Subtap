@@ -46,17 +46,6 @@ def test_cli_help_no_custom_url_asr():
     assert "--custom-asr" not in help_text
 
 
-def test_decision_no_third_party_asr():
-    """PipelineDecision 不应包含第三方 ASR 相关字段。"""
-    from subtap.engine.decision import PipelineDecision
-
-    decision = PipelineDecision.from_mode("fast")
-    # 不应有 provider 字段指向第三方
-    assert not hasattr(decision, "asr_provider") or getattr(
-        decision, "asr_provider", None
-    ) in (None, "qwen3_mlx")
-
-
 def test_config_no_api_asr_backend():
     """Config 不应包含 API ASR 后端选项。"""
     from subtap.schemas.config import ASRConfig

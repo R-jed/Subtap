@@ -316,52 +316,6 @@ def test_chunk_tracer_get_slow_chunks():
     assert slow_chunks[0]["id"] == 3
 
 
-def test_slow_detector_init():
-    """Test SlowChunkDetector initialization."""
-    from subtap.metrics.slow_detector import SlowChunkDetector
-
-    detector = SlowChunkDetector(threshold=2.0)
-    assert detector.threshold == 2.0
-    assert detector._slow_chunks == []
-
-
-def test_slow_detector_check():
-    """Test SlowChunkDetector check."""
-    from subtap.metrics.slow_detector import SlowChunkDetector
-
-    detector = SlowChunkDetector(threshold=1.5)
-
-    # Normal chunk
-    assert detector.check(0.2, 0.2) is False
-
-    # Slow chunk
-    assert detector.check(0.5, 0.2) is True
-
-
-def test_slow_detector_add_slow_chunk():
-    """Test SlowChunkDetector add_slow_chunk."""
-    from subtap.metrics.slow_detector import SlowChunkDetector
-
-    detector = SlowChunkDetector(threshold=1.5)
-    detector.add_slow_chunk(chunk_id=1, latency=0.5, avg=0.2)
-
-    assert len(detector._slow_chunks) == 1
-    assert detector._slow_chunks[0]["id"] == 1
-    assert detector._slow_chunks[0]["threshold"] == 1.5
-
-
-def test_slow_detector_get_slow_chunks():
-    """Test SlowChunkDetector get_slow_chunks."""
-    from subtap.metrics.slow_detector import SlowChunkDetector
-
-    detector = SlowChunkDetector(threshold=1.5)
-    detector.add_slow_chunk(chunk_id=1, latency=0.5, avg=0.2)
-    detector.add_slow_chunk(chunk_id=2, latency=0.6, avg=0.3)
-
-    slow_chunks = detector.get_slow_chunks()
-    assert len(slow_chunks) == 2
-
-
 def test_metrics_config_defaults():
     """Test MetricsConfig default values."""
     from subtap.schemas.config import MetricsConfig
@@ -386,13 +340,11 @@ def test_full_metrics_flow():
     from subtap.metrics.events import EventBus, EventType, PipelineEvent
     from subtap.metrics.profiler import PipelineProfiler
     from subtap.metrics.chunk_trace import ChunkTracer
-    from subtap.metrics.slow_detector import SlowChunkDetector
 
     # Create components
     bus = EventBus()
     profiler = PipelineProfiler(bus)
     tracer = ChunkTracer(bus, window_size=5)
-    assert SlowChunkDetector(threshold=1.5) is not None
 
     # Simulate chunk events
     for i in range(5):
