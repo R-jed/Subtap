@@ -130,13 +130,13 @@ class OpenAICompatibleLLM:
             '4. 不要改写原句，不要解释原因。\n\n'
             '5. 不要增加字或减少字，不要改变句子结构。\n\n'
             '6. 只输出 JSON，格式必须严格为：\n\n'
-            '{“segments”:[{“i”:0}]}\n\n'
+            '{"segments":[{"i":0}]}\n\n'
             '7. 每个输入项包含：\n'
             '- i: 原始索引\n'
             '- t: 字幕文本\n\n'
             '8. 只返回原始输入里的索引 i。\n\n'
-            '9. 如果没有可疑句子，返回 {“segments”:[]}\n\n'
-            f'待检查内容：\n{json.dumps({“segments”: segments}, ensure_ascii=False)}'
+            '9. 如果没有可疑句子，返回 {"segments":[]}\n\n'
+            f'待检查内容：\n{json.dumps({"segments": segments}, ensure_ascii=False)}'
         )
         content = self._chat(prompt, "你只输出 JSON，不输出解释。")
         parsed = self._parse_segments_json(
