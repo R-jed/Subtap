@@ -1,4 +1,5 @@
 """Tests for script file loader."""
+
 import pytest
 from pathlib import Path
 from subtap.script.loader import load_script, UnsupportedFormatError

@@ -1,4 +1,5 @@
 """Tests for script formatter."""
+
 from subtap.script.formatter import format_script
 
 
@@ -40,6 +41,7 @@ def test_normalizes_fullwidth_comma():
 
 def test_with_real_fixture():
     from pathlib import Path
+
     fixture = Path(__file__).parent / "fixtures" / "script_test_manuscript.txt"
     lines = format_script(fixture.read_text(encoding="utf-8"))
     assert len(lines) > 0

@@ -7,13 +7,18 @@ from pathlib import Path
 
 from subtap.script.formatter import format_script
 from subtap.script.loader import load_script
-from subtap.script.aligner import align_sequences, compute_alignment_quality, AlignmentQualityError
+from subtap.script.aligner import (
+    align_sequences,
+    compute_alignment_quality,
+    AlignmentQualityError,
+)
 from subtap.script.corrector import correct_segments
 
 
 @dataclass
 class MatchReport:
     """User-facing match report."""
+
     matched: int = 0
     corrected: int = 0
     skipped: int = 0
