@@ -1,81 +1,114 @@
-"""Script formatting and simple sequential matching."""
+"""Script matching: format → align → correct."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+from pathlib import Path
 
-def _is_note_line(line: str) -> bool:
-    return (
-        line.startswith("#")
-        or line.startswith("//")
-        or (line.startswith("【") and line.endswith("】"))
-        or (line.startswith("[") and line.endswith("]"))
-    )
+from subtap.script.formatter import format_script
+from subtap.script.loader import load_script
+from subtap.script.aligner import align_sequences, compute_alignment_quality, AlignmentQualityError
+from subtap.script.corrector import correct_segments
 
 
-def format_script(text: str, remove_notes: bool = True) -> list[str]:
-    """Return non-empty script lines in order."""
-    lines = []
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        if remove_notes and _is_note_line(line):
-            continue
-        lines.append(line)
-    return lines
+@dataclass
+class MatchReport:
+    """User-facing match report."""
+    matched: int = 0
+    corrected: int = 0
+    skipped: int = 0
+    warnings: list[str] = field(default_factory=list)
+    message: str = ""
 
 
 def match_script_lines(
     segments: list[dict],
-    lines: list[str],
-    mode: str = "keep_subtitle",
-) -> list[dict]:
-    """Replace segment text with script lines by order while preserving timing."""
-    if mode not in {"keep_subtitle", "follow_script"}:
+    script_text: str,
+    mode: str = "follow_script",
+) -> tuple[list[dict], MatchReport]:
+    """Main entry: format → align → correct.
+
+    Args:
+        segments: ASR segments (list of dicts with text, start_sec, end_sec).
+        script_text: Raw script text (already loaded).
+        mode: "follow_script" or "correct_only".
+
+    Returns:
+        Tuple of (corrected segments, report).
+    """
+    if mode not in {"follow_script", "correct_only"}:
         raise ValueError(f"未知文稿匹配模式：{mode}")
 
-    if mode == "follow_script":
-        if not segments:
-            return []
-        result = []
-        for index, line in enumerate(lines):
-            source = segments[index] if index < len(segments) else segments[-1]
-            item = dict(source)
-            item["text"] = line
-            result.append(item)
-        return result
+    # Step 1: Format script
+    ref_lines = format_script(script_text)
 
-    result = []
-    for index, segment in enumerate(segments):
-        item = dict(segment)
-        if index < len(lines):
-            item["text"] = lines[index]
-        result.append(item)
-    return result
+    if not ref_lines:
+        return [], MatchReport(
+            message="文稿内容为空",
+            warnings=["文稿内容为空，请检查文稿文件"],
+        )
 
+    if not segments:
+        return [], MatchReport(
+            message="无转录内容",
+            warnings=["无转录内容"],
+        )
 
-def build_match_report(
-    *,
-    segments_total: int,
-    script_lines_total: int,
-    output_total: int,
-    mode: str,
-) -> str:
-    """Build a small user-facing manuscript match report."""
-    matched = min(segments_total, script_lines_total)
-    remaining_script = max(0, script_lines_total - segments_total)
-    remaining_segments = max(0, segments_total - script_lines_total)
-    return "\n".join(
-        [
-            "# 文稿匹配报告",
-            "",
-            f"- 匹配模式：{mode}",
-            f"- 原时间轴条数：{segments_total}",
-            f"- 文稿有效行数：{script_lines_total}",
-            f"- 输出条数：{output_total}",
-            f"- 已匹配：{matched}",
-            f"- 剩余文稿行：{remaining_script}",
-            f"- 剩余字幕段：{remaining_segments}",
-            "",
-        ]
+    # Step 2: Align
+    try:
+        ops = align_sequences(
+            [s["text"] for s in segments],
+            ref_lines,
+        )
+        compute_alignment_quality(ops, [s["text"] for s in segments], ref_lines)
+    except AlignmentQualityError as e:
+        return list(segments), MatchReport(
+            message=str(e),
+            warnings=[str(e)],
+        )
+
+    # Step 3: Correct
+    result, skipped = correct_segments(segments, ops, ref_lines)
+
+    # Build report
+    matched = sum(1 for op in ops if op.op in ("equal", "replace"))
+    corrected = sum(1 for op in ops if op.op == "replace")
+    asr_extra = sum(1 for op in ops if op.op == "delete")
+    script_extra = sum(1 for op in ops if op.op == "insert")
+
+    warnings = []
+    if skipped > 0:
+        warnings.append(f"{skipped} 句匹配度较低，已保留原转录")
+    if asr_extra > 0:
+        warnings.append(f"有 {asr_extra} 句未匹配到文稿，已保留原转录")
+    if script_extra > 0:
+        warnings.append(f"文稿中有 {script_extra} 句未在音频中找到，已跳过")
+
+    message = f"文稿匹配完成，已纠错 {corrected} 句"
+
+    return result, MatchReport(
+        matched=matched,
+        corrected=corrected,
+        skipped=skipped,
+        warnings=warnings,
+        message=message,
     )
+
+
+def match_from_file(
+    segments: list[dict],
+    script_path: Path,
+    mode: str = "follow_script",
+) -> tuple[list[dict], MatchReport]:
+    """Convenience: load script file and match.
+
+    Args:
+        segments: ASR segments.
+        script_path: Path to script file.
+        mode: "follow_script" or "correct_only".
+
+    Returns:
+        Tuple of (corrected segments, report).
+    """
+    script_text = load_script(script_path)
+    return match_script_lines(segments, script_text, mode=mode)
