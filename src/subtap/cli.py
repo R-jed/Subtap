@@ -117,6 +117,32 @@ profile_app = typer.Typer(help="本地学习档案")
 app.add_typer(learn_app, name="learn")
 app.add_typer(profile_app, name="profile")
 
+# ── 首次运行向导 ────────────────────────────────────────────
+
+
+def check_first_run_wizard(config: "SubtapConfig") -> bool:
+    """检查并执行首次运行向导。
+
+    当检测到 API 配置存在但 llm_proofread 未设置时，提示用户是否开启 AI 校对。
+
+    Returns:
+        bool: 是否执行了向导
+    """
+    # 检查条件：API 配置存在（base_url 和 api_key_env 都有值）
+    if not config.remote_api.base_url or not config.remote_api.api_key_env:
+        return False
+
+    if config.llm_proofread is not None:
+        return False
+
+    # 执行向导
+    print("\n检测到 API 配置，但未设置 AI 校对选项。")
+    response = input("是否开启 AI 校对功能？(Y/n): ").strip().lower()
+
+    config.llm_proofread = response != "n"
+    return True
+
+
 # ── 基础命令 ──────────────────────────────────────────────
 
 
