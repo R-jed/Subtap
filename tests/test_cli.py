@@ -404,6 +404,10 @@ def test_run_no_align_passes_align_disabled_to_runner(tmp_path, monkeypatch):
                 raise AssertionError("--no-align must not run align")
             raise AssertionError(stage)
 
+        def cleanup(self):
+            """模拟 cleanup 调用。"""
+            return {"cleaned_count": 0, "cleaned_files": []}
+
     config = SimpleNamespace(output=SimpleNamespace(timestamp=True))
     monkeypatch.setattr("subtap.core.pipeline.Pipeline", FakePipeline)
     monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
@@ -485,6 +489,10 @@ def test_run_enhance_off_passes_clean_off_to_pipeline(tmp_path, monkeypatch):
             if stage == "align":
                 raise AssertionError("--no-align must not run align")
             raise AssertionError(stage)
+
+        def cleanup(self):
+            """模拟 cleanup 调用。"""
+            return {"cleaned_count": 0, "cleaned_files": []}
 
     config = SimpleNamespace(output=SimpleNamespace(timestamp=True))
     monkeypatch.setattr("subtap.core.pipeline.Pipeline", FakePipeline)
