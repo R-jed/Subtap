@@ -83,6 +83,19 @@ class ModelConfig(BaseModel):
     hf_mirror_endpoint: str = "https://hf-mirror.com"
 
 
+class CleanupConfig(BaseModel):
+    """清理策略配置。"""
+
+    auto_cleanup: bool = Field(
+        default=True,
+        description="执行完成后自动清理临时文件（L1）",
+    )
+    keep_chunks: bool = Field(
+        default=False,
+        description="保留 chunk WAV 文件（不推荐，会占用大量磁盘空间）",
+    )
+
+
 class WorkspaceConfig(BaseModel):
     """Workspace directory settings."""
 
@@ -148,6 +161,7 @@ class SubtapConfig(BaseModel):
     workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
     metrics: MetricsConfig = Field(default_factory=MetricsConfig)
+    cleanup: CleanupConfig = Field(default_factory=CleanupConfig)
 
 
 _DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[3] / "configs" / "default.yaml"
