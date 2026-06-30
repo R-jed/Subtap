@@ -97,7 +97,10 @@ def test_report_corrected_count():
 
 def test_asr_much_longer_than_script():
     """ASR 远多于文稿：50 条 ASR vs 10 行文稿。"""
-    segments = [{"text": f"ASR句子{i}", "start_sec": float(i), "end_sec": float(i+1)} for i in range(50)]
+    segments = [
+        {"text": f"ASR句子{i}", "start_sec": float(i), "end_sec": float(i + 1)}
+        for i in range(50)
+    ]
     script = "\n".join([f"文稿句子{i}" for i in range(10)])
     result, report = match_script_lines(segments, script, mode="follow_script")
     # ASR 多出的行应保留
@@ -107,7 +110,10 @@ def test_asr_much_longer_than_script():
 
 def test_script_much_longer_than_asr():
     """文稿远多于 ASR：10 条 ASR vs 50 行文稿。"""
-    segments = [{"text": f"ASR句子{i}", "start_sec": float(i), "end_sec": float(i+1)} for i in range(10)]
+    segments = [
+        {"text": f"ASR句子{i}", "start_sec": float(i), "end_sec": float(i + 1)}
+        for i in range(10)
+    ]
     script = "\n".join([f"文稿句子{i}" for i in range(50)])
     result, report = match_script_lines(segments, script, mode="follow_script")
     # 文稿多出的行应跳过
@@ -144,7 +150,10 @@ def test_mixed_operations():
 
 def test_large_scale_100_lines():
     """大规模测试：100 行 ASR + 100 行文稿。"""
-    segments = [{"text": f"ASR句子{i}", "start_sec": float(i), "end_sec": float(i+1)} for i in range(100)]
+    segments = [
+        {"text": f"ASR句子{i}", "start_sec": float(i), "end_sec": float(i + 1)}
+        for i in range(100)
+    ]
     script = "\n".join([f"文稿句子{i}" for i in range(100)])
     result, report = match_script_lines(segments, script, mode="follow_script")
     assert len(result) > 0
@@ -153,7 +162,14 @@ def test_large_scale_100_lines():
 
 def test_all_lines_completely_different():
     """所有行完全不同：应触发 AlignmentQualityError 或返回警告。"""
-    segments = [{"text": f"完全不同的ASR内容{i}", "start_sec": float(i), "end_sec": float(i+1)} for i in range(5)]
+    segments = [
+        {
+            "text": f"完全不同的ASR内容{i}",
+            "start_sec": float(i),
+            "end_sec": float(i + 1),
+        }
+        for i in range(5)
+    ]
     script = "\n".join([f"完全不同的文稿内容{i}" for i in range(5)])
     result, report = match_script_lines(segments, script, mode="follow_script")
     # 应返回原 segments 或警告

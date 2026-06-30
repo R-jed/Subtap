@@ -841,11 +841,11 @@ def run(
     hotword_mode: str = typer.Option(
         "local", "--hotword-mode", help="热词模式：local / api / hybrid"
     ),
-    script: str | None = typer.Option(
-        None, "--script", help="文稿文件路径（可选）"
-    ),
+    script: str | None = typer.Option(None, "--script", help="文稿文件路径（可选）"),
     script_mode: str = typer.Option(
-        "follow_script", "--script-mode", help="文稿匹配模式：follow_script / correct_only"
+        "follow_script",
+        "--script-mode",
+        help="文稿匹配模式：follow_script / correct_only",
     ),
     json_output: bool = typer.Option(False, "--json", help="输出机器可读 JSON"),
 ) -> None:
