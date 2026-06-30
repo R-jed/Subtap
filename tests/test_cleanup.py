@@ -697,7 +697,7 @@ class TestCleanCommand:
         (chunks_dir / "chunk_0000.wav").write_bytes(b"fake wav")
 
         # 运行 clean 命令
-        result = runner.invoke(app, ["clean", str(tmp_path)])
+        result = runner.invoke(app, ["cleanup", str(tmp_path)])
 
         # 验证临时文件已移除
         assert not (tmp_path / "chunks" / "chunk_0000.wav").exists()
@@ -715,7 +715,7 @@ class TestCleanCommand:
         (tmp_path / "aligned.jsonl").write_text('{"text": "hello"}\n')
 
         # 运行 clean 命令（带 --all 参数）
-        result = runner.invoke(app, ["clean", str(tmp_path), "--all"])
+        result = runner.invoke(app, ["cleanup", str(tmp_path), "--all"])
 
         # 验证中间文件已移除
         assert not (tmp_path / "cleaned.jsonl").exists()
@@ -741,7 +741,7 @@ class TestCleanCommand:
         (output_dir / "test.srt").write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n")
 
         # 运行 clean 命令（带 --all 参数）
-        result = runner.invoke(app, ["clean", str(tmp_path), "--all"])
+        result = runner.invoke(app, ["cleanup", str(tmp_path), "--all"])
 
         # 验证输出文件被保留
         assert (tmp_path / "aligned.jsonl").exists()
