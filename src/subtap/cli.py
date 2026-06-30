@@ -128,8 +128,13 @@ def check_first_run_wizard(config: "SubtapConfig") -> bool:
     Returns:
         bool: 是否执行了向导
     """
-    # 检查条件：API 配置存在（base_url 和 api_key_env 都有值）
-    if not config.remote_api.base_url or not config.remote_api.api_key_env:
+    # 检查条件：API 配置存在且 llm_proofread 未设置
+    if not config.remote_api.base_url:
+        return False
+
+    # 检查环境变量是否存在
+    api_key_env = config.remote_api.api_key_env
+    if not api_key_env or not os.environ.get(api_key_env):
         return False
 
     if config.llm_proofread is not None:
@@ -139,7 +144,7 @@ def check_first_run_wizard(config: "SubtapConfig") -> bool:
     print("\n检测到 API 配置，但未设置 AI 校对选项。")
     response = input("是否开启 AI 校对功能？(Y/n): ").strip().lower()
 
-    config.llm_proofread = response != "n"
+    config.llm_proofread = response in ("y", "")
     return True
 
 
