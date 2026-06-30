@@ -17,7 +17,16 @@ class Pipeline:
     enabling resume from any checkpoint.
     """
 
-    STAGES = ["prepare", "chunk", "asr", "clean", "segment", "align", "hotword", "export"]
+    STAGES = [
+        "prepare",
+        "chunk",
+        "asr",
+        "clean",
+        "segment",
+        "align",
+        "hotword",
+        "export",
+    ]
 
     def __init__(
         self,
@@ -141,6 +150,7 @@ class Pipeline:
 
     def _stage_hotword(self, **kwargs) -> dict:
         from subtap.core.hotword import run_hotword
+
         return run_hotword(
             self.workspace,
             glossary_dir=kwargs.get("glossary_dir"),
@@ -187,7 +197,10 @@ class Pipeline:
 
         out = Path(output_dir) if output_dir else self.workspace.root / "output"
         result = run_export(
-            self.workspace.aligned_jsonl, out, fmt=fmt, stem=stem,
+            self.workspace.aligned_jsonl,
+            out,
+            fmt=fmt,
+            stem=stem,
             max_chars=self.config.output.max_chars,
             min_chars=self.config.output.min_chars,
             punctuation=self.config.output.subtitle_punctuation,
@@ -205,5 +218,8 @@ class Pipeline:
             return {"cleaned_count": 0, "cleaned_files": [], "is_clean": True}
 
         from subtap.engine.cleanroom import Cleanroom
+
         cleanroom = Cleanroom(self.workspace.root)
-        return cleanroom.clean_temp_files(exclude_chunks=self.config.cleanup.keep_chunks)
+        return cleanroom.clean_temp_files(
+            exclude_chunks=self.config.cleanup.keep_chunks
+        )

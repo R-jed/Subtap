@@ -63,7 +63,9 @@ class PipelineProgress:
         """Print stage start with Chinese name."""
         idx = STAGE_ORDER.index(state.stage) + 1 if state.stage in STAGE_ORDER else 0
         total = len(STAGE_ORDER)
-        self.console.print(f"\n[bold cyan]▸ [{idx}/{total}] {state.stage_cn}[/bold cyan]")
+        self.console.print(
+            f"\n[bold cyan]▸ [{idx}/{total}] {state.stage_cn}[/bold cyan]"
+        )
         if state.current_task:
             self.console.print(f"  [dim]{state.current_task}[/dim]")
 

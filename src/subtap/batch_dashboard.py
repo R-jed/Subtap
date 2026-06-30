@@ -146,7 +146,8 @@ class BatchDashboard(App):
 
         # Count completed
         completed = sum(
-            1 for item in state.items
+            1
+            for item in state.items
             if item.status in ("succeeded", "failed", "interrupted")
         )
         self.total_panel.update_progress(completed, state.total)

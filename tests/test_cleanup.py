@@ -109,7 +109,9 @@ class TestCleanTempFiles:
         assert chunk1.exists(), "chunk WAV 应被保留"
         assert not source.exists(), "source WAV 应被删除"
 
-    def test_returns_cleaned_count_and_files(self, cleanroom: Cleanroom, tmp_work: Path):
+    def test_returns_cleaned_count_and_files(
+        self, cleanroom: Cleanroom, tmp_work: Path
+    ):
         """返回值应包含 cleaned_count 和 cleaned_files 列表。"""
         _create_file(tmp_work / "chunks" / "chunk_0001.wav")
         _create_file(tmp_work / "audio" / "source.wav")
@@ -121,7 +123,9 @@ class TestCleanTempFiles:
         assert result["cleaned_count"] == 2
         assert len(result["cleaned_files"]) == 2
 
-    def test_does_not_delete_intermediate_files(self, cleanroom: Cleanroom, tmp_work: Path):
+    def test_does_not_delete_intermediate_files(
+        self, cleanroom: Cleanroom, tmp_work: Path
+    ):
         """L1 清理不应删除 L2 中间文件。"""
         asr_jsonl = _create_file(tmp_work / "asr" / "asr.jsonl")
         cleaned_jsonl = _create_file(tmp_work / "cleaned.jsonl")
@@ -133,7 +137,9 @@ class TestCleanTempFiles:
         assert cleaned_jsonl.exists()
         assert sentences_jsonl.exists()
 
-    def test_does_not_delete_protected_files(self, cleanroom: Cleanroom, tmp_work: Path):
+    def test_does_not_delete_protected_files(
+        self, cleanroom: Cleanroom, tmp_work: Path
+    ):
         """永远不删除 aligned.jsonl、report.md、metrics.json、output/。"""
         aligned = _create_file(tmp_work / "aligned.jsonl")
         report = _create_file(tmp_work / "report.md")
@@ -196,9 +202,7 @@ class TestCleanIntermediateFiles:
         assert report.exists()
         assert metrics.exists()
 
-    def test_never_removes_output_directory(
-        self, cleanroom: Cleanroom, tmp_work: Path
-    ):
+    def test_never_removes_output_directory(self, cleanroom: Cleanroom, tmp_work: Path):
         """永远不删除 output/ 目录及其内容。"""
         output_file = _create_file(tmp_work / "output" / "output.srt")
 
@@ -260,9 +264,7 @@ class TestCleanAll:
         assert not sentences.exists()
         assert result["cleaned_count"] == 5
 
-    def test_never_removes_protected_files(
-        self, cleanroom: Cleanroom, tmp_work: Path
-    ):
+    def test_never_removes_protected_files(self, cleanroom: Cleanroom, tmp_work: Path):
         """clean_all 永远不删除受保护文件。"""
         aligned = _create_file(tmp_work / "aligned.jsonl")
         report = _create_file(tmp_work / "report.md")
@@ -450,7 +452,9 @@ class TestPipelineCleanup:
 class TestBatchCleanup:
     """测试批量转录完成后的清理行为。"""
 
-    def test_batch_transcribe_calls_cleanup_on_success(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_batch_transcribe_calls_cleanup_on_success(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """批量转录成功处理文件后应调用 clean_intermediate_files() 清理 L2 中间文件。"""
         from unittest.mock import MagicMock, patch
         from typer.testing import CliRunner
@@ -486,21 +490,32 @@ class TestBatchCleanup:
             mock_runner_class.return_value = mock_runner
 
             # 模拟 Cleanroom.clean_intermediate_files
-            with patch("subtap.engine.cleanroom.Cleanroom.clean_intermediate_files") as mock_clean:
+            with patch(
+                "subtap.engine.cleanroom.Cleanroom.clean_intermediate_files"
+            ) as mock_clean:
                 mock_clean.return_value = {"cleaned_count": 3, "cleaned_files": []}
 
                 # 运行批量转录
-                result = runner.invoke(app, [
-                    "batch-transcribe", str(audio_file),
-                    "--output-dir", str(output_dir),
-                    "--no-confirm",
-                    "--json",
-                ])
+                result = runner.invoke(
+                    app,
+                    [
+                        "batch-transcribe",
+                        str(audio_file),
+                        "--output-dir",
+                        str(output_dir),
+                        "--no-confirm",
+                        "--json",
+                    ],
+                )
 
                 # 验证 clean_intermediate_files 被调用
-                assert mock_clean.called, "batch_transcribe 成功后应调用 clean_intermediate_files()"
+                assert (
+                    mock_clean.called
+                ), "batch_transcribe 成功后应调用 clean_intermediate_files()"
 
-    def test_batch_transcribe_no_cleanup_on_failure(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_batch_transcribe_no_cleanup_on_failure(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """批量转录失败时不应调用 clean_intermediate_files()。"""
         from unittest.mock import MagicMock, patch
         from typer.testing import CliRunner
@@ -527,25 +542,36 @@ class TestBatchCleanup:
             mock_runner_class.return_value = mock_runner
 
             # 模拟 Cleanroom.clean_intermediate_files
-            with patch("subtap.engine.cleanroom.Cleanroom.clean_intermediate_files") as mock_clean:
+            with patch(
+                "subtap.engine.cleanroom.Cleanroom.clean_intermediate_files"
+            ) as mock_clean:
                 mock_clean.return_value = {"cleaned_count": 3, "cleaned_files": []}
 
                 # 运行批量转录
-                result = runner.invoke(app, [
-                    "batch-transcribe", str(audio_file),
-                    "--output-dir", str(output_dir),
-                    "--no-confirm",
-                    "--json",
-                ])
+                result = runner.invoke(
+                    app,
+                    [
+                        "batch-transcribe",
+                        str(audio_file),
+                        "--output-dir",
+                        str(output_dir),
+                        "--no-confirm",
+                        "--json",
+                    ],
+                )
 
                 # 验证 clean_intermediate_files 未被调用
-                assert not mock_clean.called, "batch_transcribe 失败时不应调用 clean_intermediate_files()"
+                assert (
+                    not mock_clean.called
+                ), "batch_transcribe 失败时不应调用 clean_intermediate_files()"
 
 
 class TestCLIRunCleanup:
     """测试 CLI run 命令完成后的清理行为。"""
 
-    def test_run_cleanup_removes_temp_files(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_run_cleanup_removes_temp_files(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """CLI run 应在成功执行后调用 pipeline.cleanup() 清理临时文件。"""
         from unittest.mock import MagicMock, patch
         from typer.testing import CliRunner
@@ -584,15 +610,21 @@ class TestCLIRunCleanup:
             mock_runner_class.return_value = mock_runner
 
             # 运行 pipeline（禁用 cleanroom 预检查，避免它清理文件）
-            result = runner.invoke(app, [
-                "run", str(audio_file),
-                "-w", str(work_dir),
-                "-o", str(tmp_path / "output"),
-                "--no-tui",
-                "--no-align",
-                "--no-cleanroom",
-                "--no-git-check",
-            ])
+            result = runner.invoke(
+                app,
+                [
+                    "run",
+                    str(audio_file),
+                    "-w",
+                    str(work_dir),
+                    "-o",
+                    str(tmp_path / "output"),
+                    "--no-tui",
+                    "--no-align",
+                    "--no-cleanroom",
+                    "--no-git-check",
+                ],
+            )
 
         # 验证 cleanup 发生：chunk WAV 文件应该被清理
         assert work_dir.exists(), "工作目录应该存在"
@@ -624,7 +656,7 @@ class TestFullIntegration:
         (tmp_path / "sentences.jsonl").write_text('{"text": "hello"}\n')
         (tmp_path / "aligned.jsonl").write_text('{"text": "hello"}\n')
         (tmp_path / "report.md").write_text("# Report\n")
-        (tmp_path / "metrics.json").write_text('{}\n')
+        (tmp_path / "metrics.json").write_text("{}\n")
 
         # 创建 pipeline
         config = SubtapConfig()
@@ -734,11 +766,13 @@ class TestCleanCommand:
         # 创建包含输出文件的工作区
         (tmp_path / "aligned.jsonl").write_text('{"text": "hello"}\n')
         (tmp_path / "report.md").write_text("# Report\n")
-        (tmp_path / "metrics.json").write_text('{}\n')
+        (tmp_path / "metrics.json").write_text("{}\n")
 
         output_dir = tmp_path / "output"
         output_dir.mkdir()
-        (output_dir / "test.srt").write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n")
+        (output_dir / "test.srt").write_text(
+            "1\n00:00:01,000 --> 00:00:02,000\nHello\n"
+        )
 
         # 运行 clean 命令（带 --all 参数）
         result = runner.invoke(app, ["cleanup", str(tmp_path), "--all"])

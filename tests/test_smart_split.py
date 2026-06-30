@@ -2,7 +2,6 @@
 
 from subtap.core.export import _smart_split
 
-
 # ── Acceptance criteria tests (Task 3) ──
 
 
@@ -125,7 +124,9 @@ def test_split_by_pause():
         {"word": "今", "start_sec": 2.8, "end_sec": 3.0},
         {"word": "天", "start_sec": 3.0, "end_sec": 3.2},
     ]
-    result = _smart_split(words, "这台相机从2015年发布到今天", max_chars=20, pause_threshold=0.3)
+    result = _smart_split(
+        words, "这台相机从2015年发布到今天", max_chars=20, pause_threshold=0.3
+    )
     assert len(result) == 2
     assert "发布" in result[0]["text"]
     assert "今天" in result[1]["text"]
@@ -303,20 +304,21 @@ def test_conjunction_not_at_line_end():
         {"word": "便", "start_sec": 4.0, "end_sec": 4.2},
     ]
     result = _smart_split(
-        words, "是我见过开机速度最快的相机但是轻便",
-        max_chars=25, min_chars=5, pause_threshold=0.2,
+        words,
+        "是我见过开机速度最快的相机但是轻便",
+        max_chars=25,
+        min_chars=5,
+        pause_threshold=0.2,
     )
     total = "".join(r["text"] for r in result)
     assert total == "是我见过开机速度最快的相机但是轻便"
     # "但是" should NOT be at the end of any line
     for line in result:
-        assert not line["text"].endswith("但是"), (
-            f"'但是' at line end: {result}"
-        )
+        assert not line["text"].endswith("但是"), f"'但是' at line end: {result}"
     # "但是" should be at the start of a line
-    assert any(line["text"].startswith("但是") for line in result), (
-        f"'但是' not at any line start: {result}"
-    )
+    assert any(
+        line["text"].startswith("但是") for line in result
+    ), f"'但是' not at any line start: {result}"
 
 
 def test_so_yi_not_split_realistic():
@@ -418,8 +420,11 @@ def test_single_conjunction_stripped_from_line_end():
         {"word": "贵", "start_sec": 3.2, "end_sec": 3.4},
     ]
     result = _smart_split(
-        words, "这台相机很好用但价格太贵",
-        max_chars=20, min_chars=3, pause_threshold=0.3,
+        words,
+        "这台相机很好用但价格太贵",
+        max_chars=20,
+        min_chars=3,
+        pause_threshold=0.3,
     )
     total = "".join(r["text"] for r in result)
     assert total == "这台相机很好用但价格太贵"
@@ -578,16 +583,36 @@ def test_no_split_number_unit():
 def test_no_text_loss():
     """核心约束：断句绝不丢字。输入的每个字都必须出现在输出中。"""
     cases = [
-        ([{"word": "做工", "start_sec": 0.0, "end_sec": 0.5},
-          {"word": "呃", "start_sec": 0.5, "end_sec": 1.0}], "做工呃"),
-        ([{"word": "塑料", "start_sec": 0.0, "end_sec": 0.5},
-          {"word": "的", "start_sec": 0.5, "end_sec": 0.6},
-          {"word": "虽然", "start_sec": 0.6, "end_sec": 1.0}], "塑料的虽然"),
-        ([{"word": "相机", "start_sec": 0.0, "end_sec": 0.5},
-          {"word": "但是", "start_sec": 0.5, "end_sec": 1.0}], "相机但是"),
-        ([{"word": "滤镜", "start_sec": 0.0, "end_sec": 0.5},
-          {"word": "它能", "start_sec": 0.5, "end_sec": 1.0},
-          {"word": "把", "start_sec": 1.0, "end_sec": 1.2}], "滤镜它能把"),
+        (
+            [
+                {"word": "做工", "start_sec": 0.0, "end_sec": 0.5},
+                {"word": "呃", "start_sec": 0.5, "end_sec": 1.0},
+            ],
+            "做工呃",
+        ),
+        (
+            [
+                {"word": "塑料", "start_sec": 0.0, "end_sec": 0.5},
+                {"word": "的", "start_sec": 0.5, "end_sec": 0.6},
+                {"word": "虽然", "start_sec": 0.6, "end_sec": 1.0},
+            ],
+            "塑料的虽然",
+        ),
+        (
+            [
+                {"word": "相机", "start_sec": 0.0, "end_sec": 0.5},
+                {"word": "但是", "start_sec": 0.5, "end_sec": 1.0},
+            ],
+            "相机但是",
+        ),
+        (
+            [
+                {"word": "滤镜", "start_sec": 0.0, "end_sec": 0.5},
+                {"word": "它能", "start_sec": 0.5, "end_sec": 1.0},
+                {"word": "把", "start_sec": 1.0, "end_sec": 1.2},
+            ],
+            "滤镜它能把",
+        ),
     ]
     for words, text in cases:
         result = _smart_split(words, text, max_chars=25)

@@ -17,7 +17,9 @@ def test_final_json_schema(tmp_path):
     aligned_jsonl = tmp_path / "aligned.jsonl"
     aligned_jsonl.write_text(aligned.model_dump_json() + "\n", encoding="utf-8")
 
-    run_final_exports(aligned_jsonl, tmp_path / "latest", formats={"srt", "vtt", "json", "tsv"})
+    run_final_exports(
+        aligned_jsonl, tmp_path / "latest", formats={"srt", "vtt", "json", "tsv"}
+    )
 
     payload = json.loads((tmp_path / "latest" / "final.json").read_text())
     item = payload[0]

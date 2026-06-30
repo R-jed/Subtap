@@ -31,9 +31,7 @@ def _make_mock_config():
     return config
 
 
-def test_batch_transcribe_writes_manifest_and_keeps_failed_items(
-    tmp_path, monkeypatch
-):
+def test_batch_transcribe_writes_manifest_and_keeps_failed_items(tmp_path, monkeypatch):
     """batch-transcribe should write a retryable manifest for mixed results."""
     calls = []
 
@@ -65,7 +63,9 @@ def test_batch_transcribe_writes_manifest_and_keeps_failed_items(
 
     monkeypatch.setattr("subtap.ui.tui.PlainRunner", FakeRunner)
     monkeypatch.setattr("subtap.core.pipeline.Pipeline", FakePipeline)
-    monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: _make_mock_config())
+    monkeypatch.setattr(
+        "subtap.schemas.config.load_config", lambda _: _make_mock_config()
+    )
 
     ok_file = tmp_path / "ok.wav"
     missing_file = tmp_path / "missing.wav"

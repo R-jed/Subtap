@@ -11,7 +11,9 @@ from subtap.schemas.models import ASRSegment
 
 
 class FakeLLM:
-    def __init__(self, suspicious: list[int], repairs: dict[int, str], hotwords: dict[int, str]):
+    def __init__(
+        self, suspicious: list[int], repairs: dict[int, str], hotwords: dict[int, str]
+    ):
         self.suspicious = suspicious
         self.repairs = repairs
         self.hotwords = hotwords
@@ -26,7 +28,9 @@ class FakeLLM:
         self.calls.append("repair")
         return self.repairs
 
-    def replace_hotwords(self, segments: list[dict], glossary: dict | None) -> dict[int, str]:
+    def replace_hotwords(
+        self, segments: list[dict], glossary: dict | None
+    ) -> dict[int, str]:
         self.calls.append("hotword")
         self.glossaries.append(glossary)
         return self.hotwords
@@ -69,7 +73,9 @@ def test_enhance_local_does_not_request_llm(tmp_path, monkeypatch):
 
     monkeypatch.setattr("subtap.core.clean.get_llm_backend", fail_get_backend)
 
-    result = run_clean(workspace, SubtapConfig(), enhance_mode="local", hotword_enabled=False)
+    result = run_clean(
+        workspace, SubtapConfig(), enhance_mode="local", hotword_enabled=False
+    )
 
     assert result["segment_count"] == 2
     assert len(_cleaned_texts(workspace)) == 2
@@ -148,7 +154,9 @@ def test_enhance_local_uses_explicit_hotword_glossary_dir(tmp_path):
     assert "Big Apple" in payload
 
 
-def test_enhance_api_selects_and_repairs_only_suspicious_segments(tmp_path, monkeypatch):
+def test_enhance_api_selects_and_repairs_only_suspicious_segments(
+    tmp_path, monkeypatch
+):
     workspace = _workspace(tmp_path)
     llm = FakeLLM(suspicious=[1], repairs={1: "理光 GR4"}, hotwords={})
     monkeypatch.setattr("subtap.core.clean.get_llm_backend", lambda *_a, **_k: llm)
@@ -219,7 +227,9 @@ def test_enhance_api_propagates_llm_errors(tmp_path, monkeypatch):
         def select_suspicious_segments(self, _segments):
             raise ValueError("LLM JSON 非法")
 
-    monkeypatch.setattr("subtap.core.clean.get_llm_backend", lambda *_a, **_k: BrokenLLM())
+    monkeypatch.setattr(
+        "subtap.core.clean.get_llm_backend", lambda *_a, **_k: BrokenLLM()
+    )
 
     with pytest.raises(ValueError, match="LLM JSON 非法"):
         run_clean(workspace, SubtapConfig(), enhance_mode="api", hotword_enabled=False)

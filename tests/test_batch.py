@@ -171,8 +171,16 @@ class TestResumeAndRetry:
         manifest = {
             "version": 2,
             "items": [
-                {"input_path": "a.mp4", "status": "succeeded", "output_dir": str(tmp_path / "a_mp4")},
-                {"input_path": "b.mp4", "status": "failed", "output_dir": str(tmp_path / "b_mp4")},
+                {
+                    "input_path": "a.mp4",
+                    "status": "succeeded",
+                    "output_dir": str(tmp_path / "a_mp4"),
+                },
+                {
+                    "input_path": "b.mp4",
+                    "status": "failed",
+                    "output_dir": str(tmp_path / "b_mp4"),
+                },
             ],
         }
         manifest_path.write_text(json.dumps(manifest))

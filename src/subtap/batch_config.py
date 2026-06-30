@@ -8,7 +8,6 @@ from typing import Any, Optional
 
 import yaml
 
-
 DEFAULT_CONFIG = {
     "mode": "fast",
     "enhance": "local",
