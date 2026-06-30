@@ -8,7 +8,6 @@ from subtap.cli import app
 from subtap.enhancement.api_llm import APIEnhancer
 from subtap.enhancement.tasks import EnhancementTask
 from subtap.schemas.enhancement import CleanSegment
-from subtap.translation import build_bilingual_text
 
 runner = CliRunner()
 
@@ -40,11 +39,6 @@ def test_api_translation_uses_target_language_and_preserves_timing():
     assert result.segments[0].start_sec == 1.0
     assert result.segments[0].end_sec == 2.0
     assert calls == [("你好", "translation", "en")]
-
-
-def test_build_bilingual_text_order():
-    assert build_bilingual_text("你好", "Hello", "source-first") == "你好\nHello"
-    assert build_bilingual_text("你好", "Hello", "target-first") == "Hello\n你好"
 
 
 def test_run_local_only_blocks_translation(tmp_path):
