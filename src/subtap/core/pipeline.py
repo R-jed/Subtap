@@ -23,6 +23,7 @@ class Pipeline:
         "asr",
         "clean",
         "segment",
+        "script_match",
         "align",
         "hotword",
         "export",
@@ -62,6 +63,7 @@ class Pipeline:
             "clean": self._stage_clean,
             "hotword": self._stage_hotword,
             "segment": self._stage_segment,
+            "script_match": self._stage_script_match,
             "align": self._stage_align,
             "export": self._stage_export,
         }.get(stage)
@@ -160,6 +162,41 @@ class Pipeline:
         return {
             "sentence_count": result["sentence_count"],
             "sentences_jsonl": str(self.workspace.sentences_jsonl),
+        }
+
+    def _stage_script_match(self, **_) -> dict:
+        """文稿匹配阶段（可选）。"""
+        if not self.config.output.script_path:
+            return {"skipped": True}
+        from subtap.script.match import match_from_file
+        import json
+
+        script_path = Path(self.config.output.script_path)
+        if not script_path.exists():
+            raise ValueError(f"文稿文件不存在：{script_path}")
+
+        # 读取 sentences.jsonl
+        segments = []
+        with open(self.workspace.sentences_jsonl) as f:
+            for line in f:
+                if line.strip():
+                    segments.append(json.loads(line))
+
+        result, report = match_from_file(
+            segments, script_path, mode=self.config.output.script_mode
+        )
+
+        # 写入 script_matched.jsonl
+        with open(self.workspace.script_matched_jsonl, "w") as f:
+            for seg in result:
+                f.write(json.dumps(seg, ensure_ascii=False) + "\n")
+
+        return {
+            "matched": report.matched,
+            "corrected": report.corrected,
+            "skipped": report.skipped,
+            "warnings": report.warnings,
+            "message": report.message,
         }
 
     def _stage_align(self, backend_name: str | None = None, **_) -> dict:

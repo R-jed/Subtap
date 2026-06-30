@@ -96,8 +96,11 @@ def run_align(
     Returns:
         Dict with aligned_count.
     """
-    # Load sentences
-    sentences = load_sentences(workspace.sentences_jsonl)
+    # Load sentences (prefer script-matched output if available)
+    input_path = workspace.script_matched_jsonl
+    if not input_path.exists():
+        input_path = workspace.sentences_jsonl
+    sentences = load_sentences(input_path)
     if not sentences:
         raise ValueError(f"No sentences found in {workspace.sentences_jsonl}")
 
