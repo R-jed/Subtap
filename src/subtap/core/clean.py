@@ -109,21 +109,19 @@ def run_clean(
 ) -> dict:
     """Run clean stage: load ASR → local clean → replacement → LLM → cleaned.jsonl.
 
-    Steps:
-    1. Load ASR segments from workspace.asr_jsonl
-    2. Apply local rule-based cleaning (unicode, full-width digits, whitespace)
-    3. Apply deterministic glossary replacements
-    4. Pass through LLM backend for ASR error correction (optional)
-    5. Write cleaned.jsonl to workspace
+    配置优先级：
+    1. llm_proofread / llm_hotword 独立配置项（新）
+    2. enhance_mode 统一开关（旧，兼容）
+    3. llm_backend_name="off"/"none"/"false" 强制关闭
 
     Args:
         workspace: Workspace instance with paths.
         config: Subtap config.
-        llm_backend_name: Override LLM backend (e.g. "ollama:qwen3-coder").
+        llm_backend_name: Override LLM backend (e.g. "ollama:qwen3-coder"). "off"/"none"/"false" to disable.
         glossary_path: Path to glossary YAML file.
         style_rules: Additional style rules for LLM.
-        enhance_mode: "off", "local", or "api".
-        hotword_enabled: Whether to run hotword replacement.
+        enhance_mode: "off", "local", or "api". Overrides llm_proofread/llm_hotword when set.
+        hotword_enabled: Whether to run local hotword replacement (non-LLM).
         hotword_mode: Hotword engine mode.
         hotword_lang: Hotword glossary language.
         hotword_glossary_dir: Hotword glossary directory override.
@@ -147,19 +145,8 @@ def run_clean(
     for seg in replaced:
         seg.cleaned_text = local_clean_text(seg.cleaned_text)
 
-    if llm_backend_name in {"off", "none", "false"}:
-        enhance_mode = "off"
-    elif enhance_mode is None:
-        enhance_mode = "local"
-
-    if enhance_mode not in {"off", "local", "api"}:
-        raise ValueError(f"未知增强模式：{enhance_mode}")
-
-    if enhance_mode == "off":
-        write_clean_segments(replaced, workspace.cleaned_jsonl)
-        return {"segment_count": len(replaced)}
-
-    if hotword_enabled and enhance_mode == "local" and hotword_glossary_dir:
+    # 本地热词引擎（始终在 LLM 之前运行，非 LLM 功能）
+    if hotword_enabled and hotword_glossary_dir:
         from subtap.glossary.engine import HotwordEngine
 
         engine = HotwordEngine(
@@ -169,7 +156,34 @@ def run_clean(
         for seg in replaced:
             seg.cleaned_text = engine.process(seg.cleaned_text, lang=hotword_lang)
 
-    if enhance_mode == "api":
+    # 确定 LLM 功能开关
+    llm_proofread = config.llm_proofread
+    llm_hotword = config.llm_hotword
+
+    # 兼容旧的 enhance_mode 参数
+    if llm_backend_name in {"off", "none", "false"}:
+        llm_proofread = False
+        llm_hotword = False
+    elif enhance_mode == "off":
+        llm_proofread = False
+        llm_hotword = False
+    elif enhance_mode == "api":
+        # 如果使用旧参数且为 api 模式，开启两个功能
+        if llm_proofread is None:
+            llm_proofread = True
+        if not llm_hotword:
+            llm_hotword = True
+    elif enhance_mode == "local":
+        # local 模式不使用 LLM
+        llm_proofread = False
+        llm_hotword = False
+
+    # 首次接入时，如果 llm_proofread 未设置，默认开启
+    if llm_proofread is None:
+        llm_proofread = True
+
+    # LLM 增强层
+    if llm_proofread or llm_hotword:
         clean_config = config.clean.model_copy()
         if llm_backend_name and llm_backend_name.startswith("openai:"):
             clean_config.backend = llm_backend_name
@@ -179,13 +193,17 @@ def run_clean(
         hotword_payload = _hotword_payload(glossary)
         llm = get_llm_backend(clean_config, config.remote_api)
         llm_segments = _segments_for_llm(replaced)
-        suspicious = llm.select_suspicious_segments(llm_segments)
-        if suspicious:
-            suspicious_ids = set(suspicious)
-            selected = [item for item in llm_segments if item["i"] in suspicious_ids]
-            _apply_text_updates(replaced, llm.repair_segments(selected))
 
-        if hotword_enabled and hotword_payload:
+        # AI 校对（质检+纠错）
+        if llm_proofread:
+            suspicious = llm.select_suspicious_segments(llm_segments)
+            if suspicious:
+                suspicious_ids = set(suspicious)
+                selected = [item for item in llm_segments if item["i"] in suspicious_ids]
+                _apply_text_updates(replaced, llm.repair_segments(selected))
+
+        # AI 热词替换
+        if llm_hotword and hotword_payload:
             _apply_text_updates(
                 replaced,
                 llm.replace_hotwords(_segments_for_llm(replaced), hotword_payload),
