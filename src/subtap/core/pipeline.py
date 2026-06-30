@@ -185,3 +185,9 @@ class Pipeline:
             "format": result["format"],
             "segment_count": result["segment_count"],
         }
+
+    def cleanup(self) -> dict[str, Any]:
+        """清理 L1 临时文件。"""
+        from subtap.engine.cleanroom import Cleanroom
+        cleanroom = Cleanroom(self.workspace.root)
+        return cleanroom.clean_temp_files()
