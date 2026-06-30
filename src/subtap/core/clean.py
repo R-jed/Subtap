@@ -46,8 +46,10 @@ def local_clean_text(
     1. Normalize unicode (NFKC)
     2. Normalize full-width digits to half-width
     3. Remove extra whitespace
-    4. Handle punctuation (normalize or strip based on config)
-    5. Apply glossary replacements
+    4. Remove repeated words (ASR common error)
+    5. Handle punctuation (normalize or strip based on config)
+    6. Normalize case (English sentences first letter capitalized)
+    7. Apply glossary replacements
     """
     # 1. Unicode normalization
     text = unicodedata.normalize("NFKC", text)
@@ -58,7 +60,13 @@ def local_clean_text(
     # 3. Remove extra spaces
     text = re.sub(r"\s+", " ", text).strip()
 
-    # 4. Punctuation handling
+    # 4. Remove repeated words (ASR common error, e.g., "的的的" → "的")
+    #    Only collapse when same character repeats 3+ times
+    text = re.sub(r"([一-鿿])\1{2,}", r"\1", text)
+    #    Collapse repeated English words (e.g., "the the the" → "the")
+    text = re.sub(r"\b(\w+)(\s+\1){2,}", r"\1", text)
+
+    # 5. Punctuation handling
     if punctuation:
         # Normalize punctuation by language (zh/ja: full-width, en: half-width)
         text = _normalize_punct(text, language)
@@ -67,12 +75,30 @@ def local_clean_text(
         text = _ALL_PUNCT_RE.sub(" ", text)
         text = re.sub(r"\s+", " ", text).strip()
 
-    # 5. Glossary replacement
+    # 6. Normalize case (English sentences first letter capitalized)
+    if language in ("en",):
+        text = _capitalize_sentences(text)
+
+    # 7. Glossary replacement
     if glossary:
         for wrong, correct in glossary.items():
             text = text.replace(wrong, correct)
 
     return text
+
+
+def _capitalize_sentences(text: str) -> str:
+    """Capitalize first letter of each sentence."""
+    # Split by sentence-ending punctuation
+    sentences = re.split(r'([.!?]+)', text)
+    result = []
+    for i, part in enumerate(sentences):
+        if i % 2 == 0:  # Text parts (not punctuation)
+            part = part.strip()
+            if part:
+                part = part[0].upper() + part[1:]
+        result.append(part)
+    return "".join(result)
 
 
 def _segments_for_llm(segments: list[CleanSegment]) -> list[dict]:
@@ -228,6 +254,9 @@ def run_clean(
                 replaced,
                 llm.replace_hotwords(_segments_for_llm(replaced), hotword_payload),
             )
+
+    # Filter empty segments
+    replaced = [seg for seg in replaced if seg.cleaned_text.strip()]
 
     # Write cleaned.jsonl
     write_clean_segments(replaced, workspace.cleaned_jsonl)
