@@ -49,6 +49,8 @@ def test_plain_runner_no_align_skips_align_and_writes_draft(tmp_path):
                 return {"replaced": 0, "total": 1}
             if stage == "segment":
                 return {"sentence_count": 1}
+            if stage == "script_match":
+                return {"skipped": True}
             if stage == "align":
                 raise AssertionError("no-align must not run align")
             raise AssertionError(stage)
@@ -111,6 +113,8 @@ def test_plain_runner_default_runs_align(tmp_path, monkeypatch):
                 return {"replaced": 0, "total": 1}
             if stage == "segment":
                 return {"sentence_count": 1}
+            if stage == "script_match":
+                return {"skipped": True}
             if stage == "align":
                 return {"aligned_count": 1}
             raise AssertionError(stage)
