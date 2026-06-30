@@ -50,5 +50,5 @@ pythonpath = ["src"]
 asyncio_mode = "auto"
 
 [[tool.mypy.overrides]]
-module = ["mlx_audio.*", "pydub", "pydub.*", "yaml"]
+module = ["mlx_audio.*", "pydub", "pydub.*", "yaml", "openpyxl.*", "docx.*"]
 ignore_missing_imports = true
