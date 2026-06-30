@@ -207,29 +207,35 @@ def _merge_single_letters(words: list[dict]) -> list[dict]:
             else:
                 # Not adjacent, flush buffer and start new
                 if buffer:
-                    result.append({
-                        "word": buffer,
-                        "start_sec": buffer_start,
-                        "end_sec": buffer_end,
-                    })
+                    result.append(
+                        {
+                            "word": buffer,
+                            "start_sec": buffer_start,
+                            "end_sec": buffer_end,
+                        }
+                    )
                 buffer = word_text
                 buffer_start = w["start_sec"]
                 buffer_end = w["end_sec"]
         else:
             if buffer:
-                result.append({
-                    "word": buffer,
-                    "start_sec": buffer_start,
-                    "end_sec": buffer_end,
-                })
+                result.append(
+                    {
+                        "word": buffer,
+                        "start_sec": buffer_start,
+                        "end_sec": buffer_end,
+                    }
+                )
                 buffer = ""
             result.append(w)
 
     if buffer:
-        result.append({
-            "word": buffer,
-            "start_sec": buffer_start,
-            "end_sec": buffer_end,
-        })
+        result.append(
+            {
+                "word": buffer,
+                "start_sec": buffer_start,
+                "end_sec": buffer_end,
+            }
+        )
 
     return result

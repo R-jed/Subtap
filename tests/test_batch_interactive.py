@@ -92,14 +92,14 @@ class TestRunConfigWizard:
         config_path = tmp_path / "batch-config.yaml"
         # Simulate user selecting custom values
         inputs = [
-            "2",      # mode: quality
-            "3",      # enhance: api
-            "2",      # translate_to: en
-            "2",      # bilingual: source-first
-            "",       # max_chars: default (25)
-            "",       # min_chars: default (10)
-            "y",      # punctuation: yes
-            "2",      # subtitle_language: en
+            "2",  # mode: quality
+            "3",  # enhance: api
+            "2",  # translate_to: en
+            "2",  # bilingual: source-first
+            "",  # max_chars: default (25)
+            "",  # min_chars: default (10)
+            "y",  # punctuation: yes
+            "2",  # subtitle_language: en
         ]
         with patch("builtins.input", side_effect=inputs):
             config = run_config_wizard(config_path)

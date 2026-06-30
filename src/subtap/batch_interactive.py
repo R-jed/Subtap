@@ -9,7 +9,17 @@ import typer
 
 from subtap.batch_config import BatchConfig, load_batch_config, save_batch_config
 
-MEDIA_EXTENSIONS = {".mp3", ".mp4", ".wav", ".mkv", ".avi", ".mov", ".flac", ".m4a", ".aac"}
+MEDIA_EXTENSIONS = {
+    ".mp3",
+    ".mp4",
+    ".wav",
+    ".mkv",
+    ".avi",
+    ".mov",
+    ".flac",
+    ".m4a",
+    ".aac",
+}
 
 
 def scan_directory(directory: Path) -> list[Path]:
@@ -162,7 +172,12 @@ def run_config_wizard(config_path: Path) -> BatchConfig:
 
     # Translate
     translate_options = ["不翻译", "英文 (en)", "日文 (ja)", "中文 (zh)"]
-    translate_map = {"不翻译": None, "英文 (en)": "en", "日文 (ja)": "ja", "中文 (zh)": "zh"}
+    translate_map = {
+        "不翻译": None,
+        "英文 (en)": "en",
+        "日文 (ja)": "ja",
+        "中文 (zh)": "zh",
+    }
     translate_default = "不翻译"
     if existing.translate_to:
         for k, v in translate_map.items():
@@ -178,7 +193,11 @@ def run_config_wizard(config_path: Path) -> BatchConfig:
 
     # Bilingual
     bilingual_options = ["关闭", "原文优先", "译文优先"]
-    bilingual_map = {"关闭": "off", "原文优先": "source-first", "译文优先": "target-first"}
+    bilingual_map = {
+        "关闭": "off",
+        "原文优先": "source-first",
+        "译文优先": "target-first",
+    }
     bilingual_default = "关闭"
     for k, v in bilingual_map.items():
         if v == existing.bilingual:

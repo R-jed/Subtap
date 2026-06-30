@@ -12,7 +12,6 @@ from subtap.core.itn import chinese_to_num
 from subtap.core.phrases import mark_phrase_boundaries
 from subtap.schemas.models import AlignedSegment, ASRSegment
 
-
 _PUNCT_MAP = str.maketrans(
     ",.?!;:()",
     "，。？！；：（）",
@@ -24,15 +23,52 @@ _ALL_PUNCT_RE = re.compile(r"[，。？！、；：“”‘’（）《》,.?!;
 # Trailing words that should not appear at line end
 _TRAILING_WORDS = {
     # 连词（双字）
-    "但是", "所以", "因为", "而且", "不过", "可是", "然后", "或者", "于是", "因此", "虽然",
+    "但是",
+    "所以",
+    "因为",
+    "而且",
+    "不过",
+    "可是",
+    "然后",
+    "或者",
+    "于是",
+    "因此",
+    "虽然",
     # 单字连词
-    "因", "则", "但", "所", "以", "才", "会", "又", "也",
+    "因",
+    "则",
+    "但",
+    "所",
+    "以",
+    "才",
+    "会",
+    "又",
+    "也",
     # 语气词
-    "呃", "呢", "啊", "呀", "吧", "嘛", "哦", "嗯", "哈", "哎",
+    "呃",
+    "呢",
+    "啊",
+    "呀",
+    "吧",
+    "嘛",
+    "哦",
+    "嗯",
+    "哈",
+    "哎",
     # 代词/主语
-    "我们", "它们", "它能", "它还", "他还", "她还",
+    "我们",
+    "它们",
+    "它能",
+    "它还",
+    "他还",
+    "她还",
     # 指示词
-    "这个", "那个", "这些", "那些", "那这", "那还",
+    "这个",
+    "那个",
+    "这些",
+    "那些",
+    "那这",
+    "那还",
 }
 
 
@@ -52,7 +88,6 @@ def _normalize_punct(text: str, language: str = "zh") -> str:
     return text.translate(_EN_PUNCT_MAP)
 
 
-
 def _strip_punct(text: str) -> str:
     """Remove all punctuation, preserving decimal points and ratios in numbers."""
     # Protect decimal points (e.g., 0.6秒)
@@ -61,6 +96,8 @@ def _strip_punct(text: str) -> str:
     protected = re.sub(r"(\d):(\d)", r"\1<RATIO>\2", protected)
     stripped = _ALL_PUNCT_RE.sub("", protected)
     return stripped.replace("<DECIMAL>", ".").replace("<RATIO>", ":")
+
+
 def _fmt_srt_time(seconds: float) -> str:
     """Format seconds to SRT timestamp HH:MM:SS,mmm."""
     seconds = max(0.0, seconds)
@@ -110,16 +147,32 @@ def load_asr_draft(asr_jsonl: Path) -> list[ASRSegment]:
     return segments
 
 
-_PUNCT_CHARS = set("，。？！、；：""''（）《》,.?!;:\"'()[]{}\\-—…·")
+_PUNCT_CHARS = set("，。？！、；：" "''（）《》,.?!;:\"'()[]{}\\-—…·")
 
 # 常见的跨行断词模式（单字+单字/多字组成词）
 _SPLIT_WORD_PATTERNS = {
-    ("虚", "化"), ("二", "八"), ("三", "百"), ("四", "十"),
-    ("五", "千"), ("六", "万"), ("七", "亿"),
-    ("微", "距"), ("功", "能"), ("像", "素"),
-    ("过", "程"), ("眼", "镜"), ("画", "面"), ("屏", "幕"),
-    ("时", "间"), ("空", "间"), ("体", "验"), ("系", "统"),
-    ("完", "全"), ("已", "经"), ("可", "以"), ("不", "过"),
+    ("虚", "化"),
+    ("二", "八"),
+    ("三", "百"),
+    ("四", "十"),
+    ("五", "千"),
+    ("六", "万"),
+    ("七", "亿"),
+    ("微", "距"),
+    ("功", "能"),
+    ("像", "素"),
+    ("过", "程"),
+    ("眼", "镜"),
+    ("画", "面"),
+    ("屏", "幕"),
+    ("时", "间"),
+    ("空", "间"),
+    ("体", "验"),
+    ("系", "统"),
+    ("完", "全"),
+    ("已", "经"),
+    ("可", "以"),
+    ("不", "过"),
 }
 
 
@@ -128,7 +181,9 @@ def _has_latin(s: str) -> bool:
     return any("A" <= c <= "Z" or "a" <= c <= "z" for c in s)
 
 
-def _is_incomplete_word(tail: str, next_start: str, cross_sentence: bool = False) -> bool:
+def _is_incomplete_word(
+    tail: str, next_start: str, cross_sentence: bool = False
+) -> bool:
     """检查 tail 是否是不完整词，next_start 能否组成完整词"""
     if not next_start:
         return False
@@ -139,12 +194,16 @@ def _is_incomplete_word(tail: str, next_start: str, cross_sentence: bool = False
     if (tail, next_start[:1]) in _SPLIT_WORD_PATTERNS:
         return True
     # 如果 tail 是数字且 next_start 也是数字/单位
-    if tail.isdigit() and (next_start[0].isdigit() or next_start[0] in "零一二两三四五六七八九十百千万亿"):
+    if tail.isdigit() and (
+        next_start[0].isdigit() or next_start[0] in "零一二两三四五六七八九十百千万亿"
+    ):
         return True
     return False
 
 
-def _fix_split_words(lines: list[dict], max_chars: int, cross_sentence: bool = False) -> list[dict]:
+def _fix_split_words(
+    lines: list[dict], max_chars: int, cross_sentence: bool = False
+) -> list[dict]:
     """修复跨行断词：如果行尾是不完整词，移到下一行"""
     if len(lines) < 2:
         return lines
@@ -169,7 +228,11 @@ def _fix_split_words(lines: list[dict], max_chars: int, cross_sentence: bool = F
             if len(prev_text) <= take:
                 continue
             tail = prev_text[-take:]
-            if _is_incomplete_word(tail, curr_text[:2] if len(curr_text) >= 2 else curr_text, cross_sentence=cross_sentence):
+            if _is_incomplete_word(
+                tail,
+                curr_text[:2] if len(curr_text) >= 2 else curr_text,
+                cross_sentence=cross_sentence,
+            ):
                 # 移动 tail 到 curr 开头
                 prev["text"] = prev_text[:-take]
                 curr["text"] = tail + curr_text
@@ -188,6 +251,7 @@ def _filter_words_to_text(words: list[dict], text: str) -> list[dict]:
         if w["word"] in text:
             filtered.append(w)
     return filtered if filtered else words
+
 
 def _inject_punct(words: list[dict], text: str) -> list[dict]:
     """Inject punctuation from original text into word list.
@@ -285,7 +349,9 @@ def _smart_split(
     cur_words: list[dict] = []
     _pending_prefix: list[dict] = []
 
-    def _flush_line(words_to_flush: list[dict], text_to_flush: str, break_type: str = "other"):
+    def _flush_line(
+        words_to_flush: list[dict], text_to_flush: str, break_type: str = "other"
+    ):
         """Flush a line, stripping trailing words."""
         if not words_to_flush:
             return
@@ -297,23 +363,27 @@ def _smart_split(
                 remaining_words = words_to_flush[:-clen]
                 remaining_text = text_to_flush[:-clen]
                 if remaining_words:
-                    lines.append({
-                        "text": remaining_text,
-                        "start_sec": remaining_words[0]["start_sec"],
-                        "end_sec": remaining_words[-1]["end_sec"],
-                        "break_type": break_type,
-                    })
+                    lines.append(
+                        {
+                            "text": remaining_text,
+                            "start_sec": remaining_words[0]["start_sec"],
+                            "end_sec": remaining_words[-1]["end_sec"],
+                            "break_type": break_type,
+                        }
+                    )
                 # Store stripped words as pending prefix for next line
                 nonlocal _pending_prefix
                 _pending_prefix = stripped_words
                 return
         # No trailing conjunction - flush as is
-        lines.append({
-            "text": text_to_flush,
-            "start_sec": words_to_flush[0]["start_sec"],
-            "end_sec": words_to_flush[-1]["end_sec"],
-            "break_type": break_type,
-        })
+        lines.append(
+            {
+                "text": text_to_flush,
+                "start_sec": words_to_flush[0]["start_sec"],
+                "end_sec": words_to_flush[-1]["end_sec"],
+                "break_type": break_type,
+            }
+        )
 
     i = 0
     while i < len(words):
@@ -388,7 +458,11 @@ def _smart_split(
                     split_bt = "pause"
 
             # Conjunction boundary: split BEFORE this word if there's a pause
-            elif boundary_type == "conjunction" and cur_text and len(cur_text) >= min_chars:
+            elif (
+                boundary_type == "conjunction"
+                and cur_text
+                and len(cur_text) >= min_chars
+            ):
                 if i > 0:
                     gap = w["start_sec"] - words[i - 1]["end_sec"]
                     if gap >= pause_threshold:
@@ -400,7 +474,9 @@ def _smart_split(
                             split_bt = "conjunction"
 
             # Particle boundary: split BEFORE this word if line is long enough
-            elif boundary_type == "particle" and cur_text and len(cur_text) >= min_chars:
+            elif (
+                boundary_type == "particle" and cur_text and len(cur_text) >= min_chars
+            ):
                 should_split_before = True
                 split_bt = "particle"
 
@@ -432,7 +508,11 @@ def _smart_split(
                 after_bt = "comma"
 
         # Min chars check: skip soft split only if below min AND below max
-        if should_split_after and len(cur_text) < min_chars and len(cur_text) < max_chars:
+        if (
+            should_split_after
+            and len(cur_text) < min_chars
+            and len(cur_text) < max_chars
+        ):
             if after_bt not in ("comma", "sentence_end"):
                 should_split_after = False
 
@@ -451,12 +531,14 @@ def _smart_split(
 
     # Flush remaining words (bypass trailing-word strip to avoid data loss)
     if cur_words:
-        lines.append({
-            "text": cur_text,
-            "start_sec": cur_words[0]["start_sec"],
-            "end_sec": cur_words[-1]["end_sec"],
-            "break_type": "end",
-        })
+        lines.append(
+            {
+                "text": cur_text,
+                "start_sec": cur_words[0]["start_sec"],
+                "end_sec": cur_words[-1]["end_sec"],
+                "break_type": "end",
+            }
+        )
 
     # Filter empty lines
     lines = [ln for ln in lines if ln["text"].strip()]
@@ -485,7 +567,17 @@ def _smart_split(
     # Fix split words (跨行断词修复)
     lines = _fix_split_words(lines, max_chars)
 
-    return lines if lines else [{"text": text, "start_sec": words[0]["start_sec"], "end_sec": words[-1]["end_sec"]}]
+    return (
+        lines
+        if lines
+        else [
+            {
+                "text": text,
+                "start_sec": words[0]["start_sec"],
+                "end_sec": words[-1]["end_sec"],
+            }
+        ]
+    )
 
 
 class BaseExporter(ABC):
@@ -511,7 +603,13 @@ class BaseExporter(ABC):
 class SRTExporter(BaseExporter):
     """SRT subtitle exporter."""
 
-    def __init__(self, punctuation: bool = False, language: str = "zh", max_chars: int = 25, min_chars: int = 10):
+    def __init__(
+        self,
+        punctuation: bool = False,
+        language: str = "zh",
+        max_chars: int = 25,
+        min_chars: int = 10,
+    ):
         self.punctuation = punctuation
         self.language = language
         self.max_chars = max_chars
@@ -528,11 +626,20 @@ class SRTExporter(BaseExporter):
         for seg in sorted_segs:
             # Use aligned_text (pre-hotword) for word filtering to preserve word-level timing
             # Use text (post-hotword) for display
-            word_filter_text = getattr(seg, 'aligned_text', None) or seg.text
-            words_with_punct = _inject_punct(_filter_words_to_text(seg.words, word_filter_text), seg.text)
-            sub_lines = _smart_split(words_with_punct, word_filter_text, max_chars=self.max_chars, min_chars=self.min_chars, start_sec=seg.start_sec, end_sec=seg.end_sec)
+            word_filter_text = getattr(seg, "aligned_text", None) or seg.text
+            words_with_punct = _inject_punct(
+                _filter_words_to_text(seg.words, word_filter_text), seg.text
+            )
+            sub_lines = _smart_split(
+                words_with_punct,
+                word_filter_text,
+                max_chars=self.max_chars,
+                min_chars=self.min_chars,
+                start_sec=seg.start_sec,
+                end_sec=seg.end_sec,
+            )
             # Apply hotword replacements to each sub_line (post-split)
-            replacements = getattr(seg, 'hotword_replacements', None)
+            replacements = getattr(seg, "hotword_replacements", None)
             if replacements:
                 for sub in sub_lines:
                     for alias, word in replacements.items():
@@ -554,14 +661,19 @@ class SRTExporter(BaseExporter):
                 prev = merged_subs[-1]
                 prev_visible = _strip_punct(prev["text"]).replace(" ", "")
                 # Only merge into a longer line, not into another short line
-                if (len(prev_visible) > len(visible)
-                        and len(prev_visible) + len(visible) <= self.max_chars):
+                if (
+                    len(prev_visible) > len(visible)
+                    and len(prev_visible) + len(visible) <= self.max_chars
+                ):
                     # Check: would merge create trailing word at line end?
                     merged_text = prev["text"].rstrip() + txt
                     merged_stripped = _strip_punct(merged_text).replace(" ", "")
                     creates_trailing = False
                     for tlen in (2, 1):
-                        if len(merged_stripped) > tlen and merged_stripped[-tlen:] in _TRAILING_WORDS:
+                        if (
+                            len(merged_stripped) > tlen
+                            and merged_stripped[-tlen:] in _TRAILING_WORDS
+                        ):
                             creates_trailing = True
                             break
                     if not creates_trailing:
@@ -706,7 +818,12 @@ def run_export(
     if not segments:
         raise ValueError(f"No aligned segments found in {aligned_jsonl}")
 
-    exporter = exporter_cls(punctuation=punctuation, language=language, max_chars=max_chars, min_chars=min_chars)
+    exporter = exporter_cls(
+        punctuation=punctuation,
+        language=language,
+        max_chars=max_chars,
+        min_chars=min_chars,
+    )
     output_path = output_dir / f"{stem}.{exporter.extension}"
     exporter.export(segments, output_path)
 
@@ -766,7 +883,12 @@ def run_final_exports(
 
     # Always write SRT
     srt_path.write_text(
-        SRTExporter(punctuation=punctuation, language=language, max_chars=max_chars, min_chars=min_chars).render(segments),
+        SRTExporter(
+            punctuation=punctuation,
+            language=language,
+            max_chars=max_chars,
+            min_chars=min_chars,
+        ).render(segments),
         encoding="utf-8",
     )
 
@@ -775,11 +897,20 @@ def run_final_exports(
         vtt_lines = ["WEBVTT", ""]
         vtt_index = 0
         for seg in sorted(segments, key=lambda s: s.start_sec):
-            word_filter_text = getattr(seg, 'aligned_text', None) or seg.text
-            words_with_punct = _inject_punct(_filter_words_to_text(seg.words, word_filter_text), seg.text)
-            sub_lines = _smart_split(words_with_punct, word_filter_text, max_chars=max_chars, min_chars=min_chars, start_sec=seg.start_sec, end_sec=seg.end_sec)
+            word_filter_text = getattr(seg, "aligned_text", None) or seg.text
+            words_with_punct = _inject_punct(
+                _filter_words_to_text(seg.words, word_filter_text), seg.text
+            )
+            sub_lines = _smart_split(
+                words_with_punct,
+                word_filter_text,
+                max_chars=max_chars,
+                min_chars=min_chars,
+                start_sec=seg.start_sec,
+                end_sec=seg.end_sec,
+            )
             # Apply hotword replacements to each sub_line (post-split)
-            replacements = getattr(seg, 'hotword_replacements', None)
+            replacements = getattr(seg, "hotword_replacements", None)
             if replacements:
                 for sub in sub_lines:
                     for alias, word in replacements.items():
@@ -816,7 +947,9 @@ def run_final_exports(
         tsv_lines = ["subtitle_id\tstart_sec\tend_sec\ttext"]
         for seg in sorted(segments, key=lambda s: s.start_sec):
             text = seg.text.replace("\t", " ").replace("\n", " ")
-            tsv_lines.append(f"{seg.sentence_id}\t{seg.start_sec}\t{seg.end_sec}\t{text}")
+            tsv_lines.append(
+                f"{seg.sentence_id}\t{seg.start_sec}\t{seg.end_sec}\t{text}"
+            )
         tsv_path.write_text("\n".join(tsv_lines), encoding="utf-8")
 
     # Run log (opt-in)
