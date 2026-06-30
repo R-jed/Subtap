@@ -29,3 +29,8 @@ models:
 workspace:
   root: ./work
   keep_intermediate: true
+
+# LLM 功能配置
+llm_proofread: null   # AI 校对（首次接入向导开启）
+llm_hotword: false    # AI 热词替换（默认关闭）
+translate_to: ""      # AI 翻译（空值表示不翻译）
