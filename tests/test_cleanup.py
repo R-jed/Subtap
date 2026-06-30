@@ -323,3 +323,46 @@ class TestCleanupSummary:
         summary = cleanroom.format_summary(result)
 
         assert "event.log.jsonl" in summary or "损坏" in summary
+
+
+class TestPipelineCleanup:
+    """测试 Pipeline 的 cleanup 方法。"""
+
+    def test_cleanup_removes_temp_files(self, tmp_path: Path) -> None:
+        """Pipeline.cleanup() 应清理 L1 临时文件。"""
+        from subtap.core.pipeline import Pipeline
+        from subtap.schemas.config import SubtapConfig
+
+        # 创建 chunk WAV 文件
+        chunks_dir = tmp_path / "chunks"
+        chunks_dir.mkdir()
+        (chunks_dir / "chunk_0000.wav").write_bytes(b"fake wav")
+
+        # 创建 source WAV 文件
+        audio_dir = tmp_path / "audio"
+        audio_dir.mkdir()
+        (audio_dir / "source.wav").write_bytes(b"fake wav")
+
+        config = SubtapConfig()
+        pipeline = Pipeline(config, work_dir=tmp_path)
+        result = pipeline.cleanup()
+
+        assert not (tmp_path / "chunks" / "chunk_0000.wav").exists()
+        assert not (tmp_path / "audio" / "source.wav").exists()
+        assert result["cleaned_count"] >= 2
+
+    def test_cleanup_preserves_intermediate_files(self, tmp_path: Path) -> None:
+        """Pipeline.cleanup() 应保留 L2 中间文件。"""
+        from subtap.core.pipeline import Pipeline
+        from subtap.schemas.config import SubtapConfig
+
+        # 创建中间文件
+        (tmp_path / "cleaned.jsonl").write_text('{"text": "hello"}\n')
+        (tmp_path / "sentences.jsonl").write_text('{"text": "hello"}\n')
+
+        config = SubtapConfig()
+        pipeline = Pipeline(config, work_dir=tmp_path)
+        pipeline.cleanup()
+
+        assert (tmp_path / "cleaned.jsonl").exists()
+        assert (tmp_path / "sentences.jsonl").exists()
