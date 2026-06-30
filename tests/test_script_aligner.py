@@ -1,4 +1,5 @@
 """Tests for script aligner."""
+
 import pytest
 from subtap.script.aligner import (
     AlignOp,

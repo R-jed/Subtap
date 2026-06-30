@@ -7,7 +7,6 @@ from dataclasses import dataclass
 
 from rapidfuzz.fuzz import ratio as fuzz_ratio
 
-
 ALIGNMENT_QUALITY_THRESHOLD = 0.3
 CORRECTION_THRESHOLD = 0.7
 
@@ -15,7 +14,8 @@ CORRECTION_THRESHOLD = 0.7
 @dataclass
 class AlignOp:
     """A single alignment operation."""
-    op: str           # "equal" | "replace" | "insert" | "delete"
+
+    op: str  # "equal" | "replace" | "insert" | "delete"
     asr_idx: int | None
     ref_idx: int | None
 
@@ -75,7 +75,11 @@ def compute_alignment_quality(
     Raises:
         AlignmentQualityError: If quality is below threshold.
     """
-    replace_ops = [op for op in ops if op.op == "replace" and op.asr_idx is not None and op.ref_idx is not None]
+    replace_ops = [
+        op
+        for op in ops
+        if op.op == "replace" and op.asr_idx is not None and op.ref_idx is not None
+    ]
     if not replace_ops:
         # 全部 equal 或全部 insert/delete
         equal_count = sum(1 for op in ops if op.op == "equal")
@@ -84,6 +88,7 @@ def compute_alignment_quality(
     else:
         similarities = []
         for op in replace_ops:
+            assert op.asr_idx is not None and op.ref_idx is not None
             sim = fuzz_ratio(asr_lines[op.asr_idx], ref_lines[op.ref_idx]) / 100.0
             similarities.append(sim)
         equal_count = sum(1 for op in ops if op.op == "equal")

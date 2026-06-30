@@ -1,4 +1,5 @@
 """End-to-end tests for script matching."""
+
 import tempfile
 from pathlib import Path
 
@@ -12,6 +13,7 @@ ASR_FILE = FIXTURES / "script_test_asr_sentences.jsonl"
 
 def _load_asr_segments() -> list[dict]:
     import json
+
     segments = []
     with open(ASR_FILE) as f:
         for line in f:
@@ -68,7 +70,9 @@ def test_match_from_file():
     """match_from_file 便捷函数应正常工作。"""
     segments = [{"text": "相同文本", "start_sec": 0.0, "end_sec": 2.0}]
     # 创建临时文稿文件
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as f:
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".txt", delete=False, encoding="utf-8"
+    ) as f:
         f.write("相同文本")
         tmp_path = Path(f.name)
     try:

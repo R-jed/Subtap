@@ -13,6 +13,7 @@ from subtap.script.aligner import AlignOp, CORRECTION_THRESHOLD
 @dataclass
 class CorrectionResult:
     """Result of a single text correction."""
+
     original: str
     corrected: str
     similarity: float
@@ -33,8 +34,11 @@ def correct_text(asr_text: str, ref_text: str) -> CorrectionResult:
     sim = fuzz_ratio(asr_text, ref_text) / 100.0
 
     if sim >= CORRECTION_THRESHOLD and asr_text != ref_text:
-        ops = Levenshtein.editops(asr_text, ref_text)
-        changes = [(op, src_pos, dst_pos) for op, src_pos, dst_pos in ops]
+        edit_ops = Levenshtein.editops(asr_text, ref_text)
+        changes: list[tuple[str, int, int]] = [
+            (str(op), int(src_pos), int(dst_pos))
+            for op, src_pos, dst_pos in edit_ops
+        ]
         return CorrectionResult(
             original=asr_text,
             corrected=ref_text,
@@ -72,6 +76,7 @@ def correct_segments(
     for op in align_ops:
         if op.op == "equal":
             # 保留原文
+            assert op.asr_idx is not None
             item = dict(segments[op.asr_idx])
             result.append(item)
 
