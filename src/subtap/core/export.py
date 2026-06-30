@@ -872,6 +872,19 @@ def _with_translated_text(segments: list[AlignedSegment]) -> list[AlignedSegment
     return result
 
 
+def _without_alignment_metadata(segments: list[AlignedSegment]) -> list[AlignedSegment]:
+    return [
+        segment.model_copy(
+            update={
+                "aligned_text": None,
+                "hotword_replacements": None,
+                "words": [],
+            }
+        )
+        for segment in segments
+    ]
+
+
 def _with_bilingual_text(
     segments: list[AlignedSegment],
     order: str,
@@ -936,7 +949,7 @@ def run_final_exports(
             language=language,
             max_chars=max_chars,
             min_chars=min_chars,
-        ).export(segments, source_path)
+        ).export(_without_alignment_metadata(segments), source_path)
 
     srt_path = output_dir / f"{stem}.srt"
     vtt_path = output_dir / f"{stem}.vtt"
