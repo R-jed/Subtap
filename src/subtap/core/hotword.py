@@ -34,12 +34,14 @@ def run_hotword(
                 segments.append(json.loads(line))
 
     # Apply hotword replacement on aligned text
-    # aligned.jsonl uses "text" field (not "cleaned_text")
+    # Preserve original text in "aligned_text" for word-level timing matching
+    # Export stage uses aligned_text for _filter_words_to_text, text for display
     replaced_count = 0
     for seg in segments:
         original = seg.get("text", "")
         corrected = engine.process(original, lang=lang)
         if corrected != original:
+            seg["aligned_text"] = original  # preserve for word filtering
             seg["text"] = corrected
             replaced_count += 1
 
