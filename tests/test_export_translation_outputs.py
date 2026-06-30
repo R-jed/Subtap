@@ -13,6 +13,7 @@ def _aligned(path: Path) -> None:
             start_sec=1.0,
             end_sec=2.0,
             text="理光 GR4 发布了",
+            aligned_text="李光 GR4 发布了",
             translated_text="Ricoh GR4 was released",
             words=[],
         )
@@ -73,3 +74,26 @@ def test_bilingual_target_first_export(tmp_path):
 
     text = (tmp_path / "final.srt").read_text(encoding="utf-8")
     assert "Ricoh GR4 was released\n理光 GR4 发布了" in text
+
+
+def test_translate_export_ignores_source_aligned_text_for_srt_and_vtt(tmp_path):
+    aligned = tmp_path / "aligned.jsonl"
+    _aligned(aligned)
+
+    run_final_exports(
+        aligned,
+        tmp_path,
+        formats={"srt", "vtt"},
+        stem="final",
+        translate_to="en",
+        bilingual="off",
+    )
+
+    assert "Ricoh GR4 was released" in (tmp_path / "final.srt").read_text(
+        encoding="utf-8"
+    )
+    assert "Ricoh GR4 was released" in (tmp_path / "final.vtt").read_text(
+        encoding="utf-8"
+    )
+    assert "李光" not in (tmp_path / "final.srt").read_text(encoding="utf-8")
+    assert "李光" not in (tmp_path / "final.vtt").read_text(encoding="utf-8")

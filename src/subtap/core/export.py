@@ -863,7 +863,15 @@ def _with_translated_text(segments: list[AlignedSegment]) -> list[AlignedSegment
     for segment in segments:
         if not segment.translated_text:
             raise ValueError(f"缺少翻译文本：{segment.sentence_id}")
-        result.append(segment.model_copy(update={"text": segment.translated_text}))
+        result.append(
+            segment.model_copy(
+                update={
+                    "text": segment.translated_text,
+                    "aligned_text": None,
+                    "hotword_replacements": None,
+                }
+            )
+        )
     return result
 
 
@@ -881,7 +889,15 @@ def _with_bilingual_text(
             text = f"{segment.translated_text}\n{segment.text}"
         else:
             raise ValueError(f"未知双语字幕顺序：{order}")
-        result.append(segment.model_copy(update={"text": text}))
+        result.append(
+            segment.model_copy(
+                update={
+                    "text": text,
+                    "aligned_text": None,
+                    "hotword_replacements": None,
+                }
+            )
+        )
     return result
 
 
