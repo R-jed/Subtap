@@ -105,7 +105,15 @@ class Pipeline:
         }
 
     def _stage_clean(
-        self, llm_backend: str | None = None, glossary_path: str | None = None, **_
+        self,
+        llm_backend: str | None = None,
+        glossary_path: str | None = None,
+        enhance_mode: str | None = None,
+        hotword_enabled: bool = True,
+        hotword_mode: str = "local",
+        hotword_lang: str = "zh",
+        hotword_glossary_dir: str | None = None,
+        **_,
     ) -> dict:
         from subtap.core.clean import run_clean
 
@@ -114,6 +122,11 @@ class Pipeline:
             self.config,
             llm_backend_name=llm_backend,
             glossary_path=glossary_path,
+            enhance_mode=enhance_mode,
+            hotword_enabled=hotword_enabled,
+            hotword_mode=hotword_mode,
+            hotword_lang=hotword_lang,
+            hotword_glossary_dir=hotword_glossary_dir,
         )
         self._publish_event(
             EventType.ENHANCEMENT_READY,
