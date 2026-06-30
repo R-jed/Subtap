@@ -29,7 +29,15 @@ def _split_sentences(text: str) -> list[str]:
             continue
         # Force-split long segments at word boundaries
         while len(part) > _MAX_CHARS:
+            # Try space first (English)
             cut = part.rfind(" ", 0, _MAX_CHARS)
+            if cut <= 0:
+                # Try CJK punctuation (，、；：) as break point
+                for punct in "，、；：":
+                    idx = part.rfind(punct, 0, _MAX_CHARS)
+                    if idx > 0:
+                        cut = idx + 1  # keep punctuation with preceding text
+                        break
             if cut <= 0:
                 cut = _MAX_CHARS
             sentences.append(part[:cut].strip())
