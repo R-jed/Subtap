@@ -293,6 +293,27 @@ class TestCleanAll:
 class TestCleanupSummary:
     """测试清理结果摘要格式化。"""
 
+    def test_summary_shows_cleaned_count(self, tmp_path: Path) -> None:
+        """清理摘要应显示已清理文件数量。"""
+        chunks_dir = tmp_path / "chunks"
+        chunks_dir.mkdir()
+        (chunks_dir / "chunk_0000.wav").write_bytes(b"fake wav")
+
+        cleanroom = Cleanroom(tmp_path)
+        result = cleanroom.clean_temp_files()
+
+        summary = cleanroom.format_summary(result)
+        assert "已清理" in summary
+        assert str(result["cleaned_count"]) in summary
+
+    def test_summary_shows_no_cleanup_needed(self, tmp_path: Path) -> None:
+        """工作区干净时应显示无需清理。"""
+        cleanroom = Cleanroom(tmp_path)
+        result = cleanroom.clean_temp_files()
+
+        summary = cleanroom.format_summary(result)
+        assert "无需清理" in summary
+
     def test_format_summary_with_cleaned_files(
         self, cleanroom: Cleanroom, tmp_work: Path
     ):
@@ -313,20 +334,6 @@ class TestCleanupSummary:
         assert isinstance(summary, str)
         assert "3" in summary  # 包含数量
         assert "chunk_0001.wav" in summary  # 包含文件名
-
-    def test_format_summary_with_zero_cleaned(self, cleanroom: Cleanroom):
-        """无文件被清理时应返回友好提示。"""
-        result = {
-            "cleaned_count": 0,
-            "cleaned_files": [],
-            "is_clean": True,
-            "issues": [],
-        }
-
-        summary = cleanroom.format_summary(result)
-
-        assert isinstance(summary, str)
-        assert "0" in summary or "无需" in summary or "干净" in summary
 
     def test_format_summary_with_issues(self, cleanroom: Cleanroom):
         """有问题时应包含问题描述。"""
