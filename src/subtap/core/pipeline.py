@@ -24,7 +24,7 @@ class Pipeline:
         "clean",
         "segment",
         "align",
-        "hotword",
+        "translate",
         "export",
     ]
 
@@ -63,6 +63,7 @@ class Pipeline:
             "hotword": self._stage_hotword,
             "segment": self._stage_segment,
             "align": self._stage_align,
+            "translate": self._stage_translate,
             "export": self._stage_export,
         }.get(stage)
 
@@ -189,6 +190,23 @@ class Pipeline:
             "aligned_count": result["aligned_count"],
             "aligned_jsonl": str(self.workspace.aligned_jsonl),
         }
+
+    def _stage_translate(
+        self,
+        target_language: str | None = None,
+        llm_backend: str | None = None,
+        **_,
+    ) -> dict:
+        if not target_language:
+            raise ValueError("target_language required for translate stage")
+        from subtap.core.translate import run_translate
+
+        return run_translate(
+            self.workspace,
+            self.config,
+            target_language=target_language,
+            llm_backend_name=llm_backend,
+        )
 
     def _stage_export(
         self, fmt: str = "srt", output_dir: str | None = None, stem: str = "output", **_
