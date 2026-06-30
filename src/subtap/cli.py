@@ -123,7 +123,7 @@ app.add_typer(profile_app, name="profile")
 def check_first_run_wizard(config: "SubtapConfig") -> bool:
     """检查并执行首次运行向导。
 
-    当检测到 API 配置存在但 llm_proofread 未设置时，提示用户是否开启 AI 校对。
+    当检测到 API 配置存在但 llm_proofread 未设置时，提示用户是否开启 AI 校对和热词功能。
 
     Returns:
         bool: 是否执行了向导
@@ -145,10 +145,14 @@ def check_first_run_wizard(config: "SubtapConfig") -> bool:
         return False
 
     # 执行向导
-    print("\n检测到 API 配置，但未设置 AI 校对选项。")
-    response = input("是否开启 AI 校对功能？(Y/n): ").strip().lower()
+    typer.echo("\n检测到 API 配置，但未设置 AI 校对选项。")
 
-    config.llm_proofread = response in ("y", "")
+    response = input("是否开启 AI 校对功能？(Y/n): ").strip().lower()
+    config.llm_proofread = response in ("y", "yes", "")
+
+    response = input("是否开启 AI 热词功能？(Y/n): ").strip().lower()
+    config.llm_hotword = response in ("y", "yes", "")
+
     return True
 
 
@@ -776,6 +780,18 @@ def _run_observer_parent(
         raise typer.Exit(process.returncode)
 
 
+def _apply_cli_overrides(
+    config,
+    llm_proofread: bool | None = None,
+    llm_hotword: bool | None = None,
+) -> None:
+    """将 CLI 独立配置项写入 config，供 clean 阶段读取。"""
+    if llm_proofread is not None:
+        config.llm_proofread = llm_proofread
+    if llm_hotword is not None:
+        config.llm_hotword = llm_hotword
+
+
 def _run_pipeline_safely(
     pipeline,
     input_path: Path,
@@ -794,11 +810,7 @@ def _run_pipeline_safely(
     """在线程中安全运行 pipeline，不涉及 UI 操作。"""
     from subtap.ui.tui import TUIRunner
 
-    # 将 CLI 独立配置项写入 config，供 clean 阶段读取
-    if llm_proofread is not None:
-        pipeline.config.llm_proofread = llm_proofread
-    if llm_hotword is not None:
-        pipeline.config.llm_hotword = llm_hotword
+    _apply_cli_overrides(pipeline.config, llm_proofread, llm_hotword)
 
     runner = TUIRunner(use_tui=False, mode=mode)
     return runner.run_pipeline(
@@ -1131,11 +1143,7 @@ def run(
     else:
         from subtap.ui.tui import PlainRunner
 
-        # 将 CLI 独立配置项写入 config，供 clean 阶段读取
-        if llm_proofread is not None:
-            config.llm_proofread = llm_proofread
-        if llm_hotword is not None:
-            config.llm_hotword = llm_hotword
+        _apply_cli_overrides(config, llm_proofread, llm_hotword)
 
         runner = PlainRunner()
 
