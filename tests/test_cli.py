@@ -411,6 +411,8 @@ def test_run_no_align_passes_align_disabled_to_runner(tmp_path, monkeypatch):
                 return {"replaced": 0, "total": 1}
             if stage == "segment":
                 return {"sentence_count": 1}
+            if stage == "script_match":
+                return {"skipped": True}
             if stage == "align":
                 raise AssertionError("--no-align must not run align")
             raise AssertionError(stage)
@@ -497,6 +499,8 @@ def test_run_enhance_off_passes_clean_off_to_pipeline(tmp_path, monkeypatch):
                 return {"replaced": 0, "total": 1}
             if stage == "segment":
                 return {"sentence_count": 1}
+            if stage == "script_match":
+                return {"skipped": True}
             if stage == "align":
                 raise AssertionError("--no-align must not run align")
             raise AssertionError(stage)
