@@ -33,6 +33,9 @@ class TUIRunner:
         enhance: str = "local",
         align_enabled: bool = True,
         hotword_enabled: bool = True,
+        translate_to: str | None = None,
+        bilingual: str = "off",
+        hotword_mode: str = "local",
     ) -> dict:
         """Execute full pipeline with TUI feedback."""
         self.total_start = time.time()
@@ -99,8 +102,12 @@ class TUIRunner:
                 self.progress.print_stage_start(self.state)
 
             stage_start = time.time()
-            clean_kwargs = {"llm_backend": "off"} if enhance == "off" else {}
-            result = pipeline.run_stage("clean", **clean_kwargs)
+            result = pipeline.run_stage(
+                "clean",
+                enhance_mode=enhance,
+                hotword_enabled=hotword_enabled,
+                hotword_mode=hotword_mode,
+            )
             self.timings["clean"] = time.time() - stage_start
             self.state.update(progress=100, status="completed")
             if self.use_tui:
@@ -147,20 +154,17 @@ class TUIRunner:
             else:
                 self.timings["align"] = 0.0
 
-            # Stage 7: hotword (after align, text-only replacement)
-            if hotword_enabled:
-                self.state.update(stage="hotword", status="processing", progress=0)
-                if self.use_tui:
-                    self.progress.print_stage_start(self.state)
-
+            self.timings["hotword"] = 0.0
+            if translate_to:
+                self.state.update(stage="translate", status="processing", progress=0)
                 stage_start = time.time()
-                result = pipeline.run_stage("hotword")
-                self.timings["hotword"] = time.time() - stage_start
+                result = pipeline.run_stage("translate", target_language=translate_to)
+                self.timings["translate"] = time.time() - stage_start
                 self.state.update(progress=100, status="completed")
                 if self.use_tui:
                     self.progress.print_stage_result(self.state, result)
             else:
-                self.timings["hotword"] = 0.0
+                self.timings["translate"] = 0.0
 
             # Stage 8: export
             self.state.update(stage="export", status="processing", progress=0)
@@ -180,6 +184,8 @@ class TUIRunner:
                     min_chars=pipeline.config.output.min_chars,
                     formats=pipeline.config.output.subtitle_formats,
                     stem=pipeline.config.output.subtitle_stem,
+                    translate_to=translate_to,
+                    bilingual=bilingual,
                 )
             else:
                 from subtap.core.export import run_draft_export
@@ -255,6 +261,9 @@ class PlainRunner:
         enhance: str = "local",
         align_enabled: bool = True,
         hotword_enabled: bool = True,
+        translate_to: str | None = None,
+        bilingual: str = "off",
+        hotword_mode: str = "local",
     ) -> dict:
         """Execute pipeline with plain text output."""
         import typer
@@ -287,8 +296,12 @@ class PlainRunner:
 
             _echo("▸ [4/7] 文本清洗...")
             t = time.time()
-            clean_kwargs = {"llm_backend": "off"} if enhance == "off" else {}
-            r = pipeline.run_stage("clean", **clean_kwargs)
+            r = pipeline.run_stage(
+                "clean",
+                enhance_mode=enhance,
+                hotword_enabled=hotword_enabled,
+                hotword_mode=hotword_mode,
+            )
             self.timings["clean"] = time.time() - t
             _echo(f"  ✓ {r['segment_count']} 条")
 
@@ -320,14 +333,15 @@ class PlainRunner:
                 _echo("▸ [6/8] 时间轴对齐（已关闭）...")
                 _echo("  ⚠ 未精对齐，仅生成 draft 粗剪预览")
 
-            if hotword_enabled:
-                _echo("▸ [7/8] 热词替换...")
+            self.timings["hotword"] = 0.0
+            if translate_to:
+                _echo("▸ [7/8] 字幕翻译...")
                 t = time.time()
-                r = pipeline.run_stage("hotword")
-                self.timings["hotword"] = time.time() - t
-                _echo(f"  ✓ 替换 {r['replaced']}/{r['total']} 条")
+                r = pipeline.run_stage("translate", target_language=translate_to)
+                self.timings["translate"] = time.time() - t
+                _echo(f"  ✓ 翻译 {r['translated_count']} 条")
             else:
-                self.timings["hotword"] = 0.0
+                self.timings["translate"] = 0.0
 
             _echo(f"▸ [8/8] 字幕导出 ({fmt.upper()})...")
             t = time.time()
@@ -343,6 +357,8 @@ class PlainRunner:
                     min_chars=pipeline.config.output.min_chars,
                     formats=pipeline.config.output.subtitle_formats,
                     stem=pipeline.config.output.subtitle_stem,
+                    translate_to=translate_to,
+                    bilingual=bilingual,
                 )
             else:
                 from subtap.core.export import run_draft_export

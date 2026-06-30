@@ -221,6 +221,93 @@ def test_clean_llm_backend_off_does_not_call_llm(
     assert seg.cleaned_text == "hello world"
 
 
+def test_segments_for_llm_uses_global_index(test_config: SubtapConfig, tmp_path: Path):
+    """_segments_for_llm 应该使用全局索引而不是 segment_id。"""
+    from subtap.core.clean import _segments_for_llm
+
+    # 模拟多个 chunk 的情况，每个 chunk 的 segment_id 都从 0 开始
+    segments = [
+        CleanSegment(
+            chunk_id=0,
+            segment_id=0,
+            start_sec=0.0,
+            end_sec=1.0,
+            original_text="text0",
+            cleaned_text="clean0",
+        ),
+        CleanSegment(
+            chunk_id=1,
+            segment_id=0,  # 同样的 segment_id
+            start_sec=1.0,
+            end_sec=2.0,
+            original_text="text1",
+            cleaned_text="clean1",
+        ),
+        CleanSegment(
+            chunk_id=2,
+            segment_id=0,  # 同样的 segment_id
+            start_sec=2.0,
+            end_sec=3.0,
+            original_text="text2",
+            cleaned_text="clean2",
+        ),
+    ]
+
+    result = _segments_for_llm(segments)
+
+    # 应该使用全局索引 0, 1, 2，而不是 segment_id 0, 0, 0
+    assert len(result) == 3
+    assert result[0]["i"] == 0
+    assert result[1]["i"] == 1
+    assert result[2]["i"] == 2
+    assert result[0]["t"] == "clean0"
+    assert result[1]["t"] == "clean1"
+    assert result[2]["t"] == "clean2"
+
+
+def test_apply_text_updates_uses_global_index(test_config: SubtapConfig, tmp_path: Path):
+    """_apply_text_updates 应该使用全局索引来更新 segment。"""
+    from subtap.core.clean import _apply_text_updates
+
+    # 模拟多个 chunk 的情况，每个 chunk 的 segment_id 都从 0 开始
+    segments = [
+        CleanSegment(
+            chunk_id=0,
+            segment_id=0,
+            start_sec=0.0,
+            end_sec=1.0,
+            original_text="text0",
+            cleaned_text="clean0",
+        ),
+        CleanSegment(
+            chunk_id=1,
+            segment_id=0,  # 同样的 segment_id
+            start_sec=1.0,
+            end_sec=2.0,
+            original_text="text1",
+            cleaned_text="clean1",
+        ),
+        CleanSegment(
+            chunk_id=2,
+            segment_id=0,  # 同样的 segment_id
+            start_sec=2.0,
+            end_sec=3.0,
+            original_text="text2",
+            cleaned_text="clean2",
+        ),
+    ]
+
+    # 模拟 LLM 返回的更新，使用全局索引
+    updates = {0: "updated0", 1: "updated1", 2: "updated2"}
+
+    _apply_text_updates(segments, updates)
+
+    # 验证每个 segment 都被正确更新
+    assert segments[0].cleaned_text == "updated0"
+    assert segments[1].cleaned_text == "updated1"
+    assert segments[2].cleaned_text == "updated2"
+
+
 def test_clean_jsonl_valid_schema(test_config: SubtapConfig, tmp_path: Path):
     """cleaned.jsonl contains valid CleanSegment JSONL."""
     ws = Workspace(test_config, base_dir=tmp_path / "work")
