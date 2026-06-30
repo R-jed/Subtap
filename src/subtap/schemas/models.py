@@ -80,6 +80,10 @@ class AlignedSegment(BaseModel):
         default=None,
         description="Hotword replacement pairs {alias: word} for post-split application",
     )
+    translated_text: str | None = Field(
+        default=None,
+        description="Translated subtitle text attached after align",
+    )
     words: list[dict] = Field(
         default_factory=list,
         description="Word-level timing [{word, start_sec, end_sec}]",

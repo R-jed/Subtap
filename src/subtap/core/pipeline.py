@@ -27,6 +27,7 @@ class Pipeline:
         "script_match",
         "align",
         "hotword",
+        "translate",
         "export",
     ]
 
@@ -62,10 +63,10 @@ class Pipeline:
             "chunk": self._stage_chunk,
             "asr": self._stage_asr,
             "clean": self._stage_clean,
-            "hotword": self._stage_hotword,
             "segment": self._stage_segment,
             "script_match": self._stage_script_match,
             "align": self._stage_align,
+            "translate": self._stage_translate,
             "export": self._stage_export,
         }.get(stage)
 
@@ -117,7 +118,15 @@ class Pipeline:
         }
 
     def _stage_clean(
-        self, llm_backend: str | None = None, glossary_path: str | None = None, **_
+        self,
+        llm_backend: str | None = None,
+        glossary_path: str | None = None,
+        enhance_mode: str | None = None,
+        hotword_enabled: bool = True,
+        hotword_mode: str = "local",
+        hotword_lang: str = "zh",
+        hotword_glossary_dir: str | None = None,
+        **_,
     ) -> dict:
         from subtap.core.clean import run_clean
 
@@ -126,6 +135,11 @@ class Pipeline:
             self.config,
             llm_backend_name=llm_backend,
             glossary_path=glossary_path,
+            enhance_mode=enhance_mode,
+            hotword_enabled=hotword_enabled,
+            hotword_mode=hotword_mode,
+            hotword_lang=hotword_lang,
+            hotword_glossary_dir=hotword_glossary_dir,
         )
         self._publish_event(
             EventType.ENHANCEMENT_READY,
@@ -147,7 +161,6 @@ class Pipeline:
             mode=kwargs.get("mode", "local"),
             lang=kwargs.get("lang", "zh"),
         )
-
     def _stage_segment(
         self, chunk_start: float = 0.0, chunk_end: float = 1.0, **_
     ) -> dict:
@@ -216,6 +229,23 @@ class Pipeline:
             "aligned_count": result["aligned_count"],
             "aligned_jsonl": str(self.workspace.aligned_jsonl),
         }
+
+    def _stage_translate(
+        self,
+        target_language: str | None = None,
+        llm_backend: str | None = None,
+        **_,
+    ) -> dict:
+        if not target_language:
+            raise ValueError("target_language required for translate stage")
+        from subtap.core.translate import run_translate
+
+        return run_translate(
+            self.workspace,
+            self.config,
+            target_language=target_language,
+            llm_backend_name=llm_backend,
+        )
 
     def _stage_export(
         self, fmt: str = "srt", output_dir: str | None = None, stem: str = "output", **_

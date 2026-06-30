@@ -744,6 +744,9 @@ def _run_pipeline_safely(
     enhance: str = "local",
     align_enabled: bool = True,
     hotword_enabled: bool = True,
+    translate_to: str | None = None,
+    bilingual: str = "off",
+    hotword_mode: str = "local",
 ) -> dict:
     """在线程中安全运行 pipeline，不涉及 UI 操作。"""
     from subtap.ui.tui import TUIRunner
@@ -757,6 +760,9 @@ def _run_pipeline_safely(
         enhance=enhance,
         align_enabled=align_enabled,
         hotword_enabled=hotword_enabled,
+        translate_to=translate_to,
+        bilingual=bilingual,
+        hotword_mode=hotword_mode,
     )
 
 
@@ -1035,6 +1041,9 @@ def run(
                     enhance,
                     align_enabled,
                     hotword_enabled,
+                    translate_to,
+                    bilingual,
+                    hotword_mode,
                 )
                 _exit_dashboard_when_pipeline_done(future, dashboard)
 
@@ -1072,6 +1081,9 @@ def run(
                         enhance=enhance,
                         align_enabled=align_enabled,
                         hotword_enabled=hotword_enabled,
+                        translate_to=translate_to,
+                        bilingual=bilingual,
+                        hotword_mode=hotword_mode,
                     )
             else:
                 result = runner.run_pipeline(
@@ -1082,6 +1094,9 @@ def run(
                     enhance=enhance,
                     align_enabled=align_enabled,
                     hotword_enabled=hotword_enabled,
+                    translate_to=translate_to,
+                    bilingual=bilingual,
+                    hotword_mode=hotword_mode,
                 )
             timings = result.get("timings", {})
         except SystemExit:
@@ -1270,7 +1285,6 @@ def run(
     except Exception as e:
         if not json_output:
             typer.echo(f"\n⚠ 输出契约补充失败：{e}", err=True)
-
     if json_output:
         output_path = output_dir / ("final.srt" if align_enabled else "draft.srt")
         typer.echo(

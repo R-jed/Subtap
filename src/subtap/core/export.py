@@ -618,7 +618,6 @@ class BaseExporter(ABC):
 
 class SRTExporter(BaseExporter):
     """SRT subtitle exporter."""
-
     @property
     def extension(self) -> str:
         return "srt"
@@ -767,7 +766,9 @@ class TXTExporter(BaseExporter):
     """Plain text exporter with timestamps."""
 
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+        # TXTExporter 不需要 punctuation/language/max_chars/min_chars 等配置
+        # 接受 kwargs 是为了与 run_export() 的统一调用接口保持一致
+        pass
 
     @property
     def extension(self) -> str:
@@ -869,10 +870,24 @@ def _with_translated_text(segments: list[AlignedSegment]) -> list[AlignedSegment
                     "text": segment.translated_text,
                     "aligned_text": None,
                     "hotword_replacements": None,
+                    "words": [],
                 }
             )
         )
     return result
+
+
+def _without_alignment_metadata(segments: list[AlignedSegment]) -> list[AlignedSegment]:
+    return [
+        segment.model_copy(
+            update={
+                "aligned_text": None,
+                "hotword_replacements": None,
+                "words": [],
+            }
+        )
+        for segment in segments
+    ]
 
 
 def _with_bilingual_text(
@@ -895,12 +910,11 @@ def _with_bilingual_text(
                     "text": text,
                     "aligned_text": None,
                     "hotword_replacements": None,
+                    "words": [],
                 }
             )
         )
     return result
-
-
 def run_final_exports(
     aligned_jsonl: Path,
     output_dir: Path,
@@ -938,8 +952,7 @@ def run_final_exports(
             language=language,
             max_chars=max_chars,
             min_chars=min_chars,
-        ).export(segments, source_path)
-
+        ).export(_without_alignment_metadata(segments), source_path)
     srt_path = output_dir / f"{stem}.srt"
     vtt_path = output_dir / f"{stem}.vtt"
     json_path = output_dir / f"{stem}.json"
