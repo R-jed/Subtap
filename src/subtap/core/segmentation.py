@@ -9,8 +9,11 @@ import re
 
 from subtap.schemas.models import CleanSegment, SentenceSegment
 
-# Split on CJK/Latin sentence-ending punctuation (keep delimiter attached)
-_SENTENCE_RE = re.compile(r"(?<=[。！？.!?])")
+# Split rules:
+# - CJK punctuation (。！？): always split (no space required)
+# - Latin punctuation (.!?): only split when followed by whitespace or end
+#   This preserves "0.6", "HighLightDiffusion.Filter", abbreviations etc.
+_SENTENCE_RE = re.compile(r"(?<=[。！？])|(?<=[.!?])(?=\s)")
 
 # Max chars per sentence before forced split
 _MAX_CHARS = 80
