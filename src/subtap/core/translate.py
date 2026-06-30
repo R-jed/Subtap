@@ -6,25 +6,10 @@ import re
 from pathlib import Path
 
 from subtap.backends.llm import get_llm_backend
+from subtap.core.export import _fmt_srt_time, load_aligned
 from subtap.core.workspace import Workspace
 from subtap.schemas.config import SubtapConfig
 from subtap.schemas.models import AlignedSegment
-
-
-def _format_time(seconds: float) -> str:
-    millis = int(round(seconds * 1000))
-    hours, rest = divmod(millis, 3_600_000)
-    minutes, rest = divmod(rest, 60_000)
-    secs, ms = divmod(rest, 1000)
-    return f"{hours:02d}:{minutes:02d}:{secs:02d},{ms:03d}"
-
-
-def _load_aligned(path: Path) -> list[AlignedSegment]:
-    return [
-        AlignedSegment.model_validate_json(line)
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
 
 
 def _write_aligned(path: Path, segments: list[AlignedSegment]) -> None:
@@ -36,10 +21,10 @@ def _write_aligned(path: Path, segments: list[AlignedSegment]) -> None:
 
 def render_srt_from_aligned(aligned_jsonl: Path) -> str:
     blocks = []
-    for index, segment in enumerate(_load_aligned(aligned_jsonl), start=1):
+    for index, segment in enumerate(load_aligned(aligned_jsonl), start=1):
         blocks.append(
             f"{index}\n"
-            f"{_format_time(segment.start_sec)} --> {_format_time(segment.end_sec)}\n"
+            f"{_fmt_srt_time(segment.start_sec)} --> {_fmt_srt_time(segment.end_sec)}\n"
             f"{segment.text}\n"
         )
     return "\n".join(blocks)
@@ -113,7 +98,7 @@ def run_translate(
     translated_blocks = parse_srt(translated_srt)
     validate_translated_srt(source_blocks, translated_blocks)
 
-    segments = _load_aligned(workspace.aligned_jsonl)
+    segments = load_aligned(workspace.aligned_jsonl)
     for segment, block in zip(segments, translated_blocks):
         segment.translated_text = block["text"]
     _write_aligned(workspace.aligned_jsonl, segments)

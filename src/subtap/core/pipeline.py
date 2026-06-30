@@ -60,7 +60,6 @@ class Pipeline:
             "chunk": self._stage_chunk,
             "asr": self._stage_asr,
             "clean": self._stage_clean,
-            "hotword": self._stage_hotword,
             "segment": self._stage_segment,
             "align": self._stage_align,
             "translate": self._stage_translate,
@@ -148,16 +147,6 @@ class Pipeline:
             "segment_count": result["segment_count"],
             "cleaned_jsonl": str(self.workspace.cleaned_jsonl),
         }
-
-    def _stage_hotword(self, **kwargs) -> dict:
-        from subtap.core.hotword import run_hotword
-
-        return run_hotword(
-            self.workspace,
-            glossary_dir=kwargs.get("glossary_dir"),
-            mode=kwargs.get("mode", "local"),
-            lang=kwargs.get("lang", "zh"),
-        )
 
     def _stage_segment(
         self, chunk_start: float = 0.0, chunk_end: float = 1.0, **_
