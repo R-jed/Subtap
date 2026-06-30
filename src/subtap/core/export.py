@@ -526,7 +526,10 @@ class SRTExporter(BaseExporter):
         # Collect all sub_lines from all sentences
         all_subs: list[dict] = []
         for seg in sorted_segs:
-            words_with_punct = _inject_punct(_filter_words_to_text(seg.words, seg.text), seg.text)
+            # Use aligned_text (pre-hotword) for word filtering to preserve word-level timing
+            # Use text (post-hotword) for display
+            word_filter_text = getattr(seg, 'aligned_text', None) or seg.text
+            words_with_punct = _inject_punct(_filter_words_to_text(seg.words, word_filter_text), seg.text)
             sub_lines = _smart_split(words_with_punct, seg.text, max_chars=self.max_chars, min_chars=self.min_chars, start_sec=seg.start_sec, end_sec=seg.end_sec)
             for sub in sub_lines:
                 if sub["text"].strip():
@@ -766,7 +769,8 @@ def run_final_exports(
         vtt_lines = ["WEBVTT", ""]
         vtt_index = 0
         for seg in sorted(segments, key=lambda s: s.start_sec):
-            words_with_punct = _inject_punct(_filter_words_to_text(seg.words, seg.text), seg.text)
+            word_filter_text = getattr(seg, 'aligned_text', None) or seg.text
+            words_with_punct = _inject_punct(_filter_words_to_text(seg.words, word_filter_text), seg.text)
             sub_lines = _smart_split(words_with_punct, seg.text, max_chars=max_chars, min_chars=min_chars, start_sec=seg.start_sec, end_sec=seg.end_sec)
             for sub in sub_lines:
                 if not sub["text"].strip():

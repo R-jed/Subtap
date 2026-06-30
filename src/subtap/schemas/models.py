@@ -71,7 +71,11 @@ class AlignedSegment(BaseModel):
     sentence_id: int = Field(description="Sentence index (maps to SentenceSegment)")
     start_sec: float = Field(description="Aligned start time in seconds")
     end_sec: float = Field(description="Aligned end time in seconds")
-    text: str = Field(description="Sentence text (unchanged from source)")
+    text: str = Field(description="Sentence text (may be hotword-replaced)")
+    aligned_text: str | None = Field(
+        default=None,
+        description="Original aligned text before hotword replacement (for word filtering)",
+    )
     words: list[dict] = Field(
         default_factory=list,
         description="Word-level timing [{word, start_sec, end_sec}]",
