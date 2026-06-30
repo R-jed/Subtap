@@ -7,7 +7,7 @@ import unicodedata
 from pathlib import Path
 
 from subtap.backends.llm import get_llm_backend
-from subtap.core.export import _normalize_punct, _strip_punct
+from subtap.core.export import _ALL_PUNCT_RE, _normalize_punct
 from subtap.core.replacement import apply_replacements
 from subtap.schemas.config import SubtapConfig
 from subtap.schemas.glossary import Glossary, load_glossary
@@ -63,8 +63,9 @@ def local_clean_text(
         # Normalize punctuation by language (zh/ja: full-width, en: half-width)
         text = _normalize_punct(text, language)
     else:
-        # Remove all punctuation
-        text = _strip_punct(text)
+        # Replace all punctuation with space, then collapse spaces
+        text = _ALL_PUNCT_RE.sub(" ", text)
+        text = re.sub(r"\s+", " ", text).strip()
 
     # 5. Glossary replacement
     if glossary:
