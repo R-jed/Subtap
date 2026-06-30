@@ -230,8 +230,8 @@ def _convert_keep_unit(s: str) -> str:
 
         if wan_val > 0:
             # 亿+万 combo: "一亿两千万" → "1.2亿"
-            val = yi_val + wan_val / 10000
-            val_str = f"{val:.4f}".rstrip("0").rstrip(".")
+            ratio = float(yi_val) + float(wan_val) / 10000
+            val_str = f"{ratio:.4f}".rstrip("0").rstrip(".")
             return f"{val_str}亿{suffix}"
         else:
             return f"{yi_val}亿{suffix}"
@@ -251,8 +251,8 @@ def _convert_keep_unit(s: str) -> str:
                 # Clean multiple of 1000 → keep 万 unit (一万五千 → 1.5万)
                 # Otherwise → full number (一万两千三百四十五 → 12345)
                 if rest_val % 1000 == 0:
-                    val = wan_val + rest_val / 10000
-                    val_str = f"{val:.4f}".rstrip("0").rstrip(".")
+                    ratio = float(wan_val) + float(rest_val) / 10000
+                    val_str = f"{ratio:.4f}".rstrip("0").rstrip(".")
                     return f"{val_str}万"
                 else:
                     total = wan_val * 10000 + rest_val

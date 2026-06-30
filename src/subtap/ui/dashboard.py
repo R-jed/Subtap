@@ -93,10 +93,10 @@ class StatsPanel(Static):
             "候选字幕：{candidate}  已对齐：{aligned}\n"
             "RTF：{rtf:.2f}  慢速片段：{slow}\n"
             "预览：{preview}".format(
-                candidate=int(streaming.get("candidate_count") or 0),
-                aligned=int(streaming.get("aligned_count") or 0),
-                rtf=float(performance.get("rtf") or 0.0),
-                slow=int(performance.get("slow_chunks_total") or 0),
+                candidate=int(str(streaming.get("candidate_count") or 0)),
+                aligned=int(str(streaming.get("aligned_count") or 0)),
+                rtf=float(str(performance.get("rtf") or 0.0)),
+                slow=int(str(performance.get("slow_chunks_total") or 0)),
                 preview=preview or "暂无",
             )
         )

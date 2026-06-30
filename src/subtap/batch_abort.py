@@ -5,6 +5,7 @@ from __future__ import annotations
 import signal
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 
 class AbortController:
@@ -14,7 +15,7 @@ class AbortController:
         self.output_dir = output_dir
         self.abort_file = output_dir / ".abort"
         self._aborted = False
-        self._original_handler = None
+        self._original_handler: Any = None
 
     def is_aborted(self) -> bool:
         """Check if abort has been requested."""
