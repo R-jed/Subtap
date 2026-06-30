@@ -368,6 +368,101 @@ class TestPipelineCleanup:
         assert (tmp_path / "sentences.jsonl").exists()
 
 
+class TestBatchCleanup:
+    """测试批量转录完成后的清理行为。"""
+
+    def test_batch_transcribe_calls_cleanup_on_success(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """批量转录成功处理文件后应调用 clean_intermediate_files() 清理 L2 中间文件。"""
+        from unittest.mock import MagicMock, patch
+        from typer.testing import CliRunner
+        from subtap.cli import app
+        from subtap.schemas.config import SubtapConfig
+
+        runner = CliRunner()
+        config = SubtapConfig()
+        monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
+        monkeypatch.setattr("subtap.cli.Path.home", lambda: tmp_path)
+
+        # 创建测试音频文件
+        audio_file = tmp_path / "test.wav"
+        audio_file.write_bytes(b"fake wav")
+
+        # 创建输出目录
+        output_dir = tmp_path / "output"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # 模拟 PlainRunner.run_pipeline 返回成功结果
+        mock_result = {
+            "timings": {"prepare": 0.1, "chunk": 0.2},
+            "output_path": str(output_dir / "batch.srt"),
+        }
+
+        # 用于捕获 clean_intermediate_files 的调用
+        cleanup_called = []
+        original_clean = None
+
+        with patch("subtap.ui.tui.PlainRunner") as mock_runner_class:
+            mock_runner = MagicMock()
+            mock_runner.run_pipeline.return_value = mock_result
+            mock_runner_class.return_value = mock_runner
+
+            # 模拟 Cleanroom.clean_intermediate_files
+            with patch("subtap.engine.cleanroom.Cleanroom.clean_intermediate_files") as mock_clean:
+                mock_clean.return_value = {"cleaned_count": 3, "cleaned_files": []}
+
+                # 运行批量转录
+                result = runner.invoke(app, [
+                    "batch-transcribe", str(audio_file),
+                    "--output-dir", str(output_dir),
+                    "--no-confirm",
+                    "--json",
+                ])
+
+                # 验证 clean_intermediate_files 被调用
+                assert mock_clean.called, "batch_transcribe 成功后应调用 clean_intermediate_files()"
+
+    def test_batch_transcribe_no_cleanup_on_failure(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """批量转录失败时不应调用 clean_intermediate_files()。"""
+        from unittest.mock import MagicMock, patch
+        from typer.testing import CliRunner
+        from subtap.cli import app
+        from subtap.schemas.config import SubtapConfig
+
+        runner = CliRunner()
+        config = SubtapConfig()
+        monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
+        monkeypatch.setattr("subtap.cli.Path.home", lambda: tmp_path)
+
+        # 创建测试音频文件
+        audio_file = tmp_path / "test.wav"
+        audio_file.write_bytes(b"fake wav")
+
+        # 创建输出目录
+        output_dir = tmp_path / "output"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # 模拟 PlainRunner.run_pipeline 抛出异常
+        with patch("subtap.ui.tui.PlainRunner") as mock_runner_class:
+            mock_runner = MagicMock()
+            mock_runner.run_pipeline.side_effect = RuntimeError("模拟处理失败")
+            mock_runner_class.return_value = mock_runner
+
+            # 模拟 Cleanroom.clean_intermediate_files
+            with patch("subtap.engine.cleanroom.Cleanroom.clean_intermediate_files") as mock_clean:
+                mock_clean.return_value = {"cleaned_count": 3, "cleaned_files": []}
+
+                # 运行批量转录
+                result = runner.invoke(app, [
+                    "batch-transcribe", str(audio_file),
+                    "--output-dir", str(output_dir),
+                    "--no-confirm",
+                    "--json",
+                ])
+
+                # 验证 clean_intermediate_files 未被调用
+                assert not mock_clean.called, "batch_transcribe 失败时不应调用 clean_intermediate_files()"
+
+
 class TestCLIRunCleanup:
     """测试 CLI run 命令完成后的清理行为。"""
 
