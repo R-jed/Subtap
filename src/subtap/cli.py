@@ -129,15 +129,19 @@ def check_first_run_wizard(config: "SubtapConfig") -> bool:
         bool: 是否执行了向导
     """
     # 检查条件：API 配置存在且 llm_proofread 未设置
-    if not config.remote_api.base_url:
+    remote_api = getattr(config, "remote_api", None)
+    if remote_api is None:
+        return False
+
+    if not getattr(remote_api, "base_url", ""):
         return False
 
     # 检查环境变量是否存在
-    api_key_env = config.remote_api.api_key_env
+    api_key_env = getattr(remote_api, "api_key_env", "")
     if not api_key_env or not os.environ.get(api_key_env):
         return False
 
-    if config.llm_proofread is not None:
+    if getattr(config, "llm_proofread", None) is not None:
         return False
 
     # 执行向导
@@ -684,6 +688,8 @@ def _build_observer_child_command(
     timestamp: bool,
     script: str | None = None,
     script_mode: str = "follow_script",
+    llm_proofread: bool | None = None,
+    llm_hotword: bool | None = None,
 ) -> list[str]:
     command = [
         sys.executable,
@@ -725,6 +731,10 @@ def _build_observer_child_command(
     if script:
         command.extend(["--script", script])
         command.extend(["--script-mode", script_mode])
+    if llm_proofread is not None:
+        command.append("--llm-proofread" if llm_proofread else "--no-llm-proofread")
+    if llm_hotword is not None:
+        command.append("--llm-hotword" if llm_hotword else "--no-llm-hotword")
     return command
 
 
@@ -893,6 +903,16 @@ def run(
         help="文稿匹配模式：follow_script / correct_only",
     ),
     json_output: bool = typer.Option(False, "--json", help="输出机器可读 JSON"),
+    llm_proofread: bool | None = typer.Option(
+        None,
+        "--llm-proofread/--no-llm-proofread",
+        help="启用/禁用 LLM 校对（默认根据配置自动判断）",
+    ),
+    llm_hotword: bool | None = typer.Option(
+        None,
+        "--llm-hotword/--no-llm-hotword",
+        help="启用/禁用 LLM 热词（默认根据配置自动判断）",
+    ),
 ) -> None:
     """运行完整字幕生成流程
 
@@ -976,6 +996,8 @@ def run(
             timestamp=timestamp,
             script=script,
             script_mode=script_mode,
+            llm_proofread=llm_proofread,
+            llm_hotword=llm_hotword,
         )
         typer.echo("▸ TUI 观察者进程已启动，推理将在独立子进程执行")
         _run_observer_parent(command, event_log_path)
@@ -985,6 +1007,7 @@ def run(
         use_tui = False
 
     config = load_config(Path.home() / ".subtap" / "config.yaml")
+    check_first_run_wizard(config)
     config.output.timestamp = timestamp  # CLI overrides config
     config.output.subtitle_punctuation = punctuation
     config.output.subtitle_language = subtitle_language
@@ -1083,6 +1106,8 @@ def run(
                     translate_to,
                     bilingual,
                     hotword_mode,
+                    llm_proofread,
+                    llm_hotword,
                 )
                 _exit_dashboard_when_pipeline_done(future, dashboard)
 
@@ -1105,6 +1130,12 @@ def run(
             raise typer.Exit(1)
     else:
         from subtap.ui.tui import PlainRunner
+
+        # 将 CLI 独立配置项写入 config，供 clean 阶段读取
+        if llm_proofread is not None:
+            config.llm_proofread = llm_proofread
+        if llm_hotword is not None:
+            config.llm_hotword = llm_hotword
 
         runner = PlainRunner()
 
