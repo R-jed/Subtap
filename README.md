@@ -38,6 +38,19 @@ subtap run audio.mp3 --script 文稿.txt
 
 支持格式：`.txt`、`.srt`、`.md`、`.docx`、`.xlsx`
 
+## CLI 命令
+
+```bash
+subtap run audio.mp3              # 生成字幕
+subtap run audio.mp3 --script 文稿.txt  # 文稿匹配
+subtap demo                       # 运行演示
+subtap doctor                     # 检查环境
+subtap setup                      # 初始化向导
+subtap glossary list              # 管理术语表
+subtap learn import corrected.srt # 导入修正字幕
+subtap profile export             # 导出学习档案
+```
+
 ## 开发
 
 ```bash
