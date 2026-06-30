@@ -119,22 +119,24 @@ class OpenAICompatibleLLM:
 
     def select_suspicious_segments(self, segments: list[dict]) -> list[int]:
         prompt = (
-            "你是一个字幕质检助，你的任务：\n\n"
-            "1. 阅读给定的字幕 segments。\n\n"
-            "2. 只返回“可能有问题”的句子：\n\n"
-            "- 语义错误\n\n"
-            "- 表达不通顺\n\n"
-            "- 专业名词 / 品牌 / 产品名可能识别错\n\n"
-            "3. 正常句子不要返回。\n\n"
-            "4. 不要改写原句，不要解释原因。\n\n"
-            "5. 只输出 JSON，格式必须严格为：\n\n"
-            '{"segments":[{"i":0}]}\n\n'
-            "6. 每个输入项包含：\n"
-            "- i: 原始索引\n"
-            "- t: 字幕文本\n\n"
-            "7. 只返回原始输入里的索引 i。\n\n"
-            '8. 如果没有可疑句子，返回 {"segments":[]}\n\n'
-            f"待检查内容：\n{json.dumps({'segments': segments}, ensure_ascii=False)}"
+            “你是一个字幕质检助理，你的任务：\n\n”
+            “1. 阅读给定的字幕 segments。\n\n”
+            “2. 只返回”可能有问题”的句子：\n\n”
+            “- 语义错误\n\n”
+            “- 表达不通顺\n\n”
+            “- 专业名词 / 品牌 / 产品名可能识别错\n\n”
+            “- ASR 识别错误（同音字/近音字错误）\n\n”
+            “3. 正常句子不要返回。\n\n”
+            “4. 不要改写原句，不要解释原因。\n\n”
+            “5. 不要增加字或减少字，不要改变句子结构。\n\n”
+            “6. 只输出 JSON，格式必须严格为：\n\n”
+            '{“segments”:[{“i”:0}]}\n\n'
+            “7. 每个输入项包含：\n”
+            “- i: 原始索引\n”
+            “- t: 字幕文本\n\n”
+            “8. 只返回原始输入里的索引 i。\n\n”
+            '9. 如果没有可疑句子，返回 {“segments”:[]}\n\n'
+            f”待检查内容：\n{json.dumps({'segments': segments}, ensure_ascii=False)}”
         )
         content = self._chat(prompt, "你只输出 JSON，不输出解释。")
         parsed = self._parse_segments_json(
