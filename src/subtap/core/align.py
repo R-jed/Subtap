@@ -102,7 +102,7 @@ def run_align(
         input_path = workspace.sentences_jsonl
     sentences = load_sentences(input_path)
     if not sentences:
-        raise ValueError(f"No sentences found in {workspace.sentences_jsonl}")
+        raise ValueError(f"No sentences found in {input_path}")
 
     # Resolve backend
     align_config = config.align.model_copy()

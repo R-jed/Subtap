@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Optional
 
@@ -169,11 +170,13 @@ class Pipeline:
         if not self.config.output.script_path:
             return {"skipped": True}
         from subtap.script.match import match_from_file
-        import json
 
         script_path = Path(self.config.output.script_path)
         if not script_path.exists():
             raise ValueError(f"文稿文件不存在：{script_path}")
+
+        if not self.workspace.sentences_jsonl.exists():
+            raise ValueError("sentences.jsonl 不存在，请先执行 segment 阶段")
 
         # 读取 sentences.jsonl
         segments = []
