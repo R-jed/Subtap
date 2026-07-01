@@ -187,6 +187,9 @@ def _is_incomplete_word(
     """检查 tail 是否是不完整词，next_start 能否组成完整词"""
     if not next_start:
         return False
+    # 标点结尾的 tail 不是断词（如 "e，" 是单词末尾+标点，不是断词）
+    if tail and tail[-1] in _PUNCT_CHARS:
+        return False
     # 英文词组不拆分：跨句时不合并（避免 "Hello"+"World" 误合并）
     if not cross_sentence and (_has_latin(tail) or _has_latin(next_start[:1])):
         return True
@@ -488,6 +491,9 @@ def _smart_split(
             cur_text = ""
 
         # Add word to current line
+        # Insert space between consecutive Latin words (e.g. "High" + "Light" → "High Light")
+        if cur_text and _has_latin(cur_text[-1:]) and _has_latin(word_text[:1]):
+            cur_text += " "
         cur_words.append(w)
         cur_text += word_text
 
