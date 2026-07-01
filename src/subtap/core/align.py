@@ -170,22 +170,6 @@ def run_align(
             if words[k]["end_sec"] > words[k + 1]["start_sec"]:
                 words[k + 1]["start_sec"] = words[k]["end_sec"]
 
-    # Fix sentence-level timestamps from word-level timestamps
-    for seg in aligned:
-        words = seg.words
-        if words:
-            # Recalculate sentence start/end from word timestamps
-            word_start = min(w["start_sec"] for w in words)
-            word_end = max(w["end_sec"] for w in words)
-            # Only override if word timestamps are valid and different
-            if word_end > word_start:
-                seg.start_sec = round(word_start, 3)
-                seg.end_sec = round(word_end, 3)
-        else:
-            # No words: keep sentence timestamps but ensure valid duration
-            if seg.end_sec <= seg.start_sec:
-                seg.end_sec = seg.start_sec + 0.020
-
     # Write aligned.jsonl
     write_aligned(aligned, workspace.aligned_jsonl)
     write_aligned_subtitles(
