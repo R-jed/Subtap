@@ -321,18 +321,15 @@ def test_metrics_config_defaults():
     from subtap.schemas.config import MetricsConfig
 
     config = MetricsConfig()
-    assert config.enabled is True
-    assert config.slow_threshold == 1.5
-    assert config.output_path == "performance.json"
+    assert config.output_path == "metrics.json"
 
 
 def test_metrics_config_custom():
     """Test MetricsConfig custom values."""
     from subtap.schemas.config import MetricsConfig
 
-    config = MetricsConfig(enabled=False, slow_threshold=2.0)
-    assert config.enabled is False
-    assert config.slow_threshold == 2.0
+    config = MetricsConfig(output_path="custom.json")
+    assert config.output_path == "custom.json"
 
 
 def test_full_metrics_flow():

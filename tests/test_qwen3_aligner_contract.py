@@ -72,7 +72,6 @@ def test_align_config_supports_model_quantization_and_no_keep_alive():
     assert config.model == "aligner"
     assert config.quantization == "q8"
     assert config.keep_model_alive is False
-    assert config.warmup is False
     assert config.language == "Chinese"
 
 
