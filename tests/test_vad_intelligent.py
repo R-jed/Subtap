@@ -105,3 +105,54 @@ def test_calculate_vad_probability():
     # Low energy + high ZCR + medium spectral = low probability
     assert probability[0] > probability[1]
     assert probability[2] > probability[3]
+
+
+def test_split_chunks_intelligent():
+    """Intelligent VAD should produce valid chunks."""
+    import tempfile
+    from pathlib import Path
+
+    from subtap.core.vad import split_chunks
+    from subtap.core.workspace import Workspace
+    from subtap.schemas.config import SubtapConfig
+
+    # Create temporary workspace
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config = SubtapConfig()
+        config.audio.vad.sensitivity = "normal"
+
+        workspace = Workspace(config, base_dir=Path(tmpdir))
+        workspace.ensure_dirs()
+
+        # Create test audio with silence gaps
+        samples = np.zeros(16000 * 5, dtype=np.float32)  # 5 seconds
+
+        # Add speech segments (high energy)
+        samples[16000:32000] = np.random.randn(16000).astype(np.float32) * 0.5
+        samples[48000:64000] = np.random.randn(16000).astype(np.float32) * 0.5
+
+        audio = AudioSegment(
+            samples.tobytes(),
+            frame_rate=16000,
+            sample_width=2,
+            channels=1,
+        )
+
+        # Save to workspace
+        source_path = workspace.audio_dir / "source.wav"
+        audio.export(str(source_path), format="wav")
+
+        # Run intelligent VAD
+        chunks = split_chunks(workspace, config)
+
+        # Should produce valid chunks
+        assert len(chunks) > 0
+
+        # Each chunk should have valid path
+        for chunk in chunks:
+            chunk_path = workspace.root / chunk.path
+            assert chunk_path.exists()
+
+        # Time ranges should be monotonic
+        for i in range(1, len(chunks)):
+            assert chunks[i].start_sec >= chunks[i-1].end_sec
