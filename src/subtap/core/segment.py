@@ -86,6 +86,10 @@ def run_segment(
             chunk_sentences = segment_clean_segments(chunk_segs, c_start, c_end, language=language)
             all_sentences.extend(chunk_sentences)
 
+        # Re-assign globally unique sentence_ids
+        for i, sent in enumerate(all_sentences):
+            sent.sentence_id = i
+
         write_sentences(all_sentences, workspace.sentences_jsonl)
         return {"sentence_count": len(all_sentences)}
     else:
