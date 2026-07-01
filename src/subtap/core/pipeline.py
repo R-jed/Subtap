@@ -24,7 +24,7 @@ class Pipeline:
         "asr",
         "clean",
         "segment",
-        "script_match",
+        # "script_match",  # TODO: 文稿匹配功能暂搁置，待LLM方案成熟后重新实现
         "align",
         "hotword",
         "translate",
@@ -64,7 +64,7 @@ class Pipeline:
             "asr": self._stage_asr,
             "clean": self._stage_clean,
             "segment": self._stage_segment,
-            "script_match": self._stage_script_match,
+            # "script_match": self._stage_script_match,  # TODO: 文稿匹配功能暂搁置，待LLM方案成熟后重新实现
             "align": self._stage_align,
             "translate": self._stage_translate,
             "export": self._stage_export,
@@ -179,7 +179,14 @@ class Pipeline:
         }
 
     def _stage_script_match(self, **_) -> dict:
-        """文稿匹配阶段（可选）。"""
+        """文稿匹配阶段（可选）。
+
+        TODO: 文稿匹配功能暂搁置，待LLM方案成熟后重新实现。
+        当前实现使用rapidfuzz相似度匹配，对于品牌名、数字格式等差异较大的文本纠错能力有限。
+        未来计划使用LLM语义理解来判断ASR句子与文稿句子的对应关系。
+
+        保留此方法作为未来进阶开发的参考。
+        """
         if not self.config.output.script_path:
             return {"skipped": True}
         from subtap.script.match import match_from_file
