@@ -51,3 +51,35 @@ def test_config(tmp_path: Path) -> SubtapConfig:
             keep_intermediate=True,
         ),
     )
+
+
+@pytest.fixture
+def local_config(tmp_path: Path) -> SubtapConfig:
+    """纯本地配置，禁用所有 LLM 功能"""
+    return SubtapConfig(
+        llm_proofread=False,
+        llm_hotword=False,
+        translate_to="",
+        workspace=WorkspaceConfig(
+            root=str(tmp_path / "work"),
+            keep_intermediate=True,
+        ),
+        asr={"backend": "mock-asr"},
+        align={"backend": "mock-align"},
+    )
+
+
+@pytest.fixture
+def workspace(local_config: SubtapConfig):
+    """创建工作空间"""
+    from subtap.core.workspace import Workspace
+
+    ws = Workspace(local_config)
+    ws.ensure_dirs()
+    return ws
+
+
+@pytest.fixture
+def sample_audio() -> Path:
+    """使用真实测试素材"""
+    return Path("/Users/qunqing/Downloads/ASR-SRT测试音频/高质量中文语音.mp3")
