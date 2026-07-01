@@ -749,6 +749,9 @@ def run(
     hotword_mode: str = typer.Option(
         "local", "--hotword-mode", help="热词模式：local / api / hybrid"
     ),
+    # TODO: 文稿匹配功能暂搁置，待LLM方案成熟后重新实现
+    # 当前实现使用rapidfuzz相似度匹配，对于品牌名、数字格式等差异较大的文本纠错能力有限
+    # 未来计划使用LLM语义理解来判断ASR句子与文稿句子的对应关系
     script: str | None = typer.Option(None, "--script", help="文稿文件路径（可选）"),
     script_mode: str = typer.Option(
         "follow_script",
@@ -1597,6 +1600,9 @@ def batch_compose_subtitle(
 
 @script_app.command("match")
 def script_match(
+    # TODO: 文稿匹配功能暂搁置，待LLM方案成熟后重新实现
+    # 当前实现使用rapidfuzz相似度匹配，对于品牌名、数字格式等差异较大的文本纠错能力有限
+    # 未来计划使用LLM语义理解来判断ASR句子与文稿句子的对应关系
     timeline: Path = typer.Option(..., "--timeline", help="已有时间轴 JSONL"),
     script: Path = typer.Option(..., "--script", help="文稿文本文件"),
     output: Path = typer.Option(..., "--output", "-o", help="输出 JSONL"),
