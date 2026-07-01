@@ -20,19 +20,22 @@ def load_clean_segments(cleaned_jsonl: Path) -> list[CleanSegment]:
     return segments
 
 
-def load_chunk_boundaries(chunks_jsonl: Path) -> tuple[float, float]:
+def load_chunk_boundaries(chunks_jsonl: Path) -> dict[int, tuple[float, float]]:
     """Load chunk boundaries from chunks.jsonl.
 
     Returns:
-        Tuple of (start_sec, end_sec) from the first chunk.
+        Dict mapping chunk_id to (start_sec, end_sec).
     """
+    boundaries: dict[int, tuple[float, float]] = {}
     with open(chunks_jsonl) as f:
         for line in f:
             line = line.strip()
             if line:
                 chunk = Chunk.model_validate_json(line)
-                return chunk.start_sec, chunk.end_sec
-    raise ValueError(f"No chunks found in {chunks_jsonl}")
+                boundaries[chunk.chunk_id] = (chunk.start_sec, chunk.end_sec)
+    if not boundaries:
+        raise ValueError(f"No chunks found in {chunks_jsonl}")
+    return boundaries
 
 
 def write_sentences(sentences: list[SentenceSegment], output_path: Path) -> None:
@@ -60,15 +63,33 @@ def run_segment(
     Returns:
         Dict with sentence_count.
     """
-    # Read chunk boundaries from chunks.jsonl if not provided
-    if chunk_start is None or chunk_end is None:
-        chunk_start, chunk_end = load_chunk_boundaries(workspace.chunks_jsonl)
-
     segments = load_clean_segments(workspace.cleaned_jsonl)
     if not segments:
         raise ValueError(f"No clean segments found in {workspace.cleaned_jsonl}")
 
-    sentences = segment_clean_segments(segments, chunk_start, chunk_end, language=language)
-    write_sentences(sentences, workspace.sentences_jsonl)
+    # If chunk boundaries not provided, load from chunks.jsonl and group by chunk
+    if chunk_start is None or chunk_end is None:
+        chunk_boundaries = load_chunk_boundaries(workspace.chunks_jsonl)
 
-    return {"sentence_count": len(sentences)}
+        # Group segments by source_chunk_id
+        from collections import defaultdict
+        segments_by_chunk: dict[int, list[CleanSegment]] = defaultdict(list)
+        for seg in segments:
+            segments_by_chunk[seg.source_chunk_id].append(seg)
+
+        # Process each chunk group
+        all_sentences: list[SentenceSegment] = []
+        for chunk_id, chunk_segs in sorted(segments_by_chunk.items()):
+            if chunk_id not in chunk_boundaries:
+                raise ValueError(f"Chunk {chunk_id} not found in chunks.jsonl")
+            c_start, c_end = chunk_boundaries[chunk_id]
+            chunk_sentences = segment_clean_segments(chunk_segs, c_start, c_end, language=language)
+            all_sentences.extend(chunk_sentences)
+
+        write_sentences(all_sentences, workspace.sentences_jsonl)
+        return {"sentence_count": len(all_sentences)}
+    else:
+        # Use provided boundaries (for backward compatibility)
+        sentences = segment_clean_segments(segments, chunk_start, chunk_end, language=language)
+        write_sentences(sentences, workspace.sentences_jsonl)
+        return {"sentence_count": len(sentences)}
