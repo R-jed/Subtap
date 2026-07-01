@@ -800,7 +800,19 @@ def run(
         typer.echo(f"✗ 错误：文件未找到 {input_path}", err=True)
         raise typer.Exit(1)
 
-    # ── 参数验证 ──────────────────────────────────────────────
+    # ── 加载配置并应用回退 ───────────────────────────────────
+    config = load_config(Path.home() / ".subtap" / "config.yaml")
+    check_first_run_wizard(config)
+
+    # Config mode → local_only merge (config sets baseline, CLI can override)
+    if getattr(config, "mode", "online") == "offline" and not local_only:
+        local_only = True
+
+    # translate_to: CLI overrides config; if CLI not provided, fall back to config
+    if translate_to is None and getattr(config, "translate_to", ""):
+        translate_to = config.translate_to
+
+    # ── 参数验证（在 config 回退之后） ───────────────────────
     if enhance not in ("off", "local", "api"):
         typer.echo(f"✗ 错误：--enhance 必须是 off/local/api，收到：{enhance}", err=True)
         raise typer.Exit(1)
@@ -826,13 +838,6 @@ def run(
 
     if enhance == "api":
         typer.echo("⚠ 增强模式为 api，字幕文本将发送到外部 LLM API（音频不会发送）")
-
-    config = load_config(Path.home() / ".subtap" / "config.yaml")
-    check_first_run_wizard(config)
-
-    # Config mode → local_only merge (config sets baseline, CLI can override)
-    if config.mode == "offline" and not local_only:
-        local_only = True
 
     config.output.timestamp = timestamp  # CLI overrides config
     config.output.subtitle_punctuation = punctuation

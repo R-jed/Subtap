@@ -29,8 +29,23 @@ def test_bilingual_without_translate_to_fails(tmp_path):
     assert "bilingual" in _strip_ansi(result.output).lower() or "双语" in _strip_ansi(result.output)
 
 
-def test_translate_to_shows_external_api_warning(tmp_path):
+def test_translate_to_shows_external_api_warning(tmp_path, monkeypatch):
     """验证使用 --translate-to + --enhance api 时提示外部 API 使用"""
+    from types import SimpleNamespace
+    import subtap.schemas.config as cfg_mod
+
+    config = SimpleNamespace(
+        mode="online",
+        output=SimpleNamespace(
+            timestamp=True, generate_report=True, generate_metrics=True,
+            subtitle_punctuation=False, subtitle_language="zh",
+            max_chars=25, min_chars=10, subtitle_stem="output",
+        ),
+        metrics=SimpleNamespace(output_path="metrics.json"),
+        translate_to="",
+    )
+    monkeypatch.setattr(cfg_mod, "load_config", lambda p: config)
+
     input_file = tmp_path / "input.mp3"
     input_file.write_bytes(b"fake")
 
