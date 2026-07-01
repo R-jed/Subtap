@@ -12,6 +12,10 @@ from pydantic import BaseModel, Field
 class VADConfig(BaseModel):
     """VAD / silence splitting parameters."""
 
+    # 用户配置：灵敏度（唯一用户可调参数）
+    sensitivity: str = "normal"  # low/normal/high
+
+    # 内部参数（用户无需关心）
     min_silence_sec: float = 0.4
     min_chunk_sec: float = 1.0
     max_chunk_sec: float = 30.0
@@ -170,6 +174,20 @@ class SubtapConfig(BaseModel):
     output: OutputConfig = Field(default_factory=OutputConfig)
     metrics: MetricsConfig = Field(default_factory=MetricsConfig)
     cleanup: CleanupConfig = Field(default_factory=CleanupConfig)
+
+    # LLM 功能配置
+    llm_proofread: bool | None = Field(
+        default=None,
+        description="AI 校对开关（None=未设置，首次接入向导开启）"
+    )
+    llm_hotword: bool = Field(
+        default=False,
+        description="AI 热词替换开关（默认关闭）"
+    )
+    translate_to: str = Field(
+        default="",
+        description="AI 翻译目标语言（空值表示不翻译）"
+    )
 
 
 _DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[3] / "configs" / "default.yaml"
