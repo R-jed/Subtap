@@ -413,7 +413,7 @@ def doctor(
             "keep_model_alive": bool(
                 config.asr.keep_model_alive or config.align.keep_model_alive
             ),
-            "warmup": bool(config.asr.warmup or config.align.warmup),
+            "warmup": False,  # 预热功能未启用
             "device_backend": "mlx-metal",
         }
         report["privacy"] = {

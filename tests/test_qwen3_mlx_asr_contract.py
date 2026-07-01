@@ -38,7 +38,6 @@ def test_asr_config_supports_model_quantization_and_no_keep_alive():
     assert config.model == "asr_0.6b"
     assert config.quantization == "q8"
     assert config.keep_model_alive is False
-    assert config.warmup is False
 
 
 def test_run_asr_writes_asr_draft_contract(monkeypatch, tmp_path):

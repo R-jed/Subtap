@@ -19,7 +19,6 @@ def prepare_test_audio(tmp_path):
     """准备测试用的 workspace 和 mock 数据。"""
     config = SubtapConfig()
     config.workspace.root = str(tmp_path / "work")
-    config.workspace.keep_intermediate = True
 
     workspace = Workspace(config, base_dir=tmp_path / "work")
     workspace.ensure_dirs()
