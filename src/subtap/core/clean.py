@@ -187,7 +187,8 @@ def run_clean(
     replaced = apply_replacements(segments, glossary)
 
     # Step 2: Local cleaning (always runs, no LLM dependency)
-    punctuation = config.output.subtitle_punctuation
+    # 注意：标点移除后移到 export 阶段，保留标点用于 segment 断句
+    punctuation = True  # clean 阶段保留标点，仅做规范化
     language = config.output.subtitle_language
     for seg in replaced:
         seg.cleaned_text = local_clean_text(
