@@ -829,6 +829,11 @@ def run(
 
     config = load_config(Path.home() / ".subtap" / "config.yaml")
     check_first_run_wizard(config)
+
+    # Config mode → local_only merge (config sets baseline, CLI can override)
+    if config.mode == "offline" and not local_only:
+        local_only = True
+
     config.output.timestamp = timestamp  # CLI overrides config
     config.output.subtitle_punctuation = punctuation
     config.output.subtitle_language = subtitle_language
@@ -972,63 +977,64 @@ def run(
     quality_payload: dict[str, Any] = {}
 
     # ── Generate report and debug output ────────────────────
-    try:
-        from subtap.quality.scorer import Scorer
-        from subtap.core.report import generate_report
+    if config.output.generate_report:
+        try:
+            from subtap.quality.scorer import Scorer
+            from subtap.core.report import generate_report
 
-        # Quality assessment
-        aligned_path = work_dir / "aligned.jsonl"
-        if aligned_path.exists():
-            scorer = Scorer(aligned_path)
-            quality_report = scorer.score()
-            quality_payload = {
-                "quality_score": quality_report.total_score,
-                "error_count": quality_report.error_count,
-                "fixable_count": quality_report.fixable_count,
-            }
+            # Quality assessment
+            aligned_path = work_dir / "aligned.jsonl"
+            if aligned_path.exists():
+                scorer = Scorer(aligned_path)
+                quality_report = scorer.score()
+                quality_payload = {
+                    "quality_score": quality_report.total_score,
+                    "error_count": quality_report.error_count,
+                    "fixable_count": quality_report.fixable_count,
+                }
 
-            # Generate report
-            report_content = generate_report(
-                quality_score=quality_report.total_score,
-                error_count=quality_report.error_count,
-                fixable_count=quality_report.fixable_count,
-                fixed_count=0,
-                segment_count=0,
-                timings=timings,
-                mode=mode,
-                input_file=input_path,
-                output_format=fmt,
-                performance_metrics=performance_metrics,
-            )
+                # Generate report
+                report_content = generate_report(
+                    quality_score=quality_report.total_score,
+                    error_count=quality_report.error_count,
+                    fixable_count=quality_report.fixable_count,
+                    fixed_count=0,
+                    segment_count=0,
+                    timings=timings,
+                    mode=mode,
+                    input_file=input_path,
+                    output_format=fmt,
+                    performance_metrics=performance_metrics,
+                )
 
-            # Write report
-            output_dir.mkdir(parents=True, exist_ok=True)
-            report_path = work_dir / "report.md"
-            report_path.write_text(report_content, encoding="utf-8")
+                # Write report
+                output_dir.mkdir(parents=True, exist_ok=True)
+                report_path = work_dir / "report.md"
+                report_path.write_text(report_content, encoding="utf-8")
+                if not json_output:
+                    typer.echo(f"\n▸ 质量报告：{report_path}")
+
+                # Write debug.json
+                debug_data = {
+                    "mode": mode,
+                    "input_file": str(input_path),
+                    "output_format": fmt,
+                    "alignment_enabled": align_enabled,
+                    "quality_score": quality_report.total_score,
+                    "timings": timings,
+                    "error_count": quality_report.error_count,
+                }
+                debug_path = work_dir / "debug.json"
+                debug_path.write_text(
+                    json.dumps(debug_data, indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+        except Exception as e:
+            # Report generation is optional - don't fail the whole run
             if not json_output:
-                typer.echo(f"\n▸ 质量报告：{report_path}")
+                typer.echo(f"\n⚠ 报告生成失败：{e}", err=True)
 
-            # Write debug.json
-            debug_data = {
-                "mode": mode,
-                "input_file": str(input_path),
-                "output_format": fmt,
-                "alignment_enabled": align_enabled,
-                "quality_score": quality_report.total_score,
-                "timings": timings,
-                "error_count": quality_report.error_count,
-            }
-            debug_path = work_dir / "debug.json"
-            debug_path.write_text(
-                json.dumps(debug_data, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
-    except Exception as e:
-        # Report generation is optional - don't fail the whole run
-        if not json_output:
-            typer.echo(f"\n⚠ 报告生成失败：{e}", err=True)
-
-    if not align_enabled:
+    if config.output.generate_report and not align_enabled:
         from subtap.core.report import format_performance_summary
 
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -1062,14 +1068,16 @@ def run(
         if not json_output:
             typer.echo(f"\n▸ 草稿报告：{report_path}")
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    metrics_payload = performance_metrics | {
-        "output_contract": "final" if align_enabled else "draft"
-    }
-    (work_dir / "metrics.json").write_text(
-        json.dumps(metrics_payload, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    if config.output.generate_metrics:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        metrics_payload = performance_metrics | {
+            "output_contract": "final" if align_enabled else "draft"
+        }
+        metrics_path = work_dir / config.metrics.output_path
+        metrics_path.write_text(
+            json.dumps(metrics_payload, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
 
     if json_output:
         output_path = output_dir / ("final.srt" if align_enabled else "draft.srt")

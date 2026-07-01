@@ -57,10 +57,17 @@ def detect_speech_segments(
     return segments
 
 
+_SENSITIVITY_THRESHOLDS = {
+    "low": 0.3,
+    "normal": 0.5,
+    "high": 0.7,
+}
+
+
 def split_chunks_silero(
     workspace: Workspace,
     config: SubtapConfig,
-    threshold: float = 0.5,
+    threshold: float | None = None,
 ) -> list[Chunk]:
     """Split source audio into chunks using Silero VAD.
 
@@ -68,11 +75,16 @@ def split_chunks_silero(
         workspace: Workspace instance.
         config: Subtap config.
         threshold: Speech probability threshold (0.0-1.0).
+            If None, derived from config.audio.vad.sensitivity.
 
     Returns:
         List of Chunk models and writes chunks.jsonl to workspace.
     """
     vad_cfg = config.audio.vad
+
+    # Resolve threshold from sensitivity if not explicitly provided
+    if threshold is None:
+        threshold = _SENSITIVITY_THRESHOLDS.get(vad_cfg.sensitivity, 0.5)
 
     # Load Silero VAD model
     model = load_silero_vad()

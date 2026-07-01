@@ -1,36 +1,107 @@
+# Subtap 默认配置
+# 文档：https://github.com/subtap/subtap#configuration
+
+# 运行模式：offline（纯本地，禁止 API）/ online（允许 API 调用）
+mode: offline
+
+# ──────────────────────────────────────────────
+# 音频处理
+# ──────────────────────────────────────────────
 audio:
-  sample_rate: 16000
-  channels: 1
-  format: wav
+  sample_rate: 16000        # 采样率（Hz）
+  channels: 1               # 声道数（1=单声道）
   vad:
-    min_silence_sec: 0.4
-    min_chunk_sec: 1.0
-    max_chunk_sec: 30.0
+    sensitivity: normal     # VAD 灵敏度：low(0.3) / normal(0.5) / high(0.7)
+    min_silence_sec: 0.4    # 最小静音时长（秒），低于此值不切分
+    min_chunk_sec: 1.0      # 最小音频段时长（秒），低于此值丢弃
+    max_chunk_sec: 30.0     # 最大音频段时长（秒），超过此值强制切分
 
+# ──────────────────────────────────────────────
+# 语音识别（ASR）
+# ──────────────────────────────────────────────
 asr:
-  backend: mlx-qwen-asr
-  hotwords: []
-  batch_size: 4
+  backend: mlx-qwen-asr     # ASR 后端：mlx-qwen-asr / http-asr
+  model: asr_0.6b           # 模型名称
+  quantization: q8          # 量化精度：q4 / q8 / f16
+  keep_model_alive: false   # 保持模型加载（避免重复加载开销）
+  hotwords: []              # 热词列表（提升识别率）
 
+# ──────────────────────────────────────────────
+# 文本清洗
+# ──────────────────────────────────────────────
 clean:
-  backend: ollama:qwen3-coder
-  glossary_path: null
-  style_rules: []
+  backend: ollama:qwen3-coder  # LLM 后端（用于 AI 校对/热词）
+  glossary_path: null          # 术语表 YAML 路径
+  style_rules: []              # 风格规则列表
 
+# ──────────────────────────────────────────────
+# 时间轴对齐
+# ──────────────────────────────────────────────
 align:
-  backend: mlx-qwen-aligner
+  backend: mlx-qwen-aligner   # 对齐后端：mlx-qwen-aligner / mock
+  model: aligner               # 对齐模型名称
+  quantization: q8             # 量化精度：q4 / q8 / f16
+  keep_model_alive: false      # 保持模型加载
+  language: Chinese            # 对齐语言：Chinese / English / Japanese / Korean
+  time_offset_sec: -0.15       # 对齐时间偏移（秒），负值=提前，补偿模型延迟
 
+# ──────────────────────────────────────────────
+# 第三方 API 配置（用于 LLM 增强 / HTTP ASR）
+# ──────────────────────────────────────────────
+remote_api:
+  provider: openai-compatible  # API 提供商类型
+  base_url: ""                 # API 基础 URL（如 https://api.openai.com/v1）
+  api_key_env: SUBTAP_API_KEY  # API Key 环境变量名
+  model: ""                    # API 模型名（如 gpt-4o-mini）
+  timeout_sec: 60              # API 超时时间（秒）
+
+# ──────────────────────────────────────────────
+# 模型管理
+# ──────────────────────────────────────────────
 models:
-  root: models
-  auto_download: false
-  hf_endpoint: https://huggingface.co
-  hf_mirror_endpoint: https://hf-mirror.com
+  root: models                  # 模型存储根目录
+  hf_endpoint: https://huggingface.co    # HuggingFace 端点
+  hf_mirror_endpoint: https://hf-mirror.com  # HuggingFace 镜像端点
 
+# ──────────────────────────────────────────────
+# 工作空间
+# ──────────────────────────────────────────────
 workspace:
-  root: ./work
-  keep_intermediate: true
+  root: ./work                  # 工作目录路径
 
-# LLM 功能配置
-llm_proofread: null   # AI 校对（首次接入向导开启）
-llm_hotword: false    # AI 热词替换（默认关闭）
-translate_to: ""      # AI 翻译（空值表示不翻译）
+# ──────────────────────────────────────────────
+# 输出配置
+# ──────────────────────────────────────────────
+output:
+  generate_report: true         # 生成质量报告（report.md）
+  generate_metrics: true        # 生成性能指标（metrics.json）
+  timestamp: true               # 输出目录带时间戳
+  subtitle_punctuation: false   # 字幕是否带标点符号（默认不带）
+  subtitle_language: zh         # 字幕输出语种：zh / en / ja（影响标点全角/半角）
+  max_chars: 25                 # 每行字幕最大字符数（10-60）
+  min_chars: 10                 # 每行字幕最小字符数（4-30）
+  subtitle_formats:             # 输出字幕格式列表
+    - srt
+  subtitle_stem: final          # 输出文件名前缀（不含扩展名）
+  script_path: null             # 文稿文件路径（可选），启用文稿匹配
+  script_mode: follow_script    # 文稿匹配模式：follow_script / correct_only
+
+# ──────────────────────────────────────────────
+# 性能指标
+# ──────────────────────────────────────────────
+metrics:
+  output_path: metrics.json     # 指标输出路径
+
+# ──────────────────────────────────────────────
+# 清理策略
+# ──────────────────────────────────────────────
+cleanup:
+  auto_cleanup: true            # 执行完成后自动清理临时文件
+  keep_chunks: false            # 保留 chunk WAV 文件（不推荐，占用大量磁盘）
+
+# ──────────────────────────────────────────────
+# LLM 功能开关
+# ──────────────────────────────────────────────
+llm_proofread: null             # AI 校对开关（null=首次接入向导开启，true/false=强制开关）
+llm_hotword: false              # AI 热词替换开关（默认关闭）
+translate_to: ""                # AI 翻译目标语言（空值表示不翻译，可选：en/ja/zh）
