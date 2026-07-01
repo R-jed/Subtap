@@ -135,6 +135,7 @@ class Pipeline:
             self.config,
             llm_backend_name=llm_backend,
             glossary_path=glossary_path,
+            style_rules=self.config.clean.style_rules or None,
             enhance_mode=enhance_mode,
             hotword_enabled=hotword_enabled,
             hotword_mode=hotword_mode,
