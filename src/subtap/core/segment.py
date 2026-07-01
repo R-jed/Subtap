@@ -29,7 +29,10 @@ def write_sentences(sentences: list[SentenceSegment], output_path: Path) -> None
 
 
 def run_segment(
-    workspace: Workspace, chunk_start: float = 0.0, chunk_end: float = 1.0
+    workspace: Workspace,
+    chunk_start: float = 0.0,
+    chunk_end: float = 1.0,
+    language: str = "zh",
 ) -> dict:
     """Run segment stage: load cleaned → split → sentences.jsonl.
 
@@ -37,6 +40,7 @@ def run_segment(
         workspace: Workspace instance with paths.
         chunk_start: Start time of the source chunk.
         chunk_end: End time of the source chunk.
+        language: Language code ("zh" or "en").
 
     Returns:
         Dict with sentence_count.
@@ -45,7 +49,7 @@ def run_segment(
     if not segments:
         raise ValueError(f"No clean segments found in {workspace.cleaned_jsonl}")
 
-    sentences = segment_clean_segments(segments, chunk_start, chunk_end)
+    sentences = segment_clean_segments(segments, chunk_start, chunk_end, language=language)
     write_sentences(sentences, workspace.sentences_jsonl)
 
     return {"sentence_count": len(sentences)}

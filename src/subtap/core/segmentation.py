@@ -1,50 +1,127 @@
 """Sentence segmentation: CleanSegment → SentenceSegment.
 
-Deterministic rule-based splitter. No LLM, no external deps.
+Uses pySBD for sentence boundary detection and jieba for Chinese word segmentation.
 """
 
 from __future__ import annotations
 
-import re
+import pysbd
+import jieba
 
 from subtap.schemas.models import CleanSegment, SentenceSegment
 
-# Split rules:
-# - CJK punctuation (。！？): always split (no space required)
-# - Latin punctuation (.!?): only split when followed by whitespace or end
-#   This preserves "0.6", "HighLightDiffusion.Filter", abbreviations etc.
-_SENTENCE_RE = re.compile(r"(?<=[。！？])|(?<=[.!?])(?=\s)")
+# Max chars per sentence before forced split at word boundary
+_MAX_CHARS = 60
 
-# Max chars per sentence before forced split
-_MAX_CHARS = 80
+# Min chars for a sentence to be considered valid
+_MIN_CHARS = 5
 
 
-def _split_sentences(text: str) -> list[str]:
-    """Split text into sentences by punctuation + length rules."""
-    parts = _SENTENCE_RE.split(text)
+def _split_sentences(text: str, language: str = "zh") -> list[str]:
+    """Split text into sentences using pySBD + jieba.
+
+    Args:
+        text: Input text to split.
+        language: Language code ("zh" or "en").
+
+    Returns:
+        List of sentence strings.
+    """
+    if not text.strip():
+        return []
+
+    # Step 1: Use pySBD for sentence boundary detection
+    lang = "zh" if language in ("zh", "ja") else "en"
+    segmenter = pysbd.Segmenter(language=lang, clean=False)
+    raw_sentences = segmenter.segment(text)
+
+    # Step 2: Split long sentences at word boundaries using jieba
     sentences: list[str] = []
-    for part in parts:
-        part = part.strip()
-        if not part:
+    for sent in raw_sentences:
+        sent = sent.strip()
+        if not sent:
             continue
-        # Force-split long segments at word boundaries
-        while len(part) > _MAX_CHARS:
-            # Try space first (English)
-            cut = part.rfind(" ", 0, _MAX_CHARS)
-            if cut <= 0:
-                # Try CJK punctuation (，、；：) as break point
-                for punct in "，、；：":
-                    idx = part.rfind(punct, 0, _MAX_CHARS)
-                    if idx > 0:
-                        cut = idx + 1  # keep punctuation with preceding text
-                        break
-            if cut <= 0:
-                cut = _MAX_CHARS
-            sentences.append(part[:cut].strip())
-            part = part[cut:].strip()
-        if part:
-            sentences.append(part)
-    return sentences or [""]
+
+        if len(sent) > _MAX_CHARS:
+            # Split at word boundary
+            parts = _split_at_word_boundary(sent, _MAX_CHARS)
+            sentences.extend(parts)
+        else:
+            sentences.append(sent)
+
+    # Step 3: Merge very short sentences
+    sentences = _merge_short_sentences(sentences, _MIN_CHARS)
+
+    return sentences if sentences else [""]
+
+
+def _split_at_word_boundary(text: str, max_chars: int) -> list[str]:
+    """Split long text at Chinese word boundaries using jieba.
+
+    Args:
+        text: Text to split.
+        max_chars: Maximum characters per segment.
+
+    Returns:
+        List of text segments.
+    """
+    if len(text) <= max_chars:
+        return [text]
+
+    # Use jieba to tokenize
+    words = list(jieba.cut(text))
+
+    parts: list[str] = []
+    current = ""
+
+    for word in words:
+        if len(current) + len(word) > max_chars and current:
+            parts.append(current.strip())
+            current = word
+        else:
+            current += word
+
+    if current.strip():
+        parts.append(current.strip())
+
+    return parts
+
+
+def _merge_short_sentences(sentences: list[str], min_chars: int) -> list[str]:
+    """Merge sentences that are too short.
+
+    Args:
+        sentences: List of sentences.
+        min_chars: Minimum characters for a valid sentence.
+
+    Returns:
+        List of merged sentences.
+    """
+    if not sentences:
+        return []
+
+    merged: list[str] = []
+    buffer = ""
+
+    for sent in sentences:
+        if buffer:
+            # If buffer is still short, merge with current
+            if len(buffer) < min_chars:
+                buffer += sent
+            else:
+                merged.append(buffer)
+                buffer = sent
+        else:
+            buffer = sent
+
+    if buffer:
+        if merged and len(buffer) < min_chars:
+            # Merge last short sentence with previous
+            merged[-1] += buffer
+        else:
+            merged.append(buffer)
+
+    return merged
 
 
 def _allocate_time(
@@ -77,19 +154,17 @@ def segment_clean_segments(
     segments: list[CleanSegment],
     chunk_start: float = 0.0,
     chunk_end: float = 1.0,
+    language: str = "zh",
 ) -> list[SentenceSegment]:
     """Split CleanSegments into SentenceSegments.
 
-    Rules:
-    - Split on 。！？.!? punctuation
-    - Force-split at >80 chars
-    - No cross-chunk merge
-    - Time allocated by character ratio (no regression)
+    Uses pySBD for sentence boundary detection and jieba for word-boundary splitting.
 
     Args:
         segments: CleanSegments from the clean stage.
         chunk_start: Start time of the source chunk.
         chunk_end: End time of the source chunk.
+        language: Language code ("zh" or "en").
     """
     if not segments:
         return []
@@ -102,7 +177,7 @@ def segment_clean_segments(
     sid = 0
 
     for i, seg in enumerate(segments):
-        parts = _split_sentences(seg.cleaned_text)
+        parts = _split_sentences(seg.cleaned_text, language=language)
         seg_start = chunk_start + i * seg_duration
         seg_end = seg_start + seg_duration
 
