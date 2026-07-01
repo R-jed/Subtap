@@ -28,7 +28,7 @@ def _split_sentences(text: str, language: str = "zh") -> list[str]:
         List of sentence strings.
     """
     if not text.strip():
-        return []
+        return [""]
 
     # Step 1: Use pySBD for sentence boundary detection
     lang = "zh" if language in ("zh", "ja") else "en"
