@@ -162,7 +162,7 @@ class Pipeline:
             lang=kwargs.get("lang", "zh"),
         )
     def _stage_segment(
-        self, chunk_start: float = 0.0, chunk_end: float = 1.0, **_
+        self, chunk_start: float | None = None, chunk_end: float | None = None, **_
     ) -> dict:
         from subtap.core.segment import run_segment
 
