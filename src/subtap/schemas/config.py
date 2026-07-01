@@ -12,6 +12,10 @@ from pydantic import BaseModel, Field
 class VADConfig(BaseModel):
     """VAD / silence splitting parameters."""
 
+    # 用户配置：灵敏度（唯一用户可调参数）
+    sensitivity: str = "normal"  # low/normal/high
+
+    # 内部参数（用户无需关心）
     min_silence_sec: float = 0.4
     min_chunk_sec: float = 1.0
     max_chunk_sec: float = 30.0
