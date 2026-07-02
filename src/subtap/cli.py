@@ -685,14 +685,14 @@ def _apply_cli_overrides(
         config.llm_hotword = llm_hotword
 
 
-
-
 @app.command()
 def run(
     input_path: Path = typer.Argument(
         ..., help="输入媒体文件路径（支持 mp3/mp4/wav/mkv 等）"
     ),
-    work_dir: Path | None = typer.Option(None, "-w", "--work-dir", help="工作目录（默认读取配置文件）"),
+    work_dir: Path | None = typer.Option(
+        None, "-w", "--work-dir", help="工作目录（默认读取配置文件）"
+    ),
     output_dir: Path = typer.Option(
         Path("./output"), "-o", "--output-dir", help="输出目录"
     ),
@@ -704,7 +704,10 @@ def run(
     ),
     mode: str = typer.Option("fast", "--mode", "-m", help="执行模式：fast / quality"),
     enhance: str = typer.Option(
-        "local", "--enhance", "-e", help="字幕增强模式：local（默认）/ api（需配置 API Key）"
+        "local",
+        "--enhance",
+        "-e",
+        help="字幕增强模式：local（默认）/ api（需配置 API Key）",
     ),
     local_only: bool = typer.Option(
         False, "--local-only", help="仅本地运行，禁止所有外部 API 调用"
@@ -724,10 +727,18 @@ def run(
         None, "--subtitle-language", help="字幕输出语种（zh/en/ja），默认读取配置文件"
     ),
     max_chars: int | None = typer.Option(
-        None, "--max-chars", help="每行字幕最大字符数（10-60），默认读取配置文件", min=10, max=60
+        None,
+        "--max-chars",
+        help="每行字幕最大字符数（10-60），默认读取配置文件",
+        min=10,
+        max=60,
     ),
     min_chars: int | None = typer.Option(
-        None, "--min-chars", help="每行字幕最小字符数（4-30），默认读取配置文件", min=4, max=30
+        None,
+        "--min-chars",
+        help="每行字幕最小字符数（4-30），默认读取配置文件",
+        min=4,
+        max=30,
     ),
     no_git_check: bool = typer.Option(
         False, "--no-git-check", help="跳过 Git 状态检查"
@@ -736,7 +747,9 @@ def run(
         False, "--no-cleanroom", help="跳过工作环境卫生检查"
     ),
     timestamp: bool | None = typer.Option(
-        None, "--timestamp/--no-timestamp", help="输出目录是否带时间戳（默认读取配置文件）"
+        None,
+        "--timestamp/--no-timestamp",
+        help="输出目录是否带时间戳（默认读取配置文件）",
     ),
     # TODO: 文稿匹配功能暂搁置，待LLM方案成熟后重新实现
     # 当前实现使用rapidfuzz相似度匹配，对于品牌名、数字格式等差异较大的文本纠错能力有限
@@ -967,9 +980,7 @@ def run(
     )
     if config.output.generate_metrics:
         output_dir.mkdir(parents=True, exist_ok=True)
-        metrics_payload = performance_metrics | {
-            "output_contract": "final"
-        }
+        metrics_payload = performance_metrics | {"output_contract": "final"}
         metrics_path = work_dir / config.metrics.output_path
         metrics_path.write_text(
             json.dumps(metrics_payload, indent=2, ensure_ascii=False),

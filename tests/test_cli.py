@@ -382,9 +382,13 @@ def test_run_full_pipeline_with_align(tmp_path, monkeypatch):
     config = SimpleNamespace(
         mode="online",
         output=SimpleNamespace(
-            timestamp=True, generate_metrics=True,
-            subtitle_punctuation=False, subtitle_language="zh",
-            max_chars=25, min_chars=10, subtitle_formats=["srt"],
+            timestamp=True,
+            generate_metrics=True,
+            subtitle_punctuation=False,
+            subtitle_language="zh",
+            max_chars=25,
+            min_chars=10,
+            subtitle_formats=["srt"],
             subtitle_stem="output",
         ),
         metrics=SimpleNamespace(output_path="metrics.json"),
@@ -479,9 +483,13 @@ def test_run_enhance_local_passes_clean_local_to_pipeline(tmp_path, monkeypatch)
     config = SimpleNamespace(
         mode="online",
         output=SimpleNamespace(
-            timestamp=True, generate_metrics=True,
-            subtitle_punctuation=False, subtitle_language="zh",
-            max_chars=25, min_chars=10, subtitle_formats=["srt"],
+            timestamp=True,
+            generate_metrics=True,
+            subtitle_punctuation=False,
+            subtitle_language="zh",
+            max_chars=25,
+            min_chars=10,
+            subtitle_formats=["srt"],
             subtitle_stem="output",
         ),
         metrics=SimpleNamespace(output_path="metrics.json"),
@@ -552,8 +560,6 @@ def test_observe_command_prints_event_log_status(tmp_path):
     assert "当前阶段：align" in clean
     assert "进度：80%" in clean
     assert "已对齐：1" in clean
-
-
 
 
 def test_run_mode_fast():
@@ -1132,5 +1138,3 @@ def test_apply_cli_overrides_preserves_when_none():
 
     assert config.llm_proofread is True
     assert config.llm_hotword is True
-
-

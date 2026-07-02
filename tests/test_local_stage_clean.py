@@ -48,7 +48,13 @@ class TestLocalClean:
 
         # 写入测试 ASR 数据
         segments = [
-            {"chunk_id": 0, "segment_id": 0, "start_sec": 0.0, "end_sec": 1.0, "text": "测试文本"}
+            {
+                "chunk_id": 0,
+                "segment_id": 0,
+                "start_sec": 0.0,
+                "end_sec": 1.0,
+                "text": "测试文本",
+            }
         ]
         with open(workspace.asr_jsonl, "w") as f:
             for seg in segments:

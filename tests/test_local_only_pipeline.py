@@ -23,9 +23,12 @@ class TestLocalOnlyPipeline:
         mock_asr = MagicMock()
         mock_asr.transcribe.return_value = [
             ASRSegment(
-                chunk_id=0, segment_id=0,
-                start_sec=0.0, end_sec=1.5,
-                text="测试文本第一句", confidence=0.95,
+                chunk_id=0,
+                segment_id=0,
+                start_sec=0.0,
+                end_sec=1.5,
+                text="测试文本第一句",
+                confidence=0.95,
             ),
         ]
         mock_asr.release_model = MagicMock()
@@ -34,7 +37,8 @@ class TestLocalOnlyPipeline:
         mock_align.align.return_value = [
             AlignedSegment(
                 sentence_id=0,
-                start_sec=0.0, end_sec=1.5,
+                start_sec=0.0,
+                end_sec=1.5,
                 text="测试文本第一句",
                 words=[{"word": "测试文本第一句", "start_sec": 0.0, "end_sec": 1.5}],
             ),
@@ -44,8 +48,10 @@ class TestLocalOnlyPipeline:
         pipeline = Pipeline(local_config, workspace.root)
 
         # 执行流水线
-        with patch("subtap.core.asr.get_backend", return_value=mock_asr), \
-             patch("subtap.core.align.get_aligner_backend", return_value=mock_align):
+        with (
+            patch("subtap.core.asr.get_backend", return_value=mock_asr),
+            patch("subtap.core.align.get_aligner_backend", return_value=mock_align),
+        ):
 
             # prepare
             pipeline.run_stage("prepare", input_path=sample_audio)
@@ -103,8 +109,10 @@ class TestLocalOnlyPipeline:
 
         pipeline = Pipeline(local_config, workspace.root, event_bus=event_bus)
 
-        with patch("subtap.core.asr.get_backend") as mock_asr_cls, \
-             patch("subtap.core.align.get_aligner_backend") as mock_align_cls:
+        with (
+            patch("subtap.core.asr.get_backend") as mock_asr_cls,
+            patch("subtap.core.align.get_aligner_backend") as mock_align_cls,
+        ):
 
             mock_asr = MagicMock()
             mock_asr.transcribe.return_value = []

@@ -11,7 +11,6 @@ from subtap.schemas.config import SubtapConfig
 from subtap.schemas.glossary import Glossary, GlossaryTerm
 from subtap.schemas.models import AlignedSegment, ASRSegment
 
-
 # ── Helpers ──
 
 
@@ -123,9 +122,7 @@ def test_full_pipeline_with_llm_hotword(tmp_path):
     config.translate_to = ""
 
     mock_llm = MockLLMBackend()
-    mock_glossary = Glossary(
-        terms=[GlossaryTerm(canonical="test", aliases=["Test"])]
-    )
+    mock_glossary = Glossary(terms=[GlossaryTerm(canonical="test", aliases=["Test"])])
 
     with pytest.MonkeyPatch.context() as m:
         m.setattr("subtap.core.clean.get_llm_backend", lambda *a, **k: mock_llm)
@@ -164,9 +161,7 @@ def test_full_pipeline_with_both_llm_features(tmp_path):
     config.translate_to = ""
 
     mock_llm = MockLLMBackend()
-    mock_glossary = Glossary(
-        terms=[GlossaryTerm(canonical="test", aliases=["Test"])]
-    )
+    mock_glossary = Glossary(terms=[GlossaryTerm(canonical="test", aliases=["Test"])])
 
     with pytest.MonkeyPatch.context() as m:
         m.setattr("subtap.core.clean.get_llm_backend", lambda *a, **k: mock_llm)

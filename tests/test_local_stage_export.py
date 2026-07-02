@@ -14,8 +14,20 @@ class TestLocalExport:
 
         # 写入测试 aligned 数据
         segments = [
-            {"sentence_id": 0, "start_sec": 0.0, "end_sec": 1.5, "text": "测试文本第一句", "words": []},
-            {"sentence_id": 1, "start_sec": 1.5, "end_sec": 3.0, "text": "测试文本第二句", "words": []},
+            {
+                "sentence_id": 0,
+                "start_sec": 0.0,
+                "end_sec": 1.5,
+                "text": "测试文本第一句",
+                "words": [],
+            },
+            {
+                "sentence_id": 1,
+                "start_sec": 1.5,
+                "end_sec": 3.0,
+                "text": "测试文本第二句",
+                "words": [],
+            },
         ]
         with open(workspace.aligned_jsonl, "w") as f:
             for seg in segments:
@@ -48,7 +60,13 @@ class TestLocalExport:
         from subtap.core.export import run_export
 
         segments = [
-            {"sentence_id": 0, "start_sec": 0.0, "end_sec": 1.5, "text": "测试文本", "words": []},
+            {
+                "sentence_id": 0,
+                "start_sec": 0.0,
+                "end_sec": 1.5,
+                "text": "测试文本",
+                "words": [],
+            },
         ]
         with open(workspace.aligned_jsonl, "w") as f:
             for seg in segments:
@@ -75,7 +93,13 @@ class TestLocalExport:
         from subtap.core.export import run_export
 
         segments = [
-            {"sentence_id": 0, "start_sec": 0.0, "end_sec": 1.5, "text": "测试文本", "words": []},
+            {
+                "sentence_id": 0,
+                "start_sec": 0.0,
+                "end_sec": 1.5,
+                "text": "测试文本",
+                "words": [],
+            },
         ]
         with open(workspace.aligned_jsonl, "w") as f:
             for seg in segments:

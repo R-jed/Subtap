@@ -73,6 +73,7 @@ def run_segment(
 
         # Group segments by source_chunk_id
         from collections import defaultdict
+
         segments_by_chunk: dict[int, list[CleanSegment]] = defaultdict(list)
         for seg in segments:
             segments_by_chunk[seg.source_chunk_id].append(seg)
@@ -83,7 +84,9 @@ def run_segment(
             if chunk_id not in chunk_boundaries:
                 raise ValueError(f"Chunk {chunk_id} not found in chunks.jsonl")
             c_start, c_end = chunk_boundaries[chunk_id]
-            chunk_sentences = segment_clean_segments(chunk_segs, c_start, c_end, language=language)
+            chunk_sentences = segment_clean_segments(
+                chunk_segs, c_start, c_end, language=language
+            )
             all_sentences.extend(chunk_sentences)
 
         # Re-assign globally unique sentence_ids
@@ -94,6 +97,8 @@ def run_segment(
         return {"sentence_count": len(all_sentences)}
     else:
         # Use provided boundaries (for backward compatibility)
-        sentences = segment_clean_segments(segments, chunk_start, chunk_end, language=language)
+        sentences = segment_clean_segments(
+            segments, chunk_start, chunk_end, language=language
+        )
         write_sentences(sentences, workspace.sentences_jsonl)
         return {"sentence_count": len(sentences)}

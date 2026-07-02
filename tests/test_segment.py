@@ -92,6 +92,7 @@ def _make_cleaned_jsonl(ws: Workspace, texts: list[str]) -> None:
             f.write(seg.model_dump_json() + "\n")
     # Create a minimal chunks.jsonl so run_segment can load boundaries
     from subtap.schemas.models import Chunk
+
     chunk = Chunk(chunk_id=0, start_sec=0.0, end_sec=60.0, path="chunks/chunk_000.wav")
     with open(ws.chunks_jsonl, "w") as f:
         f.write(chunk.model_dump_json() + "\n")

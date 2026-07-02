@@ -189,7 +189,9 @@ replacements:
     original_get = clean_module.get_llm_backend
     clean_module.get_llm_backend = lambda cfg, remote_api=None: None  # type: ignore
     try:
-        result = run_clean(ws, test_config, glossary_path=str(glossary_yaml), enhance_mode="local")
+        result = run_clean(
+            ws, test_config, glossary_path=str(glossary_yaml), enhance_mode="local"
+        )
     finally:
         clean_module.get_llm_backend = original_get
 
@@ -270,7 +272,9 @@ def test_segments_for_llm_uses_global_index(test_config: SubtapConfig, tmp_path:
     assert result[2]["t"] == "clean2"
 
 
-def test_apply_text_updates_uses_global_index(test_config: SubtapConfig, tmp_path: Path):
+def test_apply_text_updates_uses_global_index(
+    test_config: SubtapConfig, tmp_path: Path
+):
     """_apply_text_updates 应该使用全局索引来更新 segment。"""
     from subtap.core.clean import _apply_text_updates
 
@@ -421,7 +425,9 @@ def test_cli_clean_runnable(test_config: SubtapConfig, tmp_path: Path, monkeypat
     # Patch
     import subtap.core.clean as clean_module
 
-    monkeypatch.setattr(clean_module, "get_llm_backend", lambda cfg, remote_api=None: None)
+    monkeypatch.setattr(
+        clean_module, "get_llm_backend", lambda cfg, remote_api=None: None
+    )
     import subtap.schemas.config as cfg_mod
 
     monkeypatch.setattr(cfg_mod, "load_config", lambda p: test_config)
@@ -483,12 +489,12 @@ def test_run_clean_uses_llm_hotword_config(workspace):
     mock_llm = MockLLMBackend()
 
     # 创建 glossary 以提供 hotword_payload
-    mock_glossary = Glossary(
-        terms=[GlossaryTerm(canonical="test", aliases=["Test"])]
-    )
+    mock_glossary = Glossary(terms=[GlossaryTerm(canonical="test", aliases=["Test"])])
 
-    with patch("subtap.core.clean.get_llm_backend", return_value=mock_llm), \
-         patch("subtap.core.clean.load_glossary", return_value=mock_glossary):
+    with (
+        patch("subtap.core.clean.get_llm_backend", return_value=mock_llm),
+        patch("subtap.core.clean.load_glossary", return_value=mock_glossary),
+    ):
         result = run_clean(workspace, config)
 
     # 验证 LLM 校对未被调用（因为 llm_proofread=False）
@@ -524,12 +530,12 @@ def test_run_clean_both_enabled(workspace):
     mock_llm = MockLLMBackend()
 
     # 创建 glossary 以提供 hotword_payload
-    mock_glossary = Glossary(
-        terms=[GlossaryTerm(canonical="test", aliases=["Test"])]
-    )
+    mock_glossary = Glossary(terms=[GlossaryTerm(canonical="test", aliases=["Test"])])
 
-    with patch("subtap.core.clean.get_llm_backend", return_value=mock_llm), \
-         patch("subtap.core.clean.load_glossary", return_value=mock_glossary):
+    with (
+        patch("subtap.core.clean.get_llm_backend", return_value=mock_llm),
+        patch("subtap.core.clean.load_glossary", return_value=mock_glossary),
+    ):
         result = run_clean(workspace, config)
 
     # 验证两个功能都被调用
