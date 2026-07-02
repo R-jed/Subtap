@@ -122,8 +122,6 @@ class Pipeline:
         llm_backend: str | None = None,
         glossary_path: str | None = None,
         enhance_mode: str | None = None,
-        hotword_enabled: bool = True,
-        hotword_mode: str = "local",
         hotword_lang: str = "zh",
         hotword_glossary_dir: str | None = None,
         **_,
@@ -137,9 +135,6 @@ class Pipeline:
             glossary_path=glossary_path,
             style_rules=self.config.clean.style_rules or None,
             enhance_mode=enhance_mode,
-            hotword_enabled=hotword_enabled,
-            hotword_mode=hotword_mode,
-            hotword_lang=hotword_lang,
             hotword_glossary_dir=hotword_glossary_dir,
         )
         self._publish_event(

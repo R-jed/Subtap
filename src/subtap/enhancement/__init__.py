@@ -1,4 +1,4 @@
-"""Enhancement module: off / local / api subtitle text enhancement."""
+"""Enhancement module: local / api subtitle text enhancement."""
 
 from __future__ import annotations
 

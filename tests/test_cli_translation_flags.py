@@ -37,7 +37,7 @@ def test_translate_to_shows_external_api_warning(tmp_path, monkeypatch):
     config = SimpleNamespace(
         mode="online",
         output=SimpleNamespace(
-            timestamp=True, generate_report=True, generate_metrics=True,
+            timestamp=True, generate_metrics=True,
             subtitle_punctuation=False, subtitle_language="zh",
             max_chars=25, min_chars=10, subtitle_stem="output",
         ),

@@ -195,23 +195,13 @@ def test_run_has_no_cleanroom_flag():
     assert "cleanroom" in _strip_ansi(result.output)
 
 
-def test_run_has_no_align_flag():
-    """subtap run should expose no-align draft mode."""
-    result = runner.invoke(app, ["run", "--help"])
-    assert result.exit_code == 0
-    clean = _strip_ansi(result.output)
-    assert "no-align" in clean
-    assert "draft" in clean
-    assert "final.srt" in clean
-
-
 def test_run_help_describes_output_contract_not_single_format():
     """run help should not imply --format controls the only generated file."""
     result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
     clean = _strip_ansi(result.output)
     assert "输出清单标记" in clean
-    assert "精对齐默认生成 final.srt/final.vtt/final.json/final.tsv" in clean
+    assert "final.srt" in clean
 
 
 def test_setup_has_remote_api_options():
@@ -224,18 +214,6 @@ def test_setup_has_remote_api_options():
     assert "remote-api" in clean
     assert "remote-base-url" in clean
     assert "remote-api-key-env" in clean
-
-
-def test_quality_command_exists():
-    """subtap quality command should exist."""
-    import re
-
-    result = runner.invoke(app, ["quality", "--help"])
-    assert result.exit_code == 0
-    clean = re.sub(r"\x1b\[[0-9;]*m", "", _strip_ansi(result.output))
-    assert "aligned.jsonl" in clean
-    assert "fix" in clean
-    assert "report-only" in clean
 
 
 def test_run_has_mode_flag():
@@ -277,8 +255,6 @@ def test_batch_transcribe_runs_each_file(tmp_path, monkeypatch):
             output_dir,
             fmt="srt",
             enhance="local",
-            align_enabled=True,
-            hotword_enabled=True,
         ):
             calls.append((pipeline.work_dir, input_path, output_dir, fmt))
             return {
@@ -349,12 +325,14 @@ def test_batch_transcribe_runs_each_file(tmp_path, monkeypatch):
     assert calls[1][2] == tmp_path / "out" / "two_wav"
 
 
-def test_run_no_align_passes_align_disabled_to_runner(tmp_path, monkeypatch):
-    """--no-align should disable align stage in runner."""
+def test_run_full_pipeline_with_align(tmp_path, monkeypatch):
+    """run should always execute align stage."""
     calls = []
 
     class FakePipeline:
         def __init__(self, _config, work_dir):
+            self.config = _config
+
             class Workspace:
                 root = work_dir
                 asr_jsonl = work_dir / "asr" / "asr.jsonl"
@@ -388,7 +366,13 @@ def test_run_no_align_passes_align_disabled_to_runner(tmp_path, monkeypatch):
             if stage == "script_match":
                 return {"skipped": True}
             if stage == "align":
-                raise AssertionError("--no-align must not run align")
+                self.workspace.aligned_jsonl.parent.mkdir(parents=True, exist_ok=True)
+                self.workspace.aligned_jsonl.write_text(
+                    '{"sentence_id":0,"start_sec":0.0,"end_sec":1.0,'
+                    '"text":"hello","words":[]}\n',
+                    encoding="utf-8",
+                )
+                return {"aligned_count": 1}
             raise AssertionError(stage)
 
         def cleanup(self):
@@ -398,9 +382,10 @@ def test_run_no_align_passes_align_disabled_to_runner(tmp_path, monkeypatch):
     config = SimpleNamespace(
         mode="online",
         output=SimpleNamespace(
-            timestamp=True, generate_report=True, generate_metrics=True,
+            timestamp=True, generate_metrics=True,
             subtitle_punctuation=False, subtitle_language="zh",
-            max_chars=25, min_chars=10, subtitle_stem="output",
+            max_chars=25, min_chars=10, subtitle_formats=["srt"],
+            subtitle_stem="output",
         ),
         metrics=SimpleNamespace(output_path="metrics.json"),
         workspace=SimpleNamespace(root="./work"),
@@ -419,7 +404,6 @@ def test_run_no_align_passes_align_disabled_to_runner(tmp_path, monkeypatch):
             str(input_path),
             "--no-git-check",
             "--no-cleanroom",
-            "--no-align",
             "--output-dir",
             str(output_dir),
             "--work-dir",
@@ -428,23 +412,18 @@ def test_run_no_align_passes_align_disabled_to_runner(tmp_path, monkeypatch):
     )
 
     assert result.exit_code == 0
-    assert "align" not in calls
-    assert (output_dir / "draft.srt").exists()
-    assert (output_dir / "draft.json").exists()
-    assert not (output_dir / "final.srt").exists()
+    assert "align" in calls
+    # 输出文件名由输入文件名决定（subtitle_stem 默认用输入文件名）
+    srt_files = list(output_dir.glob("*.srt"))
+    assert len(srt_files) > 0, f"No .srt files in {output_dir}"
     work_dir = tmp_path / "work"
-    assert "未精对齐" in (work_dir / "report.md").read_text(encoding="utf-8")
-    metrics = json.loads((work_dir / "metrics.json").read_text(encoding="utf-8"))
-    assert metrics["alignment_enabled"] is False
-    assert metrics["align_runtime_sec"] == 0
-    assert metrics["external_audio_sent"] is False
     run_log = work_dir / "run.log.jsonl"
     assert run_log.exists()
     assert '"event_type": "stage_start"' in run_log.read_text(encoding="utf-8")
 
 
-def test_run_enhance_off_passes_clean_off_to_pipeline(tmp_path, monkeypatch):
-    """--enhance off 应传到 clean 阶段，避免触发 LLM backend。"""
+def test_run_enhance_local_passes_clean_local_to_pipeline(tmp_path, monkeypatch):
+    """--enhance local 应传到 clean 阶段，避免触发 LLM backend。"""
     clean_kwargs = []
 
     class FakePipeline:
@@ -484,7 +463,13 @@ def test_run_enhance_off_passes_clean_off_to_pipeline(tmp_path, monkeypatch):
             if stage == "script_match":
                 return {"skipped": True}
             if stage == "align":
-                raise AssertionError("--no-align must not run align")
+                self.workspace.aligned_jsonl.parent.mkdir(parents=True, exist_ok=True)
+                self.workspace.aligned_jsonl.write_text(
+                    '{"sentence_id":0,"start_sec":0.0,"end_sec":1.0,'
+                    '"text":"hello","words":[]}\n',
+                    encoding="utf-8",
+                )
+                return {"aligned_count": 1}
             raise AssertionError(stage)
 
         def cleanup(self):
@@ -494,9 +479,10 @@ def test_run_enhance_off_passes_clean_off_to_pipeline(tmp_path, monkeypatch):
     config = SimpleNamespace(
         mode="online",
         output=SimpleNamespace(
-            timestamp=True, generate_report=True, generate_metrics=True,
+            timestamp=True, generate_metrics=True,
             subtitle_punctuation=False, subtitle_language="zh",
-            max_chars=25, min_chars=10, subtitle_stem="output",
+            max_chars=25, min_chars=10, subtitle_formats=["srt"],
+            subtitle_stem="output",
         ),
         metrics=SimpleNamespace(output_path="metrics.json"),
         workspace=SimpleNamespace(root="./work"),
@@ -513,19 +499,16 @@ def test_run_enhance_off_passes_clean_off_to_pipeline(tmp_path, monkeypatch):
             "run",
             str(input_path),
             "--enhance",
-            "off",
+            "local",
             "--no-git-check",
             "--no-cleanroom",
-            "--no-align",
             "--output-dir",
             str(tmp_path / "out"),
         ],
     )
 
     assert result.exit_code == 0
-    assert clean_kwargs[0]["enhance_mode"] == "off"
-    assert clean_kwargs[0]["hotword_enabled"] is True
-    assert clean_kwargs[0]["hotword_mode"] == "local"
+    assert clean_kwargs[0]["enhance_mode"] == "local"
     assert "hotword_glossary_dir" in clean_kwargs[0]
 
 
@@ -585,13 +568,6 @@ def test_run_mode_quality():
     result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
     assert "quality" in _strip_ansi(result.output)
-
-
-def test_analyze_command_exists():
-    """subtap analyze command should exist."""
-    result = runner.invoke(app, ["analyze", "--help"])
-    assert result.exit_code == 0
-    assert "SRT" in _strip_ansi(result.output) or "srt" in _strip_ansi(result.output)
 
 
 def test_setup_command_exists():

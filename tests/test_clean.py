@@ -189,7 +189,7 @@ replacements:
     original_get = clean_module.get_llm_backend
     clean_module.get_llm_backend = lambda cfg, remote_api=None: None  # type: ignore
     try:
-        result = run_clean(ws, test_config, glossary_path=str(glossary_yaml), enhance_mode="off")
+        result = run_clean(ws, test_config, glossary_path=str(glossary_yaml), enhance_mode="local")
     finally:
         clean_module.get_llm_backend = original_get
 
@@ -203,10 +203,10 @@ replacements:
     assert "maching learning→machine learning" in segs[0].glossary_applied
 
 
-def test_clean_llm_backend_off_does_not_call_llm(
+def test_clean_local_mode_does_not_call_llm(
     test_config: SubtapConfig, tmp_path: Path, monkeypatch
 ):
-    """增强关闭时，clean 阶段只做本地清洗，不触发 LLM 后端。"""
+    """local 模式下，clean 阶段只做本地清洗，不触发 LLM 后端。"""
     ws = Workspace(test_config, base_dir=tmp_path / "work")
     ws.ensure_dirs()
     _make_asr_jsonl(ws, ["hello  world"])
@@ -214,11 +214,11 @@ def test_clean_llm_backend_off_does_not_call_llm(
 
     def fail_if_called(*_args, **_kwargs):
         called["count"] += 1
-        raise AssertionError("LLM backend must not be called when enhancement is off")
+        raise AssertionError("LLM backend must not be called in local mode")
 
     monkeypatch.setattr("subtap.core.clean.get_llm_backend", fail_if_called)
 
-    result = run_clean(ws, test_config, llm_backend_name="off")
+    result = run_clean(ws, test_config, enhance_mode="local")
 
     assert result["segment_count"] == 1
     assert called["count"] == 0
@@ -324,7 +324,7 @@ def test_clean_jsonl_valid_schema(test_config: SubtapConfig, tmp_path: Path):
     original_get = clean_module.get_llm_backend
     clean_module.get_llm_backend = lambda cfg, remote_api=None: None  # type: ignore
     try:
-        run_clean(ws, test_config, enhance_mode="off")
+        run_clean(ws, test_config, enhance_mode="local")
     finally:
         clean_module.get_llm_backend = original_get
 
@@ -350,7 +350,7 @@ def test_clean_stage_in_pipeline(test_config: SubtapConfig, tmp_path: Path):
     clean_module.get_llm_backend = lambda cfg, remote_api=None: None  # type: ignore
     try:
         pipeline = Pipeline(test_config, work_dir=tmp_path / "work")
-        result = pipeline.run_stage("clean", enhance_mode="off")
+        result = pipeline.run_stage("clean", enhance_mode="local")
     finally:
         clean_module.get_llm_backend = original_get
 
@@ -538,8 +538,8 @@ def test_run_clean_both_enabled(workspace):
     assert mock_llm.replace_hotwords_called is True
 
 
-def test_run_clean_enhance_mode_off_overrides_config(workspace):
-    """enhance_mode='off' 应覆盖独立配置项，禁用所有 LLM 功能"""
+def test_run_clean_enhance_mode_local_overrides_config(workspace):
+    """enhance_mode='local' 应覆盖独立配置项，禁用所有 LLM 功能"""
     config = SubtapConfig()
     config.llm_proofread = True
     config.llm_hotword = True
@@ -547,16 +547,16 @@ def test_run_clean_enhance_mode_off_overrides_config(workspace):
     mock_llm = MockLLMBackend()
 
     with patch("subtap.core.clean.get_llm_backend", return_value=mock_llm):
-        result = run_clean(workspace, config, enhance_mode="off")
+        result = run_clean(workspace, config, enhance_mode="local")
 
-    # enhance_mode="off" 应该禁用所有 LLM 功能
+    # enhance_mode="local" 应该禁用所有 LLM 功能
     assert mock_llm.select_suspicious_segments_called is False
     assert mock_llm.repair_segments_called is False
     assert mock_llm.replace_hotwords_called is False
 
 
-def test_run_clean_llm_backend_name_off_overrides_config(workspace):
-    """llm_backend_name='off' 应覆盖独立配置项，禁用所有 LLM 功能"""
+def test_run_clean_llm_backend_name_local_overrides_config(workspace):
+    """llm_backend_name='local' 应覆盖独立配置项，禁用所有 LLM 功能"""
     config = SubtapConfig()
     config.llm_proofread = True
     config.llm_hotword = True
@@ -564,9 +564,9 @@ def test_run_clean_llm_backend_name_off_overrides_config(workspace):
     mock_llm = MockLLMBackend()
 
     with patch("subtap.core.clean.get_llm_backend", return_value=mock_llm):
-        result = run_clean(workspace, config, llm_backend_name="off")
+        result = run_clean(workspace, config, enhance_mode="local")
 
-    # llm_backend_name="off" 应该禁用所有 LLM 功能
+    # enhance_mode="local" 应该禁用所有 LLM 功能
     assert mock_llm.select_suspicious_segments_called is False
     assert mock_llm.repair_segments_called is False
     assert mock_llm.replace_hotwords_called is False

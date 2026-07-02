@@ -74,41 +74,22 @@ def test_enhance_local_does_not_request_llm(tmp_path, monkeypatch):
     monkeypatch.setattr("subtap.core.clean.get_llm_backend", fail_get_backend)
 
     result = run_clean(
-        workspace, SubtapConfig(), enhance_mode="local", hotword_enabled=False
+        workspace, SubtapConfig(), enhance_mode="local"
     )
 
     assert result["segment_count"] == 2
     assert len(_cleaned_texts(workspace)) == 2
 
 
-def test_legacy_llm_backend_off_disables_enhancement(tmp_path, monkeypatch):
-    workspace = _workspace(tmp_path)
-
-    class FailHotwordEngine:
-        def __init__(self, *_args, **_kwargs):
-            raise AssertionError("llm_backend_name=off 不应进入 local 热词")
-
-    monkeypatch.setattr("subtap.glossary.engine.HotwordEngine", FailHotwordEngine)
-
-    result = run_clean(workspace, SubtapConfig(), llm_backend_name="off")
-
-    assert result["segment_count"] == 2
-
-
-def test_legacy_llm_backend_off_overrides_api_mode(tmp_path, monkeypatch):
+def test_enhance_mode_local_disables_llm(tmp_path, monkeypatch):
     workspace = _workspace(tmp_path)
 
     def fail_get_backend(*_args, **_kwargs):
-        raise AssertionError("llm_backend_name=off 不应创建 LLM")
+        raise AssertionError("local 模式不应创建 LLM")
 
     monkeypatch.setattr("subtap.core.clean.get_llm_backend", fail_get_backend)
 
-    result = run_clean(
-        workspace,
-        SubtapConfig(),
-        llm_backend_name="off",
-        enhance_mode="api",
-    )
+    result = run_clean(workspace, SubtapConfig(), enhance_mode="local")
 
     assert result["segment_count"] == 2
 
@@ -126,7 +107,7 @@ def test_enhance_local_ignores_user_home_hotwords_without_explicit_dir(
     monkeypatch.setenv("HOME", str(home))
     workspace = _workspace(tmp_path, ["New York"])
 
-    run_clean(workspace, SubtapConfig(), enhance_mode="local", hotword_enabled=True)
+    run_clean(workspace, SubtapConfig(), enhance_mode="local")
 
     payload = workspace.cleaned_jsonl.read_text(encoding="utf-8")
     assert "New York" in payload
@@ -146,7 +127,6 @@ def test_enhance_local_uses_explicit_hotword_glossary_dir(tmp_path):
         workspace,
         SubtapConfig(),
         enhance_mode="local",
-        hotword_enabled=True,
         hotword_glossary_dir=str(glossary_dir),
     )
 
@@ -161,7 +141,7 @@ def test_enhance_api_selects_and_repairs_only_suspicious_segments(
     llm = FakeLLM(suspicious=[1], repairs={1: "理光 GR4"}, hotwords={})
     monkeypatch.setattr("subtap.core.clean.get_llm_backend", lambda *_a, **_k: llm)
 
-    run_clean(workspace, SubtapConfig(), enhance_mode="api", hotword_enabled=False)
+    run_clean(workspace, SubtapConfig(), enhance_mode="api")
 
     assert llm.calls == ["select", "repair", "hotword"]
     payload = workspace.cleaned_jsonl.read_text(encoding="utf-8")
@@ -174,7 +154,7 @@ def test_enhance_api_skips_repair_when_qc_returns_empty(tmp_path, monkeypatch):
     llm = FakeLLM(suspicious=[], repairs={}, hotwords={})
     monkeypatch.setattr("subtap.core.clean.get_llm_backend", lambda *_a, **_k: llm)
 
-    run_clean(workspace, SubtapConfig(), enhance_mode="api", hotword_enabled=False)
+    run_clean(workspace, SubtapConfig(), enhance_mode="api")
 
     assert llm.calls == ["select", "hotword"]
 
@@ -185,7 +165,7 @@ def test_enhance_api_runs_hotwords_when_glossary_empty(tmp_path, monkeypatch):
     llm = FakeLLM(suspicious=[], repairs={}, hotwords={1: "理光 GR4"})
     monkeypatch.setattr("subtap.core.clean.get_llm_backend", lambda *_a, **_k: llm)
 
-    run_clean(workspace, SubtapConfig(), enhance_mode="api", hotword_enabled=True)
+    run_clean(workspace, SubtapConfig(), enhance_mode="api")
 
     assert llm.calls == ["select", "hotword"]
 
@@ -212,7 +192,6 @@ replacements:
         SubtapConfig(),
         glossary_path=str(glossary_path),
         enhance_mode="api",
-        hotword_enabled=True,
     )
 
     assert llm.calls == ["select", "hotword"]
@@ -233,4 +212,4 @@ def test_enhance_api_propagates_llm_errors(tmp_path, monkeypatch):
     )
 
     with pytest.raises(ValueError, match="LLM JSON 非法"):
-        run_clean(workspace, SubtapConfig(), enhance_mode="api", hotword_enabled=False)
+        run_clean(workspace, SubtapConfig(), enhance_mode="api")

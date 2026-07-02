@@ -12,7 +12,6 @@ from subtap.schemas.enhancement import CleanSegment
 class EnhancementMode(enum.Enum):
     """Enhancement modes."""
 
-    OFF = "off"  # No enhancement
     LOCAL = "local"  # Local rules only (glossary, typo, cleanup)
     API = "api"  # LLM API enhancement
 

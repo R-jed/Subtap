@@ -104,7 +104,6 @@ class WorkspaceConfig(BaseModel):
 class OutputConfig(BaseModel):
     """Output system configuration."""
 
-    generate_report: bool = True
     generate_metrics: bool = True
     timestamp: bool = True
     subtitle_punctuation: bool = Field(

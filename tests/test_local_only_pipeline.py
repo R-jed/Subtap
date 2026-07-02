@@ -57,7 +57,7 @@ class TestLocalOnlyPipeline:
             pipeline.run_stage("asr", backend_name="mock-asr")
 
             # clean (本地模式)
-            pipeline.run_stage("clean", enhance_mode="off")
+            pipeline.run_stage("clean", enhance_mode="local")
 
             # segment
             pipeline.run_stage("segment")

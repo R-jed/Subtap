@@ -53,8 +53,8 @@ def test_local_only_allows_enhance_local(tmp_path, monkeypatch):
     assert "local-only 模式下不能使用" not in output
 
 
-def test_local_only_allows_enhance_off(tmp_path, monkeypatch):
-    """--local-only 模式下可以使用 --enhance off。"""
+def test_local_only_allows_enhance_local(tmp_path, monkeypatch):
+    """--local-only 模式下可以使用 --enhance local。"""
     input_file = tmp_path / "test.mp3"
     input_file.write_bytes(b"fake audio")
 
@@ -67,7 +67,7 @@ def test_local_only_allows_enhance_off(tmp_path, monkeypatch):
 
     result = runner.invoke(
         app,
-        ["run", str(input_file), "--local-only", "--enhance", "off"],
+        ["run", str(input_file), "--local-only", "--enhance", "local"],
     )
     output = _strip_ansi(result.output)
     assert "local-only 模式下不能使用" not in output
@@ -103,11 +103,10 @@ def test_default_enhance_is_local():
     assert "local" in help_text
 
 
-def test_enhance_accepts_off_local_api():
-    """--enhance 应接受 off/local/api 三个值。"""
+def test_enhance_accepts_local_api():
+    """--enhance 应接受 local/api 两个值。"""
     result = runner.invoke(app, ["run", "--help"])
     assert result.exit_code == 0
     help_text = _strip_ansi(result.output)
-    assert "off" in help_text
     assert "local" in help_text
     assert "api" in help_text

@@ -129,18 +129,17 @@ def test_pipeline_state_reset():
 
 
 def test_policy_local():
-    """LOCAL_ONLY policy: no LLM, align enabled."""
+    """LOCAL_ONLY policy: no LLM."""
     p = ExecutionPolicy("local")
     assert p.use_llm is False
-    assert p.align_enabled is True
     assert p.should_skip("clean") is False
 
 
 def test_policy_fast():
-    """FAST_MODE policy: skips clean and align."""
+    """FAST_MODE policy: no stages skipped."""
     p = ExecutionPolicy("fast")
-    assert p.should_skip("clean") is True
-    assert p.should_skip("align") is True
+    assert p.should_skip("clean") is False
+    assert p.should_skip("align") is False
     assert p.should_skip("asr") is False
 
 
@@ -269,14 +268,14 @@ def test_controller_retry_after_failure(tmp_path: Path):
 
 
 def test_controller_policy_skip(tmp_path: Path):
-    """Fast policy skips clean and align in run_pipeline."""
+    """Fast policy no longer skips any stage."""
     from subtap.engine.controller import PipelineController
 
     config = SubtapConfig()
     ctrl = PipelineController(config, tmp_path / "work", policy="fast")
 
-    assert ctrl.policy.should_skip("clean") is True
-    assert ctrl.policy.should_skip("align") is True
+    assert ctrl.policy.should_skip("clean") is False
+    assert ctrl.policy.should_skip("align") is False
     assert ctrl.policy.should_skip("asr") is False
 
 

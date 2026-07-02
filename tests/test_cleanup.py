@@ -140,16 +140,14 @@ class TestCleanTempFiles:
     def test_does_not_delete_protected_files(
         self, cleanroom: Cleanroom, tmp_work: Path
     ):
-        """永远不删除 aligned.jsonl、report.md、metrics.json、output/。"""
+        """永远不删除 aligned.jsonl、metrics.json、output/。"""
         aligned = _create_file(tmp_work / "aligned.jsonl")
-        report = _create_file(tmp_work / "report.md")
         metrics = _create_file(tmp_work / "metrics.json")
         output_file = _create_file(tmp_work / "output" / "output.srt")
 
         cleanroom.clean_temp_files()
 
         assert aligned.exists()
-        assert report.exists()
         assert metrics.exists()
         assert output_file.exists()
 
@@ -190,16 +188,14 @@ class TestCleanIntermediateFiles:
 
         assert aligned.exists()
 
-    def test_never_removes_report_and_metrics(
+    def test_never_removes_metrics(
         self, cleanroom: Cleanroom, tmp_work: Path
     ):
-        """永远不删除 report.md 和 metrics.json。"""
-        report = _create_file(tmp_work / "report.md")
+        """永远不删除 metrics.json。"""
         metrics = _create_file(tmp_work / "metrics.json")
 
         cleanroom.clean_intermediate_files()
 
-        assert report.exists()
         assert metrics.exists()
 
     def test_never_removes_output_directory(self, cleanroom: Cleanroom, tmp_work: Path):
@@ -267,14 +263,12 @@ class TestCleanAll:
     def test_never_removes_protected_files(self, cleanroom: Cleanroom, tmp_work: Path):
         """clean_all 永远不删除受保护文件。"""
         aligned = _create_file(tmp_work / "aligned.jsonl")
-        report = _create_file(tmp_work / "report.md")
         metrics = _create_file(tmp_work / "metrics.json")
         output_file = _create_file(tmp_work / "output" / "output.srt")
 
         cleanroom.clean_all()
 
         assert aligned.exists()
-        assert report.exists()
         assert metrics.exists()
         assert output_file.exists()
 
@@ -619,7 +613,6 @@ class TestCLIRunCleanup:
                     str(work_dir),
                     "-o",
                     str(tmp_path / "output"),
-                    "--no-align",
                     "--no-cleanroom",
                     "--no-git-check",
                 ],
@@ -654,7 +647,6 @@ class TestFullIntegration:
         (tmp_path / "cleaned.jsonl").write_text('{"text": "hello"}\n')
         (tmp_path / "sentences.jsonl").write_text('{"text": "hello"}\n')
         (tmp_path / "aligned.jsonl").write_text('{"text": "hello"}\n')
-        (tmp_path / "report.md").write_text("# Report\n")
         (tmp_path / "metrics.json").write_text("{}\n")
 
         # 创建 pipeline
@@ -676,7 +668,6 @@ class TestFullIntegration:
 
         # 验证 L3 输出文件被保留
         assert (tmp_path / "aligned.jsonl").exists()
-        assert (tmp_path / "report.md").exists()
         assert (tmp_path / "metrics.json").exists()
 
     def test_full_cleanup_removes_intermediate(self, tmp_path: Path) -> None:
@@ -764,7 +755,6 @@ class TestCleanCommand:
 
         # 创建包含输出文件的工作区
         (tmp_path / "aligned.jsonl").write_text('{"text": "hello"}\n')
-        (tmp_path / "report.md").write_text("# Report\n")
         (tmp_path / "metrics.json").write_text("{}\n")
 
         output_dir = tmp_path / "output"
@@ -778,6 +768,5 @@ class TestCleanCommand:
 
         # 验证输出文件被保留
         assert (tmp_path / "aligned.jsonl").exists()
-        assert (tmp_path / "report.md").exists()
         assert (tmp_path / "metrics.json").exists()
         assert (output_dir / "test.srt").exists()

@@ -37,6 +37,7 @@ clean:
 # 时间轴对齐
 # ──────────────────────────────────────────────
 align:
+  enabled: true                # 是否启用强制对齐（false 则只生成 draft 粗剪字幕）
   backend: mlx-qwen-aligner   # 对齐后端：mlx-qwen-aligner / mock
   model: aligner               # 对齐模型名称
   quantization: q8             # 量化精度：q4 / q8 / f16
