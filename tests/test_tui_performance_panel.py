@@ -1,5 +1,9 @@
 """Phase 24: TUI performance state."""
 
+import pytest
+
+pytest.importorskip("textual", reason="textual is optional UI dependency")
+
 from subtap.metrics.events import EventBus
 from subtap.metrics.profiler import PipelineProfiler
 from subtap.ui.dashboard import PipelineDashboard
