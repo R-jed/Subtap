@@ -110,5 +110,5 @@ def test_run_translate_rejects_non_openai_backend(tmp_path):
             workspace,
             SubtapConfig(),
             target_language="en",
-            llm_backend_name="ollama:qwen3-coder",
+            llm_backend_name="invalid-backend",
         )

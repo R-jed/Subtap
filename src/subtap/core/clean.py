@@ -162,7 +162,7 @@ def run_clean(
     Args:
         workspace: Workspace instance with paths.
         config: Subtap config.
-        llm_backend_name: Override LLM backend (e.g. "ollama:qwen3-coder"). "off"/"none"/"false" to disable.
+        llm_backend_name: Override LLM backend (e.g. "openai:gpt-4o-mini"). "off"/"none"/"false" to disable.
         glossary_path: Path to glossary YAML file.
         style_rules: Additional style rules for LLM.
         enhance_mode: "off", "local", or "api". Overrides llm_proofread/llm_hotword when set.

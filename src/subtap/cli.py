@@ -692,7 +692,7 @@ def run(
     input_path: Path = typer.Argument(
         ..., help="输入媒体文件路径（支持 mp3/mp4/wav/mkv 等）"
     ),
-    work_dir: Path = typer.Option(Path("./work"), "-w", "--work-dir", help="工作目录"),
+    work_dir: Path | None = typer.Option(None, "-w", "--work-dir", help="工作目录（默认读取配置文件）"),
     output_dir: Path = typer.Option(
         Path("./output"), "-o", "--output-dir", help="输出目录"
     ),
@@ -722,17 +722,17 @@ def run(
         "--align/--no-align",
         help="默认执行精对齐；关闭后不生成 final.srt，只生成 draft 粗剪预览",
     ),
-    punctuation: bool = typer.Option(
-        False, "--punctuation", help="字幕带标点符号（默认不带）"
+    punctuation: bool | None = typer.Option(
+        None, "--punctuation", help="字幕带标点符号（默认读取配置文件）"
     ),
-    subtitle_language: str = typer.Option(
-        "zh", "--subtitle-language", help="字幕输出语种（zh/en/ja），影响标点规范"
+    subtitle_language: str | None = typer.Option(
+        None, "--subtitle-language", help="字幕输出语种（zh/en/ja），默认读取配置文件"
     ),
-    max_chars: int = typer.Option(
-        25, "--max-chars", help="每行字幕最大字符数（10-60）", min=10, max=60
+    max_chars: int | None = typer.Option(
+        None, "--max-chars", help="每行字幕最大字符数（10-60），默认读取配置文件", min=10, max=60
     ),
-    min_chars: int = typer.Option(
-        10, "--min-chars", help="每行字幕最小字符数（4-30）", min=4, max=30
+    min_chars: int | None = typer.Option(
+        None, "--min-chars", help="每行字幕最小字符数（4-30），默认读取配置文件", min=4, max=30
     ),
     no_git_check: bool = typer.Option(
         False, "--no-git-check", help="跳过 Git 状态检查"
@@ -740,8 +740,8 @@ def run(
     no_cleanroom: bool = typer.Option(
         False, "--no-cleanroom", help="跳过工作环境卫生检查"
     ),
-    timestamp: bool = typer.Option(
-        True, "--timestamp/--no-timestamp", help="输出目录是否带时间戳"
+    timestamp: bool | None = typer.Option(
+        None, "--timestamp/--no-timestamp", help="输出目录是否带时间戳（默认读取配置文件）"
     ),
     hotword_enabled: bool = typer.Option(
         True, "--hotword/--no-hotword", help="启用热词替换"
@@ -839,11 +839,17 @@ def run(
     if enhance == "api":
         typer.echo("⚠ 增强模式为 api，字幕文本将发送到外部 LLM API（音频不会发送）")
 
-    config.output.timestamp = timestamp  # CLI overrides config
-    config.output.subtitle_punctuation = punctuation
-    config.output.subtitle_language = subtitle_language
-    config.output.max_chars = max_chars
-    config.output.min_chars = min_chars
+    # CLI overrides config only when explicitly provided (not None)
+    if timestamp is not None:
+        config.output.timestamp = timestamp
+    if punctuation is not None:
+        config.output.subtitle_punctuation = punctuation
+    if subtitle_language is not None:
+        config.output.subtitle_language = subtitle_language
+    if max_chars is not None:
+        config.output.max_chars = max_chars
+    if min_chars is not None:
+        config.output.min_chars = min_chars
     config.output.subtitle_stem = input_path.stem
 
     # Script matching parameters
@@ -854,6 +860,10 @@ def run(
     # Mode-based model override
     if mode == "quality":
         config.asr.model = "asr_1.7b"
+
+    # work_dir: CLI overrides config; if CLI not provided, fall back to config
+    if work_dir is None:
+        work_dir = Path(config.workspace.root)
 
     pipeline = Pipeline(config, work_dir=work_dir)
     pipeline.workspace.ensure_dirs()
@@ -1293,11 +1303,21 @@ def batch_transcribe(
 
     # ── 加载配置 ──────────────────────────────────────────────
     config = load_config(Path.home() / ".subtap" / "config.yaml")
-    config.output.timestamp = True
-    config.output.subtitle_punctuation = punctuation
-    config.output.subtitle_language = subtitle_language
-    config.output.max_chars = max_chars
-    config.output.min_chars = min_chars
+
+    # Config mode → local_only merge
+    if getattr(config, "mode", "online") == "offline":
+        local_only = True
+
+    # CLI overrides config only when explicitly provided
+    config.output.timestamp = True  # batch 模式始终带时间戳
+    if punctuation is not None:
+        config.output.subtitle_punctuation = punctuation
+    if subtitle_language is not None:
+        config.output.subtitle_language = subtitle_language
+    if max_chars is not None:
+        config.output.max_chars = max_chars
+    if min_chars is not None:
+        config.output.min_chars = min_chars
     config.output.subtitle_stem = "batch"
 
     if mode == "quality":
@@ -1441,11 +1461,21 @@ def batch_transcribe(
         try:
             # 配置 Pipeline
             item_config = load_config(Path.home() / ".subtap" / "config.yaml")
-            item_config.output.timestamp = True
-            item_config.output.subtitle_punctuation = punctuation
-            item_config.output.subtitle_language = subtitle_language
-            item_config.output.max_chars = max_chars
-            item_config.output.min_chars = min_chars
+
+            # Config mode → local_only merge
+            if getattr(item_config, "mode", "online") == "offline":
+                local_only = True
+
+            # CLI overrides config only when explicitly provided
+            item_config.output.timestamp = True  # batch 模式始终带时间戳
+            if punctuation is not None:
+                item_config.output.subtitle_punctuation = punctuation
+            if subtitle_language is not None:
+                item_config.output.subtitle_language = subtitle_language
+            if max_chars is not None:
+                item_config.output.max_chars = max_chars
+            if min_chars is not None:
+                item_config.output.min_chars = min_chars
             item_config.output.subtitle_stem = path.stem
 
             if mode == "quality":
@@ -1747,7 +1777,7 @@ def clean(
     asr_path: Path = typer.Argument(..., help="asr.jsonl 路径"),
     work_dir: Path = typer.Option(Path("./work"), "-w", "--work-dir", help="工作目录"),
     llm: str | None = typer.Option(
-        None, "--llm", help="LLM 后端（如 ollama:qwen3-coder）"
+        None, "--llm", help="LLM 后端（如 openai:gpt-4o-mini）"
     ),
     glossary: Path | None = typer.Option(None, "--glossary", help="术语表 YAML 路径"),
     output: Path | None = typer.Option(

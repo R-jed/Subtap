@@ -17,11 +17,10 @@ def test_asr_config_default_local():
     assert config.backend == "mlx-qwen-asr"
 
 
-def test_clean_config_default_local():
-    """Clean 配置默认应为本地 LLM。"""
+def test_clean_config_default_backend():
+    """Clean 配置默认应为 OpenAI 兼容后端。"""
     config = CleanConfig()
-    # 默认后端应是 ollama 或本地 LLM
-    assert "ollama" in config.backend or "local" in config.backend
+    assert config.backend.startswith("openai:")
 
 
 def test_align_config_default_local():

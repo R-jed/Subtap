@@ -13,29 +13,18 @@ if TYPE_CHECKING:
 def get_llm_backend(
     config: CleanConfig, remote_api: RemoteAPIConfig | None = None
 ) -> LLMBackend:
-    """Instantiate an LLM backend by name.
+    """Instantiate an OpenAI-compatible LLM backend.
 
-    Supports formats:
-      - "ollama:<model>"  → OllamaLLM
-      - "openai:<model>"  → OpenAICompatibleLLM
-      - "lmstudio:<model>" → LMStudioLLM (stub)
+    Backend string format: "openai:<model>" (e.g. "openai:gpt-4o-mini").
+    The actual API endpoint is determined by remote_api.base_url.
     """
+    from subtap.backends.llm.openai_compat import OpenAICompatibleLLM
+
     backend_str = config.backend
-
-    if backend_str.startswith("ollama:"):
+    if backend_str.startswith("openai:"):
         model = backend_str.split(":", 1)[1]
-        from subtap.backends.llm.ollama import OllamaLLM
-
-        return OllamaLLM(model=model)
-    elif backend_str.startswith("openai:"):
-        model = backend_str.split(":", 1)[1]
-        from subtap.backends.llm.openai_compat import OpenAICompatibleLLM
-
-        return OpenAICompatibleLLM(model=model, remote_api=remote_api)
-    elif backend_str.startswith("lmstudio:"):
-        model = backend_str.split(":", 1)[1]
-        from subtap.backends.llm.lmstudio import LMStudioLLM
-
-        return LMStudioLLM(model=model)
     else:
-        raise ValueError(f"Unknown LLM backend: {backend_str}")
+        # Fallback: treat the whole string as model name
+        model = backend_str
+
+    return OpenAICompatibleLLM(model=model, remote_api=remote_api)

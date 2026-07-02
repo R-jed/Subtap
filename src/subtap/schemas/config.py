@@ -42,7 +42,7 @@ class ASRConfig(BaseModel):
 class CleanConfig(BaseModel):
     """Text cleaning / LLM backend configuration."""
 
-    backend: str = "ollama:qwen3-coder"
+    backend: str = "openai:gpt-4o-mini"  # 内部固定，用户无需配置；实际模型由 remote_api.model 决定
     glossary_path: str | None = None
     style_rules: list[str] = Field(default_factory=list)
 
