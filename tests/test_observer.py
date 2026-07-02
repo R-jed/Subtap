@@ -51,7 +51,7 @@ def test_observer_dashboard_is_textual_log_reader(tmp_path):
     """观察者 Dashboard 是 Textual App，只读取 run.log.jsonl 状态。"""
     from textual.app import App
 
-    from subtap.ui.observer import ObserverDashboard
+    from subtap.ui.observer import _make_observer_dashboard
 
     log_path = tmp_path / "run.log.jsonl"
     log_path.write_text(
@@ -72,7 +72,7 @@ def test_observer_dashboard_is_textual_log_reader(tmp_path):
         encoding="utf-8",
     )
 
-    dashboard = ObserverDashboard(
+    dashboard = _make_observer_dashboard(
         log_path=log_path,
         process=SimpleNamespace(poll=lambda: None, returncode=None),
     )

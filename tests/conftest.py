@@ -81,5 +81,8 @@ def workspace(local_config: SubtapConfig):
 
 @pytest.fixture
 def sample_audio() -> Path:
-    """使用真实测试素材"""
-    return Path("/Users/qunqing/Downloads/ASR-SRT测试音频/高质量中文语音.mp3")
+    """使用真实测试素材（本地开发环境）"""
+    path = Path("/Users/qunqing/Downloads/ASR-SRT测试音频/高质量中文语音.mp3")
+    if not path.exists():
+        pytest.skip("本地测试素材不存在，跳过集成测试")
+    return path
