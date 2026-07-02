@@ -30,7 +30,6 @@ asr:
 # 文本清洗
 # ──────────────────────────────────────────────
 clean:
-  backend: ollama:qwen3-coder  # LLM 后端（用于 AI 校对/热词）
   glossary_path: null          # 术语表 YAML 路径
   style_rules: []              # 风格规则列表
 
@@ -47,12 +46,25 @@ align:
 
 # ──────────────────────────────────────────────
 # 第三方 API 配置（用于 LLM 增强 / HTTP ASR）
+#
+# 支持所有 OpenAI 兼容格式的 API 服务：
+#   - OpenAI:    https://api.openai.com/v1
+#   - DeepSeek:  https://api.deepseek.com/v1
+#   - Moonshot:  https://api.moonshot.cn/v1
+#   - Ollama:    http://localhost:11434/v1（需启用 OpenAI 兼容模式）
+#   - LMStudio:  http://localhost:1234/v1
+#
+# 配置步骤：
+#   1. 设置 base_url 为你的 API 端点
+#   2. 设置环境变量 SUBTAP_API_KEY（或修改 api_key_env 指向其他变量）
+#   3. 设置 model 为你要使用的模型名
+#   4. 将 mode 改为 online
 # ──────────────────────────────────────────────
 remote_api:
-  provider: openai-compatible  # API 提供商类型
-  base_url: ""                 # API 基础 URL（如 https://api.openai.com/v1）
+  provider: openai-compatible  # API 提供商类型（当前仅支持 openai-compatible）
+  base_url: ""                 # ← 填入 API 基础 URL
   api_key_env: SUBTAP_API_KEY  # API Key 环境变量名
-  model: ""                    # API 模型名（如 gpt-4o-mini）
+  model: ""                    # ← 填入模型名（如 gpt-4o-mini、deepseek-chat）
   timeout_sec: 60              # API 超时时间（秒）
 
 # ──────────────────────────────────────────────
@@ -82,7 +94,7 @@ output:
   min_chars: 10                 # 每行字幕最小字符数（4-30）
   subtitle_formats:             # 输出字幕格式列表
     - srt
-  subtitle_stem: final          # 输出文件名前缀（不含扩展名）
+  subtitle_stem: final          # 输出文件名前缀（不含扩展名）；CLI run 命令会自动覆盖为输入文件名
   script_path: null             # 文稿文件路径（可选），启用文稿匹配
   script_mode: follow_script    # 文稿匹配模式：follow_script / correct_only
 
@@ -100,7 +112,7 @@ cleanup:
   keep_chunks: false            # 保留 chunk WAV 文件（不推荐，占用大量磁盘）
 
 # ──────────────────────────────────────────────
-# LLM 功能开关
+# LLM 功能开关（需先配置 remote_api 并将 mode 改为 online）
 # ──────────────────────────────────────────────
 llm_proofread: null             # AI 校对开关（null=首次接入向导开启，true/false=强制开关）
 llm_hotword: false              # AI 热词替换开关（默认关闭）

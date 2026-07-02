@@ -403,6 +403,7 @@ def test_run_no_align_passes_align_disabled_to_runner(tmp_path, monkeypatch):
             max_chars=25, min_chars=10, subtitle_stem="output",
         ),
         metrics=SimpleNamespace(output_path="metrics.json"),
+        workspace=SimpleNamespace(root="./work"),
     )
     monkeypatch.setattr("subtap.core.pipeline.Pipeline", FakePipeline)
     monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
@@ -498,6 +499,7 @@ def test_run_enhance_off_passes_clean_off_to_pipeline(tmp_path, monkeypatch):
             max_chars=25, min_chars=10, subtitle_stem="output",
         ),
         metrics=SimpleNamespace(output_path="metrics.json"),
+        workspace=SimpleNamespace(root="./work"),
     )
     monkeypatch.setattr("subtap.core.pipeline.Pipeline", FakePipeline)
     monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
