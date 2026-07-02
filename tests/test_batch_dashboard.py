@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+pytest.importorskip("textual", reason="textual is optional UI dependency")
+
 from subtap.batch_dashboard import (
     BatchDashboard,
     BatchItem,

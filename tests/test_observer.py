@@ -5,6 +5,10 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+import pytest
+
+pytest.importorskip("textual", reason="textual is optional UI dependency")
+
 from subtap.ui.observer import summarize_event_log
 
 
