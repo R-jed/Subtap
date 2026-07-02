@@ -44,9 +44,7 @@ def test_batch_transcribe_writes_manifest_and_keeps_failed_items(tmp_path, monke
             fmt="srt",
             enhance="local",
         ):
-            calls.append(
-                (pipeline.work_dir, input_path, output_dir, fmt)
-            )
+            calls.append((pipeline.work_dir, input_path, output_dir, fmt))
             return {"output_dir": str(output_dir), "timings": {"asr": 1.0}}
 
     class FakePipeline:

@@ -35,14 +35,23 @@ class TestLocalAlign:
 
         # 写入测试 sentences 数据
         sentences = [
-            {"sentence_id": 0, "chunk_id": 0, "start_sec": 0.0, "end_sec": 1.5, "text": "测试文本第一句", "source_text": "测试文本第一句"},
+            {
+                "sentence_id": 0,
+                "chunk_id": 0,
+                "start_sec": 0.0,
+                "end_sec": 1.5,
+                "text": "测试文本第一句",
+                "source_text": "测试文本第一句",
+            },
         ]
         with open(workspace.sentences_jsonl, "w") as f:
             for sent in sentences:
                 f.write(json.dumps(sent) + "\n")
 
         # Mock 对齐后端
-        with patch("subtap.core.align.get_aligner_backend", return_value=mock_align_backend):
+        with patch(
+            "subtap.core.align.get_aligner_backend", return_value=mock_align_backend
+        ):
             result = run_align(workspace, local_config)
 
         # 验证输出
@@ -77,7 +86,14 @@ class TestLocalAlign:
         ]
 
         sentences = [
-            {"sentence_id": 0, "chunk_id": 0, "start_sec": 0.0, "end_sec": 1.0, "text": "测试", "source_text": "测试"},
+            {
+                "sentence_id": 0,
+                "chunk_id": 0,
+                "start_sec": 0.0,
+                "end_sec": 1.0,
+                "text": "测试",
+                "source_text": "测试",
+            },
         ]
         with open(workspace.sentences_jsonl, "w") as f:
             for sent in sentences:

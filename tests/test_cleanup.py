@@ -188,9 +188,7 @@ class TestCleanIntermediateFiles:
 
         assert aligned.exists()
 
-    def test_never_removes_metrics(
-        self, cleanroom: Cleanroom, tmp_work: Path
-    ):
+    def test_never_removes_metrics(self, cleanroom: Cleanroom, tmp_work: Path):
         """永远不删除 metrics.json。"""
         metrics = _create_file(tmp_work / "metrics.json")
 

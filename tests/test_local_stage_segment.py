@@ -13,8 +13,18 @@ class TestLocalSegment:
 
         # 写入测试 cleaned 数据
         segments = [
-            {"segment_id": 0, "source_chunk_id": 0, "original_text": "测试", "cleaned_text": "测试文本第一句"},
-            {"segment_id": 1, "source_chunk_id": 0, "original_text": "第二", "cleaned_text": "测试文本第二句"},
+            {
+                "segment_id": 0,
+                "source_chunk_id": 0,
+                "original_text": "测试",
+                "cleaned_text": "测试文本第一句",
+            },
+            {
+                "segment_id": 1,
+                "source_chunk_id": 0,
+                "original_text": "第二",
+                "cleaned_text": "测试文本第二句",
+            },
         ]
         with open(workspace.cleaned_jsonl, "w") as f:
             for seg in segments:
@@ -32,7 +42,12 @@ class TestLocalSegment:
 
         # 写入带时间的测试数据
         segments = [
-            {"segment_id": 0, "source_chunk_id": 0, "original_text": "测试", "cleaned_text": "测试文本"},
+            {
+                "segment_id": 0,
+                "source_chunk_id": 0,
+                "original_text": "测试",
+                "cleaned_text": "测试文本",
+            },
         ]
         with open(workspace.cleaned_jsonl, "w") as f:
             for seg in segments:

@@ -7,7 +7,6 @@ from typer.testing import CliRunner
 
 from subtap.cli import app
 
-
 runner = CliRunner()
 
 
@@ -26,7 +25,9 @@ def test_bilingual_without_translate_to_fails(tmp_path):
     )
 
     assert result.exit_code == 1
-    assert "bilingual" in _strip_ansi(result.output).lower() or "双语" in _strip_ansi(result.output)
+    assert "bilingual" in _strip_ansi(result.output).lower() or "双语" in _strip_ansi(
+        result.output
+    )
 
 
 def test_translate_to_shows_external_api_warning(tmp_path, monkeypatch):
@@ -37,9 +38,13 @@ def test_translate_to_shows_external_api_warning(tmp_path, monkeypatch):
     config = SimpleNamespace(
         mode="online",
         output=SimpleNamespace(
-            timestamp=True, generate_metrics=True,
-            subtitle_punctuation=False, subtitle_language="zh",
-            max_chars=25, min_chars=10, subtitle_stem="output",
+            timestamp=True,
+            generate_metrics=True,
+            subtitle_punctuation=False,
+            subtitle_language="zh",
+            max_chars=25,
+            min_chars=10,
+            subtitle_stem="output",
         ),
         metrics=SimpleNamespace(output_path="metrics.json"),
         translate_to="",
@@ -54,4 +59,6 @@ def test_translate_to_shows_external_api_warning(tmp_path, monkeypatch):
         ["run", str(input_file), "--translate-to", "en", "--enhance", "api"],
     )
 
-    assert "翻译" in _strip_ansi(result.output) or "外部 LLM API" in _strip_ansi(result.output)
+    assert "翻译" in _strip_ansi(result.output) or "外部 LLM API" in _strip_ansi(
+        result.output
+    )

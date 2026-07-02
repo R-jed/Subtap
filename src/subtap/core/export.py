@@ -182,7 +182,9 @@ def _has_latin(s: str) -> bool:
 
 
 def _is_incomplete_word(
-    tail: str, next_start: str, cross_sentence: bool = False,
+    tail: str,
+    next_start: str,
+    cross_sentence: bool = False,
     prev_char: str = "",
 ) -> bool:
     """检查 tail 是否是不完整词，next_start 能否组成完整词
@@ -640,6 +642,7 @@ class BaseExporter(ABC):
 
 class SRTExporter(BaseExporter):
     """SRT subtitle exporter."""
+
     @property
     def extension(self) -> str:
         return "srt"
@@ -937,6 +940,8 @@ def _with_bilingual_text(
             )
         )
     return result
+
+
 def run_final_exports(
     aligned_jsonl: Path,
     output_dir: Path,

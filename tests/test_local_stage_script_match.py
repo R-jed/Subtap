@@ -18,8 +18,22 @@ class TestLocalScriptMatch:
 
         # 创建 ASR 结果
         segments = [
-            {"sentence_id": 0, "chunk_id": 0, "start_sec": 0.0, "end_sec": 1.5, "text": "测试文本第一句", "source_text": "测试文本第一句"},
-            {"sentence_id": 1, "chunk_id": 0, "start_sec": 1.5, "end_sec": 3.0, "text": "测试文本第二句", "source_text": "测试文本第二句"},
+            {
+                "sentence_id": 0,
+                "chunk_id": 0,
+                "start_sec": 0.0,
+                "end_sec": 1.5,
+                "text": "测试文本第一句",
+                "source_text": "测试文本第一句",
+            },
+            {
+                "sentence_id": 1,
+                "chunk_id": 0,
+                "start_sec": 1.5,
+                "end_sec": 3.0,
+                "text": "测试文本第二句",
+                "source_text": "测试文本第二句",
+            },
         ]
 
         result, report = match_from_file(segments, script_path, mode="follow_script")
@@ -44,7 +58,14 @@ class TestLocalScriptMatch:
         script_path.write_text(srt_content)
 
         segments = [
-            {"sentence_id": 0, "chunk_id": 0, "start_sec": 0.0, "end_sec": 1.5, "text": "测试文本第一句", "source_text": "测试文本第一句"},
+            {
+                "sentence_id": 0,
+                "chunk_id": 0,
+                "start_sec": 0.0,
+                "end_sec": 1.5,
+                "text": "测试文本第一句",
+                "source_text": "测试文本第一句",
+            },
         ]
 
         result, report = match_from_file(segments, script_path, mode="follow_script")

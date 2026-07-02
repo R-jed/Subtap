@@ -157,6 +157,7 @@ class Pipeline:
             mode=kwargs.get("mode", "local"),
             lang=kwargs.get("lang", "zh"),
         )
+
     def _stage_segment(
         self, chunk_start: float | None = None, chunk_end: float | None = None, **_
     ) -> dict:

@@ -31,13 +31,9 @@ def test_subtap_config_translate_to_field():
 
 def test_config_load_round_trip():
     """从 YAML 加载配置后字段值正确"""
-    config_data = {
-        'llm_proofread': True,
-        'llm_hotword': True,
-        'translate_to': 'zh'
-    }
+    config_data = {"llm_proofread": True, "llm_hotword": True, "translate_to": "zh"}
 
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         yaml.dump(config_data, f)
         temp_path = f.name
 
@@ -45,6 +41,6 @@ def test_config_load_round_trip():
         config = load_config(Path(temp_path))
         assert config.llm_proofread is True
         assert config.llm_hotword is True
-        assert config.translate_to == 'zh'
+        assert config.translate_to == "zh"
     finally:
         os.unlink(temp_path)

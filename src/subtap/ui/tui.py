@@ -138,14 +138,10 @@ class RichRunner:
                 if translate_to:
                     task = progress.add_task("字幕翻译", total=1)
                     t = time.time()
-                    r = pipeline.run_stage(
-                        "translate", target_language=translate_to
-                    )
+                    r = pipeline.run_stage("translate", target_language=translate_to)
                     self.timings["translate"] = time.time() - t
                     progress.update(task, completed=1)
-                    console.print(
-                        f"  [green]✓[/] 翻译 {r['translated_count']} 条"
-                    )
+                    console.print(f"  [green]✓[/] 翻译 {r['translated_count']} 条")
                 else:
                     self.timings["translate"] = 0.0
 

@@ -49,7 +49,9 @@ def test_translation_uses_repaired_hotword_text_not_raw_asr(tmp_path, monkeypatc
     monkeypatch.setattr("subtap.core.translate.get_llm_backend", lambda *_a, **_k: llm)
 
     run_clean(workspace, config, enhance_mode="api")
-    cleaned = json.loads(workspace.cleaned_jsonl.read_text(encoding="utf-8").splitlines()[0])
+    cleaned = json.loads(
+        workspace.cleaned_jsonl.read_text(encoding="utf-8").splitlines()[0]
+    )
     workspace.aligned_jsonl.write_text(
         AlignedSegment(
             sentence_id=0,

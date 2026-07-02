@@ -93,7 +93,7 @@ def local_clean_text(
 def _capitalize_sentences(text: str) -> str:
     """Capitalize first letter of each sentence."""
     # Split by sentence-ending punctuation
-    sentences = re.split(r'([.!?]+)', text)
+    sentences = re.split(r"([.!?]+)", text)
     result = []
     for i, part in enumerate(sentences):
         if i % 2 == 0:  # Text parts (not punctuation)
@@ -241,7 +241,9 @@ def run_clean(
             suspicious = llm.select_suspicious_segments(llm_segments)
             if suspicious:
                 suspicious_ids = set(suspicious)
-                selected = [item for item in llm_segments if item["i"] in suspicious_ids]
+                selected = [
+                    item for item in llm_segments if item["i"] in suspicious_ids
+                ]
                 _apply_text_updates(replaced, llm.repair_segments(selected))
 
         # AI 热词替换（本地热词为空时，AI 自主发现领域专有名词）

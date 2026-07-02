@@ -42,7 +42,9 @@ class ASRConfig(BaseModel):
 class CleanConfig(BaseModel):
     """Text cleaning / LLM backend configuration."""
 
-    backend: str = "openai:gpt-4o-mini"  # 内部固定，用户无需配置；实际模型由 remote_api.model 决定
+    backend: str = (
+        "openai:gpt-4o-mini"  # 内部固定，用户无需配置；实际模型由 remote_api.model 决定
+    )
     glossary_path: str | None = None
     style_rules: list[str] = Field(default_factory=list)
 
@@ -169,16 +171,11 @@ class SubtapConfig(BaseModel):
 
     # LLM 功能配置
     llm_proofread: bool | None = Field(
-        default=None,
-        description="AI 校对开关（None=未设置，首次接入向导开启）"
+        default=None, description="AI 校对开关（None=未设置，首次接入向导开启）"
     )
-    llm_hotword: bool = Field(
-        default=False,
-        description="AI 热词替换开关（默认关闭）"
-    )
+    llm_hotword: bool = Field(default=False, description="AI 热词替换开关（默认关闭）")
     translate_to: str = Field(
-        default="",
-        description="AI 翻译目标语言（空值表示不翻译）"
+        default="", description="AI 翻译目标语言（空值表示不翻译）"
     )
 
 

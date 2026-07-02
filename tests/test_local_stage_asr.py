@@ -34,7 +34,9 @@ class TestLocalASR:
         ]
         return mock
 
-    def test_asr_writes_jsonl(self, sample_audio, workspace, local_config, mock_asr_backend):
+    def test_asr_writes_jsonl(
+        self, sample_audio, workspace, local_config, mock_asr_backend
+    ):
         """测试 ASR 输出 JSONL 格式"""
         from subtap.core.media import prepare_media
         from subtap.core.vad import split_chunks
@@ -59,7 +61,9 @@ class TestLocalASR:
             seg = json.loads(lines[0])
             assert seg["text"] == "测试文本"
 
-    def test_asr_creates_draft(self, sample_audio, workspace, local_config, mock_asr_backend):
+    def test_asr_creates_draft(
+        self, sample_audio, workspace, local_config, mock_asr_backend
+    ):
         """测试 ASR 草稿文件创建"""
         from subtap.core.media import prepare_media
         from subtap.core.vad import split_chunks

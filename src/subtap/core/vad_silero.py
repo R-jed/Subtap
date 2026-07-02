@@ -14,6 +14,7 @@ from subtap.core.workspace import Workspace
 def load_silero_vad():
     """Load Silero VAD model using silero-vad package."""
     from silero_vad import load_silero_vad as _load
+
     model = _load(onnx=False)
     return model
 
@@ -52,7 +53,7 @@ def detect_speech_segments(
     # Convert to list of [start, end] pairs
     segments = []
     for ts in speech_timestamps:
-        segments.append([ts['start'], ts['end']])
+        segments.append([ts["start"], ts["end"]])
 
     return segments
 
@@ -100,6 +101,7 @@ def split_chunks_silero(
     if not speech_segments:
         # Fallback: treat whole file as one chunk
         import torchaudio
+
         waveform, sample_rate = torchaudio.load(str(workspace.source_audio))
         duration = waveform.shape[1] / sample_rate
         speech_segments = [[0.0, duration]]
@@ -121,12 +123,14 @@ def split_chunks_silero(
     if not final_segments:
         # Fallback: treat whole file as one chunk
         import torchaudio
+
         waveform, sample_rate = torchaudio.load(str(workspace.source_audio))
         duration = waveform.shape[1] / sample_rate
         final_segments = [[0.0, duration]]
 
     # Export individual chunk WAVs and build Chunk list
     from pydub import AudioSegment
+
     audio = AudioSegment.from_wav(workspace.source_audio)
 
     chunks: list[Chunk] = []

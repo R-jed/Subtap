@@ -73,9 +73,7 @@ def test_enhance_local_does_not_request_llm(tmp_path, monkeypatch):
 
     monkeypatch.setattr("subtap.core.clean.get_llm_backend", fail_get_backend)
 
-    result = run_clean(
-        workspace, SubtapConfig(), enhance_mode="local"
-    )
+    result = run_clean(workspace, SubtapConfig(), enhance_mode="local")
 
     assert result["segment_count"] == 2
     assert len(_cleaned_texts(workspace)) == 2
