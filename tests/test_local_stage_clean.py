@@ -58,7 +58,7 @@ class TestLocalClean:
         local_config.llm_proofread = False
         local_config.llm_hotword = False
 
-        result = run_clean(workspace, local_config, enhance_mode="off")
+        result = run_clean(workspace, local_config, enhance_mode="local")
 
         # 验证输出
         assert workspace.cleaned_jsonl.exists()

@@ -51,8 +51,8 @@ def test_local_only_allows_local_enhance(tmp_path, monkeypatch):
     assert "local-only 模式下不能使用" not in output
 
 
-def test_local_only_allows_off_enhance(tmp_path, monkeypatch):
-    """--local-only 模式下可以使用 --enhance off。"""
+def test_local_only_allows_local_enhance(tmp_path, monkeypatch):
+    """--local-only 模式下可以使用 --enhance local。"""
     from types import SimpleNamespace
 
     input_file = tmp_path / "test.mp3"
@@ -66,7 +66,7 @@ def test_local_only_allows_off_enhance(tmp_path, monkeypatch):
 
     result = runner.invoke(
         app,
-        ["run", str(input_file), "--local-only", "--enhance", "off"],
+        ["run", str(input_file), "--local-only", "--enhance", "local"],
     )
     output = _strip_ansi(result.output)
     assert "local-only 模式下不能使用" not in output

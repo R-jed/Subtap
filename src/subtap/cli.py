@@ -704,7 +704,7 @@ def run(
     ),
     mode: str = typer.Option("fast", "--mode", "-m", help="执行模式：fast / quality"),
     enhance: str = typer.Option(
-        "local", "--enhance", "-e", help="字幕增强模式：off / local / api"
+        "local", "--enhance", "-e", help="字幕增强模式：local（默认）/ api（需配置 API Key）"
     ),
     local_only: bool = typer.Option(
         False, "--local-only", help="仅本地运行，禁止所有外部 API 调用"
@@ -716,11 +716,6 @@ def run(
         "off",
         "--bilingual",
         help="双语字幕顺序：off / source-first / target-first",
-    ),
-    align_enabled: bool = typer.Option(
-        True,
-        "--align/--no-align",
-        help="默认执行精对齐；关闭后不生成 final.srt，只生成 draft 粗剪预览",
     ),
     punctuation: bool | None = typer.Option(
         None, "--punctuation", help="字幕带标点符号（默认读取配置文件）"
@@ -742,12 +737,6 @@ def run(
     ),
     timestamp: bool | None = typer.Option(
         None, "--timestamp/--no-timestamp", help="输出目录是否带时间戳（默认读取配置文件）"
-    ),
-    hotword_enabled: bool = typer.Option(
-        True, "--hotword/--no-hotword", help="启用热词替换"
-    ),
-    hotword_mode: str = typer.Option(
-        "local", "--hotword-mode", help="热词模式：local / api / hybrid"
     ),
     # TODO: 文稿匹配功能暂搁置，待LLM方案成熟后重新实现
     # 当前实现使用rapidfuzz相似度匹配，对于品牌名、数字格式等差异较大的文本纠错能力有限
@@ -779,16 +768,13 @@ def run(
       quality  — 高质量模式，使用 1.7B 模型
 
     [bold]增强：[/bold]
-      off      — 关闭字幕增强
-      local    — 本地规则增强（默认）
+      local    — 本地规则增强（默认，始终执行）
       api      — LLM API 增强（需配置 API Key）
 
-    [bold]输出：[/bold] 精对齐默认生成 final.srt/final.vtt/final.json/final.tsv；--no-align 只生成 draft.srt/draft.json
+    [bold]输出：[/bold] final.srt / final.vtt / final.json / final.tsv
 
     [bold]示例：[/bold]
       subtap run video.mp3
-      subtap run video.mp3 --local-only
-      subtap run video.mp3 --enhance off
       subtap run video.mp3 --enhance api
       subtap run video.mp3 --translate-to en
       subtap run input.mp3 --mode quality -o ./subtitles
@@ -813,8 +799,8 @@ def run(
         translate_to = config.translate_to
 
     # ── 参数验证（在 config 回退之后） ───────────────────────
-    if enhance not in ("off", "local", "api"):
-        typer.echo(f"✗ 错误：--enhance 必须是 off/local/api，收到：{enhance}", err=True)
+    if enhance not in ("local", "api"):
+        typer.echo(f"✗ 错误：--enhance 必须是 local/api，收到：{enhance}", err=True)
         raise typer.Exit(1)
 
     if local_only and enhance == "api":
@@ -926,11 +912,8 @@ def run(
                     output_dir,
                     fmt=fmt,
                     enhance=enhance,
-                    align_enabled=align_enabled,
-                    hotword_enabled=hotword_enabled,
                     translate_to=translate_to,
                     bilingual=bilingual,
-                    hotword_mode=hotword_mode,
                 )
         else:
             result = runner.run_pipeline(
@@ -939,11 +922,8 @@ def run(
                 output_dir,
                 fmt=fmt,
                 enhance=enhance,
-                align_enabled=align_enabled,
-                hotword_enabled=hotword_enabled,
                 translate_to=translate_to,
                 bilingual=bilingual,
-                hotword_mode=hotword_mode,
             )
         timings = result.get("timings", {})
     except SystemExit:
@@ -978,115 +958,17 @@ def run(
         timings=timings,
         audio_duration_sec=_audio_duration_sec(work_dir / "media_info.json"),
         chunks_total=_count_jsonl(work_dir / "chunks" / "chunks.jsonl"),
-        subtitles_total=_count_jsonl(
-            work_dir / "aligned.jsonl"
-            if align_enabled
-            else work_dir / "asr" / "asr.jsonl"
-        ),
-        alignment_enabled=align_enabled,
+        subtitles_total=_count_jsonl(work_dir / "aligned.jsonl"),
+        alignment_enabled=True,
         asr_model=getattr(asr_config, "model", "asr_0.6b"),
         aligner_model=getattr(align_config, "model", "aligner"),
         quantization=getattr(asr_config, "quantization", "q8"),
         enhance_mode=enhance,
     )
-    quality_payload: dict[str, Any] = {}
-
-    # ── Generate report and debug output ────────────────────
-    if config.output.generate_report:
-        try:
-            from subtap.quality.scorer import Scorer
-            from subtap.core.report import generate_report
-
-            # Quality assessment
-            aligned_path = work_dir / "aligned.jsonl"
-            if aligned_path.exists():
-                scorer = Scorer(aligned_path)
-                quality_report = scorer.score()
-                quality_payload = {
-                    "quality_score": quality_report.total_score,
-                    "error_count": quality_report.error_count,
-                    "fixable_count": quality_report.fixable_count,
-                }
-
-                # Generate report
-                report_content = generate_report(
-                    quality_score=quality_report.total_score,
-                    error_count=quality_report.error_count,
-                    fixable_count=quality_report.fixable_count,
-                    fixed_count=0,
-                    segment_count=0,
-                    timings=timings,
-                    mode=mode,
-                    input_file=input_path,
-                    output_format=fmt,
-                    performance_metrics=performance_metrics,
-                )
-
-                # Write report
-                output_dir.mkdir(parents=True, exist_ok=True)
-                report_path = work_dir / "report.md"
-                report_path.write_text(report_content, encoding="utf-8")
-                if not json_output:
-                    typer.echo(f"\n▸ 质量报告：{report_path}")
-
-                # Write debug.json
-                debug_data = {
-                    "mode": mode,
-                    "input_file": str(input_path),
-                    "output_format": fmt,
-                    "alignment_enabled": align_enabled,
-                    "quality_score": quality_report.total_score,
-                    "timings": timings,
-                    "error_count": quality_report.error_count,
-                }
-                debug_path = work_dir / "debug.json"
-                debug_path.write_text(
-                    json.dumps(debug_data, indent=2, ensure_ascii=False),
-                    encoding="utf-8",
-                )
-        except Exception as e:
-            # Report generation is optional - don't fail the whole run
-            if not json_output:
-                typer.echo(f"\n⚠ 报告生成失败：{e}", err=True)
-
-    if config.output.generate_report and not align_enabled:
-        from subtap.core.report import format_performance_summary
-
-        output_dir.mkdir(parents=True, exist_ok=True)
-        report_path = work_dir / "report.md"
-        report_path.write_text(
-            "# Subtap 运行报告\n\n"
-            "## 对齐状态\n\n"
-            "未精对齐，仅适合粗剪预览；本次未生成 final.srt。\n\n"
-            f"{format_performance_summary(performance_metrics)}\n"
-            "## 输出\n\n"
-            "- draft.srt\n"
-            "- draft.json\n",
-            encoding="utf-8",
-        )
-        debug_path = output_dir / "debug.json"
-        debug_path.write_text(
-            json.dumps(
-                {
-                    "mode": mode,
-                    "input_file": str(input_path),
-                    "output_format": "draft",
-                    "alignment_enabled": False,
-                    "timings": timings | {"align": 0},
-                    "draft_output": str(output_dir / "draft.srt"),
-                },
-                indent=2,
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
-        if not json_output:
-            typer.echo(f"\n▸ 草稿报告：{report_path}")
-
     if config.output.generate_metrics:
         output_dir.mkdir(parents=True, exist_ok=True)
         metrics_payload = performance_metrics | {
-            "output_contract": "final" if align_enabled else "draft"
+            "output_contract": "final"
         }
         metrics_path = work_dir / config.metrics.output_path
         metrics_path.write_text(
@@ -1095,7 +977,7 @@ def run(
         )
 
     if json_output:
-        output_path = output_dir / ("final.srt" if align_enabled else "draft.srt")
+        output_path = output_dir / "final.srt"
         typer.echo(
             json.dumps(
                 {
@@ -1104,9 +986,7 @@ def run(
                     "work_dir": str(work_dir),
                     "output_dir": str(output_dir),
                     "output_path": str(output_path),
-                    "alignment_enabled": align_enabled,
-                    "report_path": str(work_dir / "report.md"),
-                    "debug_path": str(work_dir / "debug.json"),
+                    "alignment_enabled": True,
                     "timings": timings,
                 },
                 ensure_ascii=False,
@@ -1172,7 +1052,6 @@ def batch_transcribe(
     subtitle_language: str | None = typer.Option(
         None, "--subtitle-language", help="字幕输出语种（zh/en/ja）"
     ),
-    no_align: bool | None = typer.Option(None, "--no-align", help="跳过对齐阶段"),
     concurrency: int = typer.Option(
         1,
         "--concurrency",
@@ -1270,9 +1149,6 @@ def batch_transcribe(
         punctuation = batch_config.punctuation
     if subtitle_language is None:
         subtitle_language = batch_config.subtitle_language
-    if no_align is None:
-        no_align = False
-
     if bilingual != "off" and not translate_to:
         typer.echo("✗ 错误：--bilingual 需要同时使用 --translate-to", err=True)
         raise typer.Exit(1)
@@ -1376,7 +1252,6 @@ def batch_transcribe(
         "punctuation": punctuation,
         "subtitle_language": subtitle_language,
         "concurrency": concurrency,
-        "align_enabled": not no_align,
     }
 
     # ── 初始化中止控制器 ──────────────────────────────────────
@@ -1494,8 +1369,6 @@ def batch_transcribe(
                         path,
                         item_output_dir,
                         enhance=enhance,
-                        align_enabled=not no_align,
-                        hotword_enabled=True,
                     )
             else:
                 meta = runner.run_pipeline(
@@ -1503,8 +1376,6 @@ def batch_transcribe(
                     path,
                     item_output_dir,
                     enhance=enhance,
-                    align_enabled=not no_align,
-                    hotword_enabled=True,
                 )
 
             # 记录成功
@@ -1520,12 +1391,6 @@ def batch_transcribe(
                         "status": "done",
                         "duration": round(timings[stage_name], 2),
                     }
-                elif no_align and stage_name == "align":
-                    item["stages"][stage_name] = {
-                        "status": "skipped",
-                        "reason": "--no-align",
-                    }
-
             if json_writer:
                 json_writer.write_item_complete(
                     index, filename, "succeeded", item["duration"]
@@ -2048,222 +1913,6 @@ def demo(
             typer.echo(f"  ...（共 {len(lines)} 行）")
 
 
-# ── Quality 命令 ────────────────────────────────────────────
-
-
-@app.command()
-def quality(
-    aligned_path: Path = typer.Argument(..., help="aligned.jsonl 路径"),
-    report_only: bool = typer.Option(False, "--report-only", help="只显示报告，不修复"),
-    fix: bool = typer.Option(False, "--fix", help="自动修复可修复的问题"),
-    output: Path | None = typer.Option(None, "-o", "--output", help="修复后的输出路径"),
-) -> None:
-    """评估字幕质量并可选自动修复
-
-    [bold]示例：[/bold]
-      subtap quality work/aligned.jsonl
-      subtap quality work/aligned.jsonl --report-only
-      subtap quality work/aligned.jsonl --fix
-      subtap quality work/aligned.jsonl --fix -o output/fixed.jsonl
-    """
-    from subtap.quality.scorer import Scorer
-    from subtap.quality.error_detector import ErrorDetector
-    from subtap.quality.fixer import Fixer
-
-    if not aligned_path.exists():
-        typer.echo(f"✗ 文件未找到：{aligned_path}", err=True)
-        raise typer.Exit(1)
-
-    # Score
-    scorer = Scorer(aligned_path)
-    report = scorer.score()
-
-    # Display report
-    typer.echo("═══ 字幕质量报告 ═══\n")
-    typer.echo(f"评分：{report.total_score:.0f}/100")
-    typer.echo(f"  对齐误差：      {report.alignment_error:.0f}/100")
-    typer.echo(f"  断句质量：      {report.segmentation_quality:.0f}/100")
-    typer.echo(f"  可读性：        {report.readability:.0f}/100")
-
-    # Detect errors
-    detector = ErrorDetector(aligned_path)
-    errors = detector.detect()
-
-    typer.echo(f"\n错误：{len(errors)} 个（{report.fixable_count} 可修复）")
-    for error in errors:
-        severity_icon = {
-            "critical": typer.style("✗", fg=typer.colors.RED),
-            "warning": typer.style("⚠", fg=typer.colors.YELLOW),
-            "info": typer.style("ℹ", fg=typer.colors.BLUE),
-        }.get(error.severity, "•")
-        typer.echo(
-            f"  {severity_icon} #{error.segment_id} {error.message} → {error.suggestion}"
-        )
-
-    # Fix if requested
-    if fix and not report_only:
-        fixer = Fixer(aligned_path)
-        output_path = output or aligned_path.parent / "fixed_aligned.jsonl"
-        actions = fixer.fix(errors, output_path)
-
-        applied = [a for a in actions if a.applied]
-        if applied:
-            typer.echo(f"\n✓ 已修复 {len(applied)} 个问题 → {output_path}")
-            for action in applied:
-                typer.echo(f"  ✓ #{action.segment_id}: {action.description}")
-        else:
-            typer.echo("\n没有可自动修复的问题")
-
-    # Write quality event to log
-    log_path = aligned_path.parent / "logs" / "event.log.jsonl"
-    if log_path.parent.exists():
-        import json
-        import time
-
-        event = {
-            "stage": "quality_check",
-            "quality_score": report.total_score,
-            "error_count": len(errors),
-            "fixable_count": report.fixable_count,
-            "timestamp": time.time(),
-        }
-        with open(log_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(event, ensure_ascii=False) + "\n")
-
-
-# ── Analyze 命令 ────────────────────────────────────────────
-
-
-@app.command()
-def analyze(
-    srt_path: Path = typer.Argument(..., help="SRT 字幕文件路径"),
-) -> None:
-    """分析字幕文件质量并输出报告
-
-    [bold]示例：[/bold]
-      subtap analyze output.srt
-      subtap analyze subtitles/final.srt
-    """
-    from subtap.quality.scorer import Scorer
-    from subtap.quality.error_detector import ErrorDetector
-
-    if not srt_path.exists():
-        typer.echo(f"✗ 文件未找到：{srt_path}", err=True)
-        raise typer.Exit(1)
-
-    # Parse SRT to aligned format for analysis
-    segments = _parse_srt_to_aligned(srt_path)
-    if not segments:
-        typer.echo("✗ 无法解析 SRT 文件", err=True)
-        raise typer.Exit(1)
-
-    # Create temporary aligned.jsonl for analysis
-    import tempfile
-    import json
-
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".jsonl", delete=False, encoding="utf-8"
-    ) as f:
-        for seg in segments:
-            f.write(json.dumps(seg, ensure_ascii=False) + "\n")
-        temp_path = Path(f.name)
-
-    try:
-        # Score
-        scorer = Scorer(temp_path)
-        report = scorer.score()
-
-        # Detect errors
-        detector = ErrorDetector(temp_path)
-        errors = detector.detect()
-
-        # Display analysis
-        typer.echo("═══ 字幕分析报告 ═══\n")
-        typer.echo(f"文件：{srt_path.name}")
-        typer.echo(f"字幕数：{len(segments)} 条\n")
-
-        typer.echo(f"质量评分：{report.total_score:.0f}/100")
-        typer.echo(f"  对齐误差：      {report.alignment_error:.0f}/100")
-        typer.echo(f"  断句质量：      {report.segmentation_quality:.0f}/100")
-        typer.echo(f"  可读性：        {report.readability:.0f}/100")
-
-        # Show errors
-        if errors:
-            typer.echo(f"\n问题：{len(errors)} 个")
-            for error in errors:
-                severity_icon = {
-                    "critical": typer.style("✗", fg=typer.colors.RED),
-                    "warning": typer.style("⚠", fg=typer.colors.YELLOW),
-                    "info": typer.style("ℹ", fg=typer.colors.BLUE),
-                }.get(error.severity, "•")
-                typer.echo(f"  {severity_icon} #{error.segment_id} {error.message}")
-        else:
-            typer.echo("\n✓ 未发现问题")
-
-        # Suggestions
-        typer.echo("\n建议：")
-        if report.total_score < 80:
-            typer.echo("  1. 使用 --mode quality 重新生成可提升质量")
-        if any(e.error_type == "too_long" for e in errors):
-            typer.echo("  2. 过长字幕建议拆分以提高可读性")
-        if any(e.error_type == "overlap" for e in errors):
-            typer.echo("  3. 时间轴重叠需要修复")
-        if report.total_score >= 90:
-            typer.echo("  ✓ 质量优秀，可直接用于剪辑软件")
-
-    finally:
-        temp_path.unlink()
-
-
-def _parse_srt_to_aligned(srt_path: Path) -> list[dict]:
-    """Parse SRT file to aligned segment format for analysis.
-
-    Args:
-        srt_path: Path to SRT file.
-
-    Returns:
-        List of aligned segment dicts.
-    """
-    import re
-
-    content = srt_path.read_text(encoding="utf-8")
-    segments = []
-
-    # Parse SRT format: sequence number, timestamp, text
-    pattern = r"(\d+)\n(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})\n(.+?)(?=\n\n|\n\d+\n|\Z)"
-    matches = re.findall(pattern, content, re.DOTALL)
-
-    for seq, start, end, text in matches:
-        # Convert timestamp to seconds
-        start_sec = _srt_time_to_seconds(start)
-        end_sec = _srt_time_to_seconds(end)
-        text = text.strip().replace("\n", " ")
-
-        segments.append(
-            {
-                "sentence_id": int(seq) - 1,
-                "start_sec": start_sec,
-                "end_sec": end_sec,
-                "text": text,
-            }
-        )
-
-    return segments
-
-
-def _srt_time_to_seconds(time_str: str) -> float:
-    """Convert SRT timestamp to seconds.
-
-    Args:
-        time_str: SRT timestamp (HH:MM:SS,mmm)
-
-    Returns:
-        Time in seconds.
-    """
-    hours, minutes, seconds = time_str.replace(",", ".").split(":")
-    return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
-
-
 # ── Models 子命令组 ────────────────────────────────────────
 
 models_app = typer.Typer(help="模型管理", no_args_is_help=True)
@@ -2442,7 +2091,7 @@ def clean_workspace(
 
     永远不会清理：
     - aligned.jsonl（用户输出）
-    - report.md, metrics.json（用户输出）
+    - metrics.json（用户输出）
     - output/ 目录（用户输出）
     """
     from subtap.engine.cleanroom import Cleanroom

@@ -130,7 +130,6 @@ class Cleanroom:
     # 永远不清理的文件/目录
     _PROTECTED_FILES = [
         "aligned.jsonl",
-        "report.md",
         "metrics.json",
     ]
     _PROTECTED_DIRS = ["output"]
@@ -182,7 +181,7 @@ class Cleanroom:
     def clean_intermediate_files(self) -> dict[str, Any]:
         """清理 L2 中间文件。
 
-        永远不删除：aligned.jsonl、report.md、metrics.json、output/
+        永远不删除：aligned.jsonl、metrics.json、output/
 
         Returns:
             {"cleaned_count": int, "cleaned_files": list[str]}
@@ -203,7 +202,7 @@ class Cleanroom:
     def clean_all(self) -> dict[str, Any]:
         """清理所有临时和中间文件（L1 + L2）。
 
-        永远不删除：aligned.jsonl、report.md、metrics.json、output/
+        永远不删除：aligned.jsonl、metrics.json、output/
 
         Returns:
             {"cleaned_count": int, "cleaned_files": list[str]}

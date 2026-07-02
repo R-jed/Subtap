@@ -59,8 +59,8 @@ def test_enhance_local_no_warning(tmp_path, monkeypatch):
     assert "外部" not in output
 
 
-def test_enhance_off_no_warning(tmp_path, monkeypatch):
-    """--enhance off 不应显示外部 API 警告。"""
+def test_enhance_local_no_warning(tmp_path, monkeypatch):
+    """--enhance local 不应显示外部 API 警告。"""
     from types import SimpleNamespace
 
     input_file = tmp_path / "test.mp3"
@@ -74,7 +74,7 @@ def test_enhance_off_no_warning(tmp_path, monkeypatch):
 
     result = runner.invoke(
         app,
-        ["run", str(input_file), "--enhance", "off"],
+        ["run", str(input_file), "--enhance", "local"],
     )
     output = _strip_ansi(result.output)
     assert "外部" not in output

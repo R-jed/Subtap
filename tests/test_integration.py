@@ -75,7 +75,7 @@ def run_pipeline(config, workspace):
 
     # 运行 clean 阶段
     clean_kwargs = {
-        "enhance_mode": "off",
+        "enhance_mode": "local",
     }
 
     # 根据配置决定是否启用 LLM

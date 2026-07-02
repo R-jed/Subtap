@@ -147,8 +147,6 @@ def run_clean(
     glossary_path: str | None = None,
     style_rules: list[str] | None = None,
     enhance_mode: str | None = None,
-    hotword_enabled: bool = True,
-    hotword_mode: str = "local",
     hotword_lang: str = "zh",
     hotword_glossary_dir: str | None = None,
 ) -> dict:
@@ -157,17 +155,14 @@ def run_clean(
     配置优先级：
     1. llm_proofread / llm_hotword 独立配置项（新）
     2. enhance_mode 统一开关（旧，兼容）
-    3. llm_backend_name="off"/"none"/"false" 强制关闭
 
     Args:
         workspace: Workspace instance with paths.
         config: Subtap config.
-        llm_backend_name: Override LLM backend (e.g. "openai:gpt-4o-mini"). "off"/"none"/"false" to disable.
+        llm_backend_name: Override LLM backend (e.g. "openai:gpt-4o-mini").
         glossary_path: Path to glossary YAML file.
         style_rules: Additional style rules for LLM.
-        enhance_mode: "off", "local", or "api". Overrides llm_proofread/llm_hotword when set.
-        hotword_enabled: Whether to run local hotword replacement (non-LLM).
-        hotword_mode: Hotword engine mode.
+        enhance_mode: "local" or "api". Controls LLM enhancement level.
         hotword_lang: Hotword glossary language.
         hotword_glossary_dir: Hotword glossary directory override.
 
@@ -196,11 +191,11 @@ def run_clean(
         )
 
     # 本地热词引擎（始终在 LLM 之前运行，非 LLM 功能）
-    if hotword_enabled and hotword_glossary_dir:
+    if hotword_glossary_dir:
         from subtap.glossary.engine import HotwordEngine
 
         engine = HotwordEngine(
-            mode=hotword_mode,
+            mode="local",
             glossary_dir=Path(hotword_glossary_dir),
         )
         for seg in replaced:
@@ -210,15 +205,12 @@ def run_clean(
     llm_proofread = config.llm_proofread
     llm_hotword = config.llm_hotword
 
-    # 兼容旧的 enhance_mode 参数
+    # llm_backend_name 控制 LLM 功能（单阶段命令使用）
     if llm_backend_name in {"off", "none", "false"}:
         llm_proofread = False
         llm_hotword = False
-    elif enhance_mode == "off":
-        llm_proofread = False
-        llm_hotword = False
     elif enhance_mode == "api":
-        # 如果使用旧参数且为 api 模式，开启两个功能
+        # api 模式开启 LLM 功能
         if llm_proofread is None:
             llm_proofread = True
         if not llm_hotword:

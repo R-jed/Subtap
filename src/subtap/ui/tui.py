@@ -22,11 +22,8 @@ class RichRunner:
         output_dir: Path,
         fmt: str = "srt",
         enhance: str = "local",
-        align_enabled: bool = True,
-        hotword_enabled: bool = True,
         translate_to: str | None = None,
         bilingual: str = "off",
-        hotword_mode: str = "local",
     ) -> dict:
         """Execute pipeline with rich progress display."""
         from rich.console import Console
@@ -52,9 +49,8 @@ class RichRunner:
             ("clean", "文本清洗"),
             ("segment", "智能断句"),
             ("script_match", "文稿匹配"),
+            ("align", "时间轴对齐"),
         ]
-        if align_enabled:
-            stages.append(("align", "时间轴对齐"))
         if translate_to:
             stages.append(("translate", "字幕翻译"))
         stages.append(("export", "字幕导出"))
@@ -102,8 +98,6 @@ class RichRunner:
                 r = pipeline.run_stage(
                     "clean",
                     enhance_mode=enhance,
-                    hotword_enabled=hotword_enabled,
-                    hotword_mode=hotword_mode,
                     hotword_glossary_dir=default_glossary_dir,
                 )
                 self.timings["clean"] = time.time() - t
@@ -131,15 +125,12 @@ class RichRunner:
                 #             console.print(f"    [yellow]⚠[/] {w}")
 
                 # Stage 6: align
-                if align_enabled:
-                    task = progress.add_task("时间轴对齐", total=1)
-                    t = time.time()
-                    r = pipeline.run_stage("align")
-                    self.timings["align"] = time.time() - t
-                    progress.update(task, completed=1)
-                    console.print(f"  [green]✓[/] {r['aligned_count']} 条")
-                else:
-                    self.timings["align"] = 0.0
+                task = progress.add_task("时间轴对齐", total=1)
+                t = time.time()
+                r = pipeline.run_stage("align")
+                self.timings["align"] = time.time() - t
+                progress.update(task, completed=1)
+                console.print(f"  [green]✓[/] {r['aligned_count']} 条")
 
                 self.timings["hotword"] = 0.0
 
@@ -161,25 +152,20 @@ class RichRunner:
                 # Stage 8: export
                 task = progress.add_task("字幕导出", total=1)
                 t = time.time()
-                if align_enabled:
-                    from subtap.core.export import run_final_exports
+                from subtap.core.export import run_final_exports
 
-                    r = run_final_exports(
-                        pipeline.workspace.aligned_jsonl,
-                        output_dir,
-                        punctuation=pipeline.config.output.subtitle_punctuation,
-                        language=pipeline.config.output.subtitle_language,
-                        max_chars=pipeline.config.output.max_chars,
-                        min_chars=pipeline.config.output.min_chars,
-                        formats=pipeline.config.output.subtitle_formats,
-                        stem=pipeline.config.output.subtitle_stem,
-                        translate_to=translate_to,
-                        bilingual=bilingual,
-                    )
-                else:
-                    from subtap.core.export import run_draft_export
-
-                    r = run_draft_export(pipeline.workspace.asr_jsonl, output_dir)
+                r = run_final_exports(
+                    pipeline.workspace.aligned_jsonl,
+                    output_dir,
+                    punctuation=pipeline.config.output.subtitle_punctuation,
+                    language=pipeline.config.output.subtitle_language,
+                    max_chars=pipeline.config.output.max_chars,
+                    min_chars=pipeline.config.output.min_chars,
+                    formats=pipeline.config.output.subtitle_formats,
+                    stem=pipeline.config.output.subtitle_stem,
+                    translate_to=translate_to,
+                    bilingual=bilingual,
+                )
                 self.timings["export"] = time.time() - t
                 progress.update(task, completed=1)
                 console.print(f"  [green]✓[/] {r['output_path']}")
@@ -208,7 +194,7 @@ class RichRunner:
             "work_dir": str(pipeline.workspace.root),
             "output_dir": str(output_dir),
             "format": fmt,
-            "alignment_enabled": align_enabled,
+            "alignment_enabled": True,
             "total_time_sec": round(total_time, 2),
             "timings": {k: round(v, 2) for k, v in self.timings.items()},
         }
@@ -240,11 +226,8 @@ class TUIRunner:
         output_dir: Path,
         fmt: str = "srt",
         enhance: str = "local",
-        align_enabled: bool = True,
-        hotword_enabled: bool = True,
         translate_to: str | None = None,
         bilingual: str = "off",
-        hotword_mode: str = "local",
     ) -> dict:
         """Execute full pipeline with TUI feedback."""
         self.total_start = time.time()
@@ -315,8 +298,6 @@ class TUIRunner:
             result = pipeline.run_stage(
                 "clean",
                 enhance_mode=enhance,
-                hotword_enabled=hotword_enabled,
-                hotword_mode=hotword_mode,
                 hotword_glossary_dir=default_glossary_dir,
             )
             self.timings["clean"] = time.time() - stage_start
@@ -346,25 +327,22 @@ class TUIRunner:
             #         self.progress.print_stage_result(self.state, script_result)
 
             # Stage 6: align
-            if align_enabled:
-                self.state.update(
-                    stage="align",
-                    status="loading_model",
-                    progress=0,
-                    model_used="Qwen3-ForcedAligner-0.6B",
-                    current_task="加载对齐模型",
-                )
-                if self.use_tui:
-                    self.progress.print_stage_start(self.state)
+            self.state.update(
+                stage="align",
+                status="loading_model",
+                progress=0,
+                model_used="Qwen3-ForcedAligner-0.6B",
+                current_task="加载对齐模型",
+            )
+            if self.use_tui:
+                self.progress.print_stage_start(self.state)
 
-                stage_start = time.time()
-                result = pipeline.run_stage("align")
-                self.timings["align"] = time.time() - stage_start
-                self.state.update(progress=100, status="completed", current_task="")
-                if self.use_tui:
-                    self.progress.print_stage_result(self.state, result)
-            else:
-                self.timings["align"] = 0.0
+            stage_start = time.time()
+            result = pipeline.run_stage("align")
+            self.timings["align"] = time.time() - stage_start
+            self.state.update(progress=100, status="completed", current_task="")
+            if self.use_tui:
+                self.progress.print_stage_result(self.state, result)
 
             self.timings["hotword"] = 0.0
             if translate_to:
@@ -384,25 +362,20 @@ class TUIRunner:
                 self.progress.print_stage_start(self.state)
 
             stage_start = time.time()
-            if align_enabled:
-                from subtap.core.export import run_final_exports
+            from subtap.core.export import run_final_exports
 
-                result = run_final_exports(
-                    pipeline.workspace.aligned_jsonl,
-                    output_dir,
-                    punctuation=pipeline.config.output.subtitle_punctuation,
-                    language=pipeline.config.output.subtitle_language,
-                    max_chars=pipeline.config.output.max_chars,
-                    min_chars=pipeline.config.output.min_chars,
-                    formats=pipeline.config.output.subtitle_formats,
-                    stem=pipeline.config.output.subtitle_stem,
-                    translate_to=translate_to,
-                    bilingual=bilingual,
-                )
-            else:
-                from subtap.core.export import run_draft_export
-
-                result = run_draft_export(pipeline.workspace.asr_jsonl, output_dir)
+            result = run_final_exports(
+                pipeline.workspace.aligned_jsonl,
+                output_dir,
+                punctuation=pipeline.config.output.subtitle_punctuation,
+                language=pipeline.config.output.subtitle_language,
+                max_chars=pipeline.config.output.max_chars,
+                min_chars=pipeline.config.output.min_chars,
+                formats=pipeline.config.output.subtitle_formats,
+                stem=pipeline.config.output.subtitle_stem,
+                translate_to=translate_to,
+                bilingual=bilingual,
+            )
             self.timings["export"] = time.time() - stage_start
             self.state.update(progress=100, status="completed")
             if self.use_tui:
@@ -432,7 +405,7 @@ class TUIRunner:
             "work_dir": str(pipeline.workspace.root),
             "output_dir": str(output_dir),
             "format": fmt,
-            "alignment_enabled": align_enabled,
+            "alignment_enabled": True,
             "total_time_sec": round(total_time, 2),
             "timings": {k: round(v, 2) for k, v in self.timings.items()},
             "segments": self.state.segment_count,
@@ -471,11 +444,8 @@ class PlainRunner:
         output_dir,
         fmt="srt",
         enhance: str = "local",
-        align_enabled: bool = True,
-        hotword_enabled: bool = True,
         translate_to: str | None = None,
         bilingual: str = "off",
-        hotword_mode: str = "local",
     ) -> dict:
         """Execute pipeline with plain text output."""
         import typer
@@ -512,8 +482,6 @@ class PlainRunner:
             r = pipeline.run_stage(
                 "clean",
                 enhance_mode=enhance,
-                hotword_enabled=hotword_enabled,
-                hotword_mode=hotword_mode,
                 hotword_glossary_dir=default_glossary_dir,
             )
             self.timings["clean"] = time.time() - t
@@ -537,16 +505,11 @@ class PlainRunner:
             #         for w in script_result["warnings"]:
             #             _echo(f"    ⚠ {w}")
 
-            if align_enabled:
-                _echo("▸ [6/8] 时间轴对齐...")
-                t = time.time()
-                r = pipeline.run_stage("align")
-                self.timings["align"] = time.time() - t
-                _echo(f"  ✓ {r['aligned_count']} 条")
-            else:
-                self.timings["align"] = 0.0
-                _echo("▸ [6/8] 时间轴对齐（已关闭）...")
-                _echo("  ⚠ 未精对齐，仅生成 draft 粗剪预览")
+            _echo("▸ [6/8] 时间轴对齐...")
+            t = time.time()
+            r = pipeline.run_stage("align")
+            self.timings["align"] = time.time() - t
+            _echo(f"  ✓ {r['aligned_count']} 条")
 
             self.timings["hotword"] = 0.0
             if translate_to:
@@ -560,25 +523,20 @@ class PlainRunner:
 
             _echo(f"▸ [8/8] 字幕导出 ({fmt.upper()})...")
             t = time.time()
-            if align_enabled:
-                from subtap.core.export import run_final_exports
+            from subtap.core.export import run_final_exports
 
-                r = run_final_exports(
-                    pipeline.workspace.aligned_jsonl,
-                    output_dir,
-                    punctuation=pipeline.config.output.subtitle_punctuation,
-                    language=pipeline.config.output.subtitle_language,
-                    max_chars=pipeline.config.output.max_chars,
-                    min_chars=pipeline.config.output.min_chars,
-                    formats=pipeline.config.output.subtitle_formats,
-                    stem=pipeline.config.output.subtitle_stem,
-                    translate_to=translate_to,
-                    bilingual=bilingual,
-                )
-            else:
-                from subtap.core.export import run_draft_export
-
-                r = run_draft_export(pipeline.workspace.asr_jsonl, output_dir)
+            r = run_final_exports(
+                pipeline.workspace.aligned_jsonl,
+                output_dir,
+                punctuation=pipeline.config.output.subtitle_punctuation,
+                language=pipeline.config.output.subtitle_language,
+                max_chars=pipeline.config.output.max_chars,
+                min_chars=pipeline.config.output.min_chars,
+                formats=pipeline.config.output.subtitle_formats,
+                stem=pipeline.config.output.subtitle_stem,
+                translate_to=translate_to,
+                bilingual=bilingual,
+            )
             self.timings["export"] = time.time() - t
             _echo(f"  ✓ {r['output_path']}")
 
@@ -601,7 +559,7 @@ class PlainRunner:
             "work_dir": str(pipeline.workspace.root),
             "output_dir": str(output_dir),
             "format": fmt,
-            "alignment_enabled": align_enabled,
+            "alignment_enabled": True,
             "total_time_sec": round(total_time, 2),
             "timings": {k: round(v, 2) for k, v in self.timings.items()},
         }

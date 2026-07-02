@@ -19,7 +19,6 @@ _POLICIES: dict[PolicyMode, dict] = {
         "asr_backend": "mlx-qwen-asr",
         "asr_model": "asr_0.6b",
         "use_llm": False,
-        "align_enabled": True,
         "align_backend": "mlx-qwen-aligner",
         "skip_stages": [],
         "description": "纯本地执行，不依赖外部服务",
@@ -28,16 +27,14 @@ _POLICIES: dict[PolicyMode, dict] = {
         "asr_backend": "mlx-qwen-asr",
         "asr_model": "asr_0.6b",
         "use_llm": False,
-        "align_enabled": False,
-        "align_backend": "mock-aligner",
-        "skip_stages": ["clean", "align"],
-        "description": "最快速度，跳过清洗和对齐",
+        "align_backend": "mlx-qwen-aligner",
+        "skip_stages": [],
+        "description": "最快速度，使用小模型",
     },
     PolicyMode.QUALITY_MODE: {
         "asr_backend": "mlx-qwen-asr",
         "asr_model": "asr_1.7b",
         "use_llm": True,
-        "align_enabled": True,
         "align_backend": "mlx-qwen-aligner",
         "skip_stages": [],
         "description": "高质量模式，使用大模型，完整流程 + LLM 增强",
@@ -68,10 +65,6 @@ class ExecutionPolicy:
         return self._config["use_llm"]
 
     @property
-    def align_enabled(self) -> bool:
-        return self._config["align_enabled"]
-
-    @property
     def align_backend(self) -> str:
         return self._config["align_backend"]
 
@@ -91,7 +84,6 @@ class ExecutionPolicy:
             "mode": self.mode.value,
             "asr_backend": self.asr_backend,
             "use_llm": self.use_llm,
-            "align_enabled": self.align_enabled,
             "skip_stages": self.skip_stages,
             "description": self.description,
         }
