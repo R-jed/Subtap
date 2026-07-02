@@ -4,6 +4,8 @@ import inspect
 
 import pytest
 
+pytest.importorskip("textual", reason="textual is optional UI dependency")
+
 from subtap.metrics.events import EventBus, EventType, PipelineEvent
 from subtap.ui.event_bridge import EventBridge
 
