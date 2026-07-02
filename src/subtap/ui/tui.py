@@ -5,7 +5,8 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from subtap.ui.state import STAGE_CN
+from subtap.ui.progress import PipelineProgress
+from subtap.ui.state import STAGE_CN, reset_state
 
 
 class RichRunner:

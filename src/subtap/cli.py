@@ -11,12 +11,15 @@ import sys
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 
 from subtap import __version__
 from subtap.glossary.cli import app as glossary_app
+
+if TYPE_CHECKING:
+    from subtap.schemas.config import SubtapConfig
 
 app = typer.Typer(
     name="subtap",
@@ -800,7 +803,7 @@ def run(
         raise typer.Exit(1)
 
     # ── 加载配置并应用回退 ───────────────────────────────────
-    config = load_config(Path.home() / ".subtap" / "config.yaml")
+    config: SubtapConfig = load_config(Path.home() / ".subtap" / "config.yaml")
     check_first_run_wizard(config)
 
     # Config mode → local_only merge (config sets baseline, CLI can override)
@@ -808,7 +811,7 @@ def run(
         local_only = True
 
     # translate_to: CLI overrides config; if CLI not provided, fall back to config
-    if translate_to is None and getattr(config, "translate_to", ""):
+    if translate_to is None and getattr(config, "translate_to", ""):  # type: ignore[arg-type]
         translate_to = config.translate_to
 
     # ── 参数验证（在 config 回退之后） ───────────────────────

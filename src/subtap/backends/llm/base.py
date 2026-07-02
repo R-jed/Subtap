@@ -24,20 +24,23 @@ class LLMBackend(Protocol):
         glossary: Glossary | None = None,
         style_rules: list[str] | None = None,
     ) -> list[CleanSegment]:
-        """Clean transcription segments using LLM.
+        """Clean transcription segments using LLM."""
+        ...
 
-        Rules:
-        - Do NOT change semantics
-        - Do NOT summarize
-        - Do NOT delete content
-        - Only fix ASR errors, add punctuation, improve segmentation
+    def select_suspicious_segments(self, segments: list[dict]) -> list[int]:
+        """Select segments that may contain ASR errors."""
+        ...
 
-        Args:
-            segments: Pre-replaced CleanSegments.
-            glossary: Glossary for term awareness.
-            style_rules: Additional style instructions.
+    def repair_segments(self, segments: list[dict]) -> dict[int, str]:
+        """Repair ASR errors in selected segments."""
+        ...
 
-        Returns:
-            Updated CleanSegments with cleaned_text.
-        """
+    def replace_hotwords(
+        self, segments: list[dict], glossary: dict | None
+    ) -> dict[int, str]:
+        """Replace domain-specific terms using glossary."""
+        ...
+
+    def translate_srt(self, srt_text: str, target_language: str) -> str:
+        """Translate SRT text to target language."""
         ...

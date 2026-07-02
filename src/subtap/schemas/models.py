@@ -82,13 +82,9 @@ class AlignedSegment(BaseModel):
     )
     translated_text: str | None = Field(
         default=None,
-        description="Translated subtitle text attached after align",
+        description="Translated subtitle text (for bilingual subtitle export)",
     )
     words: list[dict] = Field(
         default_factory=list,
         description="Word-level timing [{word, start_sec, end_sec}]",
-    )
-    translated_text: str | None = Field(
-        default=None,
-        description="Translated text (for bilingual subtitle export)",
     )
