@@ -54,3 +54,9 @@ venv/
 *.bak
 graphify-out/
 docs/
+output_test/
+test-workspace/
+
+# AI 工具本地配置
+.agents/
+.codex/
