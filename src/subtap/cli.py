@@ -758,9 +758,6 @@ def run(
         help="输出清单标记：srt / vtt / json / tsv；精对齐默认生成 final.srt/final.vtt/final.json/final.tsv",
     ),
     mode: str = typer.Option("fast", "--mode", "-m", help="执行模式：fast / quality"),
-    model: str | None = typer.Option(
-        None, "--model", help="指定 ASR 模型：asr_0.6b / asr_1.7b / mimo_asr（覆盖 mode 默认值）"
-    ),
     enhance: str = typer.Option(
         "local",
         "--enhance",
@@ -921,10 +918,8 @@ def run(
         config.output.script_path = script
         config.output.script_mode = script_mode
 
-    # Model selection: --model overrides mode-based default
-    if model:
-        config.asr.model = model
-    elif mode == "quality":
+    # Mode-based model override
+    if mode == "quality":
         config.asr.model = "asr_1.7b"
 
     # work_dir: CLI overrides config; if CLI not provided, fall back to config
@@ -1120,9 +1115,6 @@ def batch_transcribe(
         Path("./output"), "--output-dir", "-o", help="输出目录"
     ),
     mode: str | None = typer.Option(None, "--mode", "-m", help="fast / quality"),
-    model: str | None = typer.Option(
-        None, "--model", help="指定 ASR 模型：asr_0.6b / asr_1.7b / mimo_asr（覆盖 mode 默认值）"
-    ),
     enhance: str | None = typer.Option(
         None, "--enhance", "-e", help="字幕增强模式：off / local / api"
     ),
@@ -1286,9 +1278,7 @@ def batch_transcribe(
         config.output.min_chars = min_chars
     config.output.subtitle_stem = "batch"
 
-    if model:
-        config.asr.model = model
-    elif mode == "quality":
+    if mode == "quality":
         config.asr.model = "asr_1.7b"
 
     # ── 恢复或重试模式 ──────────────────────────────────────
@@ -1441,9 +1431,7 @@ def batch_transcribe(
                 item_config.output.min_chars = min_chars
             item_config.output.subtitle_stem = path.stem
 
-            if model:
-                item_config.asr.model = model
-            elif mode == "quality":
+            if mode == "quality":
                 item_config.asr.model = "asr_1.7b"
 
             pipeline = Pipeline(item_config, work_dir=item_output_dir / "work")
