@@ -70,6 +70,16 @@ def write_asr_drafts(
                 )
 
 
+def _load_hotwords_from_glossary(lang: str = "zh") -> list[str]:
+    """Load correct hotword forms from glossary file for system_prompt injection."""
+    from subtap.glossary.hotword import load_glossary
+    from pathlib import Path
+
+    glossary_dir = Path.home() / ".subtap" / "glossary"
+    glossary = load_glossary(glossary_dir / f"hotwords_{lang}.txt", lang)
+    return [hw.word for hw in glossary.hotwords]
+
+
 def run_asr(
     workspace: Workspace,
     config: SubtapConfig,
@@ -96,6 +106,10 @@ def run_asr(
     asr_config = config.asr.model_copy()
     if backend_name:
         asr_config.backend = backend_name
+
+    # Load hotwords: merge glossary file + config hotwords
+    glossary_hotwords = _load_hotwords_from_glossary()
+    all_hotwords = list(set(glossary_hotwords + (asr_config.hotwords or [])))
 
     if asr_config.backend == "http-asr":
         backend = get_backend(asr_config, config.remote_api)
@@ -126,7 +140,7 @@ def run_asr(
         segments = backend.transcribe(
             abs_chunks,
             language=None,
-            hotwords=config.asr.hotwords or None,
+            hotwords=all_hotwords or None,
         )
         if event_bus is not None:
             event_bus.publish_nowait(
