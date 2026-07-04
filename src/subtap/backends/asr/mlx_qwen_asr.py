@@ -54,6 +54,13 @@ class MLXQwenASR:
                 "Install: pip install mlx-audio"
             )
 
+    def _build_hotword_prompt(self, hotwords: list[str]) -> str | None:
+        """Build system_prompt from hotword list for ASR attention biasing."""
+        if not hotwords:
+            return None
+        word_list = "、".join(hotwords)
+        return f"请注意以下专业术语和人名：{word_list}"
+
     def transcribe(
         self,
         chunks: list[Chunk],
@@ -63,6 +70,9 @@ class MLXQwenASR:
         """Transcribe chunks sequentially using MLX STT."""
         self._load_model()
         segments: list[ASRSegment] = []
+        system_prompt = self._build_hotword_prompt(hotwords)
+        if system_prompt:
+            logger.info("Hotword injection enabled: %s", system_prompt)
 
         for chunk in chunks:
             audio_path = Path(chunk.path)
@@ -78,11 +88,15 @@ class MLXQwenASR:
             try:
                 from mlx_audio.stt.generate import generate_transcription
 
-                result = generate_transcription(
-                    model=self._model,
-                    audio=str(audio_path),
-                    format="json",
-                )
+                gen_kwargs = {
+                    "model": self._model,
+                    "audio": str(audio_path),
+                    "format": "json",
+                }
+                if system_prompt:
+                    gen_kwargs["system_prompt"] = system_prompt
+
+                result = generate_transcription(**gen_kwargs)
             except Exception as e:
                 logger.error("ASR failed for chunk %d: %s", chunk.chunk_id, e)
                 continue
