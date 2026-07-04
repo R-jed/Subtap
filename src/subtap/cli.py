@@ -24,10 +24,63 @@ if TYPE_CHECKING:
 app = typer.Typer(
     name="subtap",
     help="Subtap — 本地优先的 AI 字幕生成引擎",
-    no_args_is_help=True,
+    no_args_is_help=False,
     rich_markup_mode="rich",
 )
 app.add_typer(glossary_app, name="glossary")
+
+
+def _build_observer_child_command(argv: list[str]) -> list[str]:
+    """Build child run command for observer-parent mode."""
+    args = [arg for arg in argv[1:] if arg != "--tui"]
+    return [sys.executable, "-m", "subtap.cli", *args, "--observer-child", "--no-tui"]
+
+
+def _build_root_command_deck() -> str:
+    """Render the root Command Deck menu."""
+    from subtap.ui.command_deck import build_root_command_deck
+
+    return build_root_command_deck()
+
+
+def _command_deck_hint(action: str | None) -> str:
+    """Return a short follow-up command hint after interactive selection."""
+    hints = {
+        "run": "运行：subtap run <音频文件> --tui",
+        "observe": "观察：subtap observe <work/run.log.jsonl>",
+        "batch": "批量：subtap batch-transcribe --dir <媒体文件夹>",
+        "doctor": "诊断：subtap doctor",
+        "config": "配置：subtap setup",
+        "output": "输出目录：./output",
+        "version": "版本：subtap version",
+    }
+    return hints.get(action or "", "")
+
+
+def _handle_command_deck_action(action: str | None) -> None:
+    """Handle a Command Deck result."""
+    if action == "version":
+        version()
+        return
+    hint = _command_deck_hint(action)
+    if hint:
+        typer.echo(hint)
+
+
+@app.callback(invoke_without_command=True)
+def main(ctx: typer.Context) -> None:
+    """Subtap command entry."""
+    if ctx.invoked_subcommand is None:
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            from subtap.ui.command_deck import CommandDeckApp
+
+            try:
+                _handle_command_deck_action(CommandDeckApp().run())
+                return
+            except RuntimeError:
+                pass
+        typer.echo(_build_root_command_deck())
+
 
 # ── Glossary 热词命令 ──────────────────────────────────────────
 
@@ -44,7 +97,6 @@ def hotword_add(
     """添加热词"""
     from subtap.glossary.hotword import (
         Hotword,
-        HotwordGlossary,
         load_glossary,
         save_glossary,
     )
@@ -706,6 +758,9 @@ def run(
         help="输出清单标记：srt / vtt / json / tsv；精对齐默认生成 final.srt/final.vtt/final.json/final.tsv",
     ),
     mode: str = typer.Option("fast", "--mode", "-m", help="执行模式：fast / quality"),
+    model: str | None = typer.Option(
+        None, "--model", help="指定 ASR 模型：asr_0.6b / asr_1.7b / mimo_asr（覆盖 mode 默认值）"
+    ),
     enhance: str = typer.Option(
         "local",
         "--enhance",
@@ -773,6 +828,13 @@ def run(
         None,
         "--llm-hotword/--no-llm-hotword",
         help="启用/禁用 LLM 热词（默认根据配置自动判断）",
+    ),
+    tui: bool = typer.Option(False, "--tui", help="使用 TUI 观察者运行"),
+    observer_child: bool = typer.Option(
+        False, "--observer-child", hidden=True, help="内部参数：观察者子进程"
+    ),
+    no_tui: bool = typer.Option(
+        False, "--no-tui", hidden=True, help="内部参数：禁用 TUI 父进程"
     ),
 ) -> None:
     """运行完整字幕生成流程
@@ -859,13 +921,33 @@ def run(
         config.output.script_path = script
         config.output.script_mode = script_mode
 
-    # Mode-based model override
-    if mode == "quality":
+    # Model selection: --model overrides mode-based default
+    if model:
+        config.asr.model = model
+    elif mode == "quality":
         config.asr.model = "asr_1.7b"
 
     # work_dir: CLI overrides config; if CLI not provided, fall back to config
     if work_dir is None:
         work_dir = Path(config.workspace.root)
+
+    if tui and not observer_child and not no_tui:
+        process = subprocess.Popen(_build_observer_child_command(sys.argv))
+        from subtap.ui.observer import _make_observer_dashboard
+
+        result = _make_observer_dashboard(work_dir / "run.log.jsonl", process).run()
+        if result == "output":
+            typer.echo(f"输出目录：{work_dir / 'output'}")
+        elif result == "interrupt":
+            typer.echo("已中断子进程。")
+            raise typer.Exit(130)
+        elif result == "quit" and process.poll() is None:
+            typer.echo("已退出观察，子进程继续运行。")
+        returncode = process.poll()
+        if returncode not in (None, 0):
+            typer.echo(f"观察者子进程失败：退出码 {returncode}", err=True)
+            raise typer.Exit(returncode if returncode is not None else 1)
+        return
 
     pipeline = Pipeline(config, work_dir=work_dir)
     pipeline.workspace.ensure_dirs()
@@ -1018,15 +1100,10 @@ def observe(
         typer.echo(f"✗ 日志文件不存在：{log_path}", err=True)
         raise typer.Exit(1)
 
-    from subtap.ui.observer import summarize_event_log
+    from subtap.ui.observer import build_command_deck_text, summarize_event_log
 
     state = summarize_event_log(log_path)
-    typer.echo("Subtap 观察者")
-    typer.echo(f"当前阶段：{state['stage']}")
-    typer.echo(f"进度：{state['progress']}%")
-    typer.echo(f"当前 Chunk：{state['chunk_id']}")
-    typer.echo(f"当前模型：{state['model']}")
-    typer.echo(f"ASR 草稿：{state['asr_drafts']}  已对齐：{state['aligned']}")
+    typer.echo(build_command_deck_text(state))
 
 
 # ── 单阶段命令 ─────────────────────────────────────────────
@@ -1043,6 +1120,9 @@ def batch_transcribe(
         Path("./output"), "--output-dir", "-o", help="输出目录"
     ),
     mode: str | None = typer.Option(None, "--mode", "-m", help="fast / quality"),
+    model: str | None = typer.Option(
+        None, "--model", help="指定 ASR 模型：asr_0.6b / asr_1.7b / mimo_asr（覆盖 mode 默认值）"
+    ),
     enhance: str | None = typer.Option(
         None, "--enhance", "-e", help="字幕增强模式：off / local / api"
     ),
@@ -1194,10 +1274,6 @@ def batch_transcribe(
     # ── 加载配置 ──────────────────────────────────────────────
     config = load_config(Path.home() / ".subtap" / "config.yaml")
 
-    # Config mode → local_only merge
-    if getattr(config, "mode", "online") == "offline":
-        local_only = True
-
     # CLI overrides config only when explicitly provided
     config.output.timestamp = True  # batch 模式始终带时间戳
     if punctuation is not None:
@@ -1210,7 +1286,9 @@ def batch_transcribe(
         config.output.min_chars = min_chars
     config.output.subtitle_stem = "batch"
 
-    if mode == "quality":
+    if model:
+        config.asr.model = model
+    elif mode == "quality":
         config.asr.model = "asr_1.7b"
 
     # ── 恢复或重试模式 ──────────────────────────────────────
@@ -1351,10 +1429,6 @@ def batch_transcribe(
             # 配置 Pipeline
             item_config = load_config(Path.home() / ".subtap" / "config.yaml")
 
-            # Config mode → local_only merge
-            if getattr(item_config, "mode", "online") == "offline":
-                local_only = True
-
             # CLI overrides config only when explicitly provided
             item_config.output.timestamp = True  # batch 模式始终带时间戳
             if punctuation is not None:
@@ -1367,7 +1441,9 @@ def batch_transcribe(
                 item_config.output.min_chars = min_chars
             item_config.output.subtitle_stem = path.stem
 
-            if mode == "quality":
+            if model:
+                item_config.asr.model = model
+            elif mode == "quality":
                 item_config.asr.model = "asr_1.7b"
 
             pipeline = Pipeline(item_config, work_dir=item_output_dir / "work")

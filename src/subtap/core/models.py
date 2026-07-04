@@ -65,6 +65,21 @@ MODEL_REGISTRY: dict[str, ModelEntry] = {
         "hf_repo": "mlx-community/Qwen3-ForcedAligner-0.6B-8bit",
         "modelscope_repo": "mlx-community/Qwen3-ForcedAligner-0.6B-8bit",
     },
+    "mimo_asr": {
+        "description": "MiMo-V2.5 ASR MLX 8bit",
+        "subdir": "mimo_asr",
+        "required_files": [
+            "config.json",
+            "model.safetensors.index.json",
+            "model-00001-of-00002.safetensors",
+            "model-00002-of-00002.safetensors",
+            "tokenizer_config.json",
+            "vocab.json",
+            "merges.txt",
+        ],
+        "hf_repo": "mlx-community/MiMo-V2.5-ASR-MLX-8bit",
+        "modelscope_repo": "",
+    },
 }
 
 
