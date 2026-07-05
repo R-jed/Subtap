@@ -314,16 +314,16 @@ class TestMergeShortSentences:
     def test_merge_short(self):
         """短句合并。"""
         sentences = ["好的", "然后呢", "理光GR4是一款非常不错的相机"]
-        result = _merge_short_sentences(sentences, min_chars=5)
+        result = _merge_short_sentences(sentences, min_chars=10)
         assert len(result) < len(sentences)
 
     def test_no_merge_long(self):
         """长句不合并。"""
         sentences = ["理光GR4是一款非常不错的相机", "它的画质非常好而且体积小巧"]
-        result = _merge_short_sentences(sentences, min_chars=5)
+        result = _merge_short_sentences(sentences, min_chars=10)
         assert len(result) == 2
 
     def test_empty_input(self):
         """空输入返回空列表。"""
-        result = _merge_short_sentences([], min_chars=5)
+        result = _merge_short_sentences([], min_chars=10)
         assert result == []

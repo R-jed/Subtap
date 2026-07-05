@@ -18,7 +18,8 @@ from subtap.schemas.models import CleanSegment, SentenceSegment
 _MAX_CHARS = 60
 
 # Min chars for a sentence to be considered valid
-_MIN_CHARS = 5
+# 低于此值的句子会被合并到相邻句子，减少字幕碎片
+_MIN_CHARS = 10
 
 # Sentence-ending punctuation
 _SENT_END_RE = re.compile(r"[。！？.!?]+")
@@ -184,6 +185,9 @@ def _split_at_word_boundary(text: str, max_chars: int) -> list[str]:
 def _merge_short_sentences(sentences: list[str], min_chars: int) -> list[str]:
     """Merge sentences that are too short.
 
+    Preserves sentence-ending punctuation boundaries: sentences ending with
+    。！？.!? are never merged with adjacent sentences, even if short.
+
     Args:
         sentences: List of sentences.
         min_chars: Minimum characters for a valid sentence.
@@ -194,12 +198,18 @@ def _merge_short_sentences(sentences: list[str], min_chars: int) -> list[str]:
     if not sentences:
         return []
 
+    _SENT_END_CHARS = set("。！？.!?")
+
     merged: list[str] = []
     buffer = ""
 
     for sent in sentences:
         if buffer:
-            if len(buffer) < min_chars:
+            # Don't merge if buffer ends with sentence-ending punctuation
+            if buffer and buffer[-1] in _SENT_END_CHARS:
+                merged.append(buffer)
+                buffer = sent
+            elif len(buffer) < min_chars:
                 buffer += sent
             else:
                 merged.append(buffer)
@@ -208,7 +218,7 @@ def _merge_short_sentences(sentences: list[str], min_chars: int) -> list[str]:
             buffer = sent
 
     if buffer:
-        if merged and len(buffer) < min_chars:
+        if merged and len(buffer) < min_chars and (not merged[-1] or merged[-1][-1] not in _SENT_END_CHARS):
             merged[-1] += buffer
         else:
             merged.append(buffer)
