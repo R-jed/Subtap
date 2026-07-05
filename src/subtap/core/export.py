@@ -676,7 +676,7 @@ class SRTExporter(BaseExporter):
                 if sub["text"].strip():
                     all_subs.append(sub)
 
-        # Cross-sentence fragment merge: merge ≤2 char fragments into adjacent lines
+        # Cross-sentence fragment merge: merge short fragments into adjacent lines
         # Only merge if:
         #   1. Previous line is longer than the fragment (avoids merging "A"+"B")
         #   2. Combined length ≤ max_chars
@@ -685,7 +685,7 @@ class SRTExporter(BaseExporter):
         for sub in all_subs:
             txt = sub["text"].strip()
             visible = _strip_punct(txt).replace(" ", "")
-            if merged_subs and len(visible) <= 2:
+            if merged_subs and len(visible) <= self.min_chars - 1:
                 prev = merged_subs[-1]
                 prev_visible = _strip_punct(prev["text"]).replace(" ", "")
                 # Only merge into a longer line, not into another short line
