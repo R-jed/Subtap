@@ -1,24 +1,34 @@
 """Sentence segmentation: CleanSegment → SentenceSegment.
 
-Uses pySBD for sentence boundary detection and jieba for Chinese word segmentation.
+Three-tier segmentation strategy for Chinese colloquial content:
+1. Sentence-ending punctuation (。！？.!?)
+2. Comma/pause punctuation (，、,;) for long sentences
+3. jieba word boundary splitting for unpunctuated text
 """
 
 from __future__ import annotations
 
-import pysbd
+import re
+
 import jieba
 
 from subtap.schemas.models import CleanSegment, SentenceSegment
 
-# Max chars per sentence before forced split at word boundary
+# Max chars per sentence before forced split
 _MAX_CHARS = 60
 
 # Min chars for a sentence to be considered valid
 _MIN_CHARS = 5
 
+# Sentence-ending punctuation
+_SENT_END_RE = re.compile(r"[。！？.!?]+")
+
+# Comma/pause punctuation (secondary split points)
+_COMMA_RE = re.compile(r"[，、,;；]+")
+
 
 def _split_sentences(text: str, language: str = "zh") -> list[str]:
-    """Split text into sentences using pySBD + jieba.
+    """Split text into sentences using tiered strategy.
 
     Args:
         text: Input text to split.
@@ -30,29 +40,114 @@ def _split_sentences(text: str, language: str = "zh") -> list[str]:
     if not text.strip():
         return [""]
 
-    # Step 1: Use pySBD for sentence boundary detection
-    lang = "zh" if language in ("zh", "ja") else "en"
-    segmenter = pysbd.Segmenter(language=lang, clean=False)
-    raw_sentences = segmenter.segment(text)
+    if language in ("en",):
+        return _split_sentences_en(text)
 
-    # Step 2: Split long sentences at word boundaries using jieba
-    sentences: list[str] = []
-    for sent in raw_sentences:
-        sent = sent.strip()
-        if not sent:
+    return _split_sentences_zh(text)
+
+
+def _split_sentences_zh(text: str) -> list[str]:
+    """Chinese sentence segmentation with three-tier strategy."""
+
+    # Tier 1: Split at sentence-ending punctuation
+    parts = _split_at_pattern(text, _SENT_END_RE)
+
+    # Tier 2: For each part, split long sentences at comma/pause
+    expanded: list[str] = []
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        if len(part) > _MAX_CHARS:
+            expanded.extend(_split_at_comma(part))
+        else:
+            expanded.append(part)
+
+    # Tier 3: For any remaining long segments, split at word boundary
+    result: list[str] = []
+    for sent in expanded:
+        if len(sent) > _MAX_CHARS:
+            result.extend(_split_at_word_boundary(sent, _MAX_CHARS))
+        else:
+            result.append(sent)
+
+    # Merge very short sentences
+    result = _merge_short_sentences(result, _MIN_CHARS)
+
+    return result if result else [""]
+
+
+def _split_sentences_en(text: str) -> list[str]:
+    """English sentence segmentation."""
+    parts = _split_at_pattern(text, _SENT_END_RE)
+    result = [p.strip() for p in parts if p.strip()]
+    return result if result else [""]
+
+
+def _split_at_pattern(text: str, pattern: re.Pattern) -> list[str]:
+    """Split text at regex pattern boundaries, keeping delimiters attached.
+
+    Args:
+        text: Text to split.
+        pattern: Regex pattern to split at.
+
+    Returns:
+        List of text segments with punctuation attached to preceding text.
+    """
+    segments: list[str] = []
+    last_end = 0
+
+    for match in pattern.finditer(text):
+        end = match.end()
+        segment = text[last_end:end]
+        if segment.strip():
+            segments.append(segment)
+        last_end = end
+
+    # Remaining text after last punctuation
+    remaining = text[last_end:]
+    if remaining.strip():
+        segments.append(remaining)
+
+    return segments
+
+
+def _split_at_comma(text: str) -> list[str]:
+    """Split long text at comma/pause punctuation.
+
+    Tries to split at natural pause points while keeping segments ≤ _MAX_CHARS.
+    """
+    if len(text) <= _MAX_CHARS:
+        return [text]
+
+    segments: list[str] = []
+    current = ""
+
+    # Split at each comma, accumulate until max_chars
+    parts = _COMMA_RE.split(text)
+    for i, part in enumerate(parts):
+        part = part.strip()
+        if not part:
             continue
 
-        if len(sent) > _MAX_CHARS:
-            # Split at word boundary
-            parts = _split_at_word_boundary(sent, _MAX_CHARS)
-            sentences.extend(parts)
+        if current and len(current) + len(part) + 1 > _MAX_CHARS:
+            segments.append(current.strip())
+            current = part
         else:
-            sentences.append(sent)
+            current = current + "，" + part if current else part
 
-    # Step 3: Merge very short sentences
-    sentences = _merge_short_sentences(sentences, _MIN_CHARS)
+    if current.strip():
+        segments.append(current.strip())
 
-    return sentences if sentences else [""]
+    # If any segment is still too long, fall back to word boundary splitting
+    result: list[str] = []
+    for seg in segments:
+        if len(seg) > _MAX_CHARS:
+            result.extend(_split_at_word_boundary(seg, _MAX_CHARS))
+        else:
+            result.append(seg)
+
+    return result
 
 
 def _split_at_word_boundary(text: str, max_chars: int) -> list[str]:
@@ -68,7 +163,6 @@ def _split_at_word_boundary(text: str, max_chars: int) -> list[str]:
     if len(text) <= max_chars:
         return [text]
 
-    # Use jieba to tokenize
     words = list(jieba.cut(text))
 
     parts: list[str] = []
@@ -105,7 +199,6 @@ def _merge_short_sentences(sentences: list[str], min_chars: int) -> list[str]:
 
     for sent in sentences:
         if buffer:
-            # If buffer is still short, merge with current
             if len(buffer) < min_chars:
                 buffer += sent
             else:
@@ -116,7 +209,6 @@ def _merge_short_sentences(sentences: list[str], min_chars: int) -> list[str]:
 
     if buffer:
         if merged and len(buffer) < min_chars:
-            # Merge last short sentence with previous
             merged[-1] += buffer
         else:
             merged.append(buffer)
@@ -157,8 +249,6 @@ def segment_clean_segments(
     language: str = "zh",
 ) -> list[SentenceSegment]:
     """Split CleanSegments into SentenceSegments.
-
-    Uses pySBD for sentence boundary detection and jieba for word-boundary splitting.
 
     Args:
         segments: CleanSegments from the clean stage.
