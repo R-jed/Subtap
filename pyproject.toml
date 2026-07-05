@@ -19,7 +19,6 @@ dependencies = [
     "python-docx>=1.0",
     "openpyxl>=3.0",
     "rapidfuzz>=3.0",
-    "pysbd>=0.3.4",
     "jieba>=0.42.1",
     "audioop-lts>=0.2.2; python_version>='3.13'",
 ]
@@ -51,5 +50,5 @@ pythonpath = ["src", "tests"]
 asyncio_mode = "auto"
 
 [[tool.mypy.overrides]]
-module = ["mlx_audio.*", "pydub", "pydub.*", "yaml", "openpyxl.*", "docx.*", "torch", "torch.*", "torchaudio", "torchaudio.*", "silero_vad", "silero_vad.*", "textual", "textual.*", "pysbd", "jieba"]
+module = ["mlx_audio.*", "pydub", "pydub.*", "yaml", "openpyxl.*", "docx.*", "torch", "torch.*", "torchaudio", "torchaudio.*", "silero_vad", "silero_vad.*", "textual", "textual.*", "jieba"]
 ignore_missing_imports = true
