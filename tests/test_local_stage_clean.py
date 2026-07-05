@@ -20,18 +20,13 @@ class TestLocalClean:
         # 测试空格处理
         assert local_clean_text("  多余  空格  ") == "多余 空格"
 
-    def test_clean_punctuation_toggle(self, workspace, local_config):
-        """测试标点开关"""
+    def test_clean_punctuation_preserved(self, workspace, local_config):
+        """测试标点始终保留（规范化但不删除）"""
         from subtap.core.clean import local_clean_text
 
-        # 带标点
-        result_with = local_clean_text("你好，世界！", punctuation=True)
-        assert "，" in result_with or "！" in result_with
-
-        # 不带标点
-        result_without = local_clean_text("你好，世界！", punctuation=False)
-        assert "，" not in result_without
-        assert "！" not in result_without
+        # 标点应被规范化（半角→全角）但始终保留
+        result = local_clean_text("你好，世界！")
+        assert "，" in result or "！" in result
 
     def test_clean_glossary_replacement(self, workspace, local_config):
         """测试术语表替换"""
