@@ -13,6 +13,7 @@ from .spinner import Spinner
 from .config_manager import ConfigManager
 from .file_picker import FilePicker
 from .views.new_task import NewTaskView
+from .history import HistoryScanner
 
 
 class TuiApp:
@@ -300,18 +301,50 @@ class TuiApp:
 
     def _view_history(self) -> str:
         t = self.theme
-        sys.stderr.write("\033[2J\033[H")
-        sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}转录历史{t.NC}\r\n\r\n")
-        sys.stderr.write(f"\033[2K{t.GRAY}暂无记录{t.NC}\r\n\r\n")
-        sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回  Q 退出{t.NC}\r\n")
-        sys.stderr.flush()
+        scanner = HistoryScanner(Path.home() / ".subtap" / "history")
+        records = scanner.scan()
+
+        if not records:
+            sys.stderr.write("\033[2J\033[H")
+            sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}转录历史{t.NC}\r\n\r\n")
+            sys.stderr.write(f"\033[2K{t.GRAY}暂无记录{t.NC}\r\n\r\n")
+            sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回{t.NC}\r\n")
+            sys.stderr.flush()
+            while True:
+                key = self.reader.read_key(timeout=0.05)
+                if key in (Key.ESCAPE, Key.QUIT):
+                    self._pop_state()
+                    return "continue" if key == Key.ESCAPE else "quit"
+
+        menu_items = []
+        for r in records:
+            status_icon = "✓" if r.is_completed else "✗"
+            menu_items.append(f"{r.timestamp[:10]}  {r.input_name:<20} {r.duration_str:>8}  {status_icon}")
+
+        menu = Menu(
+            title="转录历史",
+            items=menu_items,
+            footer="↑↓ 导航  Enter 详情  Esc 返回",
+            theme=self.theme,
+        )
+        menu.render_full()
+
         while True:
+            old_cursor = menu.cursor
             key = self.reader.read_key(timeout=0.05)
+            if key is None:
+                continue
             if key == Key.QUIT:
                 return "quit"
             elif key == Key.ESCAPE:
                 self._pop_state()
                 return "continue"
+            elif key in (Key.UP,):
+                menu.move_up()
+                menu.render_incremental(old_cursor)
+            elif key in (Key.DOWN,):
+                menu.move_down()
+                menu.render_incremental(old_cursor)
 
     def _view_batch(self) -> str:
         t = self.theme
