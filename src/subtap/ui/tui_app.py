@@ -163,7 +163,7 @@ class TuiApp:
 
     def _view_new_task(self) -> str:
         t = self.theme
-        sys.stderr.write("\033[H")
+        sys.stderr.write("\033[2J\033[H")
         sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}新建转录{t.NC}\r\n\r\n")
         sys.stderr.write(f"\033[2K  Enter 选择音频或视频文件\r\n\r\n")
         sys.stderr.write(f"\033[2K{t.GRAY}支持格式：mp3, wav, m4a, mp4, mkv, avi{t.NC}\r\n\r\n")
@@ -182,7 +182,7 @@ class TuiApp:
 
     def _view_history(self) -> str:
         t = self.theme
-        sys.stderr.write("\033[H")
+        sys.stderr.write("\033[2J\033[H")
         sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}转录历史{t.NC}\r\n\r\n")
         sys.stderr.write(f"\033[2K{t.GRAY}暂无记录{t.NC}\r\n\r\n")
         sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回  Q 退出{t.NC}\r\n")
@@ -197,7 +197,7 @@ class TuiApp:
 
     def _view_batch(self) -> str:
         t = self.theme
-        sys.stderr.write("\033[H")
+        sys.stderr.write("\033[2J\033[H")
         sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}批量转录{t.NC}\r\n\r\n")
         sys.stderr.write(f"\033[2K  Enter 选择文件夹\r\n\r\n")
         sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回  Q 退出{t.NC}\r\n")
@@ -215,7 +215,7 @@ class TuiApp:
 
     def _view_setup(self) -> str:
         t = self.theme
-        sys.stderr.write("\033[H")
+        sys.stderr.write("\033[2J\033[H")
         sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}欢迎使用 Subtap{t.NC}\r\n\r\n")
         sys.stderr.write(f"\033[2K  首次使用，需要完成基础配置\r\n\r\n")
         sys.stderr.write(f"\033[2K{t.GRAY}Enter 开始配置  Q 退出{t.NC}\r\n")
