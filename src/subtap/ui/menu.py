@@ -102,20 +102,22 @@ class Menu:
         self._needs_full_redraw = False
 
     def render_incremental(self, old_cursor: int) -> None:
-        if self._needs_full_redraw:
-            self.render_full()
-            return
+        # 增量渲染 = 重绘菜单区域（从第一项开始，不清屏，保留 logo）
+        # 用 \033[row;1H 逐行覆盖，避免依赖 \033[H 的终端兼容性
         t = self.theme
-        # 旧行取消高亮（+2: title + blank line, +offset: logo 占位）
-        old_row = old_cursor - self.top_index + 2 + self.offset
-        sys.stderr.write(f"\r\033[{old_row};1H\033[2K  {self.items[old_cursor]}")
-        # 新行高亮
-        new_row = self.cursor - self.top_index + 2 + self.offset
-        sys.stderr.write(f"\r\033[{new_row};1H\033[2K{t.CYAN}{ICON_ARROW} {self.items[self.cursor]}{t.NC}")
-        # 光标移到页脚后（使用实际可见项数，不用 items_per_page）
+        buf = []
+        # 重写菜单项（从 offset+3 开始，跳过 title 和 blank）
+        start_row = self.offset + 3
         visible = min(self.items_per_page, len(self.items) - self.top_index)
-        footer_row = visible + 3 + self.offset
-        sys.stderr.write(f"\r\033[{footer_row};1H")
+        for i in range(visible):
+            idx = self.top_index + i
+            row = start_row + i
+            is_current = idx == self.cursor
+            if is_current:
+                buf.append(f"\033[{row};1H\033[2K{t.CYAN}{ICON_ARROW} {self.items[idx]}{t.NC}")
+            else:
+                buf.append(f"\033[{row};1H\033[2K  {self.items[idx]}")
+        sys.stderr.write("".join(buf))
         sys.stderr.flush()
 
     def set_needs_redraw(self) -> None:
