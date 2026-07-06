@@ -617,7 +617,7 @@ class TuiApp:
                     return "quit"
         except FileNotFoundError:
             sys.stderr.write("\033[H\033[J")
-            sys.stderr.write(f"\033[2K{t.RED}✗ 未找到 subtap 命令{t.NC}\r\n")
+            sys.stderr.write(f"\033[2K{t.RED}✗ 转录程序未找到，请检查安装{t.NC}\r\n")
             sys.stderr.write(f"\033[2K\r\n{t.GRAY}Esc 返回{t.NC}\r\n")
             sys.stderr.flush()
             while True:
