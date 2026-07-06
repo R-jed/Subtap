@@ -114,6 +114,7 @@ class TuiApp:
                 if digit.isdigit() and 1 <= int(digit) <= len(menu.items):
                     menu.cursor = int(digit) - 1
                     menu.render_incremental(old_cursor)
+                continue
 
     def _view_settings(self) -> str:
         menu = Menu(
@@ -125,7 +126,7 @@ class TuiApp:
                 "4. 在线服务    接口地址和密钥",
                 "5. 语音模型    下载和管理",
             ],
-            footer="↑↓ 导航  Enter 确认  Esc 返回",
+            footer="↑↓ 导航  Enter 确认  Esc 返回  Q 退出",
             theme=self.theme,
         )
         menu.render_full()
@@ -134,7 +135,9 @@ class TuiApp:
             key = self.reader.read_key(timeout=0.05)
             if key is None:
                 continue
-            if key == Key.ESCAPE:
+            if key == Key.QUIT:
+                return "quit"
+            elif key == Key.ESCAPE:
                 self._pop_state()
                 return "continue"
             elif key == Key.UP:
@@ -150,11 +153,13 @@ class TuiApp:
         sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}新建转录{t.NC}\n\n")
         sys.stderr.write(f"\033[2K  Enter 选择音频或视频文件\n\n")
         sys.stderr.write(f"\033[2K{t.GRAY}支持格式：mp3, wav, m4a, mp4, mkv, avi{t.NC}\n\n")
-        sys.stderr.write(f"\033[2K{t.GRAY}Enter 选择文件  Esc 返回{t.NC}\n")
+        sys.stderr.write(f"\033[2K{t.GRAY}Enter 选择文件  Esc 返回  Q 退出{t.NC}\n")
         sys.stderr.flush()
         while True:
             key = self.reader.read_key(timeout=0.05)
-            if key == Key.ESCAPE:
+            if key == Key.QUIT:
+                return "quit"
+            elif key == Key.ESCAPE:
                 self._pop_state()
                 return "continue"
             elif key == Key.ENTER:
@@ -166,11 +171,13 @@ class TuiApp:
         sys.stderr.write("\033[H")
         sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}转录历史{t.NC}\n\n")
         sys.stderr.write(f"\033[2K{t.GRAY}暂无记录{t.NC}\n\n")
-        sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回{t.NC}\n")
+        sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回  Q 退出{t.NC}\n")
         sys.stderr.flush()
         while True:
             key = self.reader.read_key(timeout=0.05)
-            if key == Key.ESCAPE:
+            if key == Key.QUIT:
+                return "quit"
+            elif key == Key.ESCAPE:
                 self._pop_state()
                 return "continue"
 
@@ -179,11 +186,13 @@ class TuiApp:
         sys.stderr.write("\033[H")
         sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}批量转录{t.NC}\n\n")
         sys.stderr.write(f"\033[2K  Enter 选择文件夹\n\n")
-        sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回{t.NC}\n")
+        sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回  Q 退出{t.NC}\n")
         sys.stderr.flush()
         while True:
             key = self.reader.read_key(timeout=0.05)
-            if key == Key.ESCAPE:
+            if key == Key.QUIT:
+                return "quit"
+            elif key == Key.ESCAPE:
                 self._pop_state()
                 return "continue"
             elif key == Key.ENTER:
@@ -195,11 +204,13 @@ class TuiApp:
         sys.stderr.write("\033[H")
         sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}欢迎使用 Subtap{t.NC}\n\n")
         sys.stderr.write(f"\033[2K  首次使用，需要完成基础配置\n\n")
-        sys.stderr.write(f"\033[2K{t.GRAY}Enter 开始配置{t.NC}\n")
+        sys.stderr.write(f"\033[2K{t.GRAY}Enter 开始配置  Q 退出{t.NC}\n")
         sys.stderr.flush()
         while True:
             key = self.reader.read_key(timeout=0.05)
-            if key == Key.ENTER:
+            if key == Key.QUIT:
+                return "quit"
+            elif key == Key.ENTER:
                 # TODO: 配置流程
                 self._pop_state()
                 return "continue"
