@@ -47,6 +47,8 @@ class FakePipeline:
             return {"skipped": True}
         if stage == "align":
             return {"aligned_count": 1}
+        if stage == "learn":
+            return {"learned": 0}
         if stage == "translate":
             return {"translated_count": 1}
         raise AssertionError(stage)
