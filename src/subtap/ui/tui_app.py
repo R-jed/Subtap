@@ -490,61 +490,61 @@ class TuiApp:
         sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回主菜单{t.NC}\r\n")
         sys.stderr.flush()
 
-        # 直接读取原始字节，避免 UTF-8 多字节字符被逐字节解码导致乱码
+        # 用 force_char_mode 读取，避免 q 被映射为 QUIT
+        # 用原始字节缓冲，避免 UTF-8 多字节字符被逐字节解码导致乱码
+        self.reader.force_char_mode = True
         raw_buf = b""
 
-        while True:
-            key = self.reader.read_key(timeout=0.1)
-            if key is None:
-                continue
-            if key == Key.QUIT:
-                return "quit"
-            elif key == Key.ESCAPE:
-                self._pop_state()
-                return "continue"
-            elif key == Key.ENTER:
-                if raw_buf:
-                    try:
-                        path_str = raw_buf.decode("utf-8")
-                    except UnicodeDecodeError:
-                        path_str = raw_buf.decode("utf-8", errors="replace")
-                    # 去除可能的引号（拖入时终端会加引号）
-                    clean_path = path_str.strip().strip("'\"")
-                    file_path = Path(clean_path).expanduser()
-                    if not file_path.is_file():
-                        sys.stderr.write(f"\033[8;1H\033[2K{t.RED}文件不存在：{clean_path}{t.NC}\r\n")
-                        sys.stderr.flush()
-                        raw_buf = b""
-                    elif file_path.suffix.lower() not in AUDIO_VIDEO_EXTENSIONS:
-                        sys.stderr.write(f"\033[8;1H\033[2K{t.RED}不支持的格式：{file_path.suffix}{t.NC}\r\n")
-                        sys.stderr.flush()
-                        raw_buf = b""
-                    else:
-                        view.select_file(file_path)
-                        return self._view_confirm_run(view)
-            elif key == Key.DELETE:
-                if raw_buf:
-                    # 删除最后一个 UTF-8 字符（找到前一个字符的起始字节）
-                    raw_buf = raw_buf[:-1]
-                    while raw_buf and (raw_buf[-1] & 0xC0) == 0x80:
+        try:
+            while True:
+                key = self.reader.read_key(timeout=0.1)
+                if key is None:
+                    continue
+                if key == Key.ESCAPE:
+                    self._pop_state()
+                    return "continue"
+                elif key == Key.ENTER:
+                    if raw_buf:
+                        try:
+                            path_str = raw_buf.decode("utf-8")
+                        except UnicodeDecodeError:
+                            path_str = raw_buf.decode("utf-8", errors="replace")
+                        # 去除可能的引号（拖入时终端会加引号）
+                        clean_path = path_str.strip().strip("'\"")
+                        file_path = Path(clean_path).expanduser()
+                        if not file_path.is_file():
+                            sys.stderr.write(f"\033[8;1H\033[2K{t.RED}文件不存在：{clean_path}{t.NC}\r\n")
+                            sys.stderr.flush()
+                            raw_buf = b""
+                        elif file_path.suffix.lower() not in AUDIO_VIDEO_EXTENSIONS:
+                            sys.stderr.write(f"\033[8;1H\033[2K{t.RED}不支持的格式：{file_path.suffix}{t.NC}\r\n")
+                            sys.stderr.flush()
+                            raw_buf = b""
+                        else:
+                            view.select_file(file_path)
+                            return self._view_confirm_run(view)
+                elif key == Key.DELETE:
+                    if raw_buf:
                         raw_buf = raw_buf[:-1]
-                    try:
-                        display = raw_buf.decode("utf-8")
-                    except UnicodeDecodeError:
-                        display = raw_buf.decode("utf-8", errors="replace")
-                    display = display[-60:] if len(display) > 60 else display
-                    sys.stderr.write(f"\033[6;1H\033[2K{t.CYAN}> {display}{t.NC}")
-                    sys.stderr.flush()
-            elif key.startswith("CHAR:"):
-                ch = key[5:]
-                raw_buf += ch.encode("utf-8")
-                try:
-                    display = raw_buf.decode("utf-8")
-                except UnicodeDecodeError:
-                    display = raw_buf.decode("utf-8", errors="replace")
-                display = display[-60:] if len(display) > 60 else display
-                sys.stderr.write(f"\033[6;1H\033[2K{t.CYAN}> {display}{t.NC}")
-                sys.stderr.flush()
+                        while raw_buf and (raw_buf[-1] & 0xC0) == 0x80:
+                            raw_buf = raw_buf[:-1]
+                        self._update_path_display(raw_buf)
+                elif key.startswith("CHAR:"):
+                    ch = key[5:]
+                    raw_buf += ch.encode("utf-8")
+                    self._update_path_display(raw_buf)
+        finally:
+            self.reader.force_char_mode = False
+
+    def _update_path_display(self, raw_buf: bytes) -> None:
+        t = self.theme
+        try:
+            display = raw_buf.decode("utf-8")
+        except UnicodeDecodeError:
+            display = raw_buf.decode("utf-8", errors="replace")
+        display = display[-60:] if len(display) > 60 else display
+        sys.stderr.write(f"\033[6;1H\033[2K{t.CYAN}> {display}{t.NC}")
+        sys.stderr.flush()
 
     def _view_confirm_run(self, view: NewTaskView) -> str:
         t = self.theme
