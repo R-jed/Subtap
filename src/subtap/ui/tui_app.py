@@ -692,42 +692,55 @@ class TuiApp:
 
     def _view_batch(self) -> str:
         t = self.theme
-        picker = FilePicker(Path.home(), show_dirs=True)
-        items = picker.list_items()
-        menu_items = [f"📁 {i.name}" if i.is_dir else i.name for i in items]
-        if not menu_items:
-            menu_items = ["(当前目录无文件夹)"]
 
-        menu = Menu(
-            title="批量转录 · 选择文件夹",
-            items=menu_items,
-            footer="↑↓ 导航  Enter 选择  Esc 返回",
-            theme=self.theme,
-        )
-        menu.render_full()
+        # 显示拖入提示
+        sys.stderr.write("\033[H\033[J")
+        sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}批量转录{t.NC}\r\n\r\n")
+        sys.stderr.write(f"\033[2K  拖入文件夹到此处，按 Enter 确认\r\n\r\n")
+        sys.stderr.write(f"\033[2K{t.GRAY}将处理文件夹中所有音频/视频文件{t.NC}\r\n\r\n")
+        sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回主菜单{t.NC}\r\n")
+        sys.stderr.flush()
 
-        while True:
-            old_cursor = menu.cursor
-            key = self.reader.read_key(timeout=0.05)
-            if key is None:
-                continue
-            if key == Key.QUIT:
-                return "quit"
-            elif key == Key.ESCAPE:
-                self._pop_state()
-                return "continue"
-            elif key in (Key.UP,):
-                menu.move_up()
-                menu.render_incremental(old_cursor)
-            elif key in (Key.DOWN,):
-                menu.move_down()
-                menu.render_incremental(old_cursor)
-            elif key == Key.ENTER:
-                if not items or menu.cursor >= len(items):
+        # 用 force_char_mode 读取拖入的路径
+        self.reader.force_char_mode = True
+        raw_buf = b""
+
+        try:
+            while True:
+                key = self.reader.read_key(timeout=0.1)
+                if key is None:
                     continue
-                selected = items[menu.cursor]
-                if selected.is_dir:
-                    return self._execute_batch(selected.path)
+                if key == Key.ESCAPE:
+                    self._pop_state()
+                    return "continue"
+                elif key == Key.QUIT:
+                    return "quit"
+                elif key == Key.ENTER:
+                    if raw_buf:
+                        try:
+                            path_str = raw_buf.decode("utf-8")
+                        except UnicodeDecodeError:
+                            path_str = raw_buf.decode("utf-8", errors="replace")
+                        clean_path = path_str.strip().strip("'\"")
+                        folder = Path(clean_path).expanduser()
+                        if not folder.is_dir():
+                            sys.stderr.write(f"\033[8;1H\033[2K{t.RED}文件夹不存在：{clean_path}{t.NC}\r\n")
+                            sys.stderr.flush()
+                            raw_buf = b""
+                        else:
+                            return self._execute_batch(folder)
+                elif key == Key.DELETE:
+                    if raw_buf:
+                        raw_buf = raw_buf[:-1]
+                        while raw_buf and (raw_buf[-1] & 0xC0) == 0x80:
+                            raw_buf = raw_buf[:-1]
+                        self._update_path_display(raw_buf)
+                elif key.startswith("CHAR:"):
+                    ch = key[5:]
+                    raw_buf += ch.encode("utf-8")
+                    self._update_path_display(raw_buf)
+        finally:
+            self.reader.force_char_mode = False
 
     def _execute_batch(self, folder: Path) -> str:
         t = self.theme
