@@ -166,6 +166,167 @@ class TuiApp:
             elif key == Key.DOWN:
                 menu.move_down()
                 menu.render_incremental(old_cursor)
+            elif key == Key.ENTER:
+                selected = menu.cursor
+                if selected == 0:
+                    return self._view_settings_asr()
+                elif selected == 1:
+                    return self._view_settings_enhance()
+                elif selected == 2:
+                    return self._view_settings_format()
+                elif selected == 3:
+                    return self._view_settings_api()
+                elif selected == 4:
+                    return self._view_settings_models()
+
+    def _view_settings_asr(self) -> str:
+        t = self.theme
+        model = self.config.get("asr.model", "asr_0.6b")
+        lang = self.config.get("output.subtitle_language", "zh")
+        mode = self.config.get("mode", "offline")
+
+        items = [
+            f"模型：{model}",
+            f"语言：{'中文' if lang == 'zh' else '英文' if lang == 'en' else '自动检测'}",
+            f"模式：{'在线服务' if mode == 'online' else '本地运行'}",
+        ]
+        menu = Menu(title="设置 · 语音识别", items=items, footer="↑↓ 导航  Enter 切换  Esc 返回", theme=self.theme)
+        menu.render_full()
+
+        while True:
+            old_cursor = menu.cursor
+            key = self.reader.read_key(timeout=0.05)
+            if key is None:
+                continue
+            if key == Key.ESCAPE:
+                self._pop_state()
+                return "continue"
+            elif key == Key.QUIT:
+                return "quit"
+            elif key in (Key.UP,):
+                menu.move_up()
+                menu.render_incremental(old_cursor)
+            elif key in (Key.DOWN,):
+                menu.move_down()
+                menu.render_incremental(old_cursor)
+            elif key == Key.ENTER:
+                if menu.cursor == 0:
+                    models = ["asr_0.6b", "asr_1.7b"]
+                    idx = models.index(model) if model in models else 0
+                    model = models[(idx + 1) % len(models)]
+                    self.config.set("asr.model", model)
+                    self.config.save()
+                elif menu.cursor == 1:
+                    langs = [("zh", "中文"), ("en", "英文"), ("", "自动检测")]
+                    idx = next((i for i, (k, _) in enumerate(langs) if k == lang), 0)
+                    lang, _ = langs[(idx + 1) % len(langs)]
+                    self.config.set("output.subtitle_language", lang)
+                    self.config.save()
+                elif menu.cursor == 2:
+                    mode = "online" if mode == "offline" else "offline"
+                    self.config.set("mode", mode)
+                    self.config.save()
+                items[0] = f"模型：{model}"
+                items[1] = f"语言：{'中文' if lang == 'zh' else '英文' if lang == 'en' else '自动检测'}"
+                items[2] = f"模式：{'在线服务' if mode == 'online' else '本地运行'}"
+                menu = Menu(title="设置 · 语音识别", items=items, footer="↑↓ 导航  Enter 切换  Esc 返回", theme=self.theme)
+                menu.render_full()
+
+    def _view_settings_enhance(self) -> str:
+        t = self.theme
+        proofread = self.config.get("llm_proofread", False)
+        hotword = self.config.get("llm_hotword", False)
+        translate = self.config.get("translate_to", "")
+
+        nonlocal_vars = {"proofread": proofread, "hotword": hotword, "translate": translate}
+
+        def get_items():
+            p = nonlocal_vars["proofread"]
+            h = nonlocal_vars["hotword"]
+            tr = nonlocal_vars["translate"]
+            return [
+                f"自动纠错：{'开启' if p else '关闭'}",
+                f"专有名词：{'开启' if h else '关闭'}",
+                f"自动翻译：{'关闭' if not tr else tr}",
+            ]
+
+        items = get_items()
+        menu = Menu(title="设置 · 智能优化", items=items, footer="↑↓ 导航  Enter 切换  Esc 返回", theme=self.theme)
+        menu.render_full()
+
+        while True:
+            old_cursor = menu.cursor
+            key = self.reader.read_key(timeout=0.05)
+            if key is None:
+                continue
+            if key == Key.ESCAPE:
+                self._pop_state()
+                return "continue"
+            elif key == Key.QUIT:
+                return "quit"
+            elif key in (Key.UP,):
+                menu.move_up()
+                menu.render_incremental(old_cursor)
+            elif key in (Key.DOWN,):
+                menu.move_down()
+                menu.render_incremental(old_cursor)
+            elif key == Key.ENTER:
+                if menu.cursor == 0:
+                    nonlocal_vars["proofread"] = not nonlocal_vars["proofread"]
+                    self.config.set("llm_proofread", nonlocal_vars["proofread"])
+                elif menu.cursor == 1:
+                    nonlocal_vars["hotword"] = not nonlocal_vars["hotword"]
+                    self.config.set("llm_hotword", nonlocal_vars["hotword"])
+                elif menu.cursor == 2:
+                    targets = [("", "关闭"), ("en", "英文"), ("ja", "日文")]
+                    idx = next((i for i, (k, _) in enumerate(targets) if k == nonlocal_vars["translate"]), 0)
+                    nonlocal_vars["translate"], _ = targets[(idx + 1) % len(targets)]
+                    self.config.set("translate_to", nonlocal_vars["translate"])
+                self.config.save()
+                items = get_items()
+                menu = Menu(title="设置 · 智能优化", items=items, footer="↑↓ 导航  Enter 切换  Esc 返回", theme=self.theme)
+                menu.render_full()
+
+    def _view_settings_format(self) -> str:
+        t = self.theme
+        fmts = self.config.get("output.subtitle_formats", ["srt"])
+        items = [f"当前格式：{', '.join(f.upper() for f in fmts)}"]
+        menu = Menu(title="设置 · 保存格式", items=items, footer="Esc 返回", theme=self.theme)
+        menu.render_full()
+        while True:
+            key = self.reader.read_key(timeout=0.05)
+            if key in (Key.ESCAPE,):
+                self._pop_state()
+                return "continue"
+            elif key == Key.QUIT:
+                return "quit"
+
+    def _view_settings_api(self) -> str:
+        t = self.theme
+        base_url = self.config.get("remote_api.base_url", "未配置")
+        items = [f"接口地址：{base_url}", f"密钥：{'已配置' if self.config.get('remote_api.api_key_env') else '未配置'}"]
+        menu = Menu(title="设置 · 在线服务", items=items, footer="Esc 返回", theme=self.theme)
+        menu.render_full()
+        while True:
+            key = self.reader.read_key(timeout=0.05)
+            if key in (Key.ESCAPE,):
+                self._pop_state()
+                return "continue"
+            elif key == Key.QUIT:
+                return "quit"
+
+    def _view_settings_models(self) -> str:
+        t = self.theme
+        items = ["模型管理功能开发中..."]
+        menu = Menu(title="设置 · 语音模型", items=items, footer="Esc 返回", theme=self.theme)
+        menu.render_full()
+        while True:
+            key = self.reader.read_key(timeout=0.05)
+            if key in (Key.ESCAPE,):
+                self._pop_state()
+                return "continue"
+            elif key == Key.QUIT:
+                return "quit"
 
     def _view_new_task(self) -> str:
         t = self.theme
