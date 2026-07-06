@@ -85,7 +85,11 @@ class Menu:
                 lines.append(f"\033[2K{t.CYAN}{ICON_ARROW} {self.items[idx]}{t.NC}")
             else:
                 lines.append(f"\033[2K  {self.items[idx]}")
-        lines.append("\033[2K")  # 菜单和状态栏之间间距
+        # 菜单和状态栏之间间距（5行）
+        lines.append("\033[2K")
+        lines.append("\033[2K")
+        lines.append("\033[2K")
+        lines.append("\033[2K")
         lines.append("\033[2K")
         lines.append(f"\033[2K{t.GRAY}{self.footer}{t.NC}")
         return lines
