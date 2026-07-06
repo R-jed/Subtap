@@ -478,71 +478,58 @@ class TuiApp:
     def _view_new_task(self) -> str:
         t = self.theme
         view = NewTaskView(config=self.config, home_dir=Path.home())
-        picker = FilePicker(Path.home())
-        items = picker.list_items()
-        menu_items = [f"📁 {i.name}" if i.is_dir else i.name for i in items]
-        if not menu_items:
-            menu_items = ["(当前目录无音频/视频文件)"]
 
-        menu = Menu(
-            title="新建转录 · 选择文件",
-            items=menu_items,
-            footer="↑↓ 导航  Enter 选择  Esc 返回",
-            theme=self.theme,
-        )
-        menu.render_full()
+        # 显示拖入提示
+        sys.stderr.write("\033[2J\033[H")
+        sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}新建转录{t.NC}\r\n\r\n")
+        sys.stderr.write(f"\033[2K  拖入音频或视频文件到此处\r\n\r\n")
+        sys.stderr.write(f"\033[2K{t.GRAY}支持格式：mp3, wav, m4a, mp4, mkv, avi...{t.NC}\r\n\r\n")
+        sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回主菜单{t.NC}\r\n")
+        sys.stderr.flush()
 
-        while True:
-            old_cursor = menu.cursor
-            key = self.reader.read_key(timeout=0.05)
-            if key is None:
-                continue
-            if key == Key.QUIT:
-                return "quit"
-            elif key == Key.ESCAPE:
-                # 如果不在根目录，返回上级
-                if picker.path != Path.home():
-                    picker = picker.parent()
-                    items = picker.list_items()
-                    menu_items = [f"📁 {i.name}" if i.is_dir else i.name for i in items]
-                    if not menu_items:
-                        menu_items = ["(当前目录无音频/视频文件)"]
-                    menu = Menu(
-                        title=f"新建转录 · {picker.path.name or '/'}",
-                        items=menu_items,
-                        footer="↑↓ 导航  Enter 选择  Esc 返回",
-                        theme=self.theme,
-                    )
-                    menu.render_full()
-                else:
+        # 切换到字符模式读取拖入的路径
+        self.reader.force_char_mode = True
+        path_buf = ""
+
+        try:
+            while True:
+                key = self.reader.read_key(timeout=0.1)
+                if key is None:
+                    continue
+                if key == Key.QUIT:
+                    return "quit"
+                elif key == Key.ESCAPE:
                     self._pop_state()
                     return "continue"
-            elif key in (Key.UP,):
-                menu.move_up()
-                menu.render_incremental(old_cursor)
-            elif key in (Key.DOWN,):
-                menu.move_down()
-                menu.render_incremental(old_cursor)
-            elif key == Key.ENTER:
-                if not items:
-                    continue
-                selected = items[menu.cursor]
-                if selected.is_dir:
-                    picker = picker.enter(selected.name)
-                    items = picker.list_items()
-                    menu_items = [f"📁 {i.name}" if i.is_dir else i.name for i in items]
-                    if not menu_items:
-                        menu_items = ["(当前目录无音频/视频文件)"]
-                    menu = Menu(
-                        title=f"新建转录 · {picker.path.name or '/'}",
-                        items=menu_items,
-                        footer="↑↓ 导航  Enter 选择  Esc 返回",
-                        theme=self.theme,
-                    )
-                    menu.render_full()
-                else:
-                    view.select_file(selected.path)
-                    return self._view_confirm_run(view)
+                elif key == Key.ENTER:
+                    if path_buf:
+                        # 去除可能的引号（拖入时终端会加引号）
+                        clean_path = path_buf.strip().strip("'\"")
+                        file_path = Path(clean_path).expanduser()
+                        if file_path.is_file():
+                            view.select_file(file_path)
+                            return self._view_confirm_run(view)
+                        else:
+                            # 文件不存在，清空并提示
+                            sys.stderr.write(f"\033[8;1H\033[2K{t.RED}文件不存在：{clean_path}{t.NC}\r\n")
+                            sys.stderr.write(f"\033[9;1H\033[2K{t.GRAY}请重新拖入文件{t.NC}\r\n")
+                            sys.stderr.flush()
+                            path_buf = ""
+                elif key.startswith("CHAR:"):
+                    ch = key[5:]
+                    path_buf += ch
+                    # 显示已输入的路径（截断显示）
+                    display = path_buf[-60:] if len(path_buf) > 60 else path_buf
+                    sys.stderr.write(f"\033[6;1H\033[2K{t.CYAN}> {display}{t.NC}")
+                    sys.stderr.flush()
+                elif key == Key.DELETE:
+                    if path_buf:
+                        path_buf = path_buf[:-1]
+                        display = path_buf[-60:] if len(path_buf) > 60 else path_buf
+                        sys.stderr.write(f"\033[6;1H\033[2K{t.CYAN}> {display}{t.NC}")
+                        sys.stderr.flush()
+        finally:
+            self.reader.force_char_mode = False
 
     def _view_confirm_run(self, view: NewTaskView) -> str:
         t = self.theme
