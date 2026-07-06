@@ -71,17 +71,15 @@ class TuiApp:
 
     def _view_home(self) -> str:
         t = self.theme
-        # Logo 占 3 行
-        logo_lines = [
-            f"\033[1;1H\033[2K{t.CYAN}  ____        _       {t.NC}",
-            f"\033[2;1H\033[2K{t.CYAN} / ___| _   _| |_ __ _| |__   __ _ _ __  {t.NC}",
-            f"\033[3;1H\033[2K{t.CYAN} \\___ \\| | | | __/ _` | '_ \\ / _` | '__| {t.NC}",
-            f"\033[4;1H\033[2K{t.CYAN}  ___) | |_| | || (_| | |_) | (_| | |    {t.NC}",
-            f"\033[5;1H\033[2K{t.CYAN} |____/ \\__, |\\__\\__,_|_.__/ \\__,_|_|    {t.NC}",
-            f"\033[6;1H\033[2K{t.CYAN}        |___/  {t.GRAY}音频转录工具{t.NC}",
+        # Logo 作为 prefix（菜单自带 title 空行提供间距）
+        prefix = [
+            f"{t.CYAN}  ____        _       {t.NC}",
+            f"{t.CYAN} / ___| _   _| |_ __ _| |__   __ _ _ __  {t.NC}",
+            f"{t.CYAN} \\___ \\| | | | __/ _` | '_ \\ / _` | '__| {t.NC}",
+            f"{t.CYAN}  ___) | |_| | || (_| | |_) | (_| | |    {t.NC}",
+            f"{t.CYAN} |____/ \\__, |\\__\\__,_|_.__/ \\__,_|_|    {t.NC}",
+            f"{t.CYAN}        |___/  {t.GRAY}音频转录工具{t.NC}",
         ]
-        sys.stderr.write("".join(logo_lines))
-        sys.stderr.flush()
 
         menu = Menu(
             title="",
@@ -93,7 +91,7 @@ class TuiApp:
             ],
             footer="↑↓ 导航  Enter 确认  Q 退出",
             theme=self.theme,
-            offset=6,  # Logo 占 6 行
+            prefix_lines=prefix,
         )
         menu.render_full()
         while True:
