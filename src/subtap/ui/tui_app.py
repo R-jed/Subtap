@@ -52,8 +52,6 @@ class TuiApp:
             return self._view_history()
         elif self._state == "batch":
             return self._view_batch()
-        elif self._state == "setup":
-            return self._view_setup()
         return "quit"
 
     def _push_state(self, state: str) -> None:
@@ -742,22 +740,6 @@ class TuiApp:
                 return "continue"
             elif key == Key.QUIT:
                 return "quit"
-
-    def _view_setup(self) -> str:
-        t = self.theme
-        sys.stderr.write("\033[2J\033[H")
-        sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}欢迎使用 Subtap{t.NC}\r\n\r\n")
-        sys.stderr.write(f"\033[2K  首次使用，需要完成基础配置\r\n\r\n")
-        sys.stderr.write(f"\033[2K{t.GRAY}Enter 开始配置  Q 退出{t.NC}\r\n")
-        sys.stderr.flush()
-        while True:
-            key = self.reader.read_key(timeout=0.05)
-            if key == Key.QUIT:
-                return "quit"
-            elif key == Key.ENTER:
-                # TODO: 配置流程
-                self._pop_state()
-                return "continue"
 
 
 def main():
