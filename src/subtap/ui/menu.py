@@ -88,7 +88,7 @@ class Menu:
         return lines
 
     def render_full(self) -> None:
-        buf = []
+        buf = ["\033[2J\033[H"]  # 清屏 + 光标归位
         for row, line in enumerate(self.render(), start=self.offset + 1):
             buf.append(f"\033[{row};1H\033[2K{line}")
         buf.append("\033[?25l")
