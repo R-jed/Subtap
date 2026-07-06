@@ -313,6 +313,13 @@ def chinese_to_num(text: str) -> str:
     if not text:
         return text
 
+    # Handle 月/日: 八月 → 8月, 六日 → 6日, 十二月 → 12月
+    text = re.sub(
+        r"([零一二两三四五六七八九十]+)(月|日|号)",
+        lambda m: str(_parse_total(m.group(1))) + m.group(2),
+        text,
+    )
+
     # Handle 小数点缺失: 06秒 → 0.6秒
     # 比例号：X比Y → X:Y
     def _cn_to_arabic(s):

@@ -37,8 +37,11 @@ class LLMBackend(Protocol):
 
     def replace_hotwords(
         self, segments: list[dict], glossary: dict | None
-    ) -> dict[int, str]:
-        """Replace domain-specific terms using glossary."""
+    ) -> dict[int, dict]:
+        """Replace domain-specific terms using glossary.
+
+        Returns: {index: {"text": corrected, "ops": [{"from": x, "to": y}]}}
+        """
         ...
 
     def translate_srt(self, srt_text: str, target_language: str) -> str:

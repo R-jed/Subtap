@@ -30,10 +30,10 @@ class FakeLLM:
 
     def replace_hotwords(
         self, segments: list[dict], glossary: dict | None
-    ) -> dict[int, str]:
+    ) -> dict[int, dict]:
         self.calls.append("hotword")
         self.glossaries.append(glossary)
-        return self.hotwords
+        return {idx: {"text": text, "ops": []} for idx, text in self.hotwords.items()}
 
 
 def _workspace(tmp_path: Path, texts: list[str] | None = None) -> Workspace:

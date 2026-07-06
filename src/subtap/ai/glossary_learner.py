@@ -191,3 +191,71 @@ class GlossaryLearner:
                 patterns.append(f"{original} → {corrected} (出现 {count} 次)")
 
         return patterns
+
+    def learn_from_ops(self, ops: list[dict]) -> GlossaryUpdate:
+        """Learn glossary updates from LLM hotword replacement ops.
+
+        Filters out noise: single chars, pure punctuation, ops containing
+        sentence-ending punctuation, and ops where from/to are too different
+        in length (likely bad diff).
+
+        Args:
+            ops: List of {"from": wrong, "to": correct, "segment_id": int}.
+
+        Returns:
+            GlossaryUpdate with new_terms = {correct: wrong}.
+        """
+        import re
+
+        _SENT_PUNCT = re.compile(r"[。！？.!?\n]")
+        _PURE_PUNCT = re.compile(r"^[\W\s]+$")
+
+        new_terms: dict[str, str] = {}
+        for op in ops:
+            wrong = op.get("from", "").strip()
+            correct = op.get("to", "").strip()
+            if not wrong or not correct or wrong == correct:
+                continue
+            # Skip single-char ops (too short to be meaningful)
+            if len(wrong) < 2 or len(correct) < 2:
+                continue
+            # Skip pure punctuation
+            if _PURE_PUNCT.match(wrong) or _PURE_PUNCT.match(correct):
+                continue
+            # Skip ops with sentence-ending punctuation (diff noise)
+            if _SENT_PUNCT.search(wrong) or _SENT_PUNCT.search(correct):
+                continue
+            # Skip if length ratio is too large (>3x, likely bad diff)
+            ratio = max(len(wrong), len(correct)) / max(min(len(wrong), len(correct)), 1)
+            if ratio > 3:
+                continue
+            new_terms[correct] = wrong
+
+        return GlossaryUpdate(new_terms=new_terms)
+
+
+def save_learned_hotwords(update: GlossaryUpdate, path: Path) -> None:
+    """Append learned hotwords to hotwords file (dedup with existing).
+
+    Format: correct=wrong (one per line).
+    """
+    existing: set[str] = set()
+    if path.exists():
+        for line in path.read_text(encoding="utf-8").strip().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                existing.add(line)
+
+    new_lines = []
+    for correct, wrong in update.new_terms.items():
+        # Format: wrong=correct (错词=正确词, consistent with hotwords_zh.txt)
+        entry = f"{wrong}={correct}"
+        if entry not in existing:
+            new_lines.append(entry)
+            existing.add(entry)
+
+    if new_lines:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            for line in new_lines:
+                f.write(line + "\n")

@@ -135,6 +135,17 @@ class RichRunner:
 
                 self.timings["hotword"] = 0.0
 
+                # Stage 6.5: learn (LLM discovered hotwords → local glossary)
+                task = progress.add_task("热词学习", total=1)
+                t = time.time()
+                r = pipeline.run_stage("learn")
+                self.timings["learn"] = time.time() - t
+                progress.update(task, completed=1)
+                if r.get("learned", 0) > 0:
+                    console.print(f"  [green]✓[/] 学习 {r['learned']} 个热词")
+                else:
+                    console.print("  [dim]·[/] 无新热词")
+
                 # Stage 7: translate (optional)
                 if translate_to:
                     task = progress.add_task("字幕翻译", total=1)

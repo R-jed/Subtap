@@ -826,6 +826,11 @@ def run(
         "--llm-hotword/--no-llm-hotword",
         help="启用/禁用 LLM 热词（默认根据配置自动判断）",
     ),
+    hotwords: str | None = typer.Option(
+        None,
+        "--hotwords",
+        help="ASR 热词列表，逗号分隔（如：瑞幸,CapCut,TikTok）",
+    ),
     tui: bool = typer.Option(False, "--tui", help="使用 TUI 观察者运行"),
     observer_child: bool = typer.Option(
         False, "--observer-child", hidden=True, help="内部参数：观察者子进程"
@@ -921,6 +926,10 @@ def run(
     # Mode-based model override
     if mode == "quality":
         config.asr.model = "asr_1.7b"
+
+    # Hotwords: CLI overrides config
+    if hotwords:
+        config.asr.hotwords = [w.strip() for w in hotwords.split(",") if w.strip()]
 
     # work_dir: CLI overrides config; if CLI not provided, fall back to config
     if work_dir is None:
@@ -1154,6 +1163,11 @@ def batch_transcribe(
         None, "--retry-failed", help="重试失败的文件（传入 manifest.json 路径）"
     ),
     json_output: bool = typer.Option(False, "--json", help="输出机器可读 JSON"),
+    hotwords: str | None = typer.Option(
+        None,
+        "--hotwords",
+        help="ASR 热词列表，逗号分隔（如：瑞幸,CapCut,TikTok）",
+    ),
 ) -> None:
     """批量转录多个媒体文件。
 
@@ -1280,6 +1294,10 @@ def batch_transcribe(
 
     if mode == "quality":
         config.asr.model = "asr_1.7b"
+
+    # Hotwords: CLI overrides config
+    if hotwords:
+        config.asr.hotwords = [w.strip() for w in hotwords.split(",") if w.strip()]
 
     # ── 恢复或重试模式 ──────────────────────────────────────
     if resume or retry_failed:
