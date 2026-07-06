@@ -440,7 +440,14 @@ class TuiApp:
                 self._leave_alt_screen()
                 self.reader.restore_terminal()
                 try:
-                    import questionary
+                    try:
+                        import questionary
+                    except ImportError:
+                        sys.stderr.write("\033[H\033[J")
+                        sys.stderr.write(f"\033[2K{t.RED}需要安装 questionary：pip install questionary{t.NC}\r\n")
+                        sys.stderr.flush()
+                        import time; time.sleep(2)
+                        raise
                     if menu.cursor == 0:
                         url = questionary.text("请输入接口地址：", default=nonlocal_vars["base_url"]).ask()
                         if url:
@@ -503,6 +510,8 @@ class TuiApp:
                 if key == Key.ESCAPE:
                     self._pop_state()
                     return "continue"
+                elif key == Key.QUIT:
+                    return "quit"
                 elif key == Key.ENTER:
                     if raw_buf:
                         try:
@@ -589,7 +598,32 @@ class TuiApp:
         sys.stderr.write(f"\033[2K{t.GRAY}请稍候...{t.NC}\r\n")
         sys.stderr.flush()
 
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+        except subprocess.TimeoutExpired:
+            sys.stderr.write("\033[H\033[J")
+            sys.stderr.write(f"\033[2K{t.RED}✗ 转录超时（超过1小时）{t.NC}\r\n")
+            sys.stderr.write(f"\033[2K\r\n{t.GRAY}Esc 返回{t.NC}\r\n")
+            sys.stderr.flush()
+            while True:
+                key = self.reader.read_key(timeout=0.05)
+                if key in (Key.ESCAPE, Key.ENTER):
+                    self._pop_state()
+                    return "continue"
+                elif key == Key.QUIT:
+                    return "quit"
+        except FileNotFoundError:
+            sys.stderr.write("\033[H\033[J")
+            sys.stderr.write(f"\033[2K{t.RED}✗ 未找到 subtap 命令{t.NC}\r\n")
+            sys.stderr.write(f"\033[2K\r\n{t.GRAY}Esc 返回{t.NC}\r\n")
+            sys.stderr.flush()
+            while True:
+                key = self.reader.read_key(timeout=0.05)
+                if key in (Key.ESCAPE, Key.ENTER):
+                    self._pop_state()
+                    return "continue"
+                elif key == Key.QUIT:
+                    return "quit"
 
         sys.stderr.write("\033[H\033[J")
         if result.returncode == 0:
@@ -689,7 +723,7 @@ class TuiApp:
                 menu.move_down()
                 menu.render_incremental(old_cursor)
             elif key == Key.ENTER:
-                if not items:
+                if not items or menu.cursor >= len(items):
                     continue
                 selected = items[menu.cursor]
                 if selected.is_dir:
@@ -697,7 +731,6 @@ class TuiApp:
 
     def _execute_batch(self, folder: Path) -> str:
         t = self.theme
-        from .file_picker import AUDIO_VIDEO_EXTENSIONS
         audio_files = sorted([f for f in folder.iterdir() if f.suffix.lower() in AUDIO_VIDEO_EXTENSIONS])
 
         if not audio_files:
@@ -717,7 +750,6 @@ class TuiApp:
         sys.stderr.write(f"\033[2K{t.GRAY}文件数：{len(audio_files)}{t.NC}\r\n\r\n")
         sys.stderr.flush()
 
-        import subprocess
         completed = 0
         for i, f in enumerate(audio_files):
             sys.stderr.write(f"\033[{5 + i};1H\033[2K  ⠙ {f.name}")
