@@ -257,11 +257,15 @@ class Pipeline:
         update = learner.learn_from_ops(ops)
 
         if not update.new_terms:
+            ops_path.unlink(missing_ok=True)
             return {"learned": 0}
 
         glossary_dir = Path.home() / ".subtap" / "glossary"
         hotwords_path = glossary_dir / f"hotwords_{hotword_lang}.txt"
         save_learned_hotwords(update, hotwords_path)
+
+        # Clean up ops file after learning
+        ops_path.unlink(missing_ok=True)
 
         return {"learned": len(update.new_terms), "path": str(hotwords_path)}
 
