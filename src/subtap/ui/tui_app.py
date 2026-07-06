@@ -4,10 +4,15 @@
 """
 import os
 import sys
+import subprocess
+from pathlib import Path
 from .keyboard import Key, KeyReader
 from .theme import Theme
 from .menu import Menu
 from .spinner import Spinner
+from .config_manager import ConfigManager
+from .file_picker import FilePicker
+from .views.new_task import NewTaskView
 
 
 class TuiApp:
@@ -18,6 +23,7 @@ class TuiApp:
         self.reader = KeyReader()
         self._state = "home"
         self._state_stack: list[str] = []
+        self.config = ConfigManager(Path.home() / ".subtap" / "config.yaml")
 
     def run(self) -> None:
         with self.reader:
@@ -162,22 +168,135 @@ class TuiApp:
 
     def _view_new_task(self) -> str:
         t = self.theme
-        sys.stderr.write("\033[2J\033[H")
-        sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}新建转录{t.NC}\r\n\r\n")
-        sys.stderr.write(f"\033[2K  Enter 选择音频或视频文件\r\n\r\n")
-        sys.stderr.write(f"\033[2K{t.GRAY}支持格式：mp3, wav, m4a, mp4, mkv, avi{t.NC}\r\n\r\n")
-        sys.stderr.write(f"\033[2K{t.GRAY}Enter 选择文件  Esc 返回  Q 退出{t.NC}\r\n")
-        sys.stderr.flush()
+        view = NewTaskView(config=self.config, home_dir=Path.home())
+        picker = FilePicker(Path.home())
+        items = picker.list_items()
+        menu_items = [f"📁 {i.name}" if i.is_dir else i.name for i in items]
+        if not menu_items:
+            menu_items = ["(当前目录无音频/视频文件)"]
+
+        menu = Menu(
+            title="新建转录 · 选择文件",
+            items=menu_items,
+            footer="↑↓ 导航  Enter 选择  Esc 返回",
+            theme=self.theme,
+        )
+        menu.render_full()
+
+        while True:
+            old_cursor = menu.cursor
+            key = self.reader.read_key(timeout=0.05)
+            if key is None:
+                continue
+            if key == Key.QUIT:
+                return "quit"
+            elif key == Key.ESCAPE:
+                # 如果不在根目录，返回上级
+                if picker.path != Path.home():
+                    picker = picker.parent()
+                    items = picker.list_items()
+                    menu_items = [f"📁 {i.name}" if i.is_dir else i.name for i in items]
+                    if not menu_items:
+                        menu_items = ["(当前目录无音频/视频文件)"]
+                    menu = Menu(
+                        title=f"新建转录 · {picker.path.name or '/'}",
+                        items=menu_items,
+                        footer="↑↓ 导航  Enter 选择  Esc 返回",
+                        theme=self.theme,
+                    )
+                    menu.render_full()
+                else:
+                    self._pop_state()
+                    return "continue"
+            elif key in (Key.UP,):
+                menu.move_up()
+                menu.render_incremental(old_cursor)
+            elif key in (Key.DOWN,):
+                menu.move_down()
+                menu.render_incremental(old_cursor)
+            elif key == Key.ENTER:
+                if not items:
+                    continue
+                selected = items[menu.cursor]
+                if selected.is_dir:
+                    picker = picker.enter(selected.name)
+                    items = picker.list_items()
+                    menu_items = [f"📁 {i.name}" if i.is_dir else i.name for i in items]
+                    if not menu_items:
+                        menu_items = ["(当前目录无音频/视频文件)"]
+                    menu = Menu(
+                        title=f"新建转录 · {picker.path.name or '/'}",
+                        items=menu_items,
+                        footer="↑↓ 导航  Enter 选择  Esc 返回",
+                        theme=self.theme,
+                    )
+                    menu.render_full()
+                else:
+                    view.select_file(selected.path)
+                    return self._view_confirm_run(view)
+
+    def _view_confirm_run(self, view: NewTaskView) -> str:
+        t = self.theme
+        settings = view.get_confirm_settings()
+        file_name = view.selected_file.name if view.selected_file else "未知"
+
+        items = [
+            f"文件：{file_name}",
+            f"语言：{settings['language']}",
+            f"格式：{settings['format']}",
+        ]
+        menu = Menu(
+            title="确认转录",
+            items=items,
+            footer="Enter 开始转录  Esc 返回",
+            theme=self.theme,
+        )
+        menu.render_full()
+
         while True:
             key = self.reader.read_key(timeout=0.05)
+            if key is None:
+                continue
             if key == Key.QUIT:
                 return "quit"
             elif key == Key.ESCAPE:
                 self._pop_state()
                 return "continue"
             elif key == Key.ENTER:
-                # TODO: 文件选择对话框
-                pass
+                return self._execute_run(view)
+
+    def _execute_run(self, view: NewTaskView) -> str:
+        t = self.theme
+        cmd = view.build_run_command()
+        if not cmd:
+            self._pop_state()
+            return "continue"
+
+        sys.stderr.write("\033[2J\033[H")
+        sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}正在转录{t.NC}\r\n\r\n")
+        sys.stderr.write(f"\033[2K{t.GRAY}文件：{view.selected_file.name}{t.NC}\r\n\r\n")
+        sys.stderr.write(f"\033[2K{t.GRAY}请稍候...{t.NC}\r\n")
+        sys.stderr.flush()
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+
+        sys.stderr.write("\033[2J\033[H")
+        if result.returncode == 0:
+            sys.stderr.write(f"\033[2K{t.GREEN}✓ 转录完成{t.NC}\r\n\r\n")
+        else:
+            sys.stderr.write(f"\033[2K{t.RED}✗ 转录失败{t.NC}\r\n\r\n")
+            if result.stderr:
+                sys.stderr.write(f"\033[2K{t.GRAY}{result.stderr[:200]}{t.NC}\r\n")
+        sys.stderr.write(f"\033[2K\r\n{t.GRAY}Esc 返回{t.NC}\r\n")
+        sys.stderr.flush()
+
+        while True:
+            key = self.reader.read_key(timeout=0.05)
+            if key in (Key.ESCAPE, Key.ENTER):
+                self._pop_state()
+                return "continue"
+            elif key == Key.QUIT:
+                return "quit"
 
     def _view_history(self) -> str:
         t = self.theme
