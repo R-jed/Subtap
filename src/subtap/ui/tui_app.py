@@ -142,7 +142,7 @@ class TuiApp:
             items=[
                 "1. 语音识别    识别模型和语言",
                 "2. 智能优化    自动纠错、专有名词、翻译",
-                "3. 保存格式    SRT/ASS/VTT/JSON",
+                "3. 保存设置    格式、字数、标点、双语",
                 "4. 在线服务    接口地址和密钥",
                 "5. 语音模型    下载和管理",
             ],
@@ -237,6 +237,14 @@ class TuiApp:
         proofread = self.config.get("llm_proofread", False)
         hotword = self.config.get("llm_hotword", False)
         translate = self.config.get("translate_to", "")
+        # 热词列表
+        hotwords_path = Path.home() / ".subtap" / "glossary" / "hotwords_zh.txt"
+        hotwords_list = []
+        if hotwords_path.exists():
+            for line in hotwords_path.read_text(encoding="utf-8").strip().splitlines():
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    hotwords_list.append(line)
 
         nonlocal_vars = {"proofread": proofread, "hotword": hotword, "translate": translate}
 
@@ -244,9 +252,11 @@ class TuiApp:
             p = nonlocal_vars["proofread"]
             h = nonlocal_vars["hotword"]
             tr = nonlocal_vars["translate"]
+            hw_count = len(hotwords_list)
             return [
                 f"自动纠错：{'开启' if p else '关闭'}",
                 f"专有名词：{'开启' if h else '关闭'}",
+                f"热词列表：{hw_count} 个词" if hw_count > 0 else "热词列表：未配置",
                 f"自动翻译：{'关闭' if not tr else tr}",
             ]
 
@@ -274,46 +284,185 @@ class TuiApp:
                 if menu.cursor == 0:
                     nonlocal_vars["proofread"] = not nonlocal_vars["proofread"]
                     self.config.set("llm_proofread", nonlocal_vars["proofread"])
+                    self.config.save()
                 elif menu.cursor == 1:
                     nonlocal_vars["hotword"] = not nonlocal_vars["hotword"]
                     self.config.set("llm_hotword", nonlocal_vars["hotword"])
+                    self.config.save()
                 elif menu.cursor == 2:
+                    # 热词列表查看（只读）
+                    self._view_hotword_list(hotwords_list)
+                    # 返回后重新渲染
+                elif menu.cursor == 3:
                     targets = [("", "关闭"), ("en", "英文"), ("ja", "日文")]
                     idx = next((i for i, (k, _) in enumerate(targets) if k == nonlocal_vars["translate"]), 0)
                     nonlocal_vars["translate"], _ = targets[(idx + 1) % len(targets)]
                     self.config.set("translate_to", nonlocal_vars["translate"])
-                self.config.save()
+                    self.config.save()
                 items = get_items()
                 menu = Menu(title="设置 · 智能优化", items=items, footer="↑↓ 导航  Enter 切换  Esc 返回", theme=self.theme)
                 menu.render_full()
 
+    def _view_hotword_list(self, hotwords: list[str]) -> None:
+        """热词列表查看（只读）。"""
+        t = self.theme
+        if not hotwords:
+            items = ["暂无热词，使用过程中会自动学习"]
+        else:
+            items = hotwords[:50]  # 最多显示 50 个
+            if len(hotwords) > 50:
+                items.append(f"... 还有 {len(hotwords) - 50} 个")
+        menu = Menu(
+            title="热词列表",
+            items=items,
+            footer="↑↓ 导航  Esc 返回",
+            theme=self.theme,
+        )
+        menu.render_full()
+        while True:
+            old_cursor = menu.cursor
+            key = self.reader.read_key(timeout=0.05)
+            if key is None:
+                continue
+            if key in (Key.ESCAPE,):
+                return
+            elif key == Key.QUIT:
+                return
+            elif key in (Key.UP,) and items:
+                menu.move_up()
+                menu.render_incremental(old_cursor)
+            elif key in (Key.DOWN,) and items:
+                menu.move_down()
+                menu.render_incremental(old_cursor)
+
     def _view_settings_format(self) -> str:
         t = self.theme
         fmts = self.config.get("output.subtitle_formats", ["srt"])
-        items = [f"当前格式：{', '.join(f.upper() for f in fmts)}"]
-        menu = Menu(title="设置 · 保存格式", items=items, footer="Esc 返回", theme=self.theme)
+        max_chars = self.config.get("output.max_chars", 25)
+        min_chars = self.config.get("output.min_chars", 10)
+        punctuation = self.config.get("output.subtitle_punctuation", False)
+        bilingual = self.config.get("output.bilingual", "off")
+
+        nonlocal_vars = {
+            "fmts": fmts, "max_chars": max_chars, "min_chars": min_chars,
+            "punctuation": punctuation, "bilingual": bilingual,
+        }
+
+        def get_items():
+            v = nonlocal_vars
+            bi_map = {"off": "关闭", "source-first": "原文优先", "target-first": "译文优先"}
+            return [
+                f"字幕格式：{', '.join(f.upper() for f in v['fmts'])}",
+                f"每行最大字数：{v['max_chars']}",
+                f"每行最小字数：{v['min_chars']}",
+                f"标点符号：{'开启' if v['punctuation'] else '关闭'}",
+                f"双语字幕：{bi_map.get(v['bilingual'], '关闭')}",
+            ]
+
+        items = get_items()
+        menu = Menu(title="设置 · 保存设置", items=items, footer="↑↓ 导航  Enter 切换  Esc 返回", theme=self.theme)
         menu.render_full()
+
         while True:
+            old_cursor = menu.cursor
             key = self.reader.read_key(timeout=0.05)
+            if key is None:
+                continue
             if key in (Key.ESCAPE,):
                 self._pop_state()
                 return "continue"
             elif key == Key.QUIT:
                 return "quit"
+            elif key in (Key.UP,):
+                menu.move_up()
+                menu.render_incremental(old_cursor)
+            elif key in (Key.DOWN,):
+                menu.move_down()
+                menu.render_incremental(old_cursor)
+            elif key == Key.ENTER:
+                if menu.cursor == 0:
+                    all_fmts = [["srt"], ["vtt"], ["json"], ["tsv"]]
+                    idx = next((i for i, f in enumerate(all_fmts) if f == nonlocal_vars["fmts"]), 0)
+                    nonlocal_vars["fmts"] = all_fmts[(idx + 1) % len(all_fmts)]
+                    self.config.set("output.subtitle_formats", nonlocal_vars["fmts"])
+                elif menu.cursor == 1:
+                    nonlocal_vars["max_chars"] = 15 if nonlocal_vars["max_chars"] >= 60 else nonlocal_vars["max_chars"] + 5
+                    self.config.set("output.max_chars", nonlocal_vars["max_chars"])
+                elif menu.cursor == 2:
+                    nonlocal_vars["min_chars"] = 4 if nonlocal_vars["min_chars"] >= 30 else nonlocal_vars["min_chars"] + 2
+                    self.config.set("output.min_chars", nonlocal_vars["min_chars"])
+                elif menu.cursor == 3:
+                    nonlocal_vars["punctuation"] = not nonlocal_vars["punctuation"]
+                    self.config.set("output.subtitle_punctuation", nonlocal_vars["punctuation"])
+                elif menu.cursor == 4:
+                    modes = ["off", "source-first", "target-first"]
+                    idx = modes.index(nonlocal_vars["bilingual"]) if nonlocal_vars["bilingual"] in modes else 0
+                    nonlocal_vars["bilingual"] = modes[(idx + 1) % len(modes)]
+                    self.config.set("output.bilingual", nonlocal_vars["bilingual"])
+                self.config.save()
+                items = get_items()
+                menu = Menu(title="设置 · 保存设置", items=items, footer="↑↓ 导航  Enter 切换  Esc 返回", theme=self.theme)
+                menu.render_full()
 
     def _view_settings_api(self) -> str:
         t = self.theme
         base_url = self.config.get("remote_api.base_url", "未配置")
-        items = [f"接口地址：{base_url}", f"密钥：{'已配置' if self.config.get('remote_api.api_key_env') else '未配置'}"]
-        menu = Menu(title="设置 · 在线服务", items=items, footer="Esc 返回", theme=self.theme)
+        has_key = bool(self.config.get("remote_api.api_key_env"))
+
+        nonlocal_vars = {"base_url": base_url, "has_key": has_key}
+
+        def get_items():
+            return [
+                f"接口地址：{nonlocal_vars['base_url']}",
+                f"密钥：{'已配置' if nonlocal_vars['has_key'] else '未配置'}",
+            ]
+
+        items = get_items()
+        menu = Menu(title="设置 · 在线服务", items=items, footer="↑↓ 导航  Enter 修改  Esc 返回", theme=self.theme)
         menu.render_full()
+
         while True:
+            old_cursor = menu.cursor
             key = self.reader.read_key(timeout=0.05)
+            if key is None:
+                continue
             if key in (Key.ESCAPE,):
                 self._pop_state()
                 return "continue"
             elif key == Key.QUIT:
                 return "quit"
+            elif key in (Key.UP,):
+                menu.move_up()
+                menu.render_incremental(old_cursor)
+            elif key in (Key.DOWN,):
+                menu.move_down()
+                menu.render_incremental(old_cursor)
+            elif key == Key.ENTER:
+                # 退出 alt screen，用 questionary 输入
+                self._leave_alt_screen()
+                self.reader.restore_terminal()
+                try:
+                    import questionary
+                    if menu.cursor == 0:
+                        url = questionary.text("请输入接口地址：", default=nonlocal_vars["base_url"]).ask()
+                        if url:
+                            nonlocal_vars["base_url"] = url
+                            self.config.set("remote_api.base_url", url)
+                            self.config.save()
+                    elif menu.cursor == 1:
+                        key_val = questionary.password("请输入访问密钥：").ask()
+                        if key_val:
+                            self.config.set("remote_api.api_key_env", key_val)
+                            nonlocal_vars["has_key"] = True
+                            self.config.save()
+                except Exception:
+                    pass
+                finally:
+                    self.reader.setup_terminal()
+                    self._enter_alt_screen()
+                items = get_items()
+                menu = Menu(title="设置 · 在线服务", items=items, footer="↑↓ 导航  Enter 修改  Esc 返回", theme=self.theme)
+                menu.render_full()
 
     def _view_settings_models(self) -> str:
         t = self.theme
