@@ -54,7 +54,7 @@ ICON_SOLID = "●"
 ICON_CHECK = "✓"
 ICON_CROSS = "✗"
 ICON_DOT = "·"
-ICON_SPINNER = "⠙"
+ICON_SPINNER = "⠙"  # 进行中，spinner.py 使用
 
 
 def get_display_width(text: str) -> int:
@@ -68,13 +68,16 @@ def get_display_width(text: str) -> int:
 
 
 def truncate_by_width(text: str, max_width: int) -> str:
+    if max_width <= 0:
+        return ""
+    ellipsis_width = get_display_width("...")
     width = 0
     for i, ch in enumerate(text):
         if ch in ("‍", "️"):
             continue
         eaw = unicodedata.east_asian_width(ch)
         cw = 2 if eaw in ("W", "F") else 1
-        if width + cw + 3 > max_width:
+        if width + cw + ellipsis_width > max_width:
             return text[:i] + "..."
         width += cw
     return text
