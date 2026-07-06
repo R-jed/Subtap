@@ -1,4 +1,5 @@
 """新建转录视图 — 文件选择和确认。"""
+import sys
 from pathlib import Path
 from ..config_manager import ConfigManager
 
@@ -26,7 +27,7 @@ class NewTaskView:
     def build_run_command(self) -> list[str]:
         if not self.selected_file:
             return []
-        cmd = ["subtap", "run", str(self.selected_file)]
+        cmd = [sys.executable, "-m", "subtap", "run", str(self.selected_file)]
         fmt = self.config.get("output.subtitle_formats", ["srt"])[0]
         if fmt:
             cmd.extend(["--format", fmt])
