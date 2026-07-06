@@ -768,7 +768,7 @@ class TuiApp:
         for i, f in enumerate(audio_files):
             sys.stderr.write(f"\033[{5 + i};1H\033[2K  ⠙ {f.name}")
             sys.stderr.flush()
-            result = subprocess.run(["subtap", "run", str(f)], capture_output=True, text=True)
+            result = subprocess.run([sys.executable, "-m", "subtap", "run", str(f)], capture_output=True, text=True)
             if result.returncode == 0:
                 completed += 1
                 sys.stderr.write(f"\033[{5 + i};1H\033[2K  {t.GREEN}✓{t.NC} {f.name}")
