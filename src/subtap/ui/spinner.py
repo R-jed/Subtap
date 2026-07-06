@@ -35,6 +35,9 @@ class Spinner:
     def stop(self) -> None:
         if self._thread and self._thread.is_alive():
             self._stop_event.set()
-            self._thread.join(timeout=0.3)
+            self._thread.join(timeout=0.5)
+            if self._thread.is_alive():
+                # 超时，线程仍在运行（daemon 线程会随主进程退出）
+                pass
         sys.stderr.write("\r\033[2K")
         sys.stderr.flush()

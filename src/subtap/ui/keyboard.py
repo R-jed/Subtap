@@ -67,6 +67,8 @@ class KeyReader:
         attrs[6][termios.VTIME] = 0
         termios.tcsetattr(self._fd, termios.TCSANOW, attrs)
         self._raw_mode_active = True
+        # 注意：atexit 只注册第一个实例的 restore_terminal
+        # TuiApp 只创建一个 KeyReader 实例，所以这是安全的
         if not KeyReader._atexit_registered:
             atexit.register(self.restore_terminal)
             KeyReader._atexit_registered = True
