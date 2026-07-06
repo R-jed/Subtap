@@ -95,7 +95,7 @@ class Menu:
         return lines
 
     def render_full(self) -> None:
-        buf = ["\033[2J\033[H"]  # 清屏 + 光标归位
+        buf = ["\033[H\033[J"]  # 光标归位 + 清除到屏幕末尾（比 \033[2J 闪烁更少）
         # 先写 prefix（如 logo），再写菜单
         for row, line in enumerate(self.prefix_lines, start=1):
             buf.append(f"\033[{row};1H{line}")

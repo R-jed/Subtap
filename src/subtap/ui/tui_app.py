@@ -453,8 +453,11 @@ class TuiApp:
                             self.config.set("remote_api.api_key_env", key_val)
                             nonlocal_vars["has_key"] = True
                             self.config.save()
-                except Exception:
-                    pass
+                except Exception as e:
+                    # questionary 操作被取消或出错，显示简短提示
+                    sys.stderr.write(f"\033[H\033[J")
+                    sys.stderr.write(f"\033[2K{t.RED}操作取消：{e}{t.NC}\r\n")
+                    sys.stderr.flush()
                 finally:
                     self.reader.setup_terminal()
                     self._enter_alt_screen()
@@ -480,7 +483,7 @@ class TuiApp:
         view = NewTaskView(config=self.config, home_dir=Path.home())
 
         # 显示拖入提示
-        sys.stderr.write("\033[2J\033[H")
+        sys.stderr.write("\033[H\033[J")
         sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}新建转录{t.NC}\r\n\r\n")
         sys.stderr.write(f"\033[2K  拖入音频或视频文件到此处，按 Enter 确认\r\n\r\n")
         sys.stderr.write(f"\033[2K{t.GRAY}支持格式：mp3, wav, m4a, mp4, mkv, avi...{t.NC}\r\n\r\n")
@@ -580,7 +583,7 @@ class TuiApp:
             self._pop_state()
             return "continue"
 
-        sys.stderr.write("\033[2J\033[H")
+        sys.stderr.write("\033[H\033[J")
         sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}正在转录{t.NC}\r\n\r\n")
         sys.stderr.write(f"\033[2K{t.GRAY}文件：{view.selected_file.name}{t.NC}\r\n\r\n")
         sys.stderr.write(f"\033[2K{t.GRAY}请稍候...{t.NC}\r\n")
@@ -588,7 +591,7 @@ class TuiApp:
 
         result = subprocess.run(cmd, capture_output=True, text=True)
 
-        sys.stderr.write("\033[2J\033[H")
+        sys.stderr.write("\033[H\033[J")
         if result.returncode == 0:
             sys.stderr.write(f"\033[2K{t.GREEN}✓ 转录完成{t.NC}\r\n\r\n")
         else:
@@ -612,7 +615,7 @@ class TuiApp:
         records = scanner.scan()
 
         if not records:
-            sys.stderr.write("\033[2J\033[H")
+            sys.stderr.write("\033[H\033[J")
             sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}转录历史{t.NC}\r\n\r\n")
             sys.stderr.write(f"\033[2K{t.GRAY}暂无记录{t.NC}\r\n\r\n")
             sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回{t.NC}\r\n")
@@ -698,7 +701,7 @@ class TuiApp:
         audio_files = sorted([f for f in folder.iterdir() if f.suffix.lower() in AUDIO_VIDEO_EXTENSIONS])
 
         if not audio_files:
-            sys.stderr.write("\033[2J\033[H")
+            sys.stderr.write("\033[H\033[J")
             sys.stderr.write(f"\033[2K{t.RED}该文件夹中无音频/视频文件{t.NC}\r\n\r\n")
             sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回{t.NC}\r\n")
             sys.stderr.flush()
@@ -708,7 +711,7 @@ class TuiApp:
                     self._pop_state()
                     return "continue" if key == Key.ESCAPE else "quit"
 
-        sys.stderr.write("\033[2J\033[H")
+        sys.stderr.write("\033[H\033[J")
         sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}批量转录{t.NC}\r\n\r\n")
         sys.stderr.write(f"\033[2K{t.GRAY}文件夹：{folder}{t.NC}\r\n")
         sys.stderr.write(f"\033[2K{t.GRAY}文件数：{len(audio_files)}{t.NC}\r\n\r\n")
