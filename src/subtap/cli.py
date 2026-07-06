@@ -1110,6 +1110,14 @@ def observe(
     typer.echo(build_command_deck_text(state))
 
 
+@app.command()
+def tui() -> None:
+    """启动交互式终端界面"""
+    from subtap.ui.tui_app import TuiApp
+    app = TuiApp()
+    app.run()
+
+
 # ── 单阶段命令 ─────────────────────────────────────────────
 
 
