@@ -509,21 +509,90 @@ class TuiApp:
 
     def _view_batch(self) -> str:
         t = self.theme
-        sys.stderr.write("\033[2J\033[H")
-        sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}批量转录{t.NC}\r\n\r\n")
-        sys.stderr.write(f"\033[2K  Enter 选择文件夹\r\n\r\n")
-        sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回  Q 退出{t.NC}\r\n")
-        sys.stderr.flush()
+        picker = FilePicker(Path.home(), show_dirs=True)
+        items = picker.list_items()
+        menu_items = [f"📁 {i.name}" if i.is_dir else i.name for i in items]
+        if not menu_items:
+            menu_items = ["(当前目录无文件夹)"]
+
+        menu = Menu(
+            title="批量转录 · 选择文件夹",
+            items=menu_items,
+            footer="↑↓ 导航  Enter 选择  Esc 返回",
+            theme=self.theme,
+        )
+        menu.render_full()
+
         while True:
+            old_cursor = menu.cursor
             key = self.reader.read_key(timeout=0.05)
+            if key is None:
+                continue
             if key == Key.QUIT:
                 return "quit"
             elif key == Key.ESCAPE:
                 self._pop_state()
                 return "continue"
+            elif key in (Key.UP,):
+                menu.move_up()
+                menu.render_incremental(old_cursor)
+            elif key in (Key.DOWN,):
+                menu.move_down()
+                menu.render_incremental(old_cursor)
             elif key == Key.ENTER:
-                # TODO: 文件夹选择
-                pass
+                if not items:
+                    continue
+                selected = items[menu.cursor]
+                if selected.is_dir:
+                    return self._execute_batch(selected.path)
+
+    def _execute_batch(self, folder: Path) -> str:
+        t = self.theme
+        from .file_picker import AUDIO_VIDEO_EXTENSIONS
+        audio_files = sorted([f for f in folder.iterdir() if f.suffix.lower() in AUDIO_VIDEO_EXTENSIONS])
+
+        if not audio_files:
+            sys.stderr.write("\033[2J\033[H")
+            sys.stderr.write(f"\033[2K{t.RED}该文件夹中无音频/视频文件{t.NC}\r\n\r\n")
+            sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回{t.NC}\r\n")
+            sys.stderr.flush()
+            while True:
+                key = self.reader.read_key(timeout=0.05)
+                if key in (Key.ESCAPE, Key.QUIT):
+                    self._pop_state()
+                    return "continue" if key == Key.ESCAPE else "quit"
+
+        sys.stderr.write("\033[2J\033[H")
+        sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}批量转录{t.NC}\r\n\r\n")
+        sys.stderr.write(f"\033[2K{t.GRAY}文件夹：{folder}{t.NC}\r\n")
+        sys.stderr.write(f"\033[2K{t.GRAY}文件数：{len(audio_files)}{t.NC}\r\n\r\n")
+        sys.stderr.flush()
+
+        import subprocess
+        completed = 0
+        for i, f in enumerate(audio_files):
+            sys.stderr.write(f"\033[{5 + i};1H\033[2K  ⠙ {f.name}")
+            sys.stderr.flush()
+            result = subprocess.run(["subtap", "run", str(f)], capture_output=True, text=True)
+            if result.returncode == 0:
+                completed += 1
+                sys.stderr.write(f"\033[{5 + i};1H\033[2K  {t.GREEN}✓{t.NC} {f.name}")
+            else:
+                sys.stderr.write(f"\033[{5 + i};1H\033[2K  {t.RED}✗{t.NC} {f.name}")
+            sys.stderr.flush()
+
+        sys.stderr.write(f"\033[{5 + len(audio_files) + 1};1H\r\n")
+        sys.stderr.write(f"\033[2K{t.GREEN}完成：{completed}/{len(audio_files)}{t.NC}\r\n")
+        sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回{t.NC}\r\n")
+        sys.stderr.flush()
+
+        while True:
+            key = self.reader.read_key(timeout=0.05)
+            if key in (Key.ESCAPE, Key.ENTER):
+                self._pop_state()
+                return "continue"
+            elif key == Key.QUIT:
+                return "quit"
 
     def _view_setup(self) -> str:
         t = self.theme
