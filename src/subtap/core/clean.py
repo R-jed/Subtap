@@ -37,7 +37,6 @@ def write_clean_segments(segments: list[CleanSegment], output_path: Path) -> Non
 def local_clean_text(
     text: str,
     glossary: dict | None = None,
-    punctuation: bool = False,
     language: str = "zh",
 ) -> str:
     """Local rule-based text cleaning. No LLM dependency.
@@ -47,7 +46,7 @@ def local_clean_text(
     2. Normalize full-width digits to half-width
     3. Remove extra whitespace
     4. Remove repeated words (ASR common error)
-    5. Handle punctuation (normalize or strip based on config)
+    5. Normalize punctuation (always preserve for segmentation)
     6. Normalize case (English sentences first letter capitalized)
     7. Apply glossary replacements
     """
@@ -66,14 +65,8 @@ def local_clean_text(
     #    Collapse repeated English words (e.g., "the the the" → "the")
     text = re.sub(r"\b(\w+)(\s+\1){2,}", r"\1", text)
 
-    # 5. Punctuation handling
-    if punctuation:
-        # Normalize punctuation by language (zh/ja: full-width, en: half-width)
-        text = _normalize_punct(text, language)
-    else:
-        # Replace all punctuation with space, then collapse spaces
-        text = _ALL_PUNCT_RE.sub(" ", text)
-        text = re.sub(r"\s+", " ", text).strip()
+    # 5. Normalize punctuation (always preserve for segmentation)
+    text = _normalize_punct(text, language)
 
     # 5b. Fix decimal points corrupted by punctuation normalization (0。6 → 0.6)
     text = re.sub(r"(\d)。(\d)", r"\1.\2", text)
@@ -182,12 +175,11 @@ def run_clean(
     replaced = apply_replacements(segments, glossary)
 
     # Step 2: Local cleaning (always runs, no LLM dependency)
-    # 注意：标点移除后移到 export 阶段，保留标点用于 segment 断句
-    punctuation = True  # clean 阶段保留标点，仅做规范化
+    # 注意：标点始终保留用于 segment 断句，移除在 export 阶段进行
     language = config.output.subtitle_language
     for seg in replaced:
         seg.cleaned_text = local_clean_text(
-            seg.cleaned_text, punctuation=punctuation, language=language
+            seg.cleaned_text, language=language
         )
 
     # 本地热词引擎（始终在 LLM 之前运行，非 LLM 功能）
@@ -216,9 +208,12 @@ def run_clean(
         if not llm_hotword:
             llm_hotword = True
     elif enhance_mode == "local":
-        # local 模式不使用 LLM
-        llm_proofread = False
-        llm_hotword = False
+        # local 模式：仅禁用未明确配置的 LLM 功能
+        # 如果用户显式设置了 llm_proofread=True，则保留
+        if llm_proofread is None:
+            llm_proofread = False
+        if llm_hotword is None:
+            llm_hotword = False
 
     # 首次接入时，如果 llm_proofread 未设置，默认开启
     if llm_proofread is None:
@@ -248,10 +243,30 @@ def run_clean(
 
         # AI 热词替换（本地热词为空时，AI 自主发现领域专有名词）
         if llm_hotword:
-            _apply_text_updates(
-                replaced,
-                llm.replace_hotwords(_segments_for_llm(replaced), hotword_payload),
+            hotword_result = llm.replace_hotwords(
+                _segments_for_llm(replaced), hotword_payload
             )
+            # Support both old format {idx: str} and new format {idx: {text, ops}}
+            text_updates: dict[int, str] = {}
+            all_ops: list[dict] = []
+            for idx, val in hotword_result.items():
+                if isinstance(val, dict):
+                    text_updates[idx] = val["text"]
+                    for op in val.get("ops", []):
+                        op["segment_id"] = idx
+                        all_ops.append(op)
+                else:
+                    text_updates[idx] = val
+            _apply_text_updates(replaced, text_updates)
+
+            # Record LLM discovered hotwords for learning
+            if all_ops:
+                import json as _json
+
+                ops_path = workspace.root / "llm_hotword_ops.jsonl"
+                with open(ops_path, "a", encoding="utf-8") as f:
+                    for op in all_ops:
+                        f.write(_json.dumps(op, ensure_ascii=False) + "\n")
 
     # Filter empty segments
     replaced = [seg for seg in replaced if seg.cleaned_text.strip()]

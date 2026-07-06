@@ -134,7 +134,8 @@ def test_replace_hotwords_returns_updates_and_sends_glossary(monkeypatch):
     )
 
     prompt = calls[0]["json"]["messages"][1]["content"]
-    assert result == {0: "理光 GR4"}
+    assert result[0]["text"] == "理光 GR4"
+    assert "ops" in result[0]
     assert "理光 GR4" in prompt
     assert "李光机亚四" in prompt
 

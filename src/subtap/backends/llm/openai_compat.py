@@ -40,6 +40,7 @@ class OpenAICompatibleLLM:
         base_url: str | None = None,
         api_key: str | None = None,
         remote_api: RemoteAPIConfig | None = None,
+        batch_size: int = 20,
     ):
         self.model = remote_api.model if remote_api and remote_api.model else model
         if remote_api:
@@ -55,11 +56,23 @@ class OpenAICompatibleLLM:
         self.api_key = api_key or os.environ.get(api_key_env, "")
         self.timeout_sec = remote_api.timeout_sec if remote_api else 120
         self.provider = remote_api.provider if remote_api else "openai-compatible"
+        self.batch_size = batch_size
 
         if not self.base_url:
             raise ValueError("LLM API base_url 未配置")
         if not self.api_key:
             raise ValueError(f"LLM API key 环境变量未配置：{api_key_env}")
+
+    def _batches(self, segments: list[dict]) -> list[tuple[list[dict], int]]:
+        """Split segments into batches, returning (batch, offset) pairs.
+
+        offset is the global index offset for mapping local batch indexes back.
+        """
+        result = []
+        for i in range(0, len(segments), self.batch_size):
+            batch = segments[i : i + self.batch_size]
+            result.append((batch, i))
+        return result
 
     def _chat(self, user_prompt: str, system_prompt: str) -> str:
         with httpx.Client(timeout=self.timeout_sec) as client:
@@ -118,59 +131,73 @@ class OpenAICompatibleLLM:
         return parsed
 
     def select_suspicious_segments(self, segments: list[dict]) -> list[int]:
-        prompt = (
-            "你是一个字幕质检助理，你的任务：\n\n"
-            "1. 阅读给定的字幕 segments。\n\n"
-            "2. 只返回「可能有问题」的句子：\n\n"
-            "- 语义错误\n\n"
-            "- 表达不通顺\n\n"
-            "- 专业名词 / 品牌 / 产品名可能识别错\n\n"
-            "- ASR 识别错误（同音字/近音字错误）\n\n"
-            "3. 正常句子不要返回。\n\n"
-            "4. 不要改写原句，不要解释原因。\n\n"
-            "5. 不要增加字或减少字，不要改变句子结构。\n\n"
-            "6. 只输出 JSON，格式必须严格为：\n\n"
-            '{"segments":[{"i":0}]}\n\n'
-            "7. 每个输入项包含：\n"
-            "- i: 原始索引\n"
-            "- t: 字幕文本\n\n"
-            "8. 只返回原始输入里的索引 i。\n\n"
-            '9. 如果没有可疑句子，返回 {"segments":[]}\n\n'
-            f'待检查内容：\n{json.dumps({"segments": segments}, ensure_ascii=False)}'
-        )
-        content = self._chat(prompt, "你只输出 JSON，不输出解释。")
-        parsed = self._parse_segments_json(
-            content,
-            {int(item["i"]) for item in segments},
-            require_text=False,
-        )
-        return [int(item["i"]) for item in parsed]
+        system_prompt = "你只输出 JSON，不输出解释。"
+        result: list[int] = []
+
+        for batch, _offset in self._batches(segments):
+            prompt = (
+                "你是一个字幕质检助理，你的任务：\n\n"
+                "1. 阅读给定的字幕 segments。\n\n"
+                "2. 只返回「可能有问题」的句子：\n\n"
+                "- 语义错误\n\n"
+                "- 表达不通顺\n\n"
+                "- 专业名词 / 品牌 / 产品名可能识别错\n\n"
+                "- ASR 识别错误（同音字/近音字错误）\n\n"
+                "3. 正常句子不要返回。\n\n"
+                "4. 不要改写原句，不要解释原因。\n\n"
+                "5. 不要增加字或减少字，不要改变句子结构。\n\n"
+                "6. 只输出 JSON，格式必须严格为：\n\n"
+                '{"segments":[{"i":0}]}\n\n'
+                "7. 每个输入项包含：\n"
+                "- i: 原始索引\n"
+                "- t: 字幕文本\n\n"
+                "8. 只返回原始输入里的索引 i。\n\n"
+                '9. 如果没有可疑句子，返回 {"segments":[]}\n\n'
+                f'待检查内容：\n{json.dumps({"segments": batch}, ensure_ascii=False)}'
+            )
+            content = self._chat(prompt, system_prompt)
+            parsed = self._parse_segments_json(
+                content,
+                {int(item["i"]) for item in batch},
+                require_text=False,
+            )
+            result.extend(int(item["i"]) for item in parsed)
+
+        return result
 
     def repair_segments(self, segments: list[dict]) -> dict[int, str]:
-        prompt = (
-            "你是一个字幕纠错助手。请只修正给定字幕中的明显错误。\n\n"
-            "规则：\n"
-            "1. 只修正语义错误、表达不通顺、专业名词 / 品牌 / 产品名识别错误。\n"
-            "2. 不要翻译。\n"
-            "3. 不要总结、扩写或删除信息。\n"
-            "4. 保持原句意思和字幕口语风格。\n"
-            "5. 只输出 JSON，格式严格为：\n"
-            '{"segments":[{"i":0,"t":"修正后的字幕文本"}]}\n'
-            "6. 每个输出 i 必须来自输入。\n"
-            "7. 不需要修改的句子不要返回。\n\n"
-            f"待处理内容：\n{json.dumps({'segments': segments}, ensure_ascii=False)}"
-        )
-        content = self._chat(prompt, "你只输出 JSON，不输出解释。")
-        parsed = self._parse_segments_json(
-            content,
-            {int(item["i"]) for item in segments},
-            require_text=True,
-        )
-        return {int(item["i"]): str(item["t"]) for item in parsed}
+        system_prompt = "你只输出 JSON，不输出解释。"
+        result: dict[int, str] = {}
+
+        for batch, _offset in self._batches(segments):
+            prompt = (
+                "你是一个字幕纠错助手。请只修正给定字幕中的明显错误。\n\n"
+                "规则：\n"
+                "1. 只修正语义错误、表达不通顺、专业名词 / 品牌 / 产品名识别错误。\n"
+                "2. 不要翻译。\n"
+                "3. 不要总结、扩写或删除信息。\n"
+                "4. 保持原句意思和字幕口语风格。\n"
+                "5. 只输出 JSON，格式严格为：\n"
+                '{"segments":[{"i":0,"t":"修正后的字幕文本"}]}\n'
+                "6. 每个输出 i 必须来自输入。\n"
+                "7. 不需要修改的句子不要返回。\n\n"
+                f"待处理内容：\n{json.dumps({'segments': batch}, ensure_ascii=False)}"
+            )
+            content = self._chat(prompt, system_prompt)
+            parsed = self._parse_segments_json(
+                content,
+                {int(item["i"]) for item in batch},
+                require_text=True,
+            )
+            for item in parsed:
+                result[int(item["i"])] = str(item["t"])
+
+        return result
 
     def replace_hotwords(
         self, segments: list[dict], glossary: dict | None
-    ) -> dict[int, str]:
+    ) -> dict[int, dict]:
+        """Replace hotwords and return {index: {"text": corrected, "ops": [..]}}."""
         has_glossary = bool(glossary)
         if has_glossary:
             glossary_section = (
@@ -194,21 +221,81 @@ class OpenAICompatibleLLM:
                 "5. 不要翻译。\n"
                 "6. 不合并、删除、新增字幕行。\n"
             )
-        prompt = (
-            "你是一个字幕热词替换助手。请根据上下文修正专有名词。\n\n"
-            f"{rules}"
-            "7. 只输出 JSON，格式严格为：\n"
-            '{"segments":[{"i":0,"t":"替换后的字幕文本"}]}\n\n'
-            f"{glossary_section}"
-            f"待处理内容：\n{json.dumps({'segments': segments}, ensure_ascii=False)}"
-        )
-        content = self._chat(prompt, "你只输出 JSON，不输出解释。")
-        parsed = self._parse_segments_json(
-            content,
-            {int(item["i"]) for item in segments},
-            require_text=True,
-        )
-        return {int(item["i"]): str(item["t"]) for item in parsed}
+        system_prompt = "你只输出 JSON，不输出解释。"
+        result: dict[int, dict] = {}
+
+        for batch, _offset in self._batches(segments):
+            prompt = (
+                "你是一个字幕热词替换助手。请根据上下文修正专有名词。\n\n"
+                f"{rules}"
+                "7. 只输出 JSON，格式严格为：\n"
+                '{"segments":[{"i":0,"t":"替换后的字幕文本","ops":[{"from":"错误词","to":"正确词"}]}]}\n\n'
+                f"{glossary_section}"
+                f"待处理内容：\n{json.dumps({'segments': batch}, ensure_ascii=False)}"
+            )
+            content = self._chat(prompt, system_prompt)
+
+            # Parse response
+            try:
+                payload = json.loads(content)
+                raw_segments = payload.get("segments", [])
+            except (json.JSONDecodeError, AttributeError):
+                raw_segments = []
+
+            input_map = {int(item["i"]): item["t"] for item in batch}
+
+            for item in raw_segments:
+                if not isinstance(item, dict) or "i" not in item:
+                    continue
+                local_idx = int(item["i"])
+                if local_idx not in input_map:
+                    continue
+                corrected = str(item.get("t", "")).strip()
+                if not corrected:
+                    continue
+
+                # Extract ops from LLM response
+                ops = []
+                raw_ops = item.get("ops", [])
+                if isinstance(raw_ops, list):
+                    for op in raw_ops:
+                        if isinstance(op, dict) and "from" in op and "to" in op:
+                            ops.append({"from": str(op["from"]), "to": str(op["to"])})
+
+                # Fallback: diff-based ops extraction if LLM didn't return ops
+                if not ops and corrected != input_map[local_idx]:
+                    ops = self._diff_extract_ops(input_map[local_idx], corrected)
+
+                result[local_idx] = {"text": corrected, "ops": ops}
+
+        return result
+
+    @staticmethod
+    def _diff_extract_ops(original: str, corrected: str) -> list[dict]:
+        """Extract replacement ops by diffing original and corrected text.
+
+        Filters out noise: skips ops containing sentence-ending punctuation
+        or ops that are too long (likely context bleed from diff).
+        """
+        import re
+        from difflib import SequenceMatcher
+
+        _PUNCT_RE = re.compile(r"[。！？.!?\n]")
+
+        ops = []
+        matcher = SequenceMatcher(None, original, corrected)
+        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+            if tag == "replace":
+                old = original[i1:i2]
+                new = corrected[j1:j2]
+                # Skip if contains sentence punctuation (diff noise)
+                if _PUNCT_RE.search(old) or _PUNCT_RE.search(new):
+                    continue
+                # Skip if too long (likely context bleed)
+                if len(old) > 20 or len(new) > 20:
+                    continue
+                ops.append({"from": old, "to": new})
+        return ops
 
     def translate_srt(self, srt_text: str, target_language: str) -> str:
         prompt = (
