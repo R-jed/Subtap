@@ -32,8 +32,20 @@ class Key:
     OTHER = "OTHER"
 
 
+CSI_MAP = {
+    ord("A"): Key.UP, ord("B"): Key.DOWN,
+    ord("C"): Key.RIGHT, ord("D"): Key.LEFT,
+}
+TILDE_MAP = {
+    1: Key.ESCAPE, 2: Key.OTHER, 3: Key.DELETE,
+    4: Key.OTHER, 5: Key.OTHER, 6: Key.OTHER,
+}
+
+
 class KeyReader:
     """非阻塞键盘读取器，移植自 Mole read_key()。"""
+
+    _atexit_registered = False
 
     def __init__(self):
         self._fd = sys.stdin.fileno()
@@ -55,7 +67,9 @@ class KeyReader:
         attrs[6][termios.VTIME] = 0
         termios.tcsetattr(self._fd, termios.TCSANOW, attrs)
         self._raw_mode_active = True
-        atexit.register(self.restore_terminal)
+        if not KeyReader._atexit_registered:
+            atexit.register(self.restore_terminal)
+            KeyReader._atexit_registered = True
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
 
@@ -96,7 +110,7 @@ class KeyReader:
         elif second == b"O":
             return self._parse_ss3(timeout)
         else:
-            return Key.OTHER
+            return Key.ESCAPE
 
     def _parse_csi(self, timeout: float) -> str:
         buf = b""
@@ -116,14 +130,6 @@ class KeyReader:
             for p in params_str.split(";"):
                 params.append(int(p) if p.isdigit() else 0)
         p1 = params[0] if params else 1
-        CSI_MAP = {
-            ord("A"): Key.UP, ord("B"): Key.DOWN,
-            ord("C"): Key.RIGHT, ord("D"): Key.LEFT,
-        }
-        TILDE_MAP = {
-            1: Key.ESCAPE, 2: Key.OTHER, 3: Key.DELETE,
-            4: Key.OTHER, 5: Key.OTHER, 6: Key.OTHER,
-        }
         fb = final[0]
         if fb == ord("~"):
             return TILDE_MAP.get(p1, Key.OTHER)

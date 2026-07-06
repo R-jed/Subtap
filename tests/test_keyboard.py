@@ -130,3 +130,39 @@ class TestForceCharMode:
     def test_ctrl_u_is_clear(self):
         reader = self._make_reader()
         assert reader._map_force_char(b"\x15") == Key.CLEAR_LINE
+
+
+class TestEdgeCases:
+    def _make_reader(self):
+        reader = KeyReader.__new__(KeyReader)
+        reader._fd = 0
+        reader.force_char_mode = False
+        return reader
+
+    def test_gg_is_top(self):
+        reader = self._make_reader()
+        with patch.object(reader, "_read_byte", side_effect=[b"g", b"g"]):
+            result = reader._map_normal(b"g")
+            assert result == Key.TOP
+
+    def test_g_is_bottom(self):
+        reader = self._make_reader()
+        assert reader._map_normal(b"G") == Key.BOTTOM
+
+    def test_tab_key(self):
+        reader = self._make_reader()
+        assert reader._map_normal(b"\t") == Key.TAB
+
+    def test_ctrl_u_normal_mode(self):
+        reader = self._make_reader()
+        assert reader._map_normal(b"\x15") == Key.CLEAR_LINE
+
+    def test_esc_non_sequence_returns_escape(self):
+        reader = self._make_reader()
+        with patch.object(reader, "_read_byte", return_value=b"a"):
+            assert reader._parse_csi_ss3() == Key.ESCAPE
+
+    def test_csi_partial_timeout_returns_escape(self):
+        reader = self._make_reader()
+        with patch.object(reader, "_read_byte", return_value=None):
+            assert reader._parse_csi_ss3() == Key.ESCAPE
