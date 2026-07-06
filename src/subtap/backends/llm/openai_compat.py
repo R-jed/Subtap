@@ -243,14 +243,29 @@ class OpenAICompatibleLLM:
 
     @staticmethod
     def _diff_extract_ops(original: str, corrected: str) -> list[dict]:
-        """Extract replacement ops by diffing original and corrected text."""
+        """Extract replacement ops by diffing original and corrected text.
+
+        Filters out noise: skips ops containing sentence-ending punctuation
+        or ops that are too long (likely context bleed from diff).
+        """
+        import re
         from difflib import SequenceMatcher
+
+        _PUNCT_RE = re.compile(r"[。！？.!?\n]")
 
         ops = []
         matcher = SequenceMatcher(None, original, corrected)
         for tag, i1, i2, j1, j2 in matcher.get_opcodes():
             if tag == "replace":
-                ops.append({"from": original[i1:i2], "to": corrected[j1:j2]})
+                old = original[i1:i2]
+                new = corrected[j1:j2]
+                # Skip if contains sentence punctuation (diff noise)
+                if _PUNCT_RE.search(old) or _PUNCT_RE.search(new):
+                    continue
+                # Skip if too long (likely context bleed)
+                if len(old) > 20 or len(new) > 20:
+                    continue
+                ops.append({"from": old, "to": new})
         return ops
 
     def translate_srt(self, srt_text: str, target_language: str) -> str:
