@@ -73,13 +73,13 @@ class TestMenu:
             m.move_down()
         assert m.top_index > 0
 
-    def test_render_incremental_when_needs_redraw(self):
-        """当需要全量重绘时，render_incremental 应调用 render_full"""
+    def test_render_incremental_always_redraws_menu_area(self):
+        """render_incremental 始终重绘菜单区域（不清屏，保留 logo）"""
         m = Menu(title="测试", items=["A", "B", "C"])
-        m._needs_full_redraw = True
-        # render_incremental 不应报错（会走 render_full 路径）
+        # 不管 _needs_full_redraw 状态如何，都不应报错
         m.render_incremental(0)
-        assert not m._needs_full_redraw
+        m._needs_full_redraw = True
+        m.render_incremental(0)
 
     def test_render_incremental_updates_two_lines(self):
         """增量渲染应只更新旧行和新行"""
