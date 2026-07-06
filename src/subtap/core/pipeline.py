@@ -66,6 +66,7 @@ class Pipeline:
             "segment": self._stage_segment,
             # "script_match": self._stage_script_match,  # TODO: 文稿匹配功能暂搁置，待LLM方案成熟后重新实现
             "align": self._stage_align,
+            "learn": self._stage_learn,
             "translate": self._stage_translate,
             "export": self._stage_export,
         }.get(stage)
@@ -233,6 +234,36 @@ class Pipeline:
             "aligned_count": result["aligned_count"],
             "aligned_jsonl": str(self.workspace.aligned_jsonl),
         }
+
+    def _stage_learn(self, hotword_lang: str = "zh", **_) -> dict:
+        """Learn hotwords from LLM ops recorded during clean stage."""
+        import json
+
+        from subtap.ai.glossary_learner import GlossaryLearner, save_learned_hotwords
+
+        ops_path = self.workspace.root / "llm_hotword_ops.jsonl"
+        if not ops_path.exists():
+            return {"learned": 0}
+
+        ops = []
+        for line in ops_path.read_text(encoding="utf-8").strip().splitlines():
+            if line.strip():
+                ops.append(json.loads(line))
+
+        if not ops:
+            return {"learned": 0}
+
+        learner = GlossaryLearner()
+        update = learner.learn_from_ops(ops)
+
+        if not update.new_terms:
+            return {"learned": 0}
+
+        glossary_dir = Path.home() / ".subtap" / "glossary"
+        hotwords_path = glossary_dir / f"hotwords_{hotword_lang}.txt"
+        save_learned_hotwords(update, hotwords_path)
+
+        return {"learned": len(update.new_terms), "path": str(hotwords_path)}
 
     def _stage_translate(
         self,

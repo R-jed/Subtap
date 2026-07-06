@@ -170,7 +170,8 @@ class OpenAICompatibleLLM:
 
     def replace_hotwords(
         self, segments: list[dict], glossary: dict | None
-    ) -> dict[int, str]:
+    ) -> dict[int, dict]:
+        """Replace hotwords and return {index: {"text": corrected, "ops": [..]}}."""
         has_glossary = bool(glossary)
         if has_glossary:
             glossary_section = (
@@ -198,17 +199,59 @@ class OpenAICompatibleLLM:
             "你是一个字幕热词替换助手。请根据上下文修正专有名词。\n\n"
             f"{rules}"
             "7. 只输出 JSON，格式严格为：\n"
-            '{"segments":[{"i":0,"t":"替换后的字幕文本"}]}\n\n'
+            '{"segments":[{"i":0,"t":"替换后的字幕文本","ops":[{"from":"错误词","to":"正确词"}]}]}\n\n'
             f"{glossary_section}"
             f"待处理内容：\n{json.dumps({'segments': segments}, ensure_ascii=False)}"
         )
         content = self._chat(prompt, "你只输出 JSON，不输出解释。")
-        parsed = self._parse_segments_json(
-            content,
-            {int(item["i"]) for item in segments},
-            require_text=True,
-        )
-        return {int(item["i"]): str(item["t"]) for item in parsed}
+
+        # Parse response
+        try:
+            payload = json.loads(content)
+            raw_segments = payload.get("segments", [])
+        except (json.JSONDecodeError, AttributeError):
+            raw_segments = []
+
+        input_map = {int(item["i"]): item["t"] for item in segments}
+        result: dict[int, dict] = {}
+
+        for item in raw_segments:
+            if not isinstance(item, dict) or "i" not in item:
+                continue
+            idx = int(item["i"])
+            if idx not in input_map:
+                continue
+            corrected = str(item.get("t", "")).strip()
+            if not corrected:
+                continue
+
+            # Extract ops from LLM response
+            ops = []
+            raw_ops = item.get("ops", [])
+            if isinstance(raw_ops, list):
+                for op in raw_ops:
+                    if isinstance(op, dict) and "from" in op and "to" in op:
+                        ops.append({"from": str(op["from"]), "to": str(op["to"])})
+
+            # Fallback: diff-based ops extraction if LLM didn't return ops
+            if not ops and corrected != input_map[idx]:
+                ops = self._diff_extract_ops(input_map[idx], corrected)
+
+            result[idx] = {"text": corrected, "ops": ops}
+
+        return result
+
+    @staticmethod
+    def _diff_extract_ops(original: str, corrected: str) -> list[dict]:
+        """Extract replacement ops by diffing original and corrected text."""
+        from difflib import SequenceMatcher
+
+        ops = []
+        matcher = SequenceMatcher(None, original, corrected)
+        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+            if tag == "replace":
+                ops.append({"from": original[i1:i2], "to": corrected[j1:j2]})
+        return ops
 
     def translate_srt(self, srt_text: str, target_language: str) -> str:
         prompt = (

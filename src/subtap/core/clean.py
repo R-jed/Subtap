@@ -243,10 +243,30 @@ def run_clean(
 
         # AI 热词替换（本地热词为空时，AI 自主发现领域专有名词）
         if llm_hotword:
-            _apply_text_updates(
-                replaced,
-                llm.replace_hotwords(_segments_for_llm(replaced), hotword_payload),
+            hotword_result = llm.replace_hotwords(
+                _segments_for_llm(replaced), hotword_payload
             )
+            # Support both old format {idx: str} and new format {idx: {text, ops}}
+            text_updates: dict[int, str] = {}
+            all_ops: list[dict] = []
+            for idx, val in hotword_result.items():
+                if isinstance(val, dict):
+                    text_updates[idx] = val["text"]
+                    for op in val.get("ops", []):
+                        op["segment_id"] = idx
+                        all_ops.append(op)
+                else:
+                    text_updates[idx] = val
+            _apply_text_updates(replaced, text_updates)
+
+            # Record LLM discovered hotwords for learning
+            if all_ops:
+                import json as _json
+
+                ops_path = workspace.root / "llm_hotword_ops.jsonl"
+                with open(ops_path, "a", encoding="utf-8") as f:
+                    for op in all_ops:
+                        f.write(_json.dumps(op, ensure_ascii=False) + "\n")
 
     # Filter empty segments
     replaced = [seg for seg in replaced if seg.cleaned_text.strip()]

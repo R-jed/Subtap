@@ -544,8 +544,8 @@ def test_run_clean_both_enabled(workspace):
     assert mock_llm.replace_hotwords_called is True
 
 
-def test_run_clean_enhance_mode_local_overrides_config(workspace):
-    """enhance_mode='local' 应覆盖独立配置项，禁用所有 LLM 功能"""
+def test_run_clean_enhance_mode_local_preserves_explicit_config(workspace):
+    """enhance_mode='local' 保留显式设置的 LLM 功能，只禁用未配置的"""
     config = SubtapConfig()
     config.llm_proofread = True
     config.llm_hotword = True
@@ -555,24 +555,36 @@ def test_run_clean_enhance_mode_local_overrides_config(workspace):
     with patch("subtap.core.clean.get_llm_backend", return_value=mock_llm):
         result = run_clean(workspace, config, enhance_mode="local")
 
-    # enhance_mode="local" 应该禁用所有 LLM 功能
-    assert mock_llm.select_suspicious_segments_called is False
-    assert mock_llm.repair_segments_called is False
-    assert mock_llm.replace_hotwords_called is False
+    # 显式设置 True 的功能应保留
+    assert mock_llm.select_suspicious_segments_called is True
+    assert mock_llm.repair_segments_called is True
+    assert mock_llm.replace_hotwords_called is True
 
 
-def test_run_clean_llm_backend_name_local_overrides_config(workspace):
-    """llm_backend_name='local' 应覆盖独立配置项，禁用所有 LLM 功能"""
+def test_run_clean_enhance_mode_local_disables_unset(workspace):
+    """enhance_mode='local' 禁用未显式设置的 LLM 功能（None → False）"""
+    config = SubtapConfig()
+    # llm_proofread 默认 None，llm_hotword 默认 False
+
+    def fail_get_backend(*_a, **_k):
+        raise AssertionError("未配置 LLM 时不应创建 backend")
+
+    with patch("subtap.core.clean.get_llm_backend", fail_get_backend):
+        result = run_clean(workspace, config, enhance_mode="local")
+
+    assert result["segment_count"] > 0
+
+
+def test_run_clean_llm_backend_name_off_disables_all(workspace):
+    """llm_backend_name='off' 应覆盖独立配置项，禁用所有 LLM 功能"""
     config = SubtapConfig()
     config.llm_proofread = True
     config.llm_hotword = True
 
-    mock_llm = MockLLMBackend()
+    def fail_get_backend(*_a, **_k):
+        raise AssertionError("llm_backend_name='off' 时不应创建 LLM backend")
 
-    with patch("subtap.core.clean.get_llm_backend", return_value=mock_llm):
-        result = run_clean(workspace, config, enhance_mode="local")
+    with patch("subtap.core.clean.get_llm_backend", fail_get_backend):
+        result = run_clean(workspace, config, llm_backend_name="off")
 
-    # enhance_mode="local" 应该禁用所有 LLM 功能
-    assert mock_llm.select_suspicious_segments_called is False
-    assert mock_llm.repair_segments_called is False
-    assert mock_llm.replace_hotwords_called is False
+    assert result["segment_count"] > 0
