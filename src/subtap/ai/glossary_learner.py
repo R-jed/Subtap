@@ -191,3 +191,47 @@ class GlossaryLearner:
                 patterns.append(f"{original} → {corrected} (出现 {count} 次)")
 
         return patterns
+
+    def learn_from_ops(self, ops: list[dict]) -> GlossaryUpdate:
+        """Learn glossary updates from LLM hotword replacement ops.
+
+        Args:
+            ops: List of {"from": wrong, "to": correct, "segment_id": int}.
+
+        Returns:
+            GlossaryUpdate with new_terms = {correct: wrong}.
+        """
+        new_terms: dict[str, str] = {}
+        for op in ops:
+            wrong = op.get("from", "").strip()
+            correct = op.get("to", "").strip()
+            if wrong and correct and wrong != correct:
+                new_terms[correct] = wrong
+
+        return GlossaryUpdate(new_terms=new_terms)
+
+
+def save_learned_hotwords(update: GlossaryUpdate, path: Path) -> None:
+    """Append learned hotwords to hotwords file (dedup with existing).
+
+    Format: correct=wrong (one per line).
+    """
+    existing: set[str] = set()
+    if path.exists():
+        for line in path.read_text(encoding="utf-8").strip().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                existing.add(line)
+
+    new_lines = []
+    for correct, wrong in update.new_terms.items():
+        entry = f"{correct}={wrong}"
+        if entry not in existing:
+            new_lines.append(entry)
+            existing.add(entry)
+
+    if new_lines:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            for line in new_lines:
+                f.write(line + "\n")

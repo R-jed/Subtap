@@ -26,7 +26,7 @@ class MockLLMBackend:
 
     def replace_hotwords(self, segments, hotword_payload):
         self.replace_hotwords_called = True
-        return {s["i"]: s["t"] + " [hotword]" for s in segments}
+        return {s["i"]: {"text": s["t"] + " [hotword]", "ops": []} for s in segments}
 
     def translate_srt(self, srt_text, target_language):
         self.translate_srt_called = True
