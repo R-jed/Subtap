@@ -89,7 +89,8 @@ class Menu:
     def render_full(self) -> None:
         sys.stderr.write("\033[H")
         for line in self.render():
-            sys.stderr.write(line + "\n")
+            # \r 确保回到行首（raw mode 下 \n 不会自动回行首）
+            sys.stderr.write("\r" + line + "\n")
         sys.stderr.write("\033[?25l")
         sys.stderr.flush()
         self._needs_full_redraw = False
@@ -99,14 +100,15 @@ class Menu:
             self.render_full()
             return
         t = self.theme
+        # 旧行取消高亮
         old_row = old_cursor - self.top_index + 2
-        sys.stderr.write(f"\033[{old_row};1H")
-        sys.stderr.write(f"\033[2K  {self.items[old_cursor]}")
+        sys.stderr.write(f"\r\033[{old_row};1H\033[2K  {self.items[old_cursor]}")
+        # 新行高亮
         new_row = self.cursor - self.top_index + 2
-        sys.stderr.write(f"\033[{new_row};1H")
-        sys.stderr.write(f"\033[2K{t.CYAN}{ICON_ARROW} {self.items[self.cursor]}{t.NC}")
+        sys.stderr.write(f"\r\033[{new_row};1H\033[2K{t.CYAN}{ICON_ARROW} {self.items[self.cursor]}{t.NC}")
+        # 光标移到页脚后
         footer_row = self.items_per_page + 3
-        sys.stderr.write(f"\033[{footer_row};1H")
+        sys.stderr.write(f"\r\033[{footer_row};1H")
         sys.stderr.flush()
 
     def set_needs_redraw(self) -> None:
