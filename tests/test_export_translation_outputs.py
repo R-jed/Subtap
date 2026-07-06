@@ -15,9 +15,9 @@ def _aligned(path: Path) -> None:
             sentence_id=0,
             start_sec=1.0,
             end_sec=2.0,
-            text="理光 GR4 发布了",
+            text="理光 GR4发布了",
             aligned_text="李光 GR4 发布了",
-            translated_text="Ricoh GR4 was released",
+            translated_text="Ricoh GR4was released",
             words=[
                 {"word": "李光", "start_sec": 1.0, "end_sec": 1.2},
                 {"word": "GR4", "start_sec": 1.2, "end_sec": 1.4},
@@ -46,7 +46,7 @@ def test_translate_export_writes_source_and_target_srt(tmp_path):
 
     assert (tmp_path / "final.source.srt").exists()
     source_text = (tmp_path / "final.source.srt").read_text(encoding="utf-8")
-    assert "理光 GR4 发布了" in source_text
+    assert "理光 GR4发布了" in source_text
     assert "Ricoh GR4" not in source_text
     assert (tmp_path / "final.srt").read_text(encoding="utf-8").count("Ricoh GR4") == 1
     assert result["output_path"] == str(tmp_path / "final.srt")
@@ -66,7 +66,7 @@ def test_bilingual_source_first_export(tmp_path):
     )
 
     text = (tmp_path / "final.srt").read_text(encoding="utf-8")
-    assert "理光 GR4 发布了\nRicoh GR4 was released" in text
+    assert "理光 GR4发布了\nRicoh GR4was released" in text
 
 
 def test_bilingual_target_first_export(tmp_path):
@@ -83,7 +83,7 @@ def test_bilingual_target_first_export(tmp_path):
     )
 
     text = (tmp_path / "final.srt").read_text(encoding="utf-8")
-    assert "Ricoh GR4 was released\n理光 GR4 发布了" in text
+    assert "Ricoh GR4was released\n理光 GR4发布了" in text
 
 
 def test_translate_export_ignores_source_aligned_text_for_srt_and_vtt(tmp_path):
@@ -99,10 +99,10 @@ def test_translate_export_ignores_source_aligned_text_for_srt_and_vtt(tmp_path):
         bilingual="off",
     )
 
-    assert "Ricoh GR4 was released" in (tmp_path / "final.srt").read_text(
+    assert "Ricoh GR4was released" in (tmp_path / "final.srt").read_text(
         encoding="utf-8"
     )
-    assert "Ricoh GR4 was released" in (tmp_path / "final.vtt").read_text(
+    assert "Ricoh GR4was released" in (tmp_path / "final.vtt").read_text(
         encoding="utf-8"
     )
     assert "李光" not in (tmp_path / "final.srt").read_text(encoding="utf-8")
@@ -123,10 +123,10 @@ def test_translate_export_json_and_tsv_use_translated_text(tmp_path):
     )
 
     payload = json.loads((tmp_path / "final.json").read_text(encoding="utf-8"))
-    assert payload[0]["text"] == "Ricoh GR4 was released"
+    assert payload[0]["text"] == "Ricoh GR4was released"
     tsv = (tmp_path / "final.tsv").read_text(encoding="utf-8")
-    assert "Ricoh GR4 was released" in tsv
-    assert "理光 GR4 发布了" not in tsv
+    assert "Ricoh GR4was released" in tsv
+    assert "理光 GR4发布了" not in tsv
 
 
 def test_translate_export_requires_translated_text(tmp_path):
@@ -135,7 +135,7 @@ def test_translate_export_requires_translated_text(tmp_path):
         sentence_id=0,
         start_sec=1.0,
         end_sec=2.0,
-        text="理光 GR4 发布了",
+        text="理光 GR4发布了",
         words=[],
     )
     aligned.write_text(segment.model_dump_json() + "\n", encoding="utf-8")
