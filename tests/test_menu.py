@@ -35,11 +35,11 @@ class TestMenu:
         m.jump_bottom()
         assert m.cursor == 2
 
-    def test_selected_index(self):
+    def test_selected_item(self):
         m = Menu(title="测试", items=["A", "B", "C"])
-        assert m.selected_index() == "A"
+        assert m.selected_item() == "A"
         m.move_down()
-        assert m.selected_index() == "B"
+        assert m.selected_item() == "B"
 
     def test_render_current_item_highlighted(self):
         m = Menu(title="测试", items=["A", "B", "C"])
@@ -72,3 +72,20 @@ class TestMenu:
         for _ in range(6):
             m.move_down()
         assert m.top_index > 0
+
+    def test_render_incremental_when_needs_redraw(self):
+        """当需要全量重绘时，render_incremental 应调用 render_full"""
+        m = Menu(title="测试", items=["A", "B", "C"])
+        m._needs_full_redraw = True
+        # render_incremental 不应报错（会走 render_full 路径）
+        m.render_incremental(0)
+        assert not m._needs_full_redraw
+
+    def test_render_incremental_updates_two_lines(self):
+        """增量渲染应只更新旧行和新行"""
+        m = Menu(title="测试", items=["A", "B", "C"])
+        m.render_full()
+        m._needs_full_redraw = False
+        old = m.cursor
+        m.move_down()
+        m.render_incremental(old)

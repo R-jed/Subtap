@@ -63,7 +63,7 @@ class Menu:
         self.top_index = max(0, self.cursor - self.items_per_page + 1)
         self._needs_full_redraw = True
 
-    def selected_index(self) -> str:
+    def selected_item(self) -> str:
         return self.items[self.cursor]
 
     def render(self) -> list[str]:
