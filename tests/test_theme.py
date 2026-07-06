@@ -74,6 +74,40 @@ class TestCJKWidth:
     def test_emoji_zwj_width(self):
         assert get_display_width("‍️") == 0
 
+
+class TestTruncateEdgeCases:
+    def test_empty_text(self):
+        assert truncate_by_width("", 10) == ""
+
+    def test_max_width_zero(self):
+        assert truncate_by_width("hello", 0) == ""
+
+    def test_max_width_negative(self):
+        assert truncate_by_width("hello", -1) == ""
+
+    def test_width_smaller_than_ellipsis(self):
+        result = truncate_by_width("hello", 2)
+        assert len(result) <= 2 or result == "..."
+
+
+class TestColorizeEdgeCases:
+    def test_empty_string(self, monkeypatch):
+        monkeypatch.delenv("NO_COLOR", raising=False)
+        t = Theme()
+        assert t.colorize_size("") == ""
+
+    def test_no_unit(self, monkeypatch):
+        monkeypatch.delenv("NO_COLOR", raising=False)
+        t = Theme()
+        assert t.colorize_size("123") == "123"
+
+
+class TestDisplayWidthEdgeCases:
+    def test_empty_string(self):
+        assert get_display_width("") == 0
+
+
+class TestTruncate:
     def test_truncate_ascii(self):
         result = truncate_by_width("hello world", 8)
         assert get_display_width(result) <= 8
