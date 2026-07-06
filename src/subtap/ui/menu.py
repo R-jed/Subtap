@@ -20,6 +20,7 @@ class Menu:
         footer: str = "↑↓ 导航  Enter 确认  Q 退出",
         theme: Theme | None = None,
         max_items: int = 50,
+        offset: int = 0,
     ):
         self.title = title
         self.items = items
@@ -27,6 +28,7 @@ class Menu:
         self.theme = theme or Theme()
         self.cursor = 0
         self.top_index = 0
+        self.offset = offset  # 渲染起始行偏移（用于 logo 占位）
         self.items_per_page = self._calc_items_per_page(max_items)
         self._needs_full_redraw = True
 
@@ -73,11 +75,10 @@ class Menu:
         lines = []
         lines.append(f"\033[2K{t.PURPLE_BOLD}{self.title}{t.NC}")
         lines.append("\033[2K")
-        for i in range(self.items_per_page):
+        # 只渲染实际可见的菜单项（不超过 items_per_page）
+        visible = min(self.items_per_page, len(self.items) - self.top_index)
+        for i in range(visible):
             idx = self.top_index + i
-            if idx >= len(self.items):
-                lines.append("\033[2K")
-                continue
             is_current = idx == self.cursor
             if is_current:
                 lines.append(f"\033[2K{t.CYAN}{ICON_ARROW} {self.items[idx]}{t.NC}")
@@ -88,7 +89,7 @@ class Menu:
 
     def render_full(self) -> None:
         buf = []
-        for row, line in enumerate(self.render(), start=1):
+        for row, line in enumerate(self.render(), start=self.offset + 1):
             buf.append(f"\033[{row};1H\033[2K{line}")
         buf.append("\033[?25l")
         sys.stderr.write("".join(buf))
@@ -100,14 +101,15 @@ class Menu:
             self.render_full()
             return
         t = self.theme
-        # 旧行取消高亮
-        old_row = old_cursor - self.top_index + 2
+        # 旧行取消高亮（+2: title + blank line, +offset: logo 占位）
+        old_row = old_cursor - self.top_index + 2 + self.offset
         sys.stderr.write(f"\r\033[{old_row};1H\033[2K  {self.items[old_cursor]}")
         # 新行高亮
-        new_row = self.cursor - self.top_index + 2
+        new_row = self.cursor - self.top_index + 2 + self.offset
         sys.stderr.write(f"\r\033[{new_row};1H\033[2K{t.CYAN}{ICON_ARROW} {self.items[self.cursor]}{t.NC}")
-        # 光标移到页脚后
-        footer_row = self.items_per_page + 3
+        # 光标移到页脚后（使用实际可见项数，不用 items_per_page）
+        visible = min(self.items_per_page, len(self.items) - self.top_index)
+        footer_row = visible + 3 + self.offset
         sys.stderr.write(f"\r\033[{footer_row};1H")
         sys.stderr.flush()
 
