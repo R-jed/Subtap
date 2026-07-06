@@ -208,9 +208,12 @@ def run_clean(
         if not llm_hotword:
             llm_hotword = True
     elif enhance_mode == "local":
-        # local 模式不使用 LLM
-        llm_proofread = False
-        llm_hotword = False
+        # local 模式：仅禁用未明确配置的 LLM 功能
+        # 如果用户显式设置了 llm_proofread=True，则保留
+        if llm_proofread is None:
+            llm_proofread = False
+        if llm_hotword is None:
+            llm_hotword = False
 
     # 首次接入时，如果 llm_proofread 未设置，默认开启
     if llm_proofread is None:
