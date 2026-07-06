@@ -87,11 +87,11 @@ class Menu:
         return lines
 
     def render_full(self) -> None:
-        sys.stderr.write("\033[H")
-        for line in self.render():
-            # \r 确保回到行首（raw mode 下 \n 不会自动回行首）
-            sys.stderr.write("\r" + line + "\n")
-        sys.stderr.write("\033[?25l")
+        buf = []
+        for row, line in enumerate(self.render(), start=1):
+            buf.append(f"\033[{row};1H\033[2K{line}")
+        buf.append("\033[?25l")
+        sys.stderr.write("".join(buf))
         sys.stderr.flush()
         self._needs_full_redraw = False
 
