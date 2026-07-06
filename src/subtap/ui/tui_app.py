@@ -71,7 +71,7 @@ class TuiApp:
 
     def _view_home(self) -> str:
         t = self.theme
-        # Logo 作为 prefix（菜单自带 title 空行提供间距）
+        # Logo 作为 prefix，尾部空行提供 logo 和菜单之间的间距
         prefix = [
             f"{t.CYAN}  ____        _       {t.NC}",
             f"{t.CYAN} / ___| _   _| |_ __ _| |__   __ _ _ __  {t.NC}",
@@ -79,6 +79,7 @@ class TuiApp:
             f"{t.CYAN}  ___) | |_| | || (_| | |_) | (_| | |    {t.NC}",
             f"{t.CYAN} |____/ \\__, |\\__\\__,_|_.__/ \\__,_|_|    {t.NC}",
             f"{t.CYAN}        |___/  {t.GRAY}音频转录工具{t.NC}",
+            "", "", "", "", "", "", "", "",
         ]
 
         menu = Menu(
