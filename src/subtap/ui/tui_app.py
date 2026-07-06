@@ -11,7 +11,7 @@ from .theme import Theme
 from .menu import Menu
 from .spinner import Spinner
 from .config_manager import ConfigManager
-from .file_picker import FilePicker
+from .file_picker import FilePicker, AUDIO_VIDEO_EXTENSIONS
 from .views.new_task import NewTaskView
 from .history import HistoryScanner
 
@@ -482,7 +482,7 @@ class TuiApp:
         # 显示拖入提示
         sys.stderr.write("\033[2J\033[H")
         sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}新建转录{t.NC}\r\n\r\n")
-        sys.stderr.write(f"\033[2K  拖入音频或视频文件到此处\r\n\r\n")
+        sys.stderr.write(f"\033[2K  拖入音频或视频文件到此处，按 Enter 确认\r\n\r\n")
         sys.stderr.write(f"\033[2K{t.GRAY}支持格式：mp3, wav, m4a, mp4, mkv, avi...{t.NC}\r\n\r\n")
         sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回主菜单{t.NC}\r\n")
         sys.stderr.flush()
@@ -506,15 +506,17 @@ class TuiApp:
                         # 去除可能的引号（拖入时终端会加引号）
                         clean_path = path_buf.strip().strip("'\"")
                         file_path = Path(clean_path).expanduser()
-                        if file_path.is_file():
-                            view.select_file(file_path)
-                            return self._view_confirm_run(view)
-                        else:
-                            # 文件不存在，清空并提示
+                        if not file_path.is_file():
                             sys.stderr.write(f"\033[8;1H\033[2K{t.RED}文件不存在：{clean_path}{t.NC}\r\n")
-                            sys.stderr.write(f"\033[9;1H\033[2K{t.GRAY}请重新拖入文件{t.NC}\r\n")
                             sys.stderr.flush()
                             path_buf = ""
+                        elif file_path.suffix.lower() not in AUDIO_VIDEO_EXTENSIONS:
+                            sys.stderr.write(f"\033[8;1H\033[2K{t.RED}不支持的格式：{file_path.suffix}{t.NC}\r\n")
+                            sys.stderr.flush()
+                            path_buf = ""
+                        else:
+                            view.select_file(file_path)
+                            return self._view_confirm_run(view)
                 elif key.startswith("CHAR:"):
                     ch = key[5:]
                     path_buf += ch
