@@ -64,6 +64,8 @@ class Menu:
         self._needs_full_redraw = True
 
     def selected_item(self) -> str:
+        if not self.items:
+            return ""
         return self.items[self.cursor]
 
     def render(self) -> list[str]:
