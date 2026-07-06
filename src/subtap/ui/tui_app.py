@@ -497,53 +497,56 @@ class TuiApp:
         sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回主菜单{t.NC}\r\n")
         sys.stderr.flush()
 
-        # 用 force_char_mode 读取，避免 q 被映射为 QUIT
-        # 用原始字节缓冲，避免 UTF-8 多字节字符被逐字节解码导致乱码
-        self.reader.force_char_mode = True
+        # 直接读取原始字节，不用 read_key() 的解码逻辑
+        # 避免 UTF-8 多字节字符被逐字节解码导致乱码
         raw_buf = b""
 
-        try:
-            while True:
-                key = self.reader.read_key(timeout=0.1)
-                if key is None:
-                    continue
-                if key == Key.ESCAPE:
-                    self._pop_state()
-                    return "continue"
-                elif key == Key.QUIT:
-                    return "quit"
-                elif key == Key.ENTER:
-                    if raw_buf:
-                        try:
-                            path_str = raw_buf.decode("utf-8")
-                        except UnicodeDecodeError:
-                            path_str = raw_buf.decode("utf-8", errors="replace")
-                        # 去除可能的引号（拖入时终端会加引号）
-                        clean_path = path_str.strip().strip("'\"")
-                        file_path = Path(clean_path).expanduser()
-                        if not file_path.is_file():
-                            sys.stderr.write(f"\033[8;1H\033[2K{t.RED}文件不存在：{clean_path}{t.NC}\r\n")
-                            sys.stderr.flush()
-                            raw_buf = b""
-                        elif file_path.suffix.lower() not in AUDIO_VIDEO_EXTENSIONS:
-                            sys.stderr.write(f"\033[8;1H\033[2K{t.RED}不支持的格式：{file_path.suffix}{t.NC}\r\n")
-                            sys.stderr.flush()
-                            raw_buf = b""
-                        else:
-                            view.select_file(file_path)
-                            return self._view_confirm_run(view)
-                elif key == Key.DELETE:
-                    if raw_buf:
+        while True:
+            byte = self.reader._read_byte(timeout=0.1)
+            if byte is None:
+                continue
+            # Enter: \r 或 \n
+            if byte in (b"\r", b"\n"):
+                if raw_buf:
+                    try:
+                        path_str = raw_buf.decode("utf-8")
+                    except UnicodeDecodeError:
+                        path_str = raw_buf.decode("utf-8", errors="replace")
+                    clean_path = path_str.strip().strip("'\"")
+                    file_path = Path(clean_path).expanduser()
+                    if not file_path.is_file():
+                        sys.stderr.write(f"\033[8;1H\033[2K{t.RED}文件不存在：{clean_path}{t.NC}\r\n")
+                        sys.stderr.flush()
+                        raw_buf = b""
+                    elif file_path.suffix.lower() not in AUDIO_VIDEO_EXTENSIONS:
+                        sys.stderr.write(f"\033[8;1H\033[2K{t.RED}不支持的格式：{file_path.suffix}{t.NC}\r\n")
+                        sys.stderr.flush()
+                        raw_buf = b""
+                    else:
+                        view.select_file(file_path)
+                        return self._view_confirm_run(view)
+            # Esc: 0x1b
+            elif byte == b"\x1b":
+                self._pop_state()
+                return "continue"
+            # Ctrl+C: 0x03
+            elif byte == b"\x03":
+                return "quit"
+            # Backspace/Delete: 0x7f 或 0x08
+            elif byte in (b"\x7f", b"\x08"):
+                if raw_buf:
+                    raw_buf = raw_buf[:-1]
+                    while raw_buf and (raw_buf[-1] & 0xC0) == 0x80:
                         raw_buf = raw_buf[:-1]
-                        while raw_buf and (raw_buf[-1] & 0xC0) == 0x80:
-                            raw_buf = raw_buf[:-1]
-                        self._update_path_display(raw_buf)
-                elif key.startswith("CHAR:"):
-                    ch = key[5:]
-                    raw_buf += ch.encode("utf-8")
                     self._update_path_display(raw_buf)
-        finally:
-            self.reader.force_char_mode = False
+            # Ctrl+U: 清空
+            elif byte == b"\x15":
+                raw_buf = b""
+                self._update_path_display(raw_buf)
+            # 其他字节：直接追加（包括中文 UTF-8 多字节）
+            else:
+                raw_buf += byte
+                self._update_path_display(raw_buf)
 
     def _update_path_display(self, raw_buf: bytes) -> None:
         t = self.theme
@@ -701,46 +704,44 @@ class TuiApp:
         sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回主菜单{t.NC}\r\n")
         sys.stderr.flush()
 
-        # 用 force_char_mode 读取拖入的路径
-        self.reader.force_char_mode = True
+        # 直接读取原始字节，不用 read_key() 的解码逻辑
         raw_buf = b""
 
-        try:
-            while True:
-                key = self.reader.read_key(timeout=0.1)
-                if key is None:
-                    continue
-                if key == Key.ESCAPE:
-                    self._pop_state()
-                    return "continue"
-                elif key == Key.QUIT:
-                    return "quit"
-                elif key == Key.ENTER:
-                    if raw_buf:
-                        try:
-                            path_str = raw_buf.decode("utf-8")
-                        except UnicodeDecodeError:
-                            path_str = raw_buf.decode("utf-8", errors="replace")
-                        clean_path = path_str.strip().strip("'\"")
-                        folder = Path(clean_path).expanduser()
-                        if not folder.is_dir():
-                            sys.stderr.write(f"\033[8;1H\033[2K{t.RED}文件夹不存在：{clean_path}{t.NC}\r\n")
-                            sys.stderr.flush()
-                            raw_buf = b""
-                        else:
-                            return self._execute_batch(folder)
-                elif key == Key.DELETE:
-                    if raw_buf:
+        while True:
+            byte = self.reader._read_byte(timeout=0.1)
+            if byte is None:
+                continue
+            if byte in (b"\r", b"\n"):
+                if raw_buf:
+                    try:
+                        path_str = raw_buf.decode("utf-8")
+                    except UnicodeDecodeError:
+                        path_str = raw_buf.decode("utf-8", errors="replace")
+                    clean_path = path_str.strip().strip("'\"")
+                    folder = Path(clean_path).expanduser()
+                    if not folder.is_dir():
+                        sys.stderr.write(f"\033[8;1H\033[2K{t.RED}文件夹不存在：{clean_path}{t.NC}\r\n")
+                        sys.stderr.flush()
+                        raw_buf = b""
+                    else:
+                        return self._execute_batch(folder)
+            elif byte == b"\x1b":
+                self._pop_state()
+                return "continue"
+            elif byte == b"\x03":
+                return "quit"
+            elif byte in (b"\x7f", b"\x08"):
+                if raw_buf:
+                    raw_buf = raw_buf[:-1]
+                    while raw_buf and (raw_buf[-1] & 0xC0) == 0x80:
                         raw_buf = raw_buf[:-1]
-                        while raw_buf and (raw_buf[-1] & 0xC0) == 0x80:
-                            raw_buf = raw_buf[:-1]
-                        self._update_path_display(raw_buf)
-                elif key.startswith("CHAR:"):
-                    ch = key[5:]
-                    raw_buf += ch.encode("utf-8")
                     self._update_path_display(raw_buf)
-        finally:
-            self.reader.force_char_mode = False
+            elif byte == b"\x15":
+                raw_buf = b""
+                self._update_path_display(raw_buf)
+            else:
+                raw_buf += byte
+                self._update_path_display(raw_buf)
 
     def _execute_batch(self, folder: Path) -> str:
         t = self.theme
