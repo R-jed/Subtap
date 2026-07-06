@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from subtap.ai.glossary_learner import GlossaryLearner, GlossaryUpdate
+from subtap.backends.llm.openai_compat import OpenAICompatibleLLM
 from subtap.core.clean import run_clean
 from subtap.core.workspace import Workspace
-from subtap.schemas.config import SubtapConfig
+from subtap.schemas.config import RemoteAPIConfig, SubtapConfig
 from subtap.schemas.models import ASRSegment
 
 
@@ -252,3 +254,96 @@ class TestWriteLearnedHotwords:
 
         content = hotwords_path.read_text(encoding="utf-8")
         assert content.count("VITURE=维图尔") == 1
+
+
+# ── Test: Batch LLM calls for long audio ─────────────────────
+
+
+class TestBatchLLMCalls:
+    """LLM methods should batch segments to avoid API timeout on long audio."""
+
+    def _make_llm(self, batch_size: int = 20) -> OpenAICompatibleLLM:
+        with patch.dict("os.environ", {"SUBTAP_API_KEY": "test-key"}):
+            return OpenAICompatibleLLM(
+                remote_api=RemoteAPIConfig(
+                    base_url="https://api.example.com/v1",
+                    model="test-model",
+                    api_key_env="SUBTAP_API_KEY",
+                ),
+                batch_size=batch_size,
+            )
+
+    def test_select_suspicious_batches_when_many_segments(self):
+        """select_suspicious_segments splits into batches when segments > batch_size."""
+        llm = self._make_llm(batch_size=5)
+        segments = [{"i": i, "t": f"文本{i}"} for i in range(12)]
+
+        call_count = 0
+
+        def mock_chat(prompt, system):
+            nonlocal call_count
+            call_count += 1
+            return '{"segments":[]}'
+
+        llm._chat = mock_chat
+        llm.select_suspicious_segments(segments)
+
+        # 12 segments / batch_size 5 = 3 batches
+        assert call_count == 3
+
+    def test_select_suspicious_merges_batch_results(self):
+        """Batch results are merged with correct global indexes."""
+        llm = self._make_llm(batch_size=5)
+        segments = [{"i": i, "t": f"文本{i}"} for i in range(12)]
+
+        call_idx = 0
+
+        def mock_chat(prompt, system):
+            nonlocal call_idx
+            # Return the second segment's index from each batch
+            # batch 0: segments [0,1,2,3,4] → return i=1
+            # batch 1: segments [5,6,7,8,9] → return i=6
+            # batch 2: segments [10,11] → return i=11
+            batch_start = call_idx * 5
+            call_idx += 1
+            return json.dumps({"segments": [{"i": batch_start + 1}]}, ensure_ascii=False)
+
+        llm._chat = mock_chat
+        result = llm.select_suspicious_segments(segments)
+
+        # Segments keep global indexes, no offset mapping needed
+        assert result == [1, 6, 11]
+
+    def test_replace_hotwords_batches_when_many_segments(self):
+        """replace_hotwords splits into batches when segments > batch_size."""
+        llm = self._make_llm(batch_size=5)
+        segments = [{"i": i, "t": f"文本{i}"} for i in range(12)]
+
+        call_count = 0
+
+        def mock_chat(prompt, system):
+            nonlocal call_count
+            call_count += 1
+            return '{"segments":[]}'
+
+        llm._chat = mock_chat
+        llm.replace_hotwords(segments, None)
+
+        assert call_count == 3
+
+    def test_small_segment_list_not_batched(self):
+        """Segments within batch_size are sent in a single call."""
+        llm = self._make_llm(batch_size=20)
+        segments = [{"i": i, "t": f"文本{i}"} for i in range(5)]
+
+        call_count = 0
+
+        def mock_chat(prompt, system):
+            nonlocal call_count
+            call_count += 1
+            return '{"segments":[]}'
+
+        llm._chat = mock_chat
+        llm.select_suspicious_segments(segments)
+
+        assert call_count == 1
