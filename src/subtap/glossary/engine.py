@@ -59,10 +59,6 @@ class HotwordEngine:
         # Local rule-based replacement
         text = replace_in_text(text, glossary)
 
-        # TODO: LLM-based replacement for hybrid/api mode
-        # if self.mode in ("hybrid", "api"):
-        #     text = self._llm_replace(text, glossary)
-
         return text
 
     def get_applied_replacements(self, text: str, lang: str = "zh") -> dict[str, str]:

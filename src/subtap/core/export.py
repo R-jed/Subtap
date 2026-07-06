@@ -88,6 +88,22 @@ def _normalize_punct(text: str, language: str = "zh") -> str:
     return text.translate(_EN_PUNCT_MAP)
 
 
+def _remove_cjk_spaces(text: str) -> str:
+    """Remove spaces between CJK/digits and Latin/digits.
+
+    Rules:
+    - English letter + space + digit → RS 5 → RS5
+    - Digit + space + English letter → 2.5 Pro → 2.5Pro
+    - Chinese char + space + digit → 售价 6499 → 售价6499
+    - Digit + space + Chinese char → 6499 元 → 6499元
+    """
+    text = re.sub(r"([A-Za-z])\s+(\d)", r"\1\2", text)
+    text = re.sub(r"(\d)\s+([A-Za-z])", r"\1\2", text)
+    text = re.sub(r"([一-鿿])\s+(\d)", r"\1\2", text)
+    text = re.sub(r"(\d)\s+([一-鿿])", r"\1\2", text)
+    return text
+
+
 def _strip_punct(text: str) -> str:
     """Remove all punctuation, preserving decimal points and ratios in numbers."""
     # Protect decimal points (e.g., 0.6秒)
@@ -740,6 +756,7 @@ class SRTExporter(BaseExporter):
                 text = _normalize_punct(text, self.language)
             else:
                 text = _strip_punct(text)
+            text = _remove_cjk_spaces(text)
             lines.append(str(index))
             lines.append(f"{start} --> {end}")
             lines.append(text)
@@ -870,7 +887,7 @@ def _final_json_item(seg: AlignedSegment) -> dict:
         "subtitle_id": seg.sentence_id,
         "start_sec": seg.start_sec,
         "end_sec": seg.end_sec,
-        "text": seg.text,
+        "text": _remove_cjk_spaces(seg.text),
         "words": [
             {"word": w["word"], "start_sec": w["start_sec"], "end_sec": w["end_sec"]}
             for w in seg.words
@@ -1028,6 +1045,7 @@ def run_final_exports(
                     text = _normalize_punct(text, language)
                 else:
                     text = _strip_punct(text)
+                text = _remove_cjk_spaces(text)
                 vtt_lines.extend(
                     [
                         str(vtt_index),
@@ -1050,7 +1068,7 @@ def run_final_exports(
     if "tsv" in formats:
         tsv_lines = ["subtitle_id\tstart_sec\tend_sec\ttext"]
         for seg in sorted(export_segments, key=lambda s: s.start_sec):
-            text = seg.text.replace("\t", " ").replace("\n", " ")
+            text = _remove_cjk_spaces(seg.text).replace("\t", " ").replace("\n", " ")
             tsv_lines.append(
                 f"{seg.sentence_id}\t{seg.start_sec}\t{seg.end_sec}\t{text}"
             )

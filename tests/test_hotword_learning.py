@@ -210,6 +210,27 @@ class TestGlossaryLearnerFromOps:
         assert result.new_terms == {}
         assert result.replacement_rules == []
 
+    def test_learn_from_ops_filters_single_char(self):
+        """Single char ops should be filtered out."""
+        learner = GlossaryLearner()
+        ops = [{"from": "号", "to": "好", "segment_id": 0}]
+        result = learner.learn_from_ops(ops)
+        assert len(result.new_terms) == 0
+
+    def test_learn_from_ops_filters_sentence_punct(self):
+        """Ops containing sentence-ending punctuation should be filtered."""
+        learner = GlossaryLearner()
+        ops = [{"from": "GR IV。那它", "to": "GR4。那它", "segment_id": 0}]
+        result = learner.learn_from_ops(ops)
+        assert len(result.new_terms) == 0
+
+    def test_learn_from_ops_filters_length_ratio(self):
+        """Ops with >3x length ratio should be filtered (bad diff)."""
+        learner = GlossaryLearner()
+        ops = [{"from": "探", "to": "力图楼探草丛视野", "segment_id": 0}]
+        result = learner.learn_from_ops(ops)
+        assert len(result.new_terms) == 0
+
 
 # ── Test: Write learned hotwords to file ──────────────────────
 
@@ -227,8 +248,9 @@ class TestWriteLearnedHotwords:
         save_learned_hotwords(update, hotwords_path)
 
         content = hotwords_path.read_text(encoding="utf-8")
-        assert "VITURE=维图尔" in content
-        assert "GR IV=吉亚四" in content
+        # Format: wrong=correct (错词=正确词)
+        assert "维图尔=VITURE" in content
+        assert "吉亚四=GR IV" in content
 
     def test_appends_to_existing_hotwords(self, tmp_path):
         from subtap.ai.glossary_learner import save_learned_hotwords
@@ -241,19 +263,19 @@ class TestWriteLearnedHotwords:
 
         content = hotwords_path.read_text(encoding="utf-8")
         assert "荣耀=华为荣耀" in content
-        assert "VITURE=维图尔" in content
+        assert "维图尔=VITURE" in content
 
     def test_deduplicates_existing_hotwords(self, tmp_path):
         from subtap.ai.glossary_learner import save_learned_hotwords
 
         hotwords_path = tmp_path / "hotwords_zh.txt"
-        hotwords_path.write_text("VITURE=维图尔\n", encoding="utf-8")
+        hotwords_path.write_text("维图尔=VITURE\n", encoding="utf-8")
 
         update = GlossaryUpdate(new_terms={"VITURE": "维图尔"})
         save_learned_hotwords(update, hotwords_path)
 
         content = hotwords_path.read_text(encoding="utf-8")
-        assert content.count("VITURE=维图尔") == 1
+        assert content.count("维图尔=VITURE") == 1
 
 
 # ── Test: Batch LLM calls for long audio ─────────────────────
