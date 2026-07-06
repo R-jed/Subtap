@@ -20,7 +20,7 @@ class Menu:
         footer: str = "↑↓ 导航  Enter 确认  Q 退出",
         theme: Theme | None = None,
         max_items: int = 50,
-        offset: int = 0,
+        prefix_lines: list[str] | None = None,
     ):
         self.title = title
         self.items = items
@@ -28,7 +28,8 @@ class Menu:
         self.theme = theme or Theme()
         self.cursor = 0
         self.top_index = 0
-        self.offset = offset  # 渲染起始行偏移（用于 logo 占位）
+        self.prefix_lines = prefix_lines or []  # 菜单前的内容（如 logo）
+        self.offset = len(self.prefix_lines)
         self.items_per_page = self._calc_items_per_page(max_items)
         self._needs_full_redraw = True
 
@@ -84,11 +85,15 @@ class Menu:
                 lines.append(f"\033[2K{t.CYAN}{ICON_ARROW} {self.items[idx]}{t.NC}")
             else:
                 lines.append(f"\033[2K  {self.items[idx]}")
+        lines.append("\033[2K")  # 菜单和状态栏之间空一行
         lines.append(f"\033[2K{t.GRAY}{self.footer}{t.NC}")
         return lines
 
     def render_full(self) -> None:
         buf = ["\033[2J\033[H"]  # 清屏 + 光标归位
+        # 先写 prefix（如 logo），再写菜单
+        for row, line in enumerate(self.prefix_lines, start=1):
+            buf.append(f"\033[{row};1H{line}")
         for row, line in enumerate(self.render(), start=self.offset + 1):
             buf.append(f"\033[{row};1H\033[2K{line}")
         buf.append("\033[?25l")
