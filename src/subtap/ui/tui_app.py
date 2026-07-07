@@ -3,6 +3,7 @@
 用 ANSI 原生渲染实现交互式终端 UI。
 """
 import os
+from pathlib import Path
 import sys
 import subprocess
 from pathlib import Path
@@ -14,6 +15,15 @@ from .config_manager import ConfigManager
 from .file_picker import FilePicker, AUDIO_VIDEO_EXTENSIONS
 from .views.new_task import NewTaskView
 from .history import HistoryScanner
+
+
+def _run_env() -> dict[str, str]:
+    """返回带 PYTHONPATH 的环境变量，支持从源码直接运行。"""
+    env = os.environ.copy()
+    src_dir = str(Path(__file__).resolve().parent.parent.parent)
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = f"{src_dir}{os.pathsep}{existing}" if existing else src_dir
+    return env
 
 
 class TuiApp:
@@ -602,7 +612,7 @@ class TuiApp:
         sys.stderr.flush()
 
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600, env=_run_env())
         except subprocess.TimeoutExpired:
             sys.stderr.write("\033[H\033[J")
             sys.stderr.write(f"\033[2K{t.RED}✗ 转录超时（超过1小时）{t.NC}\r\n")
@@ -768,7 +778,7 @@ class TuiApp:
         for i, f in enumerate(audio_files):
             sys.stderr.write(f"\033[{5 + i};1H\033[2K  ⠙ {f.name}")
             sys.stderr.flush()
-            result = subprocess.run([sys.executable, "-m", "subtap", "run", str(f)], capture_output=True, text=True)
+            result = subprocess.run([sys.executable, "-m", "subtap.cli", "run", str(f)], capture_output=True, text=True, env=_run_env())
             if result.returncode == 0:
                 completed += 1
                 sys.stderr.write(f"\033[{5 + i};1H\033[2K  {t.GREEN}✓{t.NC} {f.name}")
