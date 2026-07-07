@@ -3,7 +3,6 @@
 用 ANSI 原生渲染实现交互式终端 UI。
 """
 import os
-from pathlib import Path
 import sys
 import subprocess
 from pathlib import Path
@@ -643,8 +642,17 @@ class TuiApp:
             sys.stderr.write(f"\033[2K{t.GREEN}✓ 转录完成{t.NC}\r\n\r\n")
         else:
             sys.stderr.write(f"\033[2K{t.RED}✗ 转录失败{t.NC}\r\n\r\n")
-            if result.stderr:
-                sys.stderr.write(f"\033[2K{t.GRAY}{result.stderr[:200]}{t.NC}\r\n")
+            err = (result.stderr or result.stdout or "").strip()
+            if err:
+                # 提取关键错误信息（最后一行通常是核心错误）
+                lines = err.splitlines()
+                key_line = lines[-1] if lines else err[:200]
+                sys.stderr.write(f"\033[2K{t.RED}{key_line}{t.NC}\r\n")
+                # 如果是缺少依赖，给出安装提示
+                if "No module named" in err:
+                    module = err.split("'")[1] if "'" in err else ""
+                    if module:
+                        sys.stderr.write(f"\033[2K{t.YELLOW}pip install {module}{t.NC}\r\n")
         sys.stderr.write(f"\033[2K\r\n{t.GRAY}Esc 返回{t.NC}\r\n")
         sys.stderr.flush()
 
@@ -783,7 +791,9 @@ class TuiApp:
                 completed += 1
                 sys.stderr.write(f"\033[{5 + i};1H\033[2K  {t.GREEN}✓{t.NC} {f.name}")
             else:
-                sys.stderr.write(f"\033[{5 + i};1H\033[2K  {t.RED}✗{t.NC} {f.name}")
+                err = (result.stderr or result.stdout or "").strip()
+                hint = err.splitlines()[-1][:60] if err else ""
+                sys.stderr.write(f"\033[{5 + i};1H\033[2K  {t.RED}✗{t.NC} {f.name} {t.GRAY}{hint}{t.NC}")
             sys.stderr.flush()
 
         sys.stderr.write(f"\033[{5 + len(audio_files) + 1};1H\r\n")

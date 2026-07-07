@@ -17,13 +17,47 @@
 - **插拔式架构** — ASR / LLM / Aligner 后端可替换
 - **中间产物落盘** — 所有阶段输出 JSONL，支持断点续跑
 
-## 快速开始
+## 安装
+
+### 方式零：一键安装（自动选择最佳方式）
+
+```bash
+curl -sSL https://raw.githubusercontent.com/R-jed/Subtap/main/scripts/install.sh | bash
+```
+
+> 自动检测环境：macOS 用 Homebrew，有 uv 用 uvx，有 pipx 用 pipx，兜底用 pip。
+
+### 方式一：Homebrew（推荐 macOS 用户）
+
+```bash
+brew tap R-jed/tap
+brew install subtap
+```
+
+### 方式二：uvx（跨平台，无需 Python 环境）
+
+```bash
+# 临时运行
+uvx subtap
+
+# 全局安装
+uv tool install subtap
+```
+
+> [uv](https://docs.astral.sh/uv/) 会自动管理 Python 环境和依赖，零配置。
+
+### 方式三：源码安装
 
 ```bash
 git clone https://github.com/R-jed/Subtap.git
 cd Subtap
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
+```
+
+## 快速开始
+
+```bash
 subtap setup    # 下载模型
 subtap run audio.mp3
 ```
