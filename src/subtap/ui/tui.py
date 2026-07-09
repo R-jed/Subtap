@@ -2,204 +2,204 @@
 
 from __future__ import annotations
 
+import json
 import time
+from abc import ABC, abstractmethod
+from pathlib import Path
+from typing import Any, Callable
 
 from subtap.ui.progress import PipelineProgress
 from subtap.ui.state import STAGE_CN, reset_state
 
 
-class RichRunner:
-    """Rich-based pipeline runner with real-time progress display."""
+# ── BaseRunner ──────────────────────────────────────────────────────
 
-    def __init__(self):
+
+class BaseRunner(ABC):
+    """Abstract base for all pipeline runners.
+
+    Encapsulates the stage-execution loop, export, and metadata save.
+    Subclasses only provide UI callbacks.
+    """
+
+    def __init__(self) -> None:
         self.timings: dict[str, float] = {}
         self.total_start: float = 0.0
 
-    def run_pipeline(
+    # ── stage list ──────────────────────────────────────────────────
+
+    @staticmethod
+    def _build_stages(config: Any, translate_to: str | None) -> list[dict]:
+        """Build the stage list dynamically from config.
+
+        Returns a list of dicts with keys: key, name, kwargs (or None).
+        Optional stages (script_match, translate, learn) are appended
+        only when their conditions are met.
+        """
+        # Resolve glossary_dir from config (CleanConfig.glossary_path)
+        clean_cfg = getattr(config, "clean", None)
+        glossary_path = getattr(clean_cfg, "glossary_path", None) if clean_cfg else None
+        hw_kwargs = {"glossary_dir": glossary_path} if glossary_path else None
+
+        stages: list[dict] = [
+            {"key": "prepare", "name": "音频标准化"},
+            {"key": "chunk", "name": "音频切段"},
+            {"key": "asr", "name": "语音识别"},
+            {"key": "clean", "name": "文本清洗", "kwargs": None},
+            {"key": "segment", "name": "智能断句"},
+            {"key": "align", "name": "时间轴对齐"},
+            {"key": "hotword", "name": "热词替换", "kwargs": hw_kwargs},
+        ]
+
+        # Optional: script_match
+        if getattr(config.output, "script_path", None):
+            stages.append({"key": "script_match", "name": "文稿匹配"})
+
+        # learn always runs (discovers hotwords from LLM results)
+        # Must run before translate so learned hotwords can be applied
+        stages.append({"key": "learn", "name": "热词学习", "kwargs": hw_kwargs})
+
+        # Optional: translate
+        if translate_to:
+            stages.append({
+                "key": "translate",
+                "name": "字幕翻译",
+                "kwargs": {"target_language": translate_to},
+            })
+
+        stages.append({"key": "export", "name": "字幕导出"})
+        return stages
+
+    # ── UI hooks (subclass override) ────────────────────────────────
+
+    def _wrap_context(self, runner: Callable[[], Any]) -> Any:
+        """Wrap the stage loop in a context manager (e.g. rich.Progress).
+
+        Default: no-op (just call runner() directly).
+        """
+        return runner()
+
+    @abstractmethod
+    def _before_stage(
+        self, stage: dict, step_num: int, total_steps: int
+    ) -> None:
+        """Called before each stage executes."""
+
+    @abstractmethod
+    def _after_stage(
+        self, stage: dict, result: dict, elapsed: float,
+        step_num: int, total_steps: int,
+    ) -> None:
+        """Called after each stage completes."""
+
+    @abstractmethod
+    def _on_complete(self, output_dir: Path, fmt: str, total_time: float) -> None:
+        """Called after all stages finish."""
+
+    @abstractmethod
+    def _on_error(self, error: Exception) -> None:
+        """Called when a stage raises an exception."""
+
+    # ── stage execution loop ────────────────────────────────────────
+
+    def _run_loop(
         self,
-        pipeline,
+        pipeline: Any,
+        stages: list[dict],
+        enhance: str,
+    ) -> None:
+        """Execute all stages with timing and callbacks.
+
+        Calls _before_stage / _after_stage around each stage.
+        The 'export' stage is skipped here — it is handled by _run_export().
+        """
+        for i, stage in enumerate(stages):
+            # Export is handled separately by _run_export()
+            if stage["key"] == "export":
+                continue
+
+            step_num = i + 1
+            total_steps = len(stages)
+
+            self._before_stage(stage, step_num, total_steps)
+
+            # Build kwargs for this stage
+            kwargs = dict(stage.get("kwargs") or {})
+            if stage["key"] == "clean":
+                kwargs["enhance_mode"] = enhance
+
+            t = time.time()
+            result = pipeline.run_stage(stage["key"], **kwargs)
+            elapsed = time.time() - t
+            self.timings[stage["key"]] = elapsed
+
+            self._after_stage(stage, result, elapsed, step_num, total_steps)
+
+    def _run_pipeline_inner(
+        self,
+        pipeline: Any,
         input_path: Path,
         output_dir: Path,
-        fmt: str = "srt",
-        enhance: str = "local",
-        translate_to: str | None = None,
-        bilingual: str = "off",
+        fmt: str,
+        enhance: str,
+        translate_to: str | None,
+        bilingual: str,
     ) -> dict:
-        """Execute pipeline with rich progress display."""
-        from rich.console import Console
-        from rich.panel import Panel
-        from rich.progress import (
-            BarColumn,
-            MofNCompleteColumn,
-            Progress,
-            SpinnerColumn,
-            TextColumn,
-            TimeElapsedColumn,
-        )
-        from rich.table import Table
+        """Core pipeline execution: build stages, run loop, export, save meta."""
+        stages = self._build_stages(pipeline.config, translate_to)
+        self._run_loop(pipeline, stages, enhance)
 
-        console = Console()
-        self.total_start = time.time()
-
-        # Build stage list dynamically
-        stages = [
-            ("prepare", "音频标准化"),
-            ("chunk", "音频切段"),
-            ("asr", "语音识别"),
-            ("clean", "文本清洗"),
-            ("segment", "智能断句"),
-            ("script_match", "文稿匹配"),
-            ("align", "时间轴对齐"),
-        ]
-        if translate_to:
-            stages.append(("translate", "字幕翻译"))
-        stages.append(("export", "字幕导出"))
-
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[bold blue]{task.description}"),
-            BarColumn(bar_width=30),
-            MofNCompleteColumn(),
-            TimeElapsedColumn(),
-            console=console,
-        ) as progress:
-            try:
-                # Stage 1: prepare
-                task = progress.add_task("音频标准化", total=1)
-                t = time.time()
-                r = pipeline.run_stage("prepare", input_path=input_path)
-                self.timings["prepare"] = time.time() - t
-                progress.update(task, completed=1)
-                console.print(
-                    f"  [green]✓[/] {r['media_info']['duration']:.1f}s, "
-                    f"{r['media_info']['sample_rate']}Hz"
-                )
-
-                # Stage 2: chunk
-                task = progress.add_task("音频切段", total=1)
-                t = time.time()
-                r = pipeline.run_stage("chunk")
-                self.timings["chunk"] = time.time() - t
-                progress.update(task, completed=1)
-                console.print(f"  [green]✓[/] {r['chunk_count']} 段")
-
-                # Stage 3: asr
-                task = progress.add_task("语音识别", total=1)
-                t = time.time()
-                r = pipeline.run_stage("asr")
-                self.timings["asr"] = time.time() - t
-                progress.update(task, completed=1)
-                console.print(f"  [green]✓[/] {r['segment_count']} 条")
-
-                # Stage 4: clean
-                task = progress.add_task("文本清洗", total=1)
-                t = time.time()
-                r = pipeline.run_stage("clean", enhance_mode=enhance)
-                self.timings["clean"] = time.time() - t
-                progress.update(task, completed=1)
-                console.print(f"  [green]✓[/] {r['segment_count']} 条")
-
-                # Stage 5: segment
-                task = progress.add_task("智能断句", total=1)
-                t = time.time()
-                r = pipeline.run_stage("segment")
-                self.timings["segment"] = time.time() - t
-                progress.update(task, completed=1)
-                console.print(f"  [green]✓[/] {r['sentence_count']} 句")
-
-                # Stage 5.5: script_match (optional)
-                if getattr(pipeline.config.output, "script_path", None):
-                    t = time.time()
-                    script_result = pipeline.run_stage("script_match")
-                    self.timings["script_match"] = time.time() - t
-                    if not script_result.get("skipped"):
-                        msg = script_result.get("message", "")
-                        console.print(f"  [green]✓[/] 文稿匹配：{msg}")
-                        if script_result.get("warnings"):
-                            for w in script_result["warnings"]:
-                                console.print(f"    [yellow]⚠[/] {w}")
-
-                # Stage 6: align
-                task = progress.add_task("时间轴对齐", total=1)
-                t = time.time()
-                r = pipeline.run_stage("align")
-                self.timings["align"] = time.time() - t
-                progress.update(task, completed=1)
-                console.print(f"  [green]✓[/] {r['aligned_count']} 条")
-
-                # Stage 6.5: hotword (热词替换)
-                task = progress.add_task("热词替换", total=1)
-                t = time.time()
-                r = pipeline.run_stage("hotword")
-                self.timings["hotword"] = time.time() - t
-                progress.update(task, completed=1)
-                if r.get("replaced", 0) > 0:
-                    console.print(f"  [green]✓[/] 替换 {r['replaced']}/{r['total']} 条")
-                else:
-                    console.print("  [dim]·[/] 无热词替换")
-
-                # Stage 6.6: learn (LLM discovered hotwords → local glossary)
-                task = progress.add_task("热词学习", total=1)
-                t = time.time()
-                r = pipeline.run_stage("learn")
-                self.timings["learn"] = time.time() - t
-                progress.update(task, completed=1)
-                if r.get("learned", 0) > 0:
-                    console.print(f"  [green]✓[/] 学习 {r['learned']} 个热词")
-                else:
-                    console.print("  [dim]·[/] 无新热词")
-
-                # Stage 7: translate (optional)
-                if translate_to:
-                    task = progress.add_task("字幕翻译", total=1)
-                    t = time.time()
-                    r = pipeline.run_stage("translate", target_language=translate_to)
-                    self.timings["translate"] = time.time() - t
-                    progress.update(task, completed=1)
-                    console.print(f"  [green]✓[/] 翻译 {r['translated_count']} 条")
-                else:
-                    self.timings["translate"] = 0.0
-
-                # Stage 8: export
-                task = progress.add_task("字幕导出", total=1)
-                t = time.time()
-                from subtap.core.export import run_final_exports
-
-                r = run_final_exports(
-                    pipeline.workspace.aligned_jsonl,
-                    output_dir,
-                    punctuation=pipeline.config.output.subtitle_punctuation,
-                    language=pipeline.config.output.subtitle_language,
-                    max_chars=pipeline.config.output.max_chars,
-                    min_chars=pipeline.config.output.min_chars,
-                    formats={fmt},
-                    stem=pipeline.config.output.subtitle_stem,
-                    translate_to=translate_to,
-                    bilingual=bilingual,
-                )
-                self.timings["export"] = time.time() - t
-                progress.update(task, completed=1)
-                console.print(f"  [green]✓[/] {r['output_path']}")
-
-            except Exception as e:
-                console.print(f"\n[red]✗ 处理失败：{e}[/]")
-                raise
+        # Export stage (with UI callbacks)
+        export_stage = {"key": "export", "name": "字幕导出"}
+        export_idx = len(stages) - 1  # export is always last
+        self._before_stage(export_stage, export_idx + 1, len(stages))
+        t = time.time()
+        export_result = self._run_export(pipeline, output_dir, fmt, translate_to, bilingual)
+        elapsed = time.time() - t
+        self.timings["export"] = elapsed
+        self._after_stage(export_stage, export_result, elapsed, export_idx + 1, len(stages))
 
         total_time = time.time() - self.total_start
+        self._on_complete(output_dir, fmt, total_time)
+        return self._save_meta(pipeline, input_path, output_dir, fmt, total_time)
 
-        # Summary table
-        table = Table(title="全流程完成", show_header=True, header_style="bold")
-        table.add_column("阶段", style="cyan")
-        table.add_column("耗时", justify="right")
-        for stage_key, dur in self.timings.items():
-            table.add_row(STAGE_CN.get(stage_key, stage_key), f"{dur:.1f}s")
-        table.add_row("总耗时", f"[bold]{total_time:.1f}s[/]", style="bold")
-        console.print(table)
-        console.print(f"  输出目录：{output_dir}")
+    # ── export ──────────────────────────────────────────────────────
 
-        # Save run metadata
-        import json
+    @staticmethod
+    def _run_export(
+        pipeline: Any,
+        output_dir: Path,
+        fmt: str,
+        translate_to: str | None,
+        bilingual: str,
+    ) -> dict:
+        """Run final exports with consistent parameters from config."""
+        from subtap.core.export import run_final_exports
 
+        return run_final_exports(
+            pipeline.workspace.aligned_jsonl,
+            output_dir,
+            punctuation=pipeline.config.output.subtitle_punctuation,
+            language=pipeline.config.output.subtitle_language,
+            max_chars=pipeline.config.output.max_chars,
+            min_chars=pipeline.config.output.min_chars,
+            formats={fmt},
+            stem=pipeline.config.output.subtitle_stem,
+            translate_to=translate_to,
+            bilingual=bilingual,
+        )
+
+    # ── metadata ────────────────────────────────────────────────────
+
+    def _save_meta(
+        self,
+        pipeline: Any,
+        input_path: Path,
+        output_dir: Path,
+        fmt: str,
+        total_time: float,
+    ) -> dict:
+        """Save run_meta.json with timings and return the meta dict."""
         meta = {
             "input": str(input_path),
             "work_dir": str(pipeline.workspace.root),
@@ -215,24 +215,166 @@ class RichRunner:
         return meta
 
 
-class TUIRunner:
+# ── RichRunner ──────────────────────────────────────────────────────
+
+
+class RichRunner(BaseRunner):
+    """Rich-based pipeline runner with real-time progress display."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._console: Any = None
+        self._progress: Any = None
+        self._task_id: Any = None
+
+    def run_pipeline(
+        self,
+        pipeline: Any,
+        input_path: Path,
+        output_dir: Path,
+        fmt: str = "srt",
+        enhance: str = "local",
+        translate_to: str | None = None,
+        bilingual: str = "off",
+    ) -> dict:
+        """Execute pipeline with rich progress display."""
+        from rich.console import Console
+        from rich.progress import (
+            BarColumn,
+            MofNCompleteColumn,
+            Progress,
+            SpinnerColumn,
+            TextColumn,
+            TimeElapsedColumn,
+        )
+        from rich.table import Table
+
+        self._console = Console()
+        self.total_start = time.time()
+
+        def _run() -> dict:
+            return self._run_pipeline_inner(
+                pipeline, input_path, output_dir, fmt,
+                enhance, translate_to, bilingual,
+            )
+
+        # Wrap in rich Progress context
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]{task.description}"),
+            BarColumn(bar_width=30),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            console=self._console,
+        ) as progress:
+            self._progress = progress
+            try:
+                meta = _run()
+            except Exception as e:
+                self._console.print(f"\n[red]✗ 处理失败：{e}[/]")
+                raise
+
+        # Summary table
+        total_time = meta["total_time_sec"]
+        table = Table(title="全流程完成", show_header=True, header_style="bold")
+        table.add_column("阶段", style="cyan")
+        table.add_column("耗时", justify="right")
+        for stage_key, dur in self.timings.items():
+            table.add_row(STAGE_CN.get(stage_key, stage_key), f"{dur:.1f}s")
+        table.add_row("总耗时", f"[bold]{total_time:.1f}s[/]", style="bold")
+        self._console.print(table)
+        self._console.print(f"  输出目录：{output_dir}")
+
+        return meta
+
+    def _wrap_context(self, runner: Callable[[], Any]) -> Any:
+        return runner()
+
+    def _before_stage(
+        self, stage: dict, step_num: int, total_steps: int
+    ) -> None:
+        self._task_id = self._progress.add_task(stage["name"], total=1)
+
+    def _after_stage(
+        self, stage: dict, result: dict, elapsed: float,
+        step_num: int, total_steps: int,
+    ) -> None:
+        self._progress.update(self._task_id, completed=1)
+        key = stage["key"]
+        if key == "prepare":
+            self._console.print(
+                f"  [green]✓[/] {result['media_info']['duration']:.1f}s, "
+                f"{result['media_info']['sample_rate']}Hz"
+            )
+        elif key == "chunk":
+            self._console.print(f"  [green]✓[/] {result['chunk_count']} 段")
+        elif key == "asr":
+            self._console.print(f"  [green]✓[/] {result['segment_count']} 条")
+        elif key == "clean":
+            self._console.print(f"  [green]✓[/] {result['segment_count']} 条")
+        elif key == "segment":
+            self._console.print(f"  [green]✓[/] {result['sentence_count']} 句")
+        elif key == "align":
+            self._console.print(f"  [green]✓[/] {result['aligned_count']} 条")
+        elif key == "hotword":
+            if result.get("replaced", 0) > 0:
+                self._console.print(
+                    f"  [green]✓[/] 替换 {result['replaced']}/{result['total']} 条"
+                )
+            else:
+                self._console.print("  [dim]·[/] 无热词替换")
+        elif key == "script_match":
+            if not result.get("skipped"):
+                msg = result.get("message", "")
+                self._console.print(f"  [green]✓[/] 文稿匹配：{msg}")
+                if result.get("warnings"):
+                    for w in result["warnings"]:
+                        self._console.print(f"    [yellow]⚠[/] {w}")
+        elif key == "learn":
+            if result.get("learned", 0) > 0:
+                self._console.print(
+                    f"  [green]✓[/] 学习 {result['learned']} 个热词"
+                )
+            else:
+                self._console.print("  [dim]·[/] 无新热词")
+        elif key == "translate":
+            self._console.print(
+                f"  [green]✓[/] 翻译 {result['translated_count']} 条"
+            )
+        elif key == "export":
+            self._console.print(f"  [green]✓[/] {result['output_path']}")
+
+    def _on_complete(
+        self, output_dir: Path, fmt: str, total_time: float
+    ) -> None:
+        pass  # Summary is printed in run_pipeline after Progress context exits
+
+    def _on_error(self, error: Exception) -> None:
+        self._console.print(f"\n[red]✗ 处理失败：{error}[/]")
+
+
+# ── TUIRunner ───────────────────────────────────────────────────────
+
+
+class TUIRunner(BaseRunner):
     """TUI-wrapped pipeline execution with Chinese status display."""
 
-    def __init__(self, use_tui: bool = True, mode: str = "fast", output_engine=None):
+    def __init__(
+        self, use_tui: bool = True, mode: str = "fast", output_engine: Any = None
+    ) -> None:
+        super().__init__()
         self.use_tui = use_tui
         self.mode = mode
         self.output_engine = output_engine
         self.progress = PipelineProgress()
         self.state = reset_state()
-        self.timings: dict[str, float] = {}
-        self.total_start: float = 0.0
 
         if self.use_tui:
             self.state.on_change(self.progress.on_state_change)
 
     def run_pipeline(
         self,
-        pipeline,
+        pipeline: Any,
         input_path: Path,
         output_dir: Path,
         fmt: str = "srt",
@@ -247,157 +389,10 @@ class TUIRunner:
             self.progress.print_header()
 
         try:
-            # Stage 1: prepare
-            self.state.update(stage="prepare", status="processing", progress=0)
-            if self.use_tui:
-                self.progress.print_stage_start(self.state)
-
-            stage_start = time.time()
-            result = pipeline.run_stage("prepare", input_path=input_path)
-            self.timings["prepare"] = time.time() - stage_start
-            self.state.update(progress=100, status="completed")
-            if self.use_tui:
-                self.progress.print_stage_result(self.state, result)
-
-            # Stage 2: chunk
-            self.state.update(stage="chunk", status="processing", progress=0)
-            if self.use_tui:
-                self.progress.print_stage_start(self.state)
-
-            stage_start = time.time()
-            result = pipeline.run_stage("chunk")
-            self.timings["chunk"] = time.time() - stage_start
-            total_chunks = result["chunk_count"]
-            self.state.update(
-                progress=100, status="completed", total_chunks=total_chunks
+            meta = self._run_pipeline_inner(
+                pipeline, input_path, output_dir, fmt,
+                enhance, translate_to, bilingual,
             )
-            if self.use_tui:
-                self.progress.print_stage_result(self.state, result)
-
-            # Stage 3: asr
-            self.state.update(
-                stage="asr",
-                status="loading_model",
-                progress=0,
-                model_used="Qwen3-ASR-0.6B",
-                current_task=f"共 {total_chunks} 个音频片段",
-            )
-            if self.use_tui:
-                self.progress.print_stage_start(self.state)
-
-            stage_start = time.time()
-            result = pipeline.run_stage("asr")
-            self.timings["asr"] = time.time() - stage_start
-            self.state.update(
-                progress=100,
-                status="completed",
-                segment_count=result["segment_count"],
-                current_task="",
-            )
-            if self.use_tui:
-                self.progress.print_stage_result(self.state, result)
-
-            # Stage 4: clean
-            self.state.update(
-                stage="clean", status="processing", progress=0, current_task=""
-            )
-            if self.use_tui:
-                self.progress.print_stage_start(self.state)
-
-            stage_start = time.time()
-            result = pipeline.run_stage("clean", enhance_mode=enhance)
-            self.timings["clean"] = time.time() - stage_start
-            self.state.update(progress=100, status="completed")
-            if self.use_tui:
-                self.progress.print_stage_result(self.state, result)
-
-            # Stage 5: segment
-            self.state.update(stage="segment", status="processing", progress=0)
-            if self.use_tui:
-                self.progress.print_stage_start(self.state)
-
-            stage_start = time.time()
-            result = pipeline.run_stage("segment")
-            self.timings["segment"] = time.time() - stage_start
-            self.state.update(progress=100, status="completed")
-            if self.use_tui:
-                self.progress.print_stage_result(self.state, result)
-
-            # Stage 5.5: script_match (optional)
-            if getattr(pipeline.config.output, "script_path", None):
-                stage_start = time.time()
-                script_result = pipeline.run_stage("script_match")
-                self.timings["script_match"] = time.time() - stage_start
-                if not script_result.get("skipped"):
-                    if self.use_tui:
-                        self.progress.print_stage_result(self.state, script_result)
-
-            # Stage 6: align
-            self.state.update(
-                stage="align",
-                status="loading_model",
-                progress=0,
-                model_used="Qwen3-ForcedAligner-0.6B",
-                current_task="加载对齐模型",
-            )
-            if self.use_tui:
-                self.progress.print_stage_start(self.state)
-
-            stage_start = time.time()
-            result = pipeline.run_stage("align")
-            self.timings["align"] = time.time() - stage_start
-            self.state.update(progress=100, status="completed", current_task="")
-            if self.use_tui:
-                self.progress.print_stage_result(self.state, result)
-
-            # Stage 6.5: hotword (热词替换)
-            self.state.update(stage="hotword", status="processing", progress=0)
-            if self.use_tui:
-                self.progress.print_stage_start(self.state)
-
-            stage_start = time.time()
-            result = pipeline.run_stage("hotword")
-            self.timings["hotword"] = time.time() - stage_start
-            self.state.update(progress=100, status="completed")
-            if self.use_tui:
-                self.progress.print_stage_result(self.state, result)
-
-            if translate_to:
-                self.state.update(stage="translate", status="processing", progress=0)
-                stage_start = time.time()
-                result = pipeline.run_stage("translate", target_language=translate_to)
-                self.timings["translate"] = time.time() - stage_start
-                self.state.update(progress=100, status="completed")
-                if self.use_tui:
-                    self.progress.print_stage_result(self.state, result)
-            else:
-                self.timings["translate"] = 0.0
-
-            # Stage 8: export
-            self.state.update(stage="export", status="processing", progress=0)
-            if self.use_tui:
-                self.progress.print_stage_start(self.state)
-
-            stage_start = time.time()
-            from subtap.core.export import run_final_exports
-
-            result = run_final_exports(
-                pipeline.workspace.aligned_jsonl,
-                output_dir,
-                punctuation=pipeline.config.output.subtitle_punctuation,
-                language=pipeline.config.output.subtitle_language,
-                max_chars=pipeline.config.output.max_chars,
-                min_chars=pipeline.config.output.min_chars,
-                formats=pipeline.config.output.subtitle_formats,
-                stem=pipeline.config.output.subtitle_stem,
-                translate_to=translate_to,
-                bilingual=bilingual,
-            )
-            self.timings["export"] = time.time() - stage_start
-            self.state.update(progress=100, status="completed")
-            if self.use_tui:
-                self.progress.print_stage_result(self.state, result)
-
         except Exception as e:
             self.state.update(
                 status="failed",
@@ -408,29 +403,79 @@ class TUIRunner:
                 self.progress.print_error(e, self.state)
             raise
 
-        total_time = time.time() - self.total_start
-
+        total_time = meta["total_time_sec"]
         if self.use_tui:
             self.progress.print_summary(self.timings, total_time)
             self.progress.print_export_hint(str(output_dir), fmt)
 
-        # Save run metadata
-        import json
+        return meta
 
-        meta = {
-            "input": str(input_path),
-            "work_dir": str(pipeline.workspace.root),
-            "output_dir": str(output_dir),
-            "format": fmt,
-            "alignment_enabled": True,
-            "total_time_sec": round(total_time, 2),
-            "timings": {k: round(v, 2) for k, v in self.timings.items()},
-            "segments": self.state.segment_count,
-        }
-        (pipeline.workspace.root / "run_meta.json").write_text(
-            json.dumps(meta, indent=2, ensure_ascii=False)
+    def _before_stage(
+        self, stage: dict, step_num: int, total_steps: int
+    ) -> None:
+        key = stage["key"]
+        extra: dict[str, Any] = {}
+        if key == "asr":
+            extra = {
+                "status": "loading_model",
+                "model_used": "Qwen3-ASR-0.6B",
+                "current_task": f"共 {self.state.total_chunks} 个音频片段",
+            }
+        elif key == "align":
+            extra = {
+                "status": "loading_model",
+                "model_used": "Qwen3-ForcedAligner-0.6B",
+                "current_task": "加载对齐模型",
+            }
+        self.state.update(stage=key, status="processing", progress=0, **extra)
+        if self.use_tui:
+            self.progress.print_stage_start(self.state)
+
+    def _after_stage(
+        self, stage: dict, result: dict, elapsed: float,
+        step_num: int, total_steps: int,
+    ) -> None:
+        key = stage["key"]
+        extra: dict[str, Any] = {}
+        if key == "chunk":
+            extra["total_chunks"] = result["chunk_count"]
+        elif key == "asr":
+            extra["segment_count"] = result["segment_count"]
+            extra["current_task"] = ""
+        elif key == "align":
+            extra["current_task"] = ""
+
+        self.state.update(progress=100, status="completed", **extra)
+
+        if self.use_tui:
+            if key == "script_match" and result.get("skipped"):
+                return  # Don't print skipped script_match
+            self.progress.print_stage_result(self.state, result)
+
+    def _on_complete(
+        self, output_dir: Path, fmt: str, total_time: float
+    ) -> None:
+        pass  # Summary is printed in run_pipeline
+
+    def _on_error(self, error: Exception) -> None:
+        self.state.update(
+            status="failed",
+            error_msg=str(error),
+            suggestion=self._get_suggestion(error),
         )
+        if self.use_tui:
+            self.progress.print_error(error, self.state)
 
+    def _save_meta(
+        self,
+        pipeline: Any,
+        input_path: Path,
+        output_dir: Path,
+        fmt: str,
+        total_time: float,
+    ) -> dict:
+        meta = super()._save_meta(pipeline, input_path, output_dir, fmt, total_time)
+        meta["segments"] = self.state.segment_count
         return meta
 
     def _get_suggestion(self, error: Exception) -> str:
@@ -447,19 +492,23 @@ class TUIRunner:
         return "请查看日志文件获取详细信息：work/logs/subtap.log"
 
 
-class PlainRunner:
+# ── PlainRunner ─────────────────────────────────────────────────────
+
+
+class PlainRunner(BaseRunner):
     """Non-TUI pipeline execution (plain text output)."""
 
-    def __init__(self):
-        self.timings: dict[str, float] = {}
-        self.total_start: float = 0.0
+    def __init__(self) -> None:
+        super().__init__()
+        self._echo: Any = None
+        self._completed: int = 0
 
     def run_pipeline(
         self,
-        pipeline,
-        input_path,
-        output_dir,
-        fmt="srt",
+        pipeline: Any,
+        input_path: Path,
+        output_dir: Path,
+        fmt: str = "srt",
         enhance: str = "local",
         translate_to: str | None = None,
         bilingual: str = "off",
@@ -467,123 +516,81 @@ class PlainRunner:
         """Execute pipeline with plain text output."""
         import typer
 
+        self._echo = typer.echo
+        self._completed = 0
         self.total_start = time.time()
 
-        def _echo(msg: str):
-            typer.echo(msg)
-
         try:
-            _echo("▸ [1/8] 音频标准化...")
-            t = time.time()
-            r = pipeline.run_stage("prepare", input_path=input_path)
-            self.timings["prepare"] = time.time() - t
-            _echo(
-                f"  ✓ {r['media_info']['duration']:.1f}s, {r['media_info']['sample_rate']}Hz"
+            meta = self._run_pipeline_inner(
+                pipeline, input_path, output_dir, fmt,
+                enhance, translate_to, bilingual,
             )
-
-            _echo("▸ [2/8] 音频切段...")
-            t = time.time()
-            r = pipeline.run_stage("chunk")
-            self.timings["chunk"] = time.time() - t
-            _echo(f"  ✓ {r['chunk_count']} 段")
-
-            _echo("▸ [3/8] 语音识别...")
-            t = time.time()
-            r = pipeline.run_stage("asr")
-            self.timings["asr"] = time.time() - t
-            _echo(f"  ✓ {r['segment_count']} 条")
-
-            _echo("▸ [4/8] 文本清洗...")
-            t = time.time()
-            r = pipeline.run_stage("clean", enhance_mode=enhance)
-            self.timings["clean"] = time.time() - t
-            _echo(f"  ✓ {r['segment_count']} 条")
-
-            _echo("▸ [5/8] 智能断句...")
-            t = time.time()
-            r = pipeline.run_stage("segment")
-            self.timings["segment"] = time.time() - t
-            _echo(f"  ✓ {r['sentence_count']} 句")
-
-            # 文稿匹配（可选）
-            if getattr(pipeline.config.output, "script_path", None):
-                t = time.time()
-                script_result = pipeline.run_stage("script_match")
-                self.timings["script_match"] = time.time() - t
-                if not script_result.get("skipped"):
-                    msg = script_result.get("message", "")
-                    _echo(f"  ✓ {msg}")
-                    if script_result.get("warnings"):
-                        for w in script_result["warnings"]:
-                            _echo(f"    ⚠ {w}")
-
-            _echo("▸ [6/8] 时间轴对齐...")
-            t = time.time()
-            r = pipeline.run_stage("align")
-            self.timings["align"] = time.time() - t
-            _echo(f"  ✓ {r['aligned_count']} 条")
-
-            _echo("▸ [7/8] 热词替换...")
-            t = time.time()
-            r = pipeline.run_stage("hotword")
-            self.timings["hotword"] = time.time() - t
-            if r.get("replaced", 0) > 0:
-                _echo(f"  ✓ 替换 {r['replaced']}/{r['total']} 条")
-            else:
-                _echo("  · 无热词替换")
-
-            if translate_to:
-                _echo("▸ [8/9] 字幕翻译...")
-                t = time.time()
-                r = pipeline.run_stage("translate", target_language=translate_to)
-                self.timings["translate"] = time.time() - t
-                _echo(f"  ✓ 翻译 {r['translated_count']} 条")
-            else:
-                self.timings["translate"] = 0.0
-
-            _echo(f"▸ [9/9] 字幕导出 ({fmt.upper()})...")
-            t = time.time()
-            from subtap.core.export import run_final_exports
-
-            r = run_final_exports(
-                pipeline.workspace.aligned_jsonl,
-                output_dir,
-                punctuation=pipeline.config.output.subtitle_punctuation,
-                language=pipeline.config.output.subtitle_language,
-                max_chars=pipeline.config.output.max_chars,
-                min_chars=pipeline.config.output.min_chars,
-                formats=pipeline.config.output.subtitle_formats,
-                stem=pipeline.config.output.subtitle_stem,
-                translate_to=translate_to,
-                bilingual=bilingual,
-            )
-            self.timings["export"] = time.time() - t
-            _echo(f"  ✓ {r['output_path']}")
-
         except Exception as e:
-            _echo(f"\n✗ 处理失败：{e}")
+            self._echo(f"\n✗ 处理失败：{e}")
             raise typer.Exit(1)
 
-        total_time = time.time() - self.total_start
-        _echo("")
-        _echo("═══ 全流程完成 ═══")
-        _echo(f"  总耗时：{total_time:.1f}s")
+        total_time = meta["total_time_sec"]
+        self._echo("")
+        self._echo("═══ 全流程完成 ═══")
+        self._echo(f"  总耗时：{total_time:.1f}s")
         for stage, dur in self.timings.items():
-            _echo(f"  {STAGE_CN.get(stage, stage)}：{dur:.1f}s")
-        _echo(f"  输出目录：{output_dir}")
+            self._echo(f"  {STAGE_CN.get(stage, stage)}：{dur:.1f}s")
+        self._echo(f"  输出目录：{output_dir}")
 
-        import json
-
-        meta = {
-            "input": str(input_path),
-            "work_dir": str(pipeline.workspace.root),
-            "output_dir": str(output_dir),
-            "format": fmt,
-            "alignment_enabled": True,
-            "total_time_sec": round(total_time, 2),
-            "timings": {k: round(v, 2) for k, v in self.timings.items()},
-        }
-        (pipeline.workspace.root / "run_meta.json").write_text(
-            json.dumps(meta, indent=2, ensure_ascii=False)
-        )
         return meta
+
+    def _before_stage(
+        self, stage: dict, step_num: int, total_steps: int
+    ) -> None:
+        self._completed += 1
+        self._echo(f"▸ [{self._completed}/{total_steps}] {stage['name']}...")
+
+    def _after_stage(
+        self, stage: dict, result: dict, elapsed: float,
+        step_num: int, total_steps: int,
+    ) -> None:
+        key = stage["key"]
+        if key == "prepare":
+            self._echo(
+                f"  ✓ {result['media_info']['duration']:.1f}s, "
+                f"{result['media_info']['sample_rate']}Hz"
+            )
+        elif key == "chunk":
+            self._echo(f"  ✓ {result['chunk_count']} 段")
+        elif key == "asr":
+            self._echo(f"  ✓ {result['segment_count']} 条")
+        elif key == "clean":
+            self._echo(f"  ✓ {result['segment_count']} 条")
+        elif key == "segment":
+            self._echo(f"  ✓ {result['sentence_count']} 句")
+        elif key == "align":
+            self._echo(f"  ✓ {result['aligned_count']} 条")
+        elif key == "hotword":
+            if result.get("replaced", 0) > 0:
+                self._echo(f"  ✓ 替换 {result['replaced']}/{result['total']} 条")
+            else:
+                self._echo("  · 无热词替换")
+        elif key == "script_match":
+            if not result.get("skipped"):
+                msg = result.get("message", "")
+                self._echo(f"  ✓ {msg}")
+                if result.get("warnings"):
+                    for w in result["warnings"]:
+                        self._echo(f"    ⚠ {w}")
+        elif key == "learn":
+            if result.get("learned", 0) > 0:
+                self._echo(f"  ✓ 学习 {result['learned']} 个热词")
+            else:
+                self._echo("  · 无新热词")
+        elif key == "translate":
+            self._echo(f"  ✓ 翻译 {result['translated_count']} 条")
+        elif key == "export":
+            self._echo(f"  ✓ {result['output_path']}")
+
+    def _on_complete(
+        self, output_dir: Path, fmt: str, total_time: float
+    ) -> None:
+        pass  # Summary is printed in run_pipeline
+
+    def _on_error(self, error: Exception) -> None:
+        self._echo(f"\n✗ 处理失败：{error}")
