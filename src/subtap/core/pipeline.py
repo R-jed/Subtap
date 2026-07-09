@@ -231,7 +231,12 @@ class Pipeline:
             "aligned_jsonl": str(self.workspace.aligned_jsonl),
         }
 
-    def _stage_learn(self, hotword_lang: str = "zh", **_) -> dict:
+    def _stage_learn(
+        self,
+        hotword_lang: str = "zh",
+        glossary_dir: str | Path | None = None,
+        **_,
+    ) -> dict:
         """Learn hotwords from LLM ops recorded during clean stage."""
         import json
 
@@ -256,8 +261,8 @@ class Pipeline:
             ops_path.unlink(missing_ok=True)
             return {"learned": 0}
 
-        glossary_dir = Path.home() / ".subtap" / "glossary"
-        hotwords_path = glossary_dir / f"hotwords_{hotword_lang}.txt"
+        gdir = Path(glossary_dir) if glossary_dir else Path.home() / ".subtap" / "glossary"
+        hotwords_path = gdir / f"hotwords_{hotword_lang}.txt"
         save_learned_hotwords(update, hotwords_path)
 
         # Clean up ops file after learning
