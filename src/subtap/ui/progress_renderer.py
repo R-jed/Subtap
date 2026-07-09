@@ -39,6 +39,9 @@ STAGE_ORDER = [
     ("clean", "文本清洗"),
     ("segment", "智能断句"),
     ("align", "时间轴对齐"),
+    ("hotword", "热词替换"),
+    ("learn", "热词学习"),
+    ("translate", "字幕翻译"),
     ("export", "字幕导出"),
 ]
 
@@ -74,6 +77,7 @@ class PipelineProgressRenderer:
         self._stage_progress: float = 0.0
         self._model_name: str | None = None
         self._spinner_index: int = 0
+        self._rendered_lines: int = 0
 
         # Timing
         self._start_time: float = 0.0
@@ -108,7 +112,10 @@ class PipelineProgressRenderer:
         elif event_type == "stage_end":
             self._completed_stages += 1
 
-        elif event_type.endswith("_draft_ready") or event_type == "progress":
+        elif event_type in (
+            "asr_draft_ready", "audio_chunk_ready", "enhancement_ready",
+            "sentence_candidate_ready", "alignment_ready", "progress",
+        ):
             progress = data.get("progress", 0)
             self._stage_progress = float(progress)
 
@@ -127,6 +134,10 @@ class PipelineProgressRenderer:
         events = []
         try:
             with open(log_path, "r", encoding="utf-8") as f:
+                f.seek(0, 2)  # seek to end
+                file_size = f.tell()
+                if self._file_offset > file_size:
+                    self._file_offset = 0  # 文件被截断，重置
                 f.seek(self._file_offset)
                 for line in f:
                     line = line.strip()
@@ -150,6 +161,7 @@ class PipelineProgressRenderer:
         Returns:
             ANSI-colored progress bar
         """
+        progress = max(0.0, min(100.0, progress))
         filled = int(width * progress / 100)
         empty = width - filled
         return f"{GREEN}{'█' * filled}{GRAY}{'░' * empty}{RESET}"
@@ -184,7 +196,7 @@ class PipelineProgressRenderer:
         lines.append(line1)
 
         # Model line (if applicable)
-        if self._model_name and self._current_stage in ("asr", "align"):
+        if self._model_name:
             model_display = _model_display_name(self._model_name)
             lines.append(f"    {GRAY}模型：{CYAN}{model_display}{RESET}")
 
@@ -199,15 +211,16 @@ class PipelineProgressRenderer:
         if not self._stderr:
             return
 
-        # Move up and clear previous lines
-        for _ in range(len(lines)):
+        # Move up by PREVIOUS rendered line count (not current)
+        for _ in range(self._rendered_lines):
             self._stderr.write("\033[A\033[2K")
 
         # Write new lines
         for line in lines:
-            self._stderr.write(line + "\n")
+            self._stderr.write(line + "\r\n")
 
         self._stderr.flush()
+        self._rendered_lines = len(lines)
 
     def _build_result_lines(self, success: bool, output_path: str | None = None) -> list[str]:
         """Build final result lines.

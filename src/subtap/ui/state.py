@@ -11,10 +11,12 @@ STAGE_CN: dict[str, str] = {
     "chunk": "音频切段",
     "asr": "语音识别",
     "clean": "文本清洗",
-    "hotword": "热词替换",
     "segment": "智能断句",
     "script_match": "文稿匹配",
     "align": "时间轴对齐",
+    "hotword": "热词替换",
+    "translate": "字幕翻译",
+    "learn": "热词学习",
     "export": "字幕导出",
 }
 
@@ -28,6 +30,8 @@ STAGE_ORDER = [
     "script_match",
     "align",
     "hotword",
+    "translate",
+    "learn",
     "export",
 ]
 

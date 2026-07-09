@@ -74,6 +74,7 @@ class RemoteAPIConfig(BaseModel):
     api_key_env: str = "SUBTAP_API_KEY"
     model: str = ""
     timeout_sec: int = 60
+    batch_size: int = 50
 
 
 class ModelConfig(BaseModel):

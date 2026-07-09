@@ -9,23 +9,23 @@ import re
 from typing import Optional
 
 from subtap.schemas.glossary import Glossary
-from subtap.schemas.models import ASRSegment, CleanSegment
+from subtap.schemas.models import ASRSegment, RawCleanSegment
 
 
 def apply_replacements(
     segments: list[ASRSegment],
     glossary: Optional[Glossary] = None,
-) -> list[CleanSegment]:
+) -> list[RawCleanSegment]:
     """Apply deterministic replacements to ASR segments.
 
     Runs glossary replacements in order. No LLM, no semantic changes.
-    Returns CleanSegment list with glossary_applied tracking.
+    Returns RawCleanSegment list with glossary_applied tracking.
     """
     if glossary is None:
         glossary = Glossary()
 
     replacements = glossary.get_replacements()
-    results: list[CleanSegment] = []
+    results: list[RawCleanSegment] = []
 
     for seg in segments:
         text = seg.text
@@ -39,7 +39,7 @@ def apply_replacements(
                 applied.append(f"{find_str}→{replace_str}")
 
         results.append(
-            CleanSegment(
+            RawCleanSegment(
                 segment_id=seg.segment_id,
                 source_chunk_id=seg.chunk_id,
                 original_text=seg.text,

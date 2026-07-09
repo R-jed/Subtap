@@ -6,12 +6,14 @@ from subtap.metrics.performance import (
     build_subtitle_performance_metrics,
     calculate_rtf,
 )
+from subtap.metrics.run_log import RunLog
 
 __all__ = [
     "EventType",
     "PipelineEvent",
     "EventBus",
     "ChunkTracer",
+    "RunLog",
     "build_subtitle_performance_metrics",
     "calculate_rtf",
 ]

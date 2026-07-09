@@ -806,9 +806,6 @@ def run(
         "--timestamp/--no-timestamp",
         help="输出目录是否带时间戳（默认读取配置文件）",
     ),
-    # TODO: 文稿匹配功能暂搁置，待LLM方案成熟后重新实现
-    # 当前实现使用rapidfuzz相似度匹配，对于品牌名、数字格式等差异较大的文本纠错能力有限
-    # 未来计划使用LLM语义理解来判断ASR句子与文稿句子的对应关系
     script: str | None = typer.Option(None, "--script", help="文稿文件路径（可选）"),
     script_mode: str = typer.Option(
         "follow_script",
@@ -956,6 +953,49 @@ def run(
     pipeline = Pipeline(config, work_dir=work_dir)
     pipeline.workspace.ensure_dirs()
 
+    # ── Run Log ────────────────────────────────────────────
+    from subtap.metrics.run_log import RunLog
+
+    from datetime import datetime
+
+    run_log = RunLog(work_dir=work_dir)
+    run_log._start_time = datetime.now().astimezone()
+    run_log.system()
+    run_log.input(
+        path=input_path,
+        size_bytes=input_path.stat().st_size if input_path.exists() else 0,
+        format=input_path.suffix.lstrip("."),
+    )
+    asr_cfg = getattr(config, "asr", None)
+    align_cfg = getattr(config, "align", None)
+    run_log.config_snapshot({
+        "mode": mode,
+        "enhance": enhance,
+        "asr_model": getattr(asr_cfg, "model", "asr_0.6b"),
+        "aligner_model": getattr(align_cfg, "model", "aligner"),
+        "quantization": getattr(asr_cfg, "quantization", "q8"),
+        "translate_to": translate_to or "",
+        "bilingual": bilingual,
+        "script": script or "",
+        "llm_proofread": getattr(config, "llm_proofread", None),
+        "llm_hotword": getattr(config, "llm_hotword", False),
+    })
+
+    # Record hotword glossary info
+    _glossary_dir = Path.home() / ".subtap" / "glossary"
+    _hw_path = _glossary_dir / f"hotwords_zh.txt"
+    if not _hw_path.exists():
+        _hw_path = _glossary_dir / f"hotwords_zh.tsv"
+    if _hw_path.exists():
+        try:
+            from subtap.glossary.hotword import load_glossary
+            _hw_g = load_glossary(_hw_path, "zh")
+            run_log.hotwords(path=_hw_path, count=len(_hw_g.hotwords), loaded=True)
+        except Exception:
+            run_log.hotwords(path=_hw_path, loaded=False)
+    else:
+        run_log.hotwords(loaded=False)
+
     # ── Pre-flight checks ──────────────────────────────────
     # Cleanroom check
     if not no_cleanroom:
@@ -991,8 +1031,13 @@ def run(
     from subtap.metrics.profiler import PipelineProfiler
 
     # 创建 Event Bus 和 Profiler
-    event_log_path = work_dir / "run.log.jsonl"
-    event_log_path.unlink(missing_ok=True)
+    # 支持 SUBTAP_EVENT_LOG 环境变量指定日志路径（TUI 进度渲染用）
+    _env_log = os.environ.get("SUBTAP_EVENT_LOG")
+    event_log_path = Path(_env_log) if _env_log else work_dir / "run.log.jsonl"
+    # truncate 而非 unlink，避免 inode 变化导致渲染线程丢失事件
+    if event_log_path.exists():
+        with event_log_path.open("w"):
+            pass
     event_bus = EventBus(log_path=event_log_path)
     pipeline.event_bus = event_bus
     profiler = PipelineProfiler(event_bus)
@@ -1005,6 +1050,9 @@ def run(
     runner = RichRunner()
 
     timings = {}
+    import time
+
+    _run_start = time.monotonic()
     try:
         if json_output:
             with redirect_stdout(StringIO()):
@@ -1028,9 +1076,26 @@ def run(
                 bilingual=bilingual,
             )
         timings = result.get("timings", {})
+        _run_elapsed = time.monotonic() - _run_start
+        for _stage_name, _stage_dur in timings.items():
+            run_log.stage(_stage_name, "success", duration_sec=_stage_dur)
+        _output_stem = input_path.stem
+        run_log.finalize(
+            True,
+            total_duration_sec=_run_elapsed,
+            output_path=str(output_dir / f"{_output_stem}.{fmt}"),
+        )
     except SystemExit:
         raise
     except Exception as e:
+        _run_elapsed = time.monotonic() - _run_start
+        import traceback
+
+        run_log.finalize(
+            False,
+            total_duration_sec=_run_elapsed,
+            error=traceback.format_exc(),
+        )
         typer.echo(f"\n✗ 处理失败：{e}", err=True)
         raise typer.Exit(1)
 
@@ -1612,9 +1677,6 @@ def batch_compose_subtitle(
 
 @script_app.command("match")
 def script_match(
-    # TODO: 文稿匹配功能暂搁置，待LLM方案成熟后重新实现
-    # 当前实现使用rapidfuzz相似度匹配，对于品牌名、数字格式等差异较大的文本纠错能力有限
-    # 未来计划使用LLM语义理解来判断ASR句子与文稿句子的对应关系
     timeline: Path = typer.Option(..., "--timeline", help="已有时间轴 JSONL"),
     script: Path = typer.Option(..., "--script", help="文稿文本文件"),
     output: Path = typer.Option(..., "--output", "-o", help="输出 JSONL"),

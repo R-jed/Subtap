@@ -47,6 +47,8 @@ class FakePipeline:
             return {"skipped": True}
         if stage == "align":
             return {"aligned_count": 1}
+        if stage == "hotword":
+            return {"replaced": 0, "total": 1}
         if stage == "learn":
             return {"learned": 0}
         if stage == "translate":
@@ -75,10 +77,9 @@ def test_plain_runner_passes_translate_and_bilingual(monkeypatch, tmp_path):
 
     clean_call = [c for c in pipeline.calls if c[0] == "clean"][0]
     assert clean_call[1]["enhance_mode"] == "api"
-    assert "hotword_glossary_dir" in clean_call[1]
     assert ("translate", {"target_language": "en"}) in pipeline.calls
     assert any(
         call[0] == "export" and call[1]["bilingual"] == "source-first"
         for call in pipeline.calls
     )
-    assert not any(call[0] == "hotword" for call in pipeline.calls)
+    assert any(call[0] == "hotword" for call in pipeline.calls)
