@@ -8,9 +8,12 @@ Format (one row per hotword):
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -118,8 +121,8 @@ def load_glossary(path: Path, lang: str) -> HotwordGlossary:
                     aliases = [a.strip() for a in aliases_str.split(",") if a.strip()]
                     for alias in aliases:
                         glossary.add_alias(word, alias)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to load glossary from %s: %s", path, e)
     return glossary
 
 

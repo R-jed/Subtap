@@ -1,6 +1,9 @@
 """配置文件读写管理。"""
+import logging
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from subtap.schemas.config import SubtapConfig
 
@@ -17,8 +20,10 @@ class ConfigManager:
         try:
             import yaml
             with open(self.path, "r", encoding="utf-8") as f:
-                self._data = yaml.safe_load(f) or {}
-        except Exception:
+                result = yaml.safe_load(f)
+                self._data = result if isinstance(result, dict) else {}
+        except Exception as e:
+            logger.warning("Failed to load config from %s: %s", self.path, e)
             self._data = {}
 
     def get(self, key: str, default: Any = None) -> Any:
