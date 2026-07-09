@@ -49,6 +49,9 @@ def local_clean_text(
     5. Normalize punctuation (always preserve for segmentation)
     6. Normalize case (English sentences first letter capitalized)
     7. Apply glossary replacements
+
+    Note: The glossary parameter is not used in the main pipeline path.
+    Glossary replacements are handled separately by the hotword stage.
     """
     # 1. Unicode normalization
     text = unicodedata.normalize("NFKC", text)
@@ -70,7 +73,7 @@ def local_clean_text(
 
     # 4. Remove repeated words (ASR common error, e.g., "的的的" → "的")
     #    Only collapse when same character repeats 3+ times
-    text = re.sub(r"([一-鿿])\1{2,}", r"\1", text)
+    text = re.sub(r"([一-鿿㐀-䶿])\1{2,}", r"\1", text)
     #    Collapse repeated English words (e.g., "the the the" → "the")
     text = re.sub(r"\b(\w+)(\s+\1){2,}", r"\1", text)
 

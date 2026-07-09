@@ -192,7 +192,8 @@ def load_config(config_path: Optional[Path] = None) -> SubtapConfig:
 
     if config_path and config_path.exists():
         with open(config_path) as f:
-            user_data = yaml.safe_load(f) or {}
+            result = yaml.safe_load(f)
+            user_data = result if isinstance(result, dict) else {}
         return SubtapConfig.model_validate(user_data)
 
     return defaults
