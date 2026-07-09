@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from abc import ABC, abstractmethod
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from subtap.core.clauses import identify_clause_boundaries, _CONJ_PAIRS
 from subtap.core.itn import chinese_to_num
@@ -304,6 +307,16 @@ def _inject_punct(words: list[dict], text: str) -> list[dict]:
                 t = _interpolate(prev_end, next_start)
                 result.append({"word": ch, "start_sec": t, "end_sec": t})
                 prev_end = t
+
+    # Completeness check: warn if text characters were lost
+    reconstructed = "".join(w["word"] for w in result)
+    if reconstructed != text:
+        logger.warning(
+            "_inject_punct: 文本完整性校验失败，原始 text 有 %d 字符，"
+            "reconstructed 有 %d 字符。ASR word list 可能缺少部分字符，"
+            "请检查输出是否丢字。原始='%s' 重建='%s'",
+            len(text), len(reconstructed), text, reconstructed,
+        )
 
     return result
 
@@ -892,6 +905,93 @@ def _merge_short_fragments(
     return merged
 
 
+def _process_segment(
+    seg: AlignedSegment,
+    max_chars: int = 25,
+    min_chars: int = 10,
+) -> list[dict]:
+    """Common pipeline: segment -> list of subtitle dicts (text + timestamps).
+
+    Encapsulates: _filter_words_to_text -> _inject_punct -> _smart_split_v2
+    -> hotword replacements. Returns raw sub_lines (no text processing).
+    Callers apply chinese_to_num / normalize / strip / remove_cjk_spaces
+    after any post-processing (e.g. _post_process_fragments).
+    """
+    word_filter_text = getattr(seg, "aligned_text", None) or seg.text
+    words_with_punct = _inject_punct(
+        _filter_words_to_text(seg.words, word_filter_text), seg.text
+    )
+    sub_lines = _smart_split_v2(
+        words_with_punct,
+        word_filter_text,
+        max_chars=max_chars,
+        min_chars=min_chars,
+        start_sec=seg.start_sec,
+        end_sec=seg.end_sec,
+    )
+    # Apply hotword replacements to each sub_line (post-split)
+    replacements = getattr(seg, "hotword_replacements", None)
+    if replacements:
+        for sub in sub_lines:
+            for alias, word in replacements.items():
+                sub["text"] = sub["text"].replace(alias, word)
+    return sub_lines
+
+
+def _post_process_fragments(
+    lines: list[dict], max_chars: int, min_chars: int = 10
+) -> list[dict]:
+    """Three-layer post-processing in a single pass.
+
+    Merges: cross-sentence fragment merge, standalone trailing word merge,
+    and _fix_split_words. Called after _process_segment for SRT rendering.
+    """
+    # Layer 1: Cross-sentence fragment merge
+    merged_subs: list[dict] = []
+    for sub in lines:
+        txt = sub["text"].strip()
+        visible = _strip_punct(txt).replace(" ", "")
+        if merged_subs and len(visible) <= min_chars - 1:
+            prev = merged_subs[-1]
+            prev_visible = _strip_punct(prev["text"]).replace(" ", "")
+            if (
+                len(prev_visible) > len(visible)
+                and len(prev_visible) + len(visible) <= max_chars
+            ):
+                merged_text = prev["text"].rstrip() + txt
+                merged_stripped = _strip_punct(merged_text).replace(" ", "")
+                creates_trailing = False
+                for tlen in (2, 1):
+                    if (
+                        len(merged_stripped) > tlen
+                        and merged_stripped[-tlen:] in _TRAILING_WORDS
+                    ):
+                        creates_trailing = True
+                        break
+                if not creates_trailing:
+                    prev["text"] = merged_text
+                    prev["end_sec"] = sub["end_sec"]
+                    continue
+        merged_subs.append(sub)
+
+    # Layer 2: Merge standalone trailing words into the next line
+    final_subs: list[dict] = []
+    for i, sub in enumerate(merged_subs):
+        txt = sub["text"].strip()
+        visible = _strip_punct(txt).replace(" ", "")
+        if visible in _TRAILING_WORDS and i + 1 < len(merged_subs):
+            nxt = merged_subs[i + 1]
+            nxt_visible = _strip_punct(nxt["text"]).replace(" ", "")
+            if len(visible) + len(nxt_visible) <= max_chars:
+                nxt["text"] = txt + nxt["text"]
+                nxt["start_sec"] = sub["start_sec"]
+                continue
+        final_subs.append(sub)
+
+    # Layer 3: Fix cross-sentence word splits
+    return _fix_split_words(final_subs, max_chars, cross_sentence=True)
+
+
 class BaseExporter(ABC):
     """Base class for subtitle exporters."""
 
@@ -933,88 +1033,20 @@ class SRTExporter(BaseExporter):
 
     def render(self, segments: list[AlignedSegment]) -> str:
         sorted_segs = sorted(segments, key=lambda s: s.start_sec)
-        # Collect all sub_lines from all sentences
         all_subs: list[dict] = []
         for seg in sorted_segs:
-            # Use aligned_text (pre-hotword) for word filtering to preserve word-level timing
-            # Use text (post-hotword) for display
-            word_filter_text = getattr(seg, "aligned_text", None) or seg.text
-            words_with_punct = _inject_punct(
-                _filter_words_to_text(seg.words, word_filter_text), seg.text
+            sub_lines = _process_segment(
+                seg, max_chars=self.max_chars, min_chars=self.min_chars
             )
-            sub_lines = _smart_split_v2(
-                words_with_punct,
-                word_filter_text,
-                max_chars=self.max_chars,
-                min_chars=self.min_chars,
-                start_sec=seg.start_sec,
-                end_sec=seg.end_sec,
-            )
-            # Apply hotword replacements to each sub_line (post-split)
-            replacements = getattr(seg, "hotword_replacements", None)
-            if replacements:
-                for sub in sub_lines:
-                    for alias, word in replacements.items():
-                        sub["text"] = sub["text"].replace(alias, word)
             for sub in sub_lines:
                 if sub["text"].strip():
                     all_subs.append(sub)
 
-        # Cross-sentence fragment merge: merge short fragments into adjacent lines
-        # Only merge if:
-        #   1. Previous line is longer than the fragment (avoids merging "A"+"B")
-        #   2. Combined length ≤ max_chars
-        #   3. Merge doesn't create trailing word at line end
-        merged_subs: list[dict] = []
-        for sub in all_subs:
-            txt = sub["text"].strip()
-            visible = _strip_punct(txt).replace(" ", "")
-            if merged_subs and len(visible) <= self.min_chars - 1:
-                prev = merged_subs[-1]
-                prev_visible = _strip_punct(prev["text"]).replace(" ", "")
-                # Only merge into a longer line, not into another short line
-                if (
-                    len(prev_visible) > len(visible)
-                    and len(prev_visible) + len(visible) <= self.max_chars
-                ):
-                    # Check: would merge create trailing word at line end?
-                    merged_text = prev["text"].rstrip() + txt
-                    merged_stripped = _strip_punct(merged_text).replace(" ", "")
-                    creates_trailing = False
-                    for tlen in (2, 1):
-                        if (
-                            len(merged_stripped) > tlen
-                            and merged_stripped[-tlen:] in _TRAILING_WORDS
-                        ):
-                            creates_trailing = True
-                            break
-                    if not creates_trailing:
-                        prev["text"] = merged_text
-                        prev["end_sec"] = sub["end_sec"]
-                        continue
-            merged_subs.append(sub)
+        merged_subs = _post_process_fragments(
+            all_subs, self.max_chars, self.min_chars
+        )
 
-        # Merge standalone trailing words into the next line
-        final_subs: list[dict] = []
-        for i, sub in enumerate(merged_subs):
-            txt = sub["text"].strip()
-            visible = _strip_punct(txt).replace(" ", "")
-            # If this is a standalone trailing word and next line exists
-            if visible in _TRAILING_WORDS and i + 1 < len(merged_subs):
-                nxt = merged_subs[i + 1]
-                nxt_visible = _strip_punct(nxt["text"]).replace(" ", "")
-                if len(visible) + len(nxt_visible) <= self.max_chars:
-                    # Prepend trailing word to next line
-                    nxt["text"] = txt + nxt["text"]
-                    nxt["start_sec"] = sub["start_sec"]
-                    continue
-            final_subs.append(sub)
-        merged_subs = final_subs
-
-        # Fix cross-sentence word splits (e.g. "Feature" / "Beast")
-        merged_subs = _fix_split_words(merged_subs, self.max_chars, cross_sentence=True)
-
-        # Render SRT
+        # Text processing + render SRT
         lines: list[str] = []
         for index, sub in enumerate(merged_subs, 1):
             start = _fmt_srt_time(sub["start_sec"])
@@ -1286,24 +1318,9 @@ def run_final_exports(
         vtt_lines = ["WEBVTT", ""]
         vtt_index = 0
         for seg in sorted(export_segments, key=lambda s: s.start_sec):
-            word_filter_text = getattr(seg, "aligned_text", None) or seg.text
-            words_with_punct = _inject_punct(
-                _filter_words_to_text(seg.words, word_filter_text), seg.text
+            sub_lines = _process_segment(
+                seg, max_chars=max_chars, min_chars=min_chars
             )
-            sub_lines = _smart_split_v2(
-                words_with_punct,
-                word_filter_text,
-                max_chars=max_chars,
-                min_chars=min_chars,
-                start_sec=seg.start_sec,
-                end_sec=seg.end_sec,
-            )
-            # Apply hotword replacements to each sub_line (post-split)
-            replacements = getattr(seg, "hotword_replacements", None)
-            if replacements:
-                for sub in sub_lines:
-                    for alias, word in replacements.items():
-                        sub["text"] = sub["text"].replace(alias, word)
             for sub in sub_lines:
                 if not sub["text"].strip():
                     continue
