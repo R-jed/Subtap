@@ -1,4 +1,4 @@
-"""Tests for hotword replacement engine."""
+"""Tests for hotword replacement — now using HotwordGlossary directly."""
 
 from __future__ import annotations
 
@@ -6,81 +6,67 @@ from pathlib import Path
 
 import pytest
 
-from subtap.glossary.hotword import Hotword, HotwordGlossary
-from subtap.glossary.engine import (
-    HotwordEngine,
-    replace_exact,
-    replace_in_text,
-)
-
-
-class TestReplaceExact:
-    """Test exact replacement."""
-
-    def test_simple_replace(self):
-        result = replace_exact("达文西是画家", "达文西", "达芬奇")
-        assert result == "达芬奇是画家"
-
-    def test_multiple_replace(self):
-        result = replace_exact("达文西和达文西", "达文西", "达芬奇")
-        assert result == "达芬奇和达芬奇"
-
-    def test_no_match(self):
-        result = replace_exact("苹果公司", "达文西", "达芬奇")
-        assert result == "苹果公司"
+from subtap.glossary.hotword import Hotword, HotwordGlossary, load_glossary
 
 
 class TestReplaceInText:
-    """Test text replacement with glossary."""
+    """Test text replacement via HotwordGlossary.replace_in_text."""
 
     def test_single_hotword(self):
         glossary = HotwordGlossary(lang="zh")
         glossary.add(Hotword(word="达芬奇", aliases=["达文西"]))
-        result = replace_in_text("达文西是画家", glossary)
+        result = glossary.replace_in_text("达文西是画家")
         assert result == "达芬奇是画家"
 
     def test_multiple_hotwords(self):
         glossary = HotwordGlossary(lang="zh")
         glossary.add(Hotword(word="达芬奇", aliases=["达文西"]))
         glossary.add(Hotword(word="浩瀚", aliases=["浩瀚"]))
-        result = replace_in_text("达文西和浩瀚", glossary)
+        result = glossary.replace_in_text("达文西和浩瀚")
         assert result == "达芬奇和浩瀚"
 
     def test_no_match(self):
         glossary = HotwordGlossary(lang="zh")
         glossary.add(Hotword(word="达芬奇", aliases=["达文西"]))
-        result = replace_in_text("苹果公司", glossary)
+        result = glossary.replace_in_text("苹果公司")
         assert result == "苹果公司"
 
+    def test_empty_glossary(self):
+        glossary = HotwordGlossary(lang="zh")
+        result = glossary.replace_in_text("达文西是画家")
+        assert result == "达文西是画家"
 
-class TestHotwordEngine:
-    """Test HotwordEngine class."""
 
-    def test_engine_local_mode(self, tmp_path):
-        # Create glossary file
+class TestGetAppliedReplacements:
+    """Test HotwordGlossary.get_applied_replacements."""
+
+    def test_returns_matching_pairs(self):
+        glossary = HotwordGlossary(lang="zh")
+        glossary.add(Hotword(word="达芬奇", aliases=["达文西"]))
+        result = glossary.get_applied_replacements("达文西是画家")
+        assert result == {"达文西": "达芬奇"}
+
+    def test_no_match_returns_empty(self):
+        glossary = HotwordGlossary(lang="zh")
+        glossary.add(Hotword(word="达芬奇", aliases=["达文西"]))
+        result = glossary.get_applied_replacements("苹果公司")
+        assert result == {}
+
+
+class TestHotwordGlossaryFromDisk:
+    """Test loading and using glossary from disk."""
+
+    def test_load_and_replace(self, tmp_path):
         glossary_path = tmp_path / "hotwords_zh.txt"
         glossary_path.write_text(
             "达芬奇=达文西,大芬奇\n",
             encoding="utf-8",
         )
-
-        engine = HotwordEngine(mode="local", glossary_dir=tmp_path)
-        result = engine.process("达文西是画家", lang="zh")
+        glossary = load_glossary(glossary_path, "zh")
+        result = glossary.replace_in_text("达文西是画家")
         assert result == "达芬奇是画家"
 
-    def test_engine_no_glossary(self, tmp_path):
-        engine = HotwordEngine(mode="local", glossary_dir=tmp_path)
-        result = engine.process("达文西是画家", lang="zh")
-        assert result == "达文西是画家"  # No glossary, no change
-
-    def test_engine_hybrid_mode(self, tmp_path):
-        # Create glossary file
-        glossary_path = tmp_path / "hotwords_zh.txt"
-        glossary_path.write_text(
-            "达芬奇=达文西,大芬奇\n",
-            encoding="utf-8",
-        )
-
-        engine = HotwordEngine(mode="hybrid", glossary_dir=tmp_path)
-        result = engine.process("达文西是画家", lang="zh")
-        assert result == "达芬奇是画家"
+    def test_no_glossary_file(self, tmp_path):
+        glossary = load_glossary(tmp_path / "nonexistent.txt", "zh")
+        result = glossary.replace_in_text("达文西是画家")
+        assert result == "达文西是画家"

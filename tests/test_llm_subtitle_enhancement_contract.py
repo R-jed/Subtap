@@ -24,7 +24,7 @@ class FakeLLM:
     def replace_hotwords(self, segments, glossary):
         return {}
 
-    def translate_srt(self, srt_text, target_language):
+    def translate_srt(self, srt_text, target_language, custom_prompt=None):
         self.translation_input = srt_text
         return "1\n00:00:01,000 --> 00:00:02,000\nRicoh GR4was released\n"
 
@@ -46,7 +46,7 @@ def test_translation_uses_repaired_hotword_text_not_raw_asr(tmp_path, monkeypatc
     )
     llm = FakeLLM()
     monkeypatch.setattr("subtap.core.clean.get_llm_backend", lambda *_a, **_k: llm)
-    monkeypatch.setattr("subtap.core.translate.get_llm_backend", lambda *_a, **_k: llm)
+    monkeypatch.setattr("subtap.core.translate.get_translator", lambda *_a, **_k: llm)
 
     run_clean(workspace, config, enhance_mode="api")
     cleaned = json.loads(

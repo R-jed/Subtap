@@ -35,7 +35,7 @@ class TestNewTaskView:
         cmd = view.build_run_command()
         assert cmd[0] == sys.executable
         assert cmd[1] == "-m"
-        assert cmd[2] == "subtap"
+        assert cmd[2] == "subtap.cli"
         assert cmd[3] == "run"
         assert "/test/audio.mp3" in cmd
 

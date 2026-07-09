@@ -4,6 +4,8 @@
 """
 import os
 import sys
+import time
+import shutil
 import subprocess
 from pathlib import Path
 from .keyboard import Key, KeyReader
@@ -80,7 +82,7 @@ class TuiApp:
 
     def _leave_alt_screen(self) -> None:
         if sys.stderr.isatty():
-            sys.stderr.write("\033[?1049l")
+            sys.stderr.write("\033[?1049l\033[?25h")
             sys.stderr.flush()
 
     def _view_home(self) -> str:
@@ -597,6 +599,109 @@ class TuiApp:
             elif key == Key.ENTER:
                 return self._execute_run(view)
 
+    def _run_subprocess_with_progress(
+        self, cmd: list[str], run_env: dict[str, str], log_path: Path,
+        timeout: float = 3600,
+    ) -> tuple[int, str, bool]:
+        """启动子进程并渲染实时进度。
+
+        Args:
+            timeout: 超时秒数，默认 1 小时
+
+        Returns:
+            (returncode, stderr_text, user_quit)
+        """
+        from .progress_renderer import PipelineProgressRenderer
+        import threading
+
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            env=run_env,
+        )
+
+        # 守护线程持续读取 stderr 防止管道阻塞
+        stderr_lines: list[str] = []
+        def _drain_stderr():
+            try:
+                if proc.stderr:
+                    for line in proc.stderr:
+                        stderr_lines.append(line)
+            except (OSError, ValueError):
+                pass  # 管道已关闭或进程被 kill，静默退出
+
+        stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+        stderr_thread.start()
+
+        renderer = PipelineProgressRenderer(stderr=sys.stderr)
+
+        # 渲染线程：轮询 JSONL + 渲染进度
+        stop_event = threading.Event()
+        def _render_loop():
+            try:
+                renderer._start_time = time.time()
+                renderer._render(renderer._build_lines())
+                while not stop_event.is_set():
+                    with renderer._lock:
+                        events = renderer._read_new_events(log_path)
+                        for ev in events:
+                            renderer._handle_event(ev)
+                        renderer._spinner_index += 1
+                        lines = renderer._build_lines()
+                        renderer._render(lines)
+                    if proc.poll() is not None:
+                        break
+                    stop_event.wait(0.25)
+                # 最终渲染：先等进程结束，再等 drain 线程读完，最后关闭管道
+                proc.wait()
+                stderr_thread.join(timeout=2)
+                if proc.stderr:
+                    proc.stderr.close()
+                renderer._total_time = time.time() - renderer._start_time
+                with renderer._lock:
+                    success = proc.returncode == 0
+                    result = renderer._build_result_lines(success)
+                    renderer._render(result)
+            except Exception:
+                import traceback
+                traceback.print_exc(file=sys.stderr)  # 记录但不阻塞主流程
+
+        render_thread = threading.Thread(target=_render_loop, daemon=True)
+        render_thread.start()
+
+        # 主线程键盘轮询：支持 Q 退出 + 超时保护
+        start_time = time.time()
+        while proc.poll() is None:
+            key = self.reader.read_key(timeout=0.2)
+            if key == Key.QUIT:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                stop_event.set()
+                render_thread.join(timeout=2)
+                stderr_thread.join(timeout=2)
+                return (-1, "", True)
+            if timeout > 0 and (time.time() - start_time) > timeout:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                stop_event.set()
+                render_thread.join(timeout=2)
+                stderr_thread.join(timeout=2)
+                return (-1, "转录超时（超过 {:.0f} 分钟）".format(timeout / 60), False)
+
+        stop_event.set()
+        render_thread.join(timeout=5)
+        stderr_thread.join(timeout=2)
+        return (proc.returncode, "".join(stderr_lines), False)
+
     def _execute_run(self, view: NewTaskView) -> str:
         t = self.theme
         cmd = view.build_run_command()
@@ -604,56 +709,61 @@ class TuiApp:
             self._pop_state()
             return "continue"
 
+        # 确定 run.log.jsonl 路径，通过环境变量传递给子进程
+        import tempfile
+        _tmp_dir = Path(tempfile.mkdtemp(prefix="subtap_tui_"))
+        log_path = _tmp_dir / "run.log.jsonl"
+
         sys.stderr.write("\033[H\033[J")
         sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}正在转录{t.NC}\r\n\r\n")
         sys.stderr.write(f"\033[2K{t.GRAY}文件：{view.selected_file.name}{t.NC}\r\n\r\n")
-        sys.stderr.write(f"\033[2K{t.GRAY}请稍候...{t.NC}\r\n")
         sys.stderr.flush()
 
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600, env=_run_env())
-        except subprocess.TimeoutExpired:
-            sys.stderr.write("\033[H\033[J")
-            sys.stderr.write(f"\033[2K{t.RED}✗ 转录超时（超过1小时）{t.NC}\r\n")
-            sys.stderr.write(f"\033[2K\r\n{t.GRAY}Esc 返回{t.NC}\r\n")
-            sys.stderr.flush()
-            while True:
-                key = self.reader.read_key(timeout=0.05)
-                if key in (Key.ESCAPE, Key.ENTER):
-                    self._pop_state()
-                    return "continue"
-                elif key == Key.QUIT:
-                    return "quit"
-        except FileNotFoundError:
-            sys.stderr.write("\033[H\033[J")
-            sys.stderr.write(f"\033[2K{t.RED}✗ 转录程序未找到，请检查安装{t.NC}\r\n")
-            sys.stderr.write(f"\033[2K\r\n{t.GRAY}Esc 返回{t.NC}\r\n")
-            sys.stderr.flush()
-            while True:
-                key = self.reader.read_key(timeout=0.05)
-                if key in (Key.ESCAPE, Key.ENTER):
-                    self._pop_state()
-                    return "continue"
-                elif key == Key.QUIT:
-                    return "quit"
+        # 预留 10 行给进度渲染
+        for _ in range(10):
+            sys.stderr.write("\r\n")
+        sys.stderr.flush()
 
-        sys.stderr.write("\033[H\033[J")
-        if result.returncode == 0:
-            sys.stderr.write(f"\033[2K{t.GREEN}✓ 转录完成{t.NC}\r\n\r\n")
-        else:
-            sys.stderr.write(f"\033[2K{t.RED}✗ 转录失败{t.NC}\r\n\r\n")
-            err = (result.stderr or result.stdout or "").strip()
+        returncode = -1
+        stderr_text = ""
+        try:
+            run_env = _run_env()
+            run_env["SUBTAP_EVENT_LOG"] = str(log_path)
+            returncode, stderr_text, user_quit = self._run_subprocess_with_progress(
+                cmd, run_env, log_path
+            )
+            if user_quit:
+                return "quit"
+        except OSError as e:
+            sys.stderr.write("\033[H\033[J")
+            sys.stderr.write(f"\033[2K{t.RED}✗ 转录程序启动失败：{e}{t.NC}\r\n")
+            sys.stderr.write(f"\033[2K\r\n{t.GRAY}Esc 返回{t.NC}\r\n")
+            sys.stderr.flush()
+            while True:
+                key = self.reader.read_key(timeout=0.05)
+                if key in (Key.ESCAPE, Key.ENTER):
+                    self._pop_state()
+                    return "continue"
+                elif key == Key.QUIT:
+                    return "quit"
+        finally:
+            shutil.rmtree(_tmp_dir, ignore_errors=True)
+
+        # 失败时追加 stderr 详情
+        if returncode != 0:
+            err = stderr_text.strip()
             if err:
-                # 提取关键错误信息（最后一行通常是核心错误）
                 lines = err.splitlines()
                 key_line = lines[-1] if lines else err[:200]
                 sys.stderr.write(f"\033[2K{t.RED}{key_line}{t.NC}\r\n")
-                # 如果是缺少依赖，给出安装提示
                 if "No module named" in err:
                     module = err.split("'")[1] if "'" in err else ""
                     if module:
                         sys.stderr.write(f"\033[2K{t.YELLOW}pip install {module}{t.NC}\r\n")
-        sys.stderr.write(f"\033[2K\r\n{t.GRAY}Esc 返回{t.NC}\r\n")
+            sys.stderr.flush()
+
+        # 结果展示
+        sys.stderr.write(f"\033[2K\r\n{t.GRAY}Esc 返回  Q 退出{t.NC}\r\n")
         sys.stderr.flush()
 
         while True:
@@ -782,22 +892,70 @@ class TuiApp:
         sys.stderr.write(f"\033[2K{t.GRAY}文件数：{len(audio_files)}{t.NC}\r\n\r\n")
         sys.stderr.flush()
 
-        completed = 0
-        for i, f in enumerate(audio_files):
-            sys.stderr.write(f"\033[{5 + i};1H\033[2K  ⠙ {f.name}")
-            sys.stderr.flush()
-            result = subprocess.run([sys.executable, "-m", "subtap.cli", "run", str(f)], capture_output=True, text=True, env=_run_env())
-            if result.returncode == 0:
-                completed += 1
-                sys.stderr.write(f"\033[{5 + i};1H\033[2K  {t.GREEN}✓{t.NC} {f.name}")
-            else:
-                err = (result.stderr or result.stdout or "").strip()
-                hint = err.splitlines()[-1][:60] if err else ""
-                sys.stderr.write(f"\033[{5 + i};1H\033[2K  {t.RED}✗{t.NC} {f.name} {t.GRAY}{hint}{t.NC}")
-            sys.stderr.flush()
+        import tempfile
 
-        sys.stderr.write(f"\033[{5 + len(audio_files) + 1};1H\r\n")
-        sys.stderr.write(f"\033[2K{t.GREEN}完成：{completed}/{len(audio_files)}{t.NC}\r\n")
+        _tmp_dir = Path(tempfile.mkdtemp(prefix="subtap_batch_"))
+        log_path = _tmp_dir / "run.log.jsonl"
+
+        # 从配置读取批量转录参数（与 new_task.py 保持一致的 key）
+        fmts = self.config.get("output.subtitle_formats", ["srt"])
+        fmt = fmts[0] if fmts else "srt"
+        subtitle_lang = self.config.get("output.subtitle_language")
+        proofread = self.config.get("llm_proofread", False)
+        hotword = self.config.get("llm_hotword", False)
+
+        total = len(audio_files)
+        completed = 0
+        current_row = 5
+
+        try:
+            for i, f in enumerate(audio_files):
+                # 标题行：[i/N] 文件名
+                sys.stderr.write(f"\033[{current_row};1H\033[2K  {t.GRAY}[{i + 1}/{total}]{t.NC} {f.name}")
+                sys.stderr.flush()
+
+                # 准备日志和命令（truncate 而非 unlink，保持 inode 不变）
+                log_path.open("w").close()
+                cmd = [sys.executable, "-m", "subtap.cli", "run", str(f)]
+                # 拼接配置参数
+                if fmt:
+                    cmd.extend(["--format", fmt])
+                if subtitle_lang:
+                    cmd.extend(["--subtitle-language", subtitle_lang])
+                if proofread or hotword:
+                    cmd.extend(["--enhance", "local"])
+
+                returncode = -1
+                stderr_text = ""
+                try:
+                    run_env = _run_env()
+                    run_env["SUBTAP_EVENT_LOG"] = str(log_path)
+                    returncode, stderr_text, user_quit = self._run_subprocess_with_progress(
+                        cmd, run_env, log_path
+                    )
+                    if user_quit:
+                        return "quit"
+                except OSError:
+                    returncode = -1
+
+                # 更新标题行为最终状态
+                if returncode == 0:
+                    completed += 1
+                    sys.stderr.write(f"\033[{current_row};1H\033[2K  {t.GREEN}✓{t.NC} {f.name}")
+                else:
+                    err = stderr_text.strip()
+                    hint = err.splitlines()[-1][:60] if err else ""
+                    sys.stderr.write(f"\033[{current_row};1H\033[2K  {t.RED}✗{t.NC} {f.name} {t.GRAY}{hint}{t.NC}")
+                sys.stderr.flush()
+
+                # 下一个文件：标题(1) + 渲染器占用行(2) + 状态行(1) + 空行(1)
+                current_row += 4
+        finally:
+            shutil.rmtree(_tmp_dir, ignore_errors=True)
+
+        # 完成汇总
+        sys.stderr.write(f"\033[{current_row};1H\r\n")
+        sys.stderr.write(f"\033[2K{t.GREEN}完成：{completed}/{total}{t.NC}\r\n")
         sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回{t.NC}\r\n")
         sys.stderr.flush()
 

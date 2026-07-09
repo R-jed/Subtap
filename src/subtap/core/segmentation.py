@@ -1,4 +1,4 @@
-"""Sentence segmentation: CleanSegment → SentenceSegment.
+"""Sentence segmentation: RawCleanSegment → SentenceSegment.
 
 Three-tier segmentation strategy for Chinese colloquial content:
 1. Sentence-ending punctuation (。！？.!?)
@@ -12,7 +12,7 @@ import re
 
 import jieba
 
-from subtap.schemas.models import CleanSegment, SentenceSegment
+from subtap.schemas.models import RawCleanSegment, SentenceSegment
 
 # Max chars per sentence before forced split
 _MAX_CHARS = 60
@@ -253,15 +253,15 @@ def _allocate_time(
 
 
 def segment_clean_segments(
-    segments: list[CleanSegment],
+    segments: list[RawCleanSegment],
     chunk_start: float = 0.0,
     chunk_end: float = 1.0,
     language: str = "zh",
 ) -> list[SentenceSegment]:
-    """Split CleanSegments into SentenceSegments.
+    """Split RawCleanSegments into SentenceSegments.
 
     Args:
-        segments: CleanSegments from the clean stage.
+        segments: RawCleanSegments from the clean stage.
         chunk_start: Start time of the source chunk.
         chunk_end: End time of the source chunk.
         language: Language code ("zh" or "en").
@@ -291,7 +291,7 @@ def segment_clean_segments(
                     start_sec=t_start,
                     end_sec=t_end,
                     text=text,
-                    source_text=seg.cleaned_text,
+                    source_text=text,
                 )
             )
             sid += 1

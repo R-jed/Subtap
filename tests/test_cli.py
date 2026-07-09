@@ -36,6 +36,7 @@ def _patch_stage_pipeline(monkeypatch, stage_name: str):
             self.cleaned_jsonl = root / "cleaned.jsonl"
             self.sentences_jsonl = root / "sentences.jsonl"
             self.aligned_jsonl = root / "aligned.jsonl"
+            self.run_log = root / "run.log"
 
         def ensure_dirs(self):
             self.asr_jsonl.parent.mkdir(parents=True, exist_ok=True)
@@ -268,6 +269,8 @@ def test_batch_transcribe_runs_each_file(tmp_path, monkeypatch):
             self.work_dir = work_dir
 
             class Workspace:
+                run_log = work_dir / "run.log"
+
                 def ensure_dirs(self):
                     return None
 
@@ -337,6 +340,7 @@ def test_run_full_pipeline_with_align(tmp_path, monkeypatch):
                 root = work_dir
                 asr_jsonl = work_dir / "asr" / "asr.jsonl"
                 aligned_jsonl = work_dir / "aligned.jsonl"
+                run_log = work_dir / "run.log"
 
                 def ensure_dirs(self):
                     self.root.mkdir(parents=True, exist_ok=True)
@@ -361,6 +365,8 @@ def test_run_full_pipeline_with_align(tmp_path, monkeypatch):
                 return {"segment_count": 1}
             if stage == "hotword":
                 return {"replaced": 0, "total": 1}
+            if stage == "learn":
+                return {"learned": 0}
             if stage == "segment":
                 return {"sentence_count": 1}
             if stage == "script_match":
@@ -373,6 +379,10 @@ def test_run_full_pipeline_with_align(tmp_path, monkeypatch):
                     encoding="utf-8",
                 )
                 return {"aligned_count": 1}
+            if stage == "translate":
+                return {"translated_count": 0}
+            if stage == "export":
+                return {"exported_count": 1}
             raise AssertionError(stage)
 
         def cleanup(self):
@@ -438,6 +448,7 @@ def test_run_enhance_local_passes_clean_local_to_pipeline(tmp_path, monkeypatch)
                 root = work_dir
                 asr_jsonl = work_dir / "asr" / "asr.jsonl"
                 aligned_jsonl = work_dir / "aligned.jsonl"
+                run_log = work_dir / "run.log"
 
                 def ensure_dirs(self):
                     self.root.mkdir(parents=True, exist_ok=True)
@@ -462,6 +473,8 @@ def test_run_enhance_local_passes_clean_local_to_pipeline(tmp_path, monkeypatch)
                 return {"segment_count": 1}
             if stage == "hotword":
                 return {"replaced": 0, "total": 1}
+            if stage == "learn":
+                return {"learned": 0}
             if stage == "segment":
                 return {"sentence_count": 1}
             if stage == "script_match":
@@ -474,6 +487,10 @@ def test_run_enhance_local_passes_clean_local_to_pipeline(tmp_path, monkeypatch)
                     encoding="utf-8",
                 )
                 return {"aligned_count": 1}
+            if stage == "translate":
+                return {"translated_count": 0}
+            if stage == "export":
+                return {"exported_count": 1}
             raise AssertionError(stage)
 
         def cleanup(self):
@@ -517,7 +534,6 @@ def test_run_enhance_local_passes_clean_local_to_pipeline(tmp_path, monkeypatch)
 
     assert result.exit_code == 0
     assert clean_kwargs[0]["enhance_mode"] == "local"
-    assert "hotword_glossary_dir" in clean_kwargs[0]
 
 
 def test_observe_command_prints_event_log_status(tmp_path):
@@ -795,13 +811,20 @@ def test_doctor_release_fails_when_models_missing(tmp_path, monkeypatch):
 
 
 def test_python_module_entrypoint_outputs_help():
+    import os
     import subprocess
     import sys
+    from pathlib import Path
+
+    env = os.environ.copy()
+    src_dir = str(Path(__file__).resolve().parent.parent / "src")
+    env["PYTHONPATH"] = src_dir + os.pathsep + env.get("PYTHONPATH", "")
 
     result = subprocess.run(
         [sys.executable, "-m", "subtap.cli", "--help"],
         capture_output=True,
         text=True,
+        env=env,
     )
 
     assert result.returncode == 0

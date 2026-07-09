@@ -8,7 +8,7 @@ import json
 from subtap.core.segment import run_segment
 from subtap.core.workspace import Workspace
 from subtap.schemas.config import SubtapConfig
-from subtap.schemas.models import CleanSegment, Chunk
+from subtap.schemas.models import RawCleanSegment, Chunk
 
 
 def test_run_segment_reads_chunk_boundaries(test_config: SubtapConfig, tmp_path: Path):
@@ -23,13 +23,13 @@ def test_run_segment_reads_chunk_boundaries(test_config: SubtapConfig, tmp_path:
 
     # Create cleaned.jsonl with some segments
     segments = [
-        CleanSegment(
+        RawCleanSegment(
             segment_id=0,
             original_text="orig 0",
             cleaned_text="First sentence。",
             glossary_applied=[],
         ),
-        CleanSegment(
+        RawCleanSegment(
             segment_id=1,
             original_text="orig 1",
             cleaned_text="Second sentence。",

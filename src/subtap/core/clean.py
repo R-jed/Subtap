@@ -7,11 +7,11 @@ import unicodedata
 from pathlib import Path
 
 from subtap.backends.llm import get_llm_backend
-from subtap.core.export import _ALL_PUNCT_RE, _normalize_punct
+from subtap.core.text_utils import ALL_PUNCT_RE, normalize_punct
 from subtap.core.replacement import apply_replacements
 from subtap.schemas.config import SubtapConfig
-from subtap.schemas.glossary import Glossary, load_glossary
-from subtap.schemas.models import ASRSegment, CleanSegment
+from subtap.schemas.glossary import Glossary, load_glossary as load_yaml_glossary
+from subtap.schemas.models import ASRSegment, RawCleanSegment
 from subtap.core.workspace import Workspace
 
 
@@ -26,7 +26,7 @@ def load_asr_segments(asr_jsonl: Path) -> list[ASRSegment]:
     return segments
 
 
-def write_clean_segments(segments: list[CleanSegment], output_path: Path) -> None:
+def write_clean_segments(segments: list[RawCleanSegment], output_path: Path) -> None:
     """Write clean segments to JSONL."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w") as f:
@@ -66,7 +66,7 @@ def local_clean_text(
     text = re.sub(r"\b(\w+)(\s+\1){2,}", r"\1", text)
 
     # 5. Normalize punctuation (always preserve for segmentation)
-    text = _normalize_punct(text, language)
+    text = normalize_punct(text, language)
 
     # 5b. Fix decimal points corrupted by punctuation normalization (0。6 → 0.6)
     text = re.sub(r"(\d)。(\d)", r"\1.\2", text)
@@ -97,11 +97,11 @@ def _capitalize_sentences(text: str) -> str:
     return "".join(result)
 
 
-def _segments_for_llm(segments: list[CleanSegment]) -> list[dict]:
+def _segments_for_llm(segments: list[RawCleanSegment]) -> list[dict]:
     return [{"i": idx, "t": seg.cleaned_text} for idx, seg in enumerate(segments)]
 
 
-def _apply_text_updates(segments: list[CleanSegment], updates: dict[int, str]) -> None:
+def _apply_text_updates(segments: list[RawCleanSegment], updates: dict[int, str]) -> None:
     for idx, text in updates.items():
         if idx < 0 or idx >= len(segments):
             raise ValueError(f"LLM 返回非法索引：{idx}")
@@ -112,6 +112,7 @@ def _apply_text_updates(segments: list[CleanSegment], updates: dict[int, str]) -
 
 
 def _hotword_payload(glossary: Glossary) -> dict[str, list[str]]:
+    """Build hotword payload from Glossary (YAML format)."""
     payload: dict[str, list[str]] = {}
 
     def add_alias(canonical: str, alias: str) -> None:
@@ -133,6 +134,59 @@ def _hotword_payload(glossary: Glossary) -> dict[str, list[str]]:
     return payload
 
 
+def _hotword_payload_from_glossary(
+    glossary: HotwordGlossary,
+) -> dict[str, list[str]]:
+    """Build hotword payload from HotwordGlossary (equals format)."""
+    payload: dict[str, list[str]] = {}
+    for hw in glossary.hotwords:
+        if hw.aliases:
+            payload[hw.word] = list(hw.aliases)
+    return payload
+
+
+def resolve_llm_flags(
+    *,
+    config_llm_proofread: bool | None,
+    config_llm_hotword: bool | None,
+    llm_backend_name: str | None = None,
+    enhance_mode: str | None = None,
+) -> tuple[bool, bool]:
+    """Resolve LLM feature flags from multiple overlapping sources.
+
+    Priority:
+    1. llm_backend_name off/none/false → disable all
+    2. enhance_mode=api → enable all (unless user explicitly disabled)
+    3. enhance_mode=local → disable unless user explicitly enabled
+    4. config values → use as-is
+    5. Default → proofread=True, hotword=False
+    """
+    llm_proofread = config_llm_proofread
+    llm_hotword = config_llm_hotword
+
+    if llm_backend_name in {"off", "none", "false"}:
+        llm_proofread = False
+        llm_hotword = False
+    elif enhance_mode == "api":
+        if llm_proofread is None:
+            llm_proofread = True
+        if not llm_hotword:
+            llm_hotword = True
+    elif enhance_mode == "local":
+        if llm_proofread is None:
+            llm_proofread = False
+        if llm_hotword is None:
+            llm_hotword = False
+
+    # Default: proofread on, hotword off
+    if llm_proofread is None:
+        llm_proofread = True
+    if llm_hotword is None:
+        llm_hotword = False
+
+    return llm_proofread, llm_hotword
+
+
 def run_clean(
     workspace: Workspace,
     config: SubtapConfig,
@@ -140,8 +194,6 @@ def run_clean(
     glossary_path: str | None = None,
     style_rules: list[str] | None = None,
     enhance_mode: str | None = None,
-    hotword_lang: str = "zh",
-    hotword_glossary_dir: str | None = None,
 ) -> dict:
     """Run clean stage: load ASR → local clean → replacement → LLM → cleaned.jsonl.
 
@@ -156,8 +208,6 @@ def run_clean(
         glossary_path: Path to glossary YAML file.
         style_rules: Additional style rules for LLM.
         enhance_mode: "local" or "api". Controls LLM enhancement level.
-        hotword_lang: Hotword glossary language.
-        hotword_glossary_dir: Hotword glossary directory override.
 
     Returns:
         Dict with segment_count.
@@ -169,7 +219,7 @@ def run_clean(
 
     # Load glossary
     glossary_file = glossary_path or config.clean.glossary_path
-    glossary = load_glossary(Path(glossary_file) if glossary_file else None)
+    glossary = load_yaml_glossary(Path(glossary_file) if glossary_file else None)
 
     # Step 1: Deterministic replacement (no LLM)
     replaced = apply_replacements(segments, glossary)
@@ -182,42 +232,13 @@ def run_clean(
             seg.cleaned_text, language=language
         )
 
-    # 本地热词引擎（始终在 LLM 之前运行，非 LLM 功能）
-    if hotword_glossary_dir:
-        from subtap.glossary.engine import HotwordEngine
-
-        engine = HotwordEngine(
-            mode="local",
-            glossary_dir=Path(hotword_glossary_dir),
-        )
-        for seg in replaced:
-            seg.cleaned_text = engine.process(seg.cleaned_text, lang=hotword_lang)
-
     # 确定 LLM 功能开关
-    llm_proofread = config.llm_proofread
-    llm_hotword = config.llm_hotword
-
-    # llm_backend_name 控制 LLM 功能（单阶段命令使用）
-    if llm_backend_name in {"off", "none", "false"}:
-        llm_proofread = False
-        llm_hotword = False
-    elif enhance_mode == "api":
-        # api 模式开启 LLM 功能
-        if llm_proofread is None:
-            llm_proofread = True
-        if not llm_hotword:
-            llm_hotword = True
-    elif enhance_mode == "local":
-        # local 模式：仅禁用未明确配置的 LLM 功能
-        # 如果用户显式设置了 llm_proofread=True，则保留
-        if llm_proofread is None:
-            llm_proofread = False
-        if llm_hotword is None:
-            llm_hotword = False
-
-    # 首次接入时，如果 llm_proofread 未设置，默认开启
-    if llm_proofread is None:
-        llm_proofread = True
+    llm_proofread, llm_hotword = resolve_llm_flags(
+        config_llm_proofread=config.llm_proofread,
+        config_llm_hotword=config.llm_hotword,
+        llm_backend_name=llm_backend_name,
+        enhance_mode=enhance_mode,
+    )
 
     # LLM 增强层
     if llm_proofread or llm_hotword:

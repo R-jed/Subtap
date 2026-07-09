@@ -126,7 +126,7 @@ def test_full_pipeline_with_llm_hotword(tmp_path):
 
     with pytest.MonkeyPatch.context() as m:
         m.setattr("subtap.core.clean.get_llm_backend", lambda *a, **k: mock_llm)
-        m.setattr("subtap.core.clean.load_glossary", lambda *a, **k: mock_glossary)
+        m.setattr("subtap.core.clean.load_yaml_glossary", lambda *a, **k: mock_glossary)
         result = run_pipeline(config, workspace)
 
     assert result["success"] is True
@@ -145,7 +145,7 @@ def test_full_pipeline_with_translation(tmp_path):
     mock_llm = MockLLMBackend()
 
     with pytest.MonkeyPatch.context() as m:
-        m.setattr("subtap.core.translate.get_llm_backend", lambda *a, **k: mock_llm)
+        m.setattr("subtap.core.translate.get_translator", lambda *a, **k: mock_llm)
         result = run_pipeline(config, workspace)
 
     assert result["success"] is True
@@ -165,7 +165,7 @@ def test_full_pipeline_with_both_llm_features(tmp_path):
 
     with pytest.MonkeyPatch.context() as m:
         m.setattr("subtap.core.clean.get_llm_backend", lambda *a, **k: mock_llm)
-        m.setattr("subtap.core.clean.load_glossary", lambda *a, **k: mock_glossary)
+        m.setattr("subtap.core.clean.load_yaml_glossary", lambda *a, **k: mock_glossary)
         result = run_pipeline(config, workspace)
 
     assert result["success"] is True

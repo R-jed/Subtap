@@ -40,8 +40,13 @@ class ASRSegment(BaseModel):
     )
 
 
-class CleanSegment(BaseModel):
-    """A cleaned transcription segment with glossary tracking."""
+class RawCleanSegment(BaseModel):
+    """Pre-enhancement clean segment (pipeline internal).
+
+    This is the lightweight version used during the clean stage before
+    timing fields are available. For the full contract with timing
+    immutability guarantees, see schemas.enhancement.CleanSegment.
+    """
 
     segment_id: int = Field(description="Segment index (maps to ASR segment)")
     source_chunk_id: int = Field(
@@ -52,6 +57,10 @@ class CleanSegment(BaseModel):
     glossary_applied: list[str] = Field(
         default_factory=list, description="Glossary terms applied"
     )
+
+
+# Backward-compatible alias — prefer RawCleanSegment in new code.
+CleanSegment = RawCleanSegment
 
 
 class SentenceSegment(BaseModel):

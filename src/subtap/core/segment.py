@@ -5,18 +5,18 @@ from __future__ import annotations
 from pathlib import Path
 
 from subtap.core.segmentation import segment_clean_segments
-from subtap.schemas.models import CleanSegment, SentenceSegment, Chunk
+from subtap.schemas.models import RawCleanSegment, SentenceSegment, Chunk
 from subtap.core.workspace import Workspace
 
 
-def load_clean_segments(cleaned_jsonl: Path) -> list[CleanSegment]:
-    """Load CleanSegments from JSONL."""
-    segments: list[CleanSegment] = []
+def load_clean_segments(cleaned_jsonl: Path) -> list[RawCleanSegment]:
+    """Load RawCleanSegments from JSONL."""
+    segments: list[RawCleanSegment] = []
     with open(cleaned_jsonl) as f:
         for line in f:
             line = line.strip()
             if line:
-                segments.append(CleanSegment.model_validate_json(line))
+                segments.append(RawCleanSegment.model_validate_json(line))
     return segments
 
 
@@ -74,7 +74,7 @@ def run_segment(
         # Group segments by source_chunk_id
         from collections import defaultdict
 
-        segments_by_chunk: dict[int, list[CleanSegment]] = defaultdict(list)
+        segments_by_chunk: dict[int, list[RawCleanSegment]] = defaultdict(list)
         for seg in segments:
             segments_by_chunk[seg.source_chunk_id].append(seg)
 

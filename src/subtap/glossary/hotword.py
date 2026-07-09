@@ -61,6 +61,38 @@ class HotwordGlossary:
             result[hw.word] = hw.word
         return result
 
+    def replace_in_text(self, text: str) -> str:
+        """Replace all hotwords in text. Sorts by length descending to avoid partial matches.
+
+        Skips self-replacements (alias == word) and prevents duplicate creation
+        when the word already appears adjacent to the alias.
+        """
+        aliases = self.get_all_aliases()
+        if not aliases:
+            return text
+        sorted_aliases = sorted(aliases.keys(), key=len, reverse=True)
+        for alias in sorted_aliases:
+            word = aliases[alias]
+            if alias == word or alias not in text:
+                continue
+            # Prevent duplicate: skip if word already adjacent to alias
+            # e.g., "VITURE维图尔" should not become "VITUREVITURE"
+            new_text = text.replace(alias, word)
+            if word + word not in new_text:
+                text = new_text
+        return text
+
+    def get_applied_replacements(self, text: str) -> dict[str, str]:
+        """Get the replacement pairs that would be applied to text."""
+        aliases = self.get_all_aliases()
+        result = {}
+        sorted_aliases = sorted(aliases.keys(), key=len, reverse=True)
+        for alias in sorted_aliases:
+            word = aliases[alias]
+            if alias in text and alias != word:
+                result[alias] = word
+        return result
+
 
 def load_glossary(path: Path, lang: str) -> HotwordGlossary:
     """Load glossary from equals format file.

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import time
-from pathlib import Path
 
 from subtap.ui.progress import PipelineProgress
 from subtap.ui.state import STAGE_CN, reset_state
@@ -95,12 +94,7 @@ class RichRunner:
                 # Stage 4: clean
                 task = progress.add_task("文本清洗", total=1)
                 t = time.time()
-                default_glossary_dir = str(Path.home() / ".subtap" / "glossary")
-                r = pipeline.run_stage(
-                    "clean",
-                    enhance_mode=enhance,
-                    hotword_glossary_dir=default_glossary_dir,
-                )
+                r = pipeline.run_stage("clean", enhance_mode=enhance)
                 self.timings["clean"] = time.time() - t
                 progress.update(task, completed=1)
                 console.print(f"  [green]✓[/] {r['segment_count']} 条")
@@ -114,16 +108,16 @@ class RichRunner:
                 console.print(f"  [green]✓[/] {r['sentence_count']} 句")
 
                 # Stage 5.5: script_match (optional)
-                # TODO: 文稿匹配功能暂搁置，待LLM方案成熟后重新实现
-                # t = time.time()
-                # script_result = pipeline.run_stage("script_match")
-                # self.timings["script_match"] = time.time() - t
-                # if not script_result.get("skipped"):
-                #     msg = script_result.get("message", "")
-                #     console.print(f"  [green]✓[/] 文稿匹配：{msg}")
-                #     if script_result.get("warnings"):
-                #         for w in script_result["warnings"]:
-                #             console.print(f"    [yellow]⚠[/] {w}")
+                if getattr(pipeline.config.output, "script_path", None):
+                    t = time.time()
+                    script_result = pipeline.run_stage("script_match")
+                    self.timings["script_match"] = time.time() - t
+                    if not script_result.get("skipped"):
+                        msg = script_result.get("message", "")
+                        console.print(f"  [green]✓[/] 文稿匹配：{msg}")
+                        if script_result.get("warnings"):
+                            for w in script_result["warnings"]:
+                                console.print(f"    [yellow]⚠[/] {w}")
 
                 # Stage 6: align
                 task = progress.add_task("时间轴对齐", total=1)
@@ -133,9 +127,18 @@ class RichRunner:
                 progress.update(task, completed=1)
                 console.print(f"  [green]✓[/] {r['aligned_count']} 条")
 
-                self.timings["hotword"] = 0.0
+                # Stage 6.5: hotword (热词替换)
+                task = progress.add_task("热词替换", total=1)
+                t = time.time()
+                r = pipeline.run_stage("hotword")
+                self.timings["hotword"] = time.time() - t
+                progress.update(task, completed=1)
+                if r.get("replaced", 0) > 0:
+                    console.print(f"  [green]✓[/] 替换 {r['replaced']}/{r['total']} 条")
+                else:
+                    console.print("  [dim]·[/] 无热词替换")
 
-                # Stage 6.5: learn (LLM discovered hotwords → local glossary)
+                # Stage 6.6: learn (LLM discovered hotwords → local glossary)
                 task = progress.add_task("热词学习", total=1)
                 t = time.time()
                 r = pipeline.run_stage("learn")
@@ -169,7 +172,7 @@ class RichRunner:
                     language=pipeline.config.output.subtitle_language,
                     max_chars=pipeline.config.output.max_chars,
                     min_chars=pipeline.config.output.min_chars,
-                    formats=pipeline.config.output.subtitle_formats,
+                    formats={fmt},
                     stem=pipeline.config.output.subtitle_stem,
                     translate_to=translate_to,
                     bilingual=bilingual,
@@ -302,12 +305,7 @@ class TUIRunner:
                 self.progress.print_stage_start(self.state)
 
             stage_start = time.time()
-            default_glossary_dir = str(Path.home() / ".subtap" / "glossary")
-            result = pipeline.run_stage(
-                "clean",
-                enhance_mode=enhance,
-                hotword_glossary_dir=default_glossary_dir,
-            )
+            result = pipeline.run_stage("clean", enhance_mode=enhance)
             self.timings["clean"] = time.time() - stage_start
             self.state.update(progress=100, status="completed")
             if self.use_tui:
@@ -326,13 +324,13 @@ class TUIRunner:
                 self.progress.print_stage_result(self.state, result)
 
             # Stage 5.5: script_match (optional)
-            # TODO: 文稿匹配功能暂搁置，待LLM方案成熟后重新实现
-            # stage_start = time.time()
-            # script_result = pipeline.run_stage("script_match")
-            # self.timings["script_match"] = time.time() - stage_start
-            # if not script_result.get("skipped"):
-            #     if self.use_tui:
-            #         self.progress.print_stage_result(self.state, script_result)
+            if getattr(pipeline.config.output, "script_path", None):
+                stage_start = time.time()
+                script_result = pipeline.run_stage("script_match")
+                self.timings["script_match"] = time.time() - stage_start
+                if not script_result.get("skipped"):
+                    if self.use_tui:
+                        self.progress.print_stage_result(self.state, script_result)
 
             # Stage 6: align
             self.state.update(
@@ -352,7 +350,18 @@ class TUIRunner:
             if self.use_tui:
                 self.progress.print_stage_result(self.state, result)
 
-            self.timings["hotword"] = 0.0
+            # Stage 6.5: hotword (热词替换)
+            self.state.update(stage="hotword", status="processing", progress=0)
+            if self.use_tui:
+                self.progress.print_stage_start(self.state)
+
+            stage_start = time.time()
+            result = pipeline.run_stage("hotword")
+            self.timings["hotword"] = time.time() - stage_start
+            self.state.update(progress=100, status="completed")
+            if self.use_tui:
+                self.progress.print_stage_result(self.state, result)
+
             if translate_to:
                 self.state.update(stage="translate", status="processing", progress=0)
                 stage_start = time.time()
@@ -464,7 +473,7 @@ class PlainRunner:
             typer.echo(msg)
 
         try:
-            _echo("▸ [1/7] 音频标准化...")
+            _echo("▸ [1/8] 音频标准化...")
             t = time.time()
             r = pipeline.run_stage("prepare", input_path=input_path)
             self.timings["prepare"] = time.time() - t
@@ -472,26 +481,21 @@ class PlainRunner:
                 f"  ✓ {r['media_info']['duration']:.1f}s, {r['media_info']['sample_rate']}Hz"
             )
 
-            _echo("▸ [2/7] 音频切段...")
+            _echo("▸ [2/8] 音频切段...")
             t = time.time()
             r = pipeline.run_stage("chunk")
             self.timings["chunk"] = time.time() - t
             _echo(f"  ✓ {r['chunk_count']} 段")
 
-            _echo("▸ [3/7] 语音识别...")
+            _echo("▸ [3/8] 语音识别...")
             t = time.time()
             r = pipeline.run_stage("asr")
             self.timings["asr"] = time.time() - t
             _echo(f"  ✓ {r['segment_count']} 条")
 
-            _echo("▸ [4/7] 文本清洗...")
+            _echo("▸ [4/8] 文本清洗...")
             t = time.time()
-            default_glossary_dir = str(Path.home() / ".subtap" / "glossary")
-            r = pipeline.run_stage(
-                "clean",
-                enhance_mode=enhance,
-                hotword_glossary_dir=default_glossary_dir,
-            )
+            r = pipeline.run_stage("clean", enhance_mode=enhance)
             self.timings["clean"] = time.time() - t
             _echo(f"  ✓ {r['segment_count']} 条")
 
@@ -502,16 +506,16 @@ class PlainRunner:
             _echo(f"  ✓ {r['sentence_count']} 句")
 
             # 文稿匹配（可选）
-            # TODO: 文稿匹配功能暂搁置，待LLM方案成熟后重新实现
-            # t = time.time()
-            # script_result = pipeline.run_stage("script_match")
-            # self.timings["script_match"] = time.time() - t
-            # if not script_result.get("skipped"):
-            #     msg = script_result.get("message", "")
-            #     _echo(f"  ✓ {msg}")
-            #     if script_result.get("warnings"):
-            #         for w in script_result["warnings"]:
-            #             _echo(f"    ⚠ {w}")
+            if getattr(pipeline.config.output, "script_path", None):
+                t = time.time()
+                script_result = pipeline.run_stage("script_match")
+                self.timings["script_match"] = time.time() - t
+                if not script_result.get("skipped"):
+                    msg = script_result.get("message", "")
+                    _echo(f"  ✓ {msg}")
+                    if script_result.get("warnings"):
+                        for w in script_result["warnings"]:
+                            _echo(f"    ⚠ {w}")
 
             _echo("▸ [6/8] 时间轴对齐...")
             t = time.time()
@@ -519,9 +523,17 @@ class PlainRunner:
             self.timings["align"] = time.time() - t
             _echo(f"  ✓ {r['aligned_count']} 条")
 
-            self.timings["hotword"] = 0.0
+            _echo("▸ [7/8] 热词替换...")
+            t = time.time()
+            r = pipeline.run_stage("hotword")
+            self.timings["hotword"] = time.time() - t
+            if r.get("replaced", 0) > 0:
+                _echo(f"  ✓ 替换 {r['replaced']}/{r['total']} 条")
+            else:
+                _echo("  · 无热词替换")
+
             if translate_to:
-                _echo("▸ [7/8] 字幕翻译...")
+                _echo("▸ [8/9] 字幕翻译...")
                 t = time.time()
                 r = pipeline.run_stage("translate", target_language=translate_to)
                 self.timings["translate"] = time.time() - t
@@ -529,7 +541,7 @@ class PlainRunner:
             else:
                 self.timings["translate"] = 0.0
 
-            _echo(f"▸ [8/8] 字幕导出 ({fmt.upper()})...")
+            _echo(f"▸ [9/9] 字幕导出 ({fmt.upper()})...")
             t = time.time()
             from subtap.core.export import run_final_exports
 
