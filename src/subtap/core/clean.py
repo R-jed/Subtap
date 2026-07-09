@@ -56,6 +56,15 @@ def local_clean_text(
     # 2. Full-width digit normalization (１２３ → 123)
     text = re.sub(r"[０-９]", lambda m: chr(ord(m.group()) - 0xFEE0), text)
 
+    # 2b. Latin+Chinese digit normalization (GR三 → GR3, HX四 → HX4)
+    #     Universal rule: Chinese digits after Latin letters → Arabic digits
+    _CN_DIGIT_MAP = str.maketrans("零一二两三四五六七八九", "01223456789")
+    text = re.sub(
+        r"([A-Za-z])([零一二两三四五六七八九]+)",
+        lambda m: m.group(1) + m.group(2).translate(_CN_DIGIT_MAP),
+        text,
+    )
+
     # 3. Remove extra spaces
     text = re.sub(r"\s+", " ", text).strip()
 
