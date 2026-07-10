@@ -323,6 +323,175 @@ def _inject_punct(words: list[dict], text: str) -> list[dict]:
     return result
 
 
+def _flush_split_line(
+    lines: list[dict],
+    words_to_flush: list[dict],
+    text_to_flush: str,
+    break_type: str = "other",
+) -> list[dict] | None:
+    """Flush a line, stripping trailing words. Returns stripped words for pending prefix."""
+    if not words_to_flush:
+        return None
+    for clen in (2, 1):
+        if len(text_to_flush) > clen and text_to_flush[-clen:] in _TRAILING_WORDS:
+            stripped_words = words_to_flush[-clen:]
+            remaining_words = words_to_flush[:-clen]
+            remaining_text = text_to_flush[:-clen]
+            if remaining_words:
+                lines.append(
+                    {
+                        "text": remaining_text,
+                        "start_sec": remaining_words[0]["start_sec"],
+                        "end_sec": remaining_words[-1]["end_sec"],
+                        "break_type": break_type,
+                    }
+                )
+            return stripped_words
+    lines.append(
+        {
+            "text": text_to_flush,
+            "start_sec": words_to_flush[0]["start_sec"],
+            "end_sec": words_to_flush[-1]["end_sec"],
+            "break_type": break_type,
+        }
+    )
+    return None
+
+
+def _greedy_split(
+    words: list[dict],
+    text: str,
+    boundaries: list[tuple[str, float] | None],
+    max_chars: int,
+    min_chars: int,
+    pause_threshold: float,
+) -> list[dict]:
+    """Greedy accumulation split using clause boundaries."""
+    _SENT_END = set("。！？.!?")
+    _NUM_CHARS = set("零一二两三四五六七八九十百千万亿")
+
+    lines: list[dict] = []
+    cur_text = ""
+    cur_words: list[dict] = []
+    pending_prefix: list[dict] = []
+
+    i = 0
+    while i < len(words):
+        w = words[i]
+        word_text = w["word"]
+
+        if pending_prefix:
+            cur_words = pending_prefix + cur_words
+            cur_text = "".join(x["word"] for x in cur_words)
+            for pw in pending_prefix:
+                pw["start_sec"] = w["start_sec"]
+                pw["end_sec"] = w["start_sec"]
+            pending_prefix = []
+
+        if word_text in _SENT_END:
+            if cur_words:
+                stripped = _flush_split_line(lines, cur_words, cur_text, "sentence_end")
+                if stripped:
+                    pending_prefix = stripped
+                cur_words = []
+                cur_text = ""
+            i += 1
+            continue
+
+        if word_text in _NUM_CHARS:
+            seq_start = i
+            seq_end = i
+            while seq_end < len(words) - 1 and words[seq_end + 1]["word"] in _NUM_CHARS:
+                seq_end += 1
+            seq_len = sum(len(words[j]["word"]) for j in range(seq_start, seq_end + 1))
+            if seq_len >= max_chars and cur_words:
+                stripped = _flush_split_line(lines, cur_words, cur_text)
+                if stripped:
+                    pending_prefix = stripped
+                cur_words = []
+                cur_text = ""
+            for j in range(seq_start, seq_end + 1):
+                cur_words.append(words[j])
+                cur_text += words[j]["word"]
+            i = seq_end + 1
+            continue
+
+        if cur_text and len(cur_text) + len(word_text) > max_chars:
+            if cur_words:
+                stripped = _flush_split_line(lines, cur_words, cur_text)
+                if stripped:
+                    pending_prefix = stripped
+                cur_words = []
+                cur_text = ""
+
+        should_split_before = False
+        split_bt = "other"
+        if i < len(boundaries) and boundaries[i] is not None:
+            b = boundaries[i]
+            assert b is not None
+            boundary_type, score = b
+            if boundary_type == "pause" and cur_text and len(cur_text) >= min_chars:
+                if not any(cur_text.startswith(c) for c in _CONJ_PAIRS):
+                    should_split_before = True
+                    split_bt = "pause"
+            elif boundary_type == "conjunction" and cur_text and len(cur_text) >= min_chars:
+                if i > 0:
+                    gap = w["start_sec"] - words[i - 1]["end_sec"]
+                    if gap >= pause_threshold and not any(cur_text.startswith(c) for c in _CONJ_PAIRS):
+                        should_split_before = True
+                        split_bt = "conjunction"
+            elif boundary_type == "particle" and cur_text and len(cur_text) >= min_chars:
+                should_split_before = True
+                split_bt = "particle"
+
+        if should_split_before and cur_words:
+            stripped = _flush_split_line(lines, cur_words, cur_text, split_bt)
+            if stripped:
+                pending_prefix = stripped
+            cur_words = []
+            cur_text = ""
+
+        if cur_text and _has_latin(cur_text[-1:]) and _has_latin(word_text[:1]):
+            cur_text += " "
+        cur_words.append(w)
+        cur_text += word_text
+
+        should_split_after = False
+        after_bt = "other"
+        if len(cur_text) >= max_chars:
+            should_split_after = True
+        if i < len(boundaries) and boundaries[i] is not None:
+            b = boundaries[i]
+            assert b is not None
+            boundary_type, score = b
+            if boundary_type == "sentence_end":
+                should_split_after = True
+                after_bt = "sentence_end"
+            elif boundary_type == "comma":
+                should_split_after = True
+                after_bt = "comma"
+        if should_split_after and len(cur_text) < min_chars and len(cur_text) < max_chars:
+            if after_bt not in ("comma", "sentence_end"):
+                should_split_after = False
+        if should_split_after:
+            stripped = _flush_split_line(lines, cur_words, cur_text, after_bt)
+            if stripped:
+                pending_prefix = stripped
+            cur_words = []
+            cur_text = ""
+
+        i += 1
+
+    if pending_prefix:
+        cur_words = pending_prefix + cur_words
+        cur_text = "".join(x["word"] for x in cur_words)
+
+    if cur_words:
+        lines.append({"text": cur_text, "start_sec": cur_words[0]["start_sec"], "end_sec": cur_words[-1]["end_sec"], "break_type": "end"})
+
+    return [ln for ln in lines if ln["text"].strip()]
+
+
 def _smart_split(
     words: list[dict],
     text: str,
@@ -336,239 +505,18 @@ def _smart_split(
 
     CORE CONSTRAINT: 绝不丢字。输入的每个字都必须出现在输出中。
     算法只做分割和移动，不做删除。
-
-    Algorithm:
-    1. Mark phrase boundaries via mark_phrase_boundaries()
-    2. Identify clause boundaries via identify_clause_boundaries()
-    3. Accumulate words; split at clause boundaries or max_chars
     """
     if not words:
         return [{"text": text, "start_sec": start_sec, "end_sec": end_sec}]
 
-    _SENT_END = set("。！？.!?")
-    _COMMA_PUNCT = set("，、,;")
-    _NUM_CHARS = set("零一二两三四五六七八九十百千万亿")
-
-    # --- Step 1: Mark phrase boundaries ---
     marked_words = mark_phrase_boundaries(words)
-
-    # --- Step 2: Identify clause boundaries ---
     boundaries = identify_clause_boundaries(
         words, marked=marked_words, pause_threshold=pause_threshold
     )
 
-    # --- Step 3: Greedy split using clause boundaries ---
-    cur_text = ""
-    lines: list[dict] = []
-    cur_words: list[dict] = []
-    _pending_prefix: list[dict] = []
+    lines = _greedy_split(words, text, boundaries, max_chars, min_chars, pause_threshold)
 
-    def _flush_line(
-        words_to_flush: list[dict], text_to_flush: str, break_type: str = "other"
-    ):
-        """Flush a line, stripping trailing words."""
-        if not words_to_flush:
-            return
-        # Strip trailing words (e.g. "但是", "这个") from line end
-        for clen in (2, 1):
-            if len(text_to_flush) > clen and text_to_flush[-clen:] in _TRAILING_WORDS:
-                # Move conjunction to pending prefix
-                stripped_words = words_to_flush[-clen:]
-                remaining_words = words_to_flush[:-clen]
-                remaining_text = text_to_flush[:-clen]
-                if remaining_words:
-                    lines.append(
-                        {
-                            "text": remaining_text,
-                            "start_sec": remaining_words[0]["start_sec"],
-                            "end_sec": remaining_words[-1]["end_sec"],
-                            "break_type": break_type,
-                        }
-                    )
-                # Store stripped words as pending prefix for next line
-                nonlocal _pending_prefix
-                _pending_prefix = stripped_words
-                return
-        # No trailing conjunction - flush as is
-        lines.append(
-            {
-                "text": text_to_flush,
-                "start_sec": words_to_flush[0]["start_sec"],
-                "end_sec": words_to_flush[-1]["end_sec"],
-                "break_type": break_type,
-            }
-        )
-
-    i = 0
-    while i < len(words):
-        w = words[i]
-        word_text = w["word"]
-
-        # Apply pending prefix (conjunction stripped from previous line end)
-        if _pending_prefix:
-            cur_words = _pending_prefix + cur_words
-            cur_text = "".join(x["word"] for x in cur_words)
-            # Set prefix start time to current word's start
-            for pw in _pending_prefix:
-                pw["start_sec"] = w["start_sec"]
-                pw["end_sec"] = w["start_sec"]
-            _pending_prefix = []
-
-        # Sentence-ending punctuation → flush and skip
-        if word_text in _SENT_END:
-            if cur_words:
-                _flush_line(cur_words, cur_text, "sentence_end")
-                cur_words = []
-                cur_text = ""
-            i += 1
-            continue
-
-        # Number sequence protection: if entering a number sequence,
-        # check if the ENTIRE sequence would exceed max_chars.
-        # If so, split before the sequence. If not, skip the sequence.
-        if word_text in _NUM_CHARS:
-            seq_start = i
-            seq_end = i
-            while seq_end < len(words) - 1 and words[seq_end + 1]["word"] in _NUM_CHARS:
-                seq_end += 1
-            seq_len = sum(len(words[j]["word"]) for j in range(seq_start, seq_end + 1))
-            if seq_len >= max_chars:
-                # Flush current line before the number sequence
-                if cur_words:
-                    _flush_line(cur_words, cur_text)
-                    cur_words = []
-                    cur_text = ""
-            # Add all words in the number sequence
-            for j in range(seq_start, seq_end + 1):
-                cur_words.append(words[j])
-                cur_text += words[j]["word"]
-            # Skip to the end of the sequence
-            i = seq_end + 1
-            continue
-
-        # Max chars check BEFORE adding (to avoid exceeding limit)
-        if cur_text and len(cur_text) + len(word_text) > max_chars:
-            # Flush current line before adding new word
-            if cur_words:
-                _flush_line(cur_words, cur_text)
-                cur_words = []
-                cur_text = ""
-
-        # Check pause/conjunction boundaries BEFORE adding word
-        # so the pause word starts the new line (not ends the old one)
-        should_split_before = False
-        split_bt = "other"
-
-        if i < len(boundaries) and boundaries[i] is not None:
-            b = boundaries[i]
-            assert b is not None
-            boundary_type, score = b
-
-            # Pause boundary: split BEFORE this word if current line is long enough
-            if boundary_type == "pause" and cur_text and len(cur_text) >= min_chars:
-                line_starts_with_conj = any(
-                    cur_text.startswith(conj) for conj in _CONJ_PAIRS
-                )
-                if not line_starts_with_conj:
-                    should_split_before = True
-                    split_bt = "pause"
-
-            # Conjunction boundary: split BEFORE this word if there's a pause
-            elif (
-                boundary_type == "conjunction"
-                and cur_text
-                and len(cur_text) >= min_chars
-            ):
-                if i > 0:
-                    gap = w["start_sec"] - words[i - 1]["end_sec"]
-                    if gap >= pause_threshold:
-                        line_starts_with_conj = any(
-                            cur_text.startswith(conj) for conj in _CONJ_PAIRS
-                        )
-                        if not line_starts_with_conj:
-                            should_split_before = True
-                            split_bt = "conjunction"
-
-            # Particle boundary: split BEFORE this word if line is long enough
-            elif (
-                boundary_type == "particle" and cur_text and len(cur_text) >= min_chars
-            ):
-                should_split_before = True
-                split_bt = "particle"
-
-        if should_split_before and cur_words:
-            _flush_line(cur_words, cur_text, split_bt)
-            cur_words = []
-            cur_text = ""
-
-        # Add word to current line
-        # Insert space between consecutive Latin words (e.g. "High" + "Light" → "High Light")
-        if cur_text and _has_latin(cur_text[-1:]) and _has_latin(word_text[:1]):
-            cur_text += " "
-        cur_words.append(w)
-        cur_text += word_text
-
-        # Check if we should split AFTER this position
-        should_split_after = False
-        after_bt = "other"
-
-        # Max chars check (exact match)
-        if len(cur_text) >= max_chars:
-            should_split_after = True
-
-        # Clause boundary check (sentence_end, comma)
-        if i < len(boundaries) and boundaries[i] is not None:
-            b = boundaries[i]
-            assert b is not None
-            boundary_type, score = b
-            if boundary_type == "sentence_end":
-                should_split_after = True
-                after_bt = "sentence_end"
-            elif boundary_type == "comma":
-                should_split_after = True
-                after_bt = "comma"
-
-        # Min chars check: skip soft split only if below min AND below max
-        if (
-            should_split_after
-            and len(cur_text) < min_chars
-            and len(cur_text) < max_chars
-        ):
-            if after_bt not in ("comma", "sentence_end"):
-                should_split_after = False
-
-        if should_split_after:
-            _flush_line(cur_words, cur_text, after_bt)
-            cur_words = []
-            cur_text = ""
-
-        i += 1
-
-    # Prepend any pending prefix before the final flush
-    if _pending_prefix:
-        cur_words = _pending_prefix + cur_words
-        cur_text = "".join(x["word"] for x in cur_words)
-        _pending_prefix = []
-
-    # Flush remaining words (bypass trailing-word strip to avoid data loss)
-    if cur_words:
-        lines.append(
-            {
-                "text": cur_text,
-                "start_sec": cur_words[0]["start_sec"],
-                "end_sec": cur_words[-1]["end_sec"],
-                "break_type": "end",
-            }
-        )
-
-    # Filter empty lines
-    lines = [ln for ln in lines if ln["text"].strip()]
-
-    # Merge very short fragments into adjacent lines
-    # - ≤1 char: always merge (e.g. "的", "了")
-    # - ≤2 char: merge unless previous line is a hard break
-    #   Hard breaks: sentence_end, comma (these mark real boundaries)
-    #   Soft breaks: pause, particle, conjunction, other (can merge across)
+    # Merge very short fragments (≤1 char always, ≤2 char unless hard break)
     _HARD_BREAKS = {"sentence_end", "comma"}
     merged: list[dict] = []
     for line in lines:
@@ -576,7 +524,6 @@ def _smart_split(
         if merged and len(txt) <= 2:
             prev = merged[-1]
             prev_bt = prev.get("break_type")
-            # ≤1 char always merges; ≤2 char merges unless crossing hard break
             can_merge = len(txt) <= 1 or prev_bt not in _HARD_BREAKS
             if can_merge and len(prev["text"]) + len(txt) <= max_chars:
                 prev["text"] += txt
@@ -584,20 +531,12 @@ def _smart_split(
                 continue
         merged.append(line)
     lines = merged
-
-    # Fix split words (跨行断词修复)
     lines = _fix_split_words(lines, max_chars)
 
     return (
         lines
         if lines
-        else [
-            {
-                "text": text,
-                "start_sec": words[0]["start_sec"],
-                "end_sec": words[-1]["end_sec"],
-            }
-        ]
+        else [{"text": text, "start_sec": words[0]["start_sec"], "end_sec": words[-1]["end_sec"]}]
     )
 
 
