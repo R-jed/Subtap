@@ -160,18 +160,24 @@ def split_chunks(workspace: Workspace, config: SubtapConfig) -> list[Chunk]:
             merged.append([start_sec, end_sec])
 
     # Split oversized chunks and drop undersized ones
+    # When Silero VAD is active, segments already respect natural pauses,
+    # so skip mechanical max_chunk_sec splitting to preserve sentence integrity.
     final_segments: list[list[float]] = []
     for start, end in merged:
         dur = end - start
         if dur < vad_cfg.min_chunk_sec:
             continue
-        # Split if longer than max_chunk_sec
-        while dur > vad_cfg.max_chunk_sec:
-            final_segments.append([start, start + vad_cfg.max_chunk_sec])
-            start += vad_cfg.max_chunk_sec
-            dur = end - start
-        if dur >= vad_cfg.min_chunk_sec:
+        if vad_cfg.use_silero_vad:
+            # Silero VAD already split at natural pauses — keep as-is
             final_segments.append([start, end])
+        else:
+            # pydub fallback: mechanical split at max_chunk_sec
+            while dur > vad_cfg.max_chunk_sec:
+                final_segments.append([start, start + vad_cfg.max_chunk_sec])
+                start += vad_cfg.max_chunk_sec
+                dur = end - start
+            if dur >= vad_cfg.min_chunk_sec:
+                final_segments.append([start, end])
 
     if not final_segments:
         # Fallback: treat whole file as one chunk
