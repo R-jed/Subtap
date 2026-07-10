@@ -20,11 +20,6 @@ from subtap.core.text_utils import (
 )
 from subtap.schemas.models import AlignedSegment, ASRSegment
 
-# Module-level aliases for text_utils functions used throughout this module
-_strip_punct = strip_punct
-_normalize_punct = normalize_punct
-_remove_cjk_spaces = remove_cjk_spaces
-
 # Sentence-ending punctuation (shared across split functions)
 _SENT_END = frozenset("。！？.!?")
 
@@ -906,16 +901,16 @@ def _post_process_fragments(
     merged_subs: list[dict] = []
     for sub in lines:
         txt = sub["text"].strip()
-        visible = _strip_punct(txt).replace(" ", "")
+        visible = strip_punct(txt).replace(" ", "")
         if merged_subs and len(visible) <= min_chars - 1:
             prev = merged_subs[-1]
-            prev_visible = _strip_punct(prev["text"]).replace(" ", "")
+            prev_visible = strip_punct(prev["text"]).replace(" ", "")
             if (
                 len(prev_visible) > len(visible)
                 and len(prev_visible) + len(visible) <= max_chars
             ):
                 merged_text = prev["text"].rstrip() + txt
-                merged_stripped = _strip_punct(merged_text).replace(" ", "")
+                merged_stripped = strip_punct(merged_text).replace(" ", "")
                 creates_trailing = False
                 for tlen in (2, 1):
                     if (
@@ -934,10 +929,10 @@ def _post_process_fragments(
     final_subs: list[dict] = []
     for i, sub in enumerate(merged_subs):
         txt = sub["text"].strip()
-        visible = _strip_punct(txt).replace(" ", "")
+        visible = strip_punct(txt).replace(" ", "")
         if visible in _TRAILING_WORDS and i + 1 < len(merged_subs):
             nxt = merged_subs[i + 1]
-            nxt_visible = _strip_punct(nxt["text"]).replace(" ", "")
+            nxt_visible = strip_punct(nxt["text"]).replace(" ", "")
             if len(visible) + len(nxt_visible) <= max_chars:
                 nxt["text"] = txt + nxt["text"]
                 nxt["start_sec"] = sub["start_sec"]
@@ -1007,10 +1002,10 @@ class SRTExporter(BaseExporter):
             end = _fmt_srt_time(sub["end_sec"])
             text = chinese_to_num(sub["text"])
             if self.punctuation:
-                text = _normalize_punct(text, self.language)
+                text = normalize_punct(text, self.language)
             else:
-                text = _strip_punct(text)
-            text = _remove_cjk_spaces(text)
+                text = strip_punct(text)
+            text = remove_cjk_spaces(text)
             lines.append(str(index))
             lines.append(f"{start} --> {end}")
             lines.append(text)
@@ -1144,7 +1139,7 @@ def _final_json_item(seg: AlignedSegment) -> dict:
         "subtitle_id": seg.sentence_id,
         "start_sec": seg.start_sec,
         "end_sec": seg.end_sec,
-        "text": _remove_cjk_spaces(seg.text),
+        "text": remove_cjk_spaces(seg.text),
         "words": [
             {"word": w["word"], "start_sec": w["start_sec"], "end_sec": w["end_sec"]}
             for w in seg.words
@@ -1282,10 +1277,10 @@ def run_final_exports(
                 vtt_index += 1
                 text = chinese_to_num(sub["text"])
                 if punctuation:
-                    text = _normalize_punct(text, language)
+                    text = normalize_punct(text, language)
                 else:
-                    text = _strip_punct(text)
-                text = _remove_cjk_spaces(text)
+                    text = strip_punct(text)
+                text = remove_cjk_spaces(text)
                 vtt_lines.extend(
                     [
                         str(vtt_index),
@@ -1308,7 +1303,7 @@ def run_final_exports(
     if "tsv" in formats:
         tsv_lines = ["subtitle_id\tstart_sec\tend_sec\ttext"]
         for seg in sorted(export_segments, key=lambda s: s.start_sec):
-            text = _remove_cjk_spaces(seg.text).replace("\t", " ").replace("\n", " ")
+            text = remove_cjk_spaces(seg.text).replace("\t", " ").replace("\n", " ")
             tsv_lines.append(
                 f"{seg.sentence_id}\t{seg.start_sec}\t{seg.end_sec}\t{text}"
             )
