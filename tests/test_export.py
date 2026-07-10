@@ -539,3 +539,204 @@ def test_inject_punct_empty_input():
     from subtap.core.export import _inject_punct
 
     assert _inject_punct([], "") == []
+
+
+def test_inject_punct_completeness_warning_on_missing_word(caplog):
+    """P1-3: ASR word list 不完整时应记录 warning 日志。"""
+    import logging
+
+    from subtap.core.export import _inject_punct
+
+    words = [
+        {"word": "照", "start_sec": 44.0, "end_sec": 44.2},
+        {"word": "但", "start_sec": 44.8, "end_sec": 45.0},
+        {"word": "是", "start_sec": 45.0, "end_sec": 45.1},
+        {"word": "卖", "start_sec": 45.2, "end_sec": 45.5},
+    ]
+    # text='照片,但是卖'，words 缺少'片'，reconstructed != text
+    with caplog.at_level(logging.WARNING, logger="subtap.core.export"):
+        result = _inject_punct(words, "照片,但是卖")
+
+    # 功能不变：标点仍在正确位置
+    seq = [w["word"] for w in result]
+    assert seq == ["照", ",", "但", "是", "卖"]
+    # 但应记录 warning
+    assert "完整性校验失败" in caplog.text
+
+
+def test_inject_punct_no_warning_when_complete(caplog):
+    """word list 完整时不应触发 warning。"""
+    import logging
+
+    from subtap.core.export import _inject_punct
+
+    words = [
+        {"word": "照", "start_sec": 44.0, "end_sec": 44.2},
+        {"word": "片", "start_sec": 44.2, "end_sec": 44.5},
+        {"word": "但", "start_sec": 44.8, "end_sec": 45.0},
+        {"word": "是", "start_sec": 45.0, "end_sec": 45.1},
+        {"word": "卖", "start_sec": 45.2, "end_sec": 45.5},
+    ]
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="subtap.core.export"):
+        _inject_punct(words, "照片,但是卖")
+
+    assert "完整性校验失败" not in caplog.text
+
+
+# ── _process_segment / _post_process_fragments tests ──
+
+
+def test_process_segment_returns_raw_text():
+    """_process_segment returns sub_lines with raw text (no chinese_to_num)."""
+    from subtap.core.export import _process_segment
+
+    seg = AlignedSegment(
+        sentence_id=0,
+        start_sec=0.0,
+        end_sec=3.0,
+        text="价格是一万两千九百九十九",
+        words=[
+            {"word": "价格", "start_sec": 0.0, "end_sec": 0.3},
+            {"word": "是", "start_sec": 0.3, "end_sec": 0.5},
+            {"word": "一万两千九百九十九", "start_sec": 0.5, "end_sec": 2.5},
+        ],
+    )
+    result = _process_segment(seg, max_chars=25, min_chars=10)
+    # chinese_to_num should NOT be applied yet
+    all_text = " ".join(r["text"] for r in result)
+    assert "一万两千九百九十九" in all_text
+    assert "12999" not in all_text
+
+
+def test_process_segment_applies_hotword_replacements():
+    """_process_segment applies hotword_replacements."""
+    from subtap.core.export import _process_segment
+
+    seg = AlignedSegment(
+        sentence_id=0,
+        start_sec=0.0,
+        end_sec=2.0,
+        text="这是GR四",
+        words=[
+            {"word": "这", "start_sec": 0.0, "end_sec": 0.2},
+            {"word": "是", "start_sec": 0.2, "end_sec": 0.4},
+            {"word": "GR", "start_sec": 0.4, "end_sec": 0.8},
+            {"word": "四", "start_sec": 0.8, "end_sec": 1.0},
+        ],
+        aligned_text="这是GR四",
+        hotword_replacements={"GR": "理光GR四"},
+    )
+    result = _process_segment(seg, max_chars=25, min_chars=10)
+    all_text = " ".join(r["text"] for r in result)
+    assert "理光GR四" in all_text
+
+
+def test_process_segment_filters_empty():
+    """_process_segment returns lines even if text is empty."""
+    from subtap.core.export import _process_segment
+
+    seg = AlignedSegment(
+        sentence_id=0, start_sec=0.0, end_sec=1.0, text="",
+        words=[],
+    )
+    result = _process_segment(seg, max_chars=25, min_chars=10)
+    # Empty segment returns a single dict with empty text
+    assert len(result) >= 1
+
+
+def test_post_process_fragments_merges_short():
+    """_post_process_fragments merges short fragments into adjacent lines."""
+    from subtap.core.export import _post_process_fragments
+
+    lines = [
+        {"text": "这是一个比较长的句子", "start_sec": 0.0, "end_sec": 2.0},
+        {"text": "短句", "start_sec": 2.0, "end_sec": 2.5},
+    ]
+    result = _post_process_fragments(lines, max_chars=25, min_chars=10)
+    assert len(result) == 1
+    assert "短句" in result[0]["text"]
+
+
+def test_post_process_fragments_merges_trailing_word():
+    """_post_process_fragments merges standalone trailing words into next line."""
+    from subtap.core.export import _post_process_fragments
+
+    lines = [
+        {"text": "第一句话比较长的内容", "start_sec": 0.0, "end_sec": 2.0},
+        {"text": "但是", "start_sec": 2.0, "end_sec": 2.2},
+        {"text": "第二句话也比较长", "start_sec": 2.2, "end_sec": 4.0},
+    ]
+    result = _post_process_fragments(lines, max_chars=25, min_chars=10)
+    # "但是" should be prepended to next line
+    assert len(result) == 2
+    assert result[1]["text"].startswith("但是")
+
+
+def test_post_process_fragments_no_merge_long_lines():
+    """_post_process_fragments does not merge lines that are already long enough."""
+    from subtap.core.export import _post_process_fragments
+
+    lines = [
+        {"text": "这是一句足够长的话不会被合并", "start_sec": 0.0, "end_sec": 2.0},
+        {"text": "这也是一句足够长的话不会被合并", "start_sec": 2.0, "end_sec": 4.0},
+    ]
+    result = _post_process_fragments(lines, max_chars=25, min_chars=10)
+    assert len(result) == 2
+
+
+def test_srt_uses_process_segment_and_post_process():
+    """SRTExporter.render() produces same output as manual pipeline."""
+    from subtap.core.export import _process_segment, _post_process_fragments
+
+    segs = [
+        AlignedSegment(
+            sentence_id=0, start_sec=0.0, end_sec=3.0,
+            text="这是一段比较长的话",
+            words=[
+                {"word": "这是", "start_sec": 0.0, "end_sec": 0.4},
+                {"word": "一段", "start_sec": 0.4, "end_sec": 0.8},
+                {"word": "比较长的", "start_sec": 0.8, "end_sec": 1.5},
+                {"word": "话", "start_sec": 1.5, "end_sec": 2.0},
+            ],
+        ),
+        AlignedSegment(
+            sentence_id=1, start_sec=3.0, end_sec=5.0,
+            text="第二段话",
+            words=[
+                {"word": "第二段话", "start_sec": 3.0, "end_sec": 4.5},
+            ],
+        ),
+    ]
+    srt = SRTExporter(punctuation=False, max_chars=25, min_chars=10).render(segs)
+    assert "-->" in srt
+    # Verify both segments appear
+    assert "这是一段比较长的话" in srt
+    assert "第二段话" in srt
+
+
+# ── aligned_jsonl 存在性检查 ──
+
+
+def test_run_export_raises_when_aligned_jsonl_missing(tmp_path: Path):
+    """run_export 在 aligned.jsonl 不存在时抛出 FileNotFoundError，包含路径信息。"""
+    missing = tmp_path / "nonexistent" / "aligned.jsonl"
+    out_dir = tmp_path / "output"
+    try:
+        run_export(missing, out_dir, fmt="srt")
+        assert False, "Should have raised FileNotFoundError"
+    except FileNotFoundError as e:
+        assert str(missing) in str(e)
+
+
+def test_run_final_exports_raises_when_aligned_jsonl_missing(tmp_path: Path):
+    """run_final_exports 在 aligned.jsonl 不存在时抛出 FileNotFoundError，包含路径信息。"""
+    from subtap.core.export import run_final_exports
+
+    missing = tmp_path / "nonexistent" / "aligned.jsonl"
+    out_dir = tmp_path / "output"
+    try:
+        run_final_exports(missing, out_dir)
+        assert False, "Should have raised FileNotFoundError"
+    except FileNotFoundError as e:
+        assert str(missing) in str(e)

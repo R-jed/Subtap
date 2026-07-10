@@ -33,8 +33,7 @@ class Theme:
 
     @staticmethod
     def _should_disable_color() -> bool:
-        val = os.environ.get("NO_COLOR")
-        return val is not None and val != ""
+        return "NO_COLOR" in os.environ
 
     def colorize_size(self, size_str: str) -> str:
         if size_str.endswith("GB"):

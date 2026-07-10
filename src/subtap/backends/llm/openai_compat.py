@@ -1,18 +1,27 @@
-"""OpenAI-compatible LLM backend for text cleaning."""
+"""OpenAI-compatible LLM backend.
+
+Implements all four LLM protocols:
+- TextCleaner:      clean_segments()
+- TextProofreader:  select_suspicious_segments() + repair_segments()
+- HotwordSuggester: replace_hotwords()
+- TextTranslator:   translate_srt()
+"""
 
 from __future__ import annotations
 
 import json
 import logging
 import os
+import random
 import re
+import time
 from typing import Optional
 
 import httpx
 
 from subtap.schemas.config import RemoteAPIConfig
 from subtap.schemas.glossary import Glossary
-from subtap.schemas.models import CleanSegment
+from subtap.schemas.models import RawCleanSegment
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +49,7 @@ class OpenAICompatibleLLM:
         base_url: str | None = None,
         api_key: str | None = None,
         remote_api: RemoteAPIConfig | None = None,
-        batch_size: int = 20,
+        batch_size: int = 50,
     ):
         self.model = remote_api.model if remote_api and remote_api.model else model
         if remote_api:
@@ -56,7 +65,7 @@ class OpenAICompatibleLLM:
         self.api_key = api_key or os.environ.get(api_key_env, "")
         self.timeout_sec = remote_api.timeout_sec if remote_api else 120
         self.provider = remote_api.provider if remote_api else "openai-compatible"
-        self.batch_size = batch_size
+        self.batch_size = remote_api.batch_size if remote_api else batch_size
 
         if not self.base_url:
             raise ValueError("LLM API base_url 未配置")
@@ -74,22 +83,51 @@ class OpenAICompatibleLLM:
             result.append((batch, i))
         return result
 
+    _RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+    _MAX_RETRIES = 3
+    _BASE_DELAY = 1.0  # 秒
+
+    @staticmethod
+    def _is_retryable(exc: Exception) -> bool:
+        """判断异常是否可重试（网络/瞬态错误）。"""
+        if isinstance(exc, (httpx.ReadTimeout, httpx.RemoteProtocolError)):
+            return True
+        if isinstance(exc, httpx.HTTPStatusError):
+            return exc.response.status_code in OpenAICompatibleLLM._RETRYABLE_STATUS_CODES
+        return False
+
     def _chat(self, user_prompt: str, system_prompt: str) -> str:
-        with httpx.Client(timeout=self.timeout_sec) as client:
-            resp = client.post(
-                f"{self.base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {self.api_key}"},
-                json={
-                    "model": self.model,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return data["choices"][0]["message"]["content"]
+        last_exc: Exception | None = None
+        for attempt in range(self._MAX_RETRIES + 1):
+            try:
+                with httpx.Client(timeout=self.timeout_sec) as client:
+                    resp = client.post(
+                        f"{self.base_url}/chat/completions",
+                        headers={"Authorization": f"Bearer {self.api_key}"},
+                        json={
+                            "model": self.model,
+                            "messages": [
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_prompt},
+                            ],
+                        },
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                    return data["choices"][0]["message"]["content"]
+            except Exception as exc:
+                last_exc = exc
+                if not self._is_retryable(exc) or attempt == self._MAX_RETRIES:
+                    raise
+                delay = self._BASE_DELAY * (2 ** attempt)
+                jitter = delay * random.uniform(0, 0.3)
+                sleep_sec = delay + jitter
+                logger.warning(
+                    "LLM API 调用失败（第 %d/%d 次），%.1f 秒后重试: %s",
+                    attempt + 1, self._MAX_RETRIES, sleep_sec, exc,
+                )
+                time.sleep(sleep_sec)
+        raise last_exc  # type: ignore[misc]  # 不会走到这里，但让类型检查满意
 
     def _parse_segments_json(
         self,
@@ -297,25 +335,33 @@ class OpenAICompatibleLLM:
                 ops.append({"from": old, "to": new})
         return ops
 
-    def translate_srt(self, srt_text: str, target_language: str) -> str:
-        prompt = (
-            f"你是一名经验丰富的影视字幕翻译专家。请将下面的 SRT 字幕翻译为{target_language}。\n\n"
-            "翻译目标：\n"
-            "1. 保留原字幕的序号、时间轴、分段结构与换行结构，不要新增或删除字幕块。\n"
-            "2. 译文要自然、口语化、准确、简洁，符合真实字幕阅读习惯，而不是生硬直译。\n"
-            "3. 优先传达说话者真实意图、语气与信息重点；有口头语时可自然化处理，但不要无故扩写。\n"
-            "4. 人名、地名、品牌名、产品名、专业术语要结合上下文统一翻译；无法确认时优先保留原文或使用更稳妥写法。\n"
-            "5. 数字、年份、日期、时间、百分比、货币、型号、专有缩写等信息必须准确保留，不要误改。\n"
-            "6. 如果原文有上下句承接关系，请确保译文衔接自然，不要把句意翻断。\n"
-            "7. 每条字幕尽量控制在适合阅读的长度，避免过长、过书面或过于机器化。\n"
-            "8. 不要输出解释、备注、分析、前言、后记，只输出合法的 SRT 内容。\n\n"
-            f"待翻译内容：\n{srt_text}"
-        )
+    def translate_srt(
+        self,
+        srt_text: str,
+        target_language: str,
+        custom_prompt: str | None = None,
+    ) -> str:
+        if custom_prompt:
+            prompt = custom_prompt
+        else:
+            prompt = (
+                f"你是一名经验丰富的影视字幕翻译专家。请将下面的 SRT 字幕翻译为{target_language}。\n\n"
+                "翻译目标：\n"
+                "1. 保留原字幕的序号、时间轴、分段结构与换行结构，不要新增或删除字幕块。\n"
+                "2. 译文要自然、口语化、准确、简洁，符合真实字幕阅读习惯，而不是生硬直译。\n"
+                "3. 优先传达说话者真实意图、语气与信息重点；有口头语时可自然化处理，但不要无故扩写。\n"
+                "4. 人名、地名、品牌名、产品名、专业术语要结合上下文统一翻译；无法确认时优先保留原文或使用更稳妥写法。\n"
+                "5. 数字、年份、日期、时间、百分比、货币、型号、专有缩写等信息必须准确保留，不要误改。\n"
+                "6. 如果原文有上下句承接关系，请确保译文衔接自然，不要把句意翻断。\n"
+                "7. 每条字幕尽量控制在适合阅读的长度，避免过长、过书面或过于机器化。\n"
+                "8. 不要输出解释、备注、分析、前言、后记，只输出合法的 SRT 内容。\n\n"
+                f"待翻译内容：\n{srt_text}"
+            )
         return self._chat(prompt, "你只输出合法 SRT 内容。")
 
     def _build_prompt(
         self,
-        segments: list[CleanSegment],
+        segments: list[RawCleanSegment],
         glossary: Optional[Glossary],
         style_rules: Optional[list[str]],
     ) -> str:
@@ -336,8 +382,8 @@ class OpenAICompatibleLLM:
         return text_block + "\n\n" + "\n".join(instructions)
 
     def _parse_response(
-        self, response_text: str, segments: list[CleanSegment]
-    ) -> list[CleanSegment]:
+        self, response_text: str, segments: list[RawCleanSegment]
+    ) -> list[RawCleanSegment]:
         lines = [
             line.strip() for line in response_text.strip().split("\n") if line.strip()
         ]
@@ -355,10 +401,10 @@ class OpenAICompatibleLLM:
 
     def clean_segments(
         self,
-        segments: list[CleanSegment],
+        segments: list[RawCleanSegment],
         glossary: Optional[Glossary] = None,
         style_rules: Optional[list[str]] = None,
-    ) -> list[CleanSegment]:
+    ) -> list[RawCleanSegment]:
         if not segments:
             return segments
 

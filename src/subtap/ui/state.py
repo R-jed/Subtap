@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Callable, Optional
+
+logger = logging.getLogger(__name__)
 
 # Chinese stage name mapping
 STAGE_CN: dict[str, str] = {
@@ -11,10 +14,12 @@ STAGE_CN: dict[str, str] = {
     "chunk": "音频切段",
     "asr": "语音识别",
     "clean": "文本清洗",
-    "hotword": "热词替换",
     "segment": "智能断句",
     "script_match": "文稿匹配",
     "align": "时间轴对齐",
+    "hotword": "热词替换",
+    "translate": "字幕翻译",
+    "learn": "热词学习",
     "export": "字幕导出",
 }
 
@@ -28,6 +33,8 @@ STAGE_ORDER = [
     "script_match",
     "align",
     "hotword",
+    "translate",
+    "learn",
     "export",
 ]
 
@@ -80,8 +87,8 @@ class PipelineState:
         for listener in self._listeners:
             try:
                 listener(self)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Pipeline state listener callback failed: %s", e)
 
     def on_change(self, callback: Callable[["PipelineState"], None]) -> None:
         """Register a state change listener."""

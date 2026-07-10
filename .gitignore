@@ -63,4 +63,5 @@ TUI设计.md
 # AI 工具本地配置
 .agents/
 .codex/
-macos/.build/
+macos/
+lazygit/

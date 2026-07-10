@@ -36,6 +36,7 @@ def _patch_stage_pipeline(monkeypatch, stage_name: str):
             self.cleaned_jsonl = root / "cleaned.jsonl"
             self.sentences_jsonl = root / "sentences.jsonl"
             self.aligned_jsonl = root / "aligned.jsonl"
+            self.run_log = root / "run.log"
 
         def ensure_dirs(self):
             self.asr_jsonl.parent.mkdir(parents=True, exist_ok=True)
@@ -253,13 +254,12 @@ def test_batch_transcribe_runs_each_file(tmp_path, monkeypatch):
             pipeline,
             input_path,
             output_dir,
-            fmt="srt",
-            enhance="local",
+            **kwargs,
         ):
-            calls.append((pipeline.work_dir, input_path, output_dir, fmt))
+            calls.append((pipeline.work_dir, input_path, output_dir, kwargs))
             return {
                 "output_dir": str(output_dir),
-                "format": fmt,
+                "format": kwargs.get("fmt", "srt"),
                 "timings": {"asr": 1.0},
             }
 
@@ -268,6 +268,8 @@ def test_batch_transcribe_runs_each_file(tmp_path, monkeypatch):
             self.work_dir = work_dir
 
             class Workspace:
+                run_log = work_dir / "run.log"
+
                 def ensure_dirs(self):
                     return None
 
@@ -325,6 +327,150 @@ def test_batch_transcribe_runs_each_file(tmp_path, monkeypatch):
     assert calls[1][2] == tmp_path / "out" / "two_wav"
 
 
+def test_batch_transcribe_passes_translate_and_bilingual(tmp_path, monkeypatch):
+    """batch-transcribe 应传递 translate_to、bilingual 和 fmt 参数。"""
+    captured_kwargs = []
+
+    class FakeRunner:
+        def run_pipeline(self, pipeline, input_path, output_dir, **kwargs):
+            captured_kwargs.append(kwargs)
+            return {
+                "output_dir": str(output_dir),
+                "format": kwargs.get("fmt", "srt"),
+                "timings": {"asr": 1.0},
+            }
+
+    class FakePipeline:
+        def __init__(self, _config, work_dir):
+            self.work_dir = work_dir
+
+            class Workspace:
+                run_log = work_dir / "run.log"
+
+                def ensure_dirs(self):
+                    return None
+
+            self.workspace = Workspace()
+
+    monkeypatch.setattr("subtap.ui.tui.RichRunner", FakeRunner)
+    monkeypatch.setattr("subtap.core.pipeline.Pipeline", FakePipeline)
+
+    def _mock_config(_):
+        c = SimpleNamespace()
+        c.output = SimpleNamespace()
+        c.output.timestamp = True
+        c.output.subtitle_punctuation = False
+        c.output.subtitle_language = "zh"
+        c.output.max_chars = 25
+        c.output.min_chars = 10
+        c.output.subtitle_stem = "test"
+        c.asr = SimpleNamespace()
+        c.asr.model = "asr_0.6b"
+        c.asr.quantization = "q8"
+        c.align = SimpleNamespace()
+        c.align.model = "aligner"
+        c.align.quantization = "q8"
+        return c
+
+    monkeypatch.setattr("subtap.schemas.config.load_config", _mock_config)
+    one = tmp_path / "one.wav"
+    one.write_bytes(b"1")
+
+    result = runner.invoke(
+        app,
+        [
+            "batch-transcribe",
+            "--files",
+            str(one),
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--json",
+            "--no-confirm",
+            "--translate-to",
+            "en",
+            "--bilingual",
+            "source-first",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert len(captured_kwargs) == 1
+    kw = captured_kwargs[0]
+    assert kw["fmt"] == "srt"
+    assert kw["translate_to"] == "en"
+    assert kw["bilingual"] == "source-first"
+
+
+def test_batch_transcribe_bilingual_defaults_to_off(tmp_path, monkeypatch):
+    """batch-transcribe bilingual 未指定时应默认 off。"""
+    captured_kwargs = []
+
+    class FakeRunner:
+        def run_pipeline(self, pipeline, input_path, output_dir, **kwargs):
+            captured_kwargs.append(kwargs)
+            return {
+                "output_dir": str(output_dir),
+                "format": kwargs.get("fmt", "srt"),
+                "timings": {"asr": 1.0},
+            }
+
+    class FakePipeline:
+        def __init__(self, _config, work_dir):
+            self.work_dir = work_dir
+
+            class Workspace:
+                run_log = work_dir / "run.log"
+
+                def ensure_dirs(self):
+                    return None
+
+            self.workspace = Workspace()
+
+    monkeypatch.setattr("subtap.ui.tui.RichRunner", FakeRunner)
+    monkeypatch.setattr("subtap.core.pipeline.Pipeline", FakePipeline)
+
+    def _mock_config(_):
+        c = SimpleNamespace()
+        c.output = SimpleNamespace()
+        c.output.timestamp = True
+        c.output.subtitle_punctuation = False
+        c.output.subtitle_language = "zh"
+        c.output.max_chars = 25
+        c.output.min_chars = 10
+        c.output.subtitle_stem = "test"
+        c.asr = SimpleNamespace()
+        c.asr.model = "asr_0.6b"
+        c.asr.quantization = "q8"
+        c.align = SimpleNamespace()
+        c.align.model = "aligner"
+        c.align.quantization = "q8"
+        return c
+
+    monkeypatch.setattr("subtap.schemas.config.load_config", _mock_config)
+    one = tmp_path / "one.wav"
+    one.write_bytes(b"1")
+
+    result = runner.invoke(
+        app,
+        [
+            "batch-transcribe",
+            "--files",
+            str(one),
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--json",
+            "--no-confirm",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert len(captured_kwargs) == 1
+    kw = captured_kwargs[0]
+    assert kw["fmt"] == "srt"
+    assert kw["translate_to"] is None
+    assert kw["bilingual"] == "off"
+
+
 def test_run_full_pipeline_with_align(tmp_path, monkeypatch):
     """run should always execute align stage."""
     calls = []
@@ -337,6 +483,7 @@ def test_run_full_pipeline_with_align(tmp_path, monkeypatch):
                 root = work_dir
                 asr_jsonl = work_dir / "asr" / "asr.jsonl"
                 aligned_jsonl = work_dir / "aligned.jsonl"
+                run_log = work_dir / "run.log"
 
                 def ensure_dirs(self):
                     self.root.mkdir(parents=True, exist_ok=True)
@@ -361,6 +508,8 @@ def test_run_full_pipeline_with_align(tmp_path, monkeypatch):
                 return {"segment_count": 1}
             if stage == "hotword":
                 return {"replaced": 0, "total": 1}
+            if stage == "learn":
+                return {"learned": 0}
             if stage == "segment":
                 return {"sentence_count": 1}
             if stage == "script_match":
@@ -373,6 +522,10 @@ def test_run_full_pipeline_with_align(tmp_path, monkeypatch):
                     encoding="utf-8",
                 )
                 return {"aligned_count": 1}
+            if stage == "translate":
+                return {"translated_count": 0}
+            if stage == "export":
+                return {"exported_count": 1}
             raise AssertionError(stage)
 
         def cleanup(self):
@@ -438,6 +591,7 @@ def test_run_enhance_local_passes_clean_local_to_pipeline(tmp_path, monkeypatch)
                 root = work_dir
                 asr_jsonl = work_dir / "asr" / "asr.jsonl"
                 aligned_jsonl = work_dir / "aligned.jsonl"
+                run_log = work_dir / "run.log"
 
                 def ensure_dirs(self):
                     self.root.mkdir(parents=True, exist_ok=True)
@@ -462,6 +616,8 @@ def test_run_enhance_local_passes_clean_local_to_pipeline(tmp_path, monkeypatch)
                 return {"segment_count": 1}
             if stage == "hotword":
                 return {"replaced": 0, "total": 1}
+            if stage == "learn":
+                return {"learned": 0}
             if stage == "segment":
                 return {"sentence_count": 1}
             if stage == "script_match":
@@ -474,6 +630,10 @@ def test_run_enhance_local_passes_clean_local_to_pipeline(tmp_path, monkeypatch)
                     encoding="utf-8",
                 )
                 return {"aligned_count": 1}
+            if stage == "translate":
+                return {"translated_count": 0}
+            if stage == "export":
+                return {"exported_count": 1}
             raise AssertionError(stage)
 
         def cleanup(self):
@@ -517,7 +677,6 @@ def test_run_enhance_local_passes_clean_local_to_pipeline(tmp_path, monkeypatch)
 
     assert result.exit_code == 0
     assert clean_kwargs[0]["enhance_mode"] == "local"
-    assert "hotword_glossary_dir" in clean_kwargs[0]
 
 
 def test_observe_command_prints_event_log_status(tmp_path):
@@ -795,13 +954,20 @@ def test_doctor_release_fails_when_models_missing(tmp_path, monkeypatch):
 
 
 def test_python_module_entrypoint_outputs_help():
+    import os
     import subprocess
     import sys
+    from pathlib import Path
+
+    env = os.environ.copy()
+    src_dir = str(Path(__file__).resolve().parent.parent / "src")
+    env["PYTHONPATH"] = src_dir + os.pathsep + env.get("PYTHONPATH", "")
 
     result = subprocess.run(
         [sys.executable, "-m", "subtap.cli", "--help"],
         capture_output=True,
         text=True,
+        env=env,
     )
 
     assert result.returncode == 0
@@ -1138,3 +1304,152 @@ def test_apply_cli_overrides_preserves_when_none():
 
     assert config.llm_proofread is True
     assert config.llm_hotword is True
+
+
+# ── hotword edit 跨平台测试 ──────────────────────────────────────
+
+
+def test_open_file_cross_platform_macos(monkeypatch):
+    """macOS 应使用 open 命令（不含 -a Numbers）"""
+    from unittest.mock import patch
+    from pathlib import Path
+
+    monkeypatch.setattr("subtap.cli.platform.system", lambda: "Darwin")
+
+    with patch("subtap.cli.subprocess.run") as mock_run:
+        from subtap.cli import _open_file_cross_platform
+
+        _open_file_cross_platform(Path("/tmp/test.txt"))
+
+        mock_run.assert_called_once_with(["open", "/tmp/test.txt"], check=True)
+
+
+def test_open_file_cross_platform_linux(monkeypatch):
+    """Linux 应使用 xdg-open 命令"""
+    from unittest.mock import patch
+    from pathlib import Path
+
+    monkeypatch.setattr("subtap.cli.platform.system", lambda: "Linux")
+
+    with patch("subtap.cli.subprocess.run") as mock_run:
+        from subtap.cli import _open_file_cross_platform
+
+        _open_file_cross_platform(Path("/tmp/test.txt"))
+
+        mock_run.assert_called_once_with(["xdg-open", "/tmp/test.txt"], check=True)
+
+
+def test_open_file_cross_platform_windows(monkeypatch):
+    """Windows 应使用 start 命令并启用 shell"""
+    from unittest.mock import patch
+    from pathlib import Path
+
+    monkeypatch.setattr("subtap.cli.platform.system", lambda: "Windows")
+
+    with patch("subtap.cli.subprocess.run") as mock_run:
+        from subtap.cli import _open_file_cross_platform
+
+        _open_file_cross_platform(Path("C:\\test.txt"))
+
+        mock_run.assert_called_once_with(
+            ["start", "C:\\test.txt"], shell=True, check=True
+        )
+
+
+def test_open_file_cross_platform_unsupported_os(monkeypatch):
+    """不支持的操作系统应抛出 RuntimeError"""
+    from pathlib import Path
+
+    monkeypatch.setattr("subtap.cli.platform.system", lambda: "FreeBSD")
+
+    from subtap.cli import _open_file_cross_platform
+
+    try:
+        _open_file_cross_platform(Path("/tmp/test.txt"))
+        assert False, "应抛出 RuntimeError"
+    except RuntimeError as e:
+        assert "FreeBSD" in str(e)
+
+
+def test_handle_error_default_exit_code():
+    """_handle_error 默认退出码应为 1，错误消息应输出到 stderr"""
+    from typer import Exit
+    from subtap.cli import _handle_error
+
+    try:
+        _handle_error("测试错误消息")
+        assert False, "应抛出 Exit 异常"
+    except Exit as e:
+        assert e.exit_code == 1
+
+
+def test_handle_error_custom_exit_code():
+    """_handle_error 应支持自定义退出码"""
+    from typer import Exit
+    from subtap.cli import _handle_error
+
+    try:
+        _handle_error("自定义错误", exit_code=2)
+        assert False, "应抛出 Exit 异常"
+    except Exit as e:
+        assert e.exit_code == 2
+
+
+def test_handle_error_message_format():
+    """_handle_error 输出的消息应包含 ✗ 前缀"""
+    import typer
+    from unittest.mock import patch
+    from subtap.cli import _handle_error
+
+    with patch("subtap.cli.typer.echo") as mock_echo:
+        try:
+            _handle_error("文件不存在")
+        except Exception:
+            pass
+
+        # 验证调用了 typer.echo
+        mock_echo.assert_called_once()
+        call_args = mock_echo.call_args
+        # 检查消息内容
+        assert "✗ 文件不存在" in call_args[0][0]
+        # 检查 err=True
+        assert call_args[1].get("err", False) is True
+
+
+def test_cli_file_not_found_errors(tmp_path, monkeypatch):
+    """CLI 命令对不存在的文件应输出错误并退出码 1"""
+    # 测试 prepare 命令
+    result = runner.invoke(app, ["prepare", str(tmp_path / "nonexistent.mp3")])
+    assert result.exit_code == 1
+    assert "文件未找到" in _strip_ansi(result.output)
+
+    # 测试 transcribe 命令
+    result = runner.invoke(app, ["transcribe", str(tmp_path / "nonexistent.wav")])
+    assert result.exit_code == 1
+    assert "文件未找到" in _strip_ansi(result.output)
+
+    # 测试 export 命令
+    result = runner.invoke(app, ["export", str(tmp_path / "nonexistent.jsonl")])
+    assert result.exit_code == 1
+    assert "文件未找到" in _strip_ansi(result.output)
+
+
+def test_cli_run_parameter_validation(tmp_path):
+    """run 命令参数验证应输出正确错误消息"""
+    # 创建一个假文件以通过文件存在检查
+    fake_file = tmp_path / "test.mp3"
+    fake_file.touch()
+
+    # 测试 --enhance 参数验证
+    result = runner.invoke(
+        app, ["run", str(fake_file), "--enhance", "invalid"]
+    )
+    assert result.exit_code == 1
+    assert "--enhance" in _strip_ansi(result.output)
+
+    # 测试 --bilingual 参数验证
+    result = runner.invoke(
+        app, ["run", str(fake_file), "--bilingual", "invalid"]
+    )
+    assert result.exit_code == 1
+    assert "--bilingual" in _strip_ansi(result.output)

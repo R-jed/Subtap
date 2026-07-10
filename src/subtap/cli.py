@@ -150,7 +150,7 @@ def hotword_delete(
 def hotword_edit(
     lang: str = typer.Option("zh", "--lang", "-l", help="语言"),
 ) -> None:
-    """编辑热词（用 Numbers 打开）"""
+    """编辑热词（用默认应用打开）"""
     import subprocess
 
     glossary_dir = Path.home() / ".subtap" / "glossary"
@@ -161,8 +161,34 @@ def hotword_edit(
 
         save_glossary(HotwordGlossary(lang=lang), path)
 
-    subprocess.run(["open", "-a", "Numbers", str(path)])
+    _open_file_cross_platform(path)
     typer.echo(f"✓ 已打开 {path}")
+
+
+def _open_file_cross_platform(path: Path) -> None:
+    """跨平台打开文件，使用系统默认应用。"""
+    import subprocess
+
+    system = platform.system()
+    if system == "Darwin":
+        subprocess.run(["open", str(path)], check=True)
+    elif system == "Linux":
+        subprocess.run(["xdg-open", str(path)], check=True)
+    elif system == "Windows":
+        subprocess.run(["start", str(path)], shell=True, check=True)
+    else:
+        raise RuntimeError(f"不支持的操作系统：{system}，请手动打开：{path}")
+
+
+def _handle_error(message: str, exit_code: int = 1) -> None:
+    """统一错误处理：输出错误信息并退出。
+
+    Args:
+        message: 错误消息
+        exit_code: 退出码，默认为 1
+    """
+    typer.echo(f"✗ {message}", err=True)
+    raise typer.Exit(exit_code)
 
 
 script_app = typer.Typer(help="文稿匹配")
@@ -268,8 +294,7 @@ def learn_import(
     from subtap.learning.profile_store import ProfileStore
 
     if not corrected_srt.exists():
-        typer.echo(f"✗ 文件不存在：{corrected_srt}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"文件不存在：{corrected_srt}")
 
     texts = import_corrected_srt(corrected_srt)
     pairs = [{"from": "", "to": text} for text in texts]
@@ -806,9 +831,6 @@ def run(
         "--timestamp/--no-timestamp",
         help="输出目录是否带时间戳（默认读取配置文件）",
     ),
-    # TODO: 文稿匹配功能暂搁置，待LLM方案成熟后重新实现
-    # 当前实现使用rapidfuzz相似度匹配，对于品牌名、数字格式等差异较大的文本纠错能力有限
-    # 未来计划使用LLM语义理解来判断ASR句子与文稿句子的对应关系
     script: str | None = typer.Option(None, "--script", help="文稿文件路径（可选）"),
     script_mode: str = typer.Option(
         "follow_script",
@@ -863,8 +885,7 @@ def run(
     from subtap.core.pipeline import Pipeline
 
     if not input_path.exists():
-        typer.echo(f"✗ 错误：文件未找到 {input_path}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"错误：文件未找到 {input_path}")
 
     # ── 加载配置并应用回退 ───────────────────────────────────
     config: SubtapConfig = load_config(Path.home() / ".subtap" / "config.yaml")
@@ -880,27 +901,21 @@ def run(
 
     # ── 参数验证（在 config 回退之后） ───────────────────────
     if enhance not in ("local", "api"):
-        typer.echo(f"✗ 错误：--enhance 必须是 local/api，收到：{enhance}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"错误：--enhance 必须是 local/api，收到：{enhance}")
 
     if local_only and enhance == "api":
-        typer.echo("✗ 错误：--local-only 模式下不能使用 --enhance api", err=True)
-        raise typer.Exit(1)
+        _handle_error("错误：--local-only 模式下不能使用 --enhance api")
 
     if local_only and translate_to:
-        typer.echo("✗ 错误：--local-only 模式下不能使用 --translate-to", err=True)
-        raise typer.Exit(1)
+        _handle_error("错误：--local-only 模式下不能使用 --translate-to")
 
     if bilingual not in ("off", "source-first", "target-first"):
-        typer.echo(
-            f"✗ 错误：--bilingual 必须是 off/source-first/target-first，收到：{bilingual}",
-            err=True,
+        _handle_error(
+            f"错误：--bilingual 必须是 off/source-first/target-first，收到：{bilingual}"
         )
-        raise typer.Exit(1)
 
     if bilingual != "off" and not translate_to:
-        typer.echo("✗ 错误：--bilingual 需要同时使用 --translate-to", err=True)
-        raise typer.Exit(1)
+        _handle_error("错误：--bilingual 需要同时使用 --translate-to")
 
     if enhance == "api":
         typer.echo("⚠ 增强模式为 api，字幕文本将发送到外部 LLM API（音频不会发送）")
@@ -956,6 +971,49 @@ def run(
     pipeline = Pipeline(config, work_dir=work_dir)
     pipeline.workspace.ensure_dirs()
 
+    # ── Run Log ────────────────────────────────────────────
+    from subtap.metrics.run_log import RunLog
+
+    from datetime import datetime
+
+    run_log = RunLog(work_dir=work_dir)
+    run_log._start_time = datetime.now().astimezone()
+    run_log.system()
+    run_log.input(
+        path=input_path,
+        size_bytes=input_path.stat().st_size if input_path.exists() else 0,
+        format=input_path.suffix.lstrip("."),
+    )
+    asr_cfg = getattr(config, "asr", None)
+    align_cfg = getattr(config, "align", None)
+    run_log.config_snapshot({
+        "mode": mode,
+        "enhance": enhance,
+        "asr_model": getattr(asr_cfg, "model", "asr_0.6b"),
+        "aligner_model": getattr(align_cfg, "model", "aligner"),
+        "quantization": getattr(asr_cfg, "quantization", "q8"),
+        "translate_to": translate_to or "",
+        "bilingual": bilingual,
+        "script": script or "",
+        "llm_proofread": getattr(config, "llm_proofread", None),
+        "llm_hotword": getattr(config, "llm_hotword", False),
+    })
+
+    # Record hotword glossary info
+    _glossary_dir = Path.home() / ".subtap" / "glossary"
+    _hw_path = _glossary_dir / f"hotwords_zh.txt"
+    if not _hw_path.exists():
+        _hw_path = _glossary_dir / f"hotwords_zh.tsv"
+    if _hw_path.exists():
+        try:
+            from subtap.glossary.hotword import load_glossary
+            _hw_g = load_glossary(_hw_path, "zh")
+            run_log.hotwords(path=_hw_path, count=len(_hw_g.hotwords), loaded=True)
+        except Exception:
+            run_log.hotwords(path=_hw_path, loaded=False)
+    else:
+        run_log.hotwords(loaded=False)
+
     # ── Pre-flight checks ──────────────────────────────────
     # Cleanroom check
     if not no_cleanroom:
@@ -991,8 +1049,13 @@ def run(
     from subtap.metrics.profiler import PipelineProfiler
 
     # 创建 Event Bus 和 Profiler
-    event_log_path = work_dir / "run.log.jsonl"
-    event_log_path.unlink(missing_ok=True)
+    # 支持 SUBTAP_EVENT_LOG 环境变量指定日志路径（TUI 进度渲染用）
+    _env_log = os.environ.get("SUBTAP_EVENT_LOG")
+    event_log_path = Path(_env_log) if _env_log else work_dir / "run.log.jsonl"
+    # truncate 而非 unlink，避免 inode 变化导致渲染线程丢失事件
+    if event_log_path.exists():
+        with event_log_path.open("w"):
+            pass
     event_bus = EventBus(log_path=event_log_path)
     pipeline.event_bus = event_bus
     profiler = PipelineProfiler(event_bus)
@@ -1005,6 +1068,9 @@ def run(
     runner = RichRunner()
 
     timings = {}
+    import time
+
+    _run_start = time.monotonic()
     try:
         if json_output:
             with redirect_stdout(StringIO()):
@@ -1028,11 +1094,27 @@ def run(
                 bilingual=bilingual,
             )
         timings = result.get("timings", {})
+        _run_elapsed = time.monotonic() - _run_start
+        for _stage_name, _stage_dur in timings.items():
+            run_log.stage(_stage_name, "success", duration_sec=_stage_dur)
+        _output_stem = input_path.stem
+        run_log.finalize(
+            True,
+            total_duration_sec=_run_elapsed,
+            output_path=str(output_dir / f"{_output_stem}.{fmt}"),
+        )
     except SystemExit:
         raise
     except Exception as e:
-        typer.echo(f"\n✗ 处理失败：{e}", err=True)
-        raise typer.Exit(1)
+        _run_elapsed = time.monotonic() - _run_start
+        import traceback
+
+        run_log.finalize(
+            False,
+            total_duration_sec=_run_elapsed,
+            error=traceback.format_exc(),
+        )
+        _handle_error(f"处理失败：{e}")
 
     # Pipeline 执行成功后清理 L1 临时文件
     pipeline.cleanup()
@@ -1101,8 +1183,7 @@ def observe(
 ) -> None:
     """观察已运行或正在运行的任务事件日志。"""
     if not log_path.exists():
-        typer.echo(f"✗ 日志文件不存在：{log_path}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"日志文件不存在：{log_path}")
 
     from subtap.ui.observer import build_command_deck_text, summarize_event_log
 
@@ -1217,12 +1298,10 @@ def batch_transcribe(
 
     # ── 参数冲突检查 ──────────────────────────────────────────
     if resume and retry_failed:
-        typer.echo("✗ 错误：--resume 和 --retry-failed 不能同时使用", err=True)
-        raise typer.Exit(1)
+        _handle_error("错误：--resume 和 --retry-failed 不能同时使用")
 
     if (resume or retry_failed) and (files or args or directory):
-        typer.echo("✗ 错误：--resume/--retry-failed 不能与输入文件同时使用", err=True)
-        raise typer.Exit(1)
+        _handle_error("错误：--resume/--retry-failed 不能与输入文件同时使用")
 
     # ── 配置向导 ──────────────────────────────────────────────
     from subtap.batch_config import load_batch_config
@@ -1258,8 +1337,7 @@ def batch_transcribe(
     if subtitle_language is None:
         subtitle_language = batch_config.subtitle_language
     if bilingual != "off" and not translate_to:
-        typer.echo("✗ 错误：--bilingual 需要同时使用 --translate-to", err=True)
-        raise typer.Exit(1)
+        _handle_error("错误：--bilingual 需要同时使用 --translate-to")
 
     # ── 收集文件（支持多种方式）─────────────────────────────────
     if not resume and not retry_failed:
@@ -1270,8 +1348,7 @@ def batch_transcribe(
             collected.extend(parse_files(files))
 
         if not collected:
-            typer.echo("✗ 未找到媒体文件", err=True)
-            raise typer.Exit(1)
+            _handle_error("未找到媒体文件")
 
         # 验证文件（仅用于确认提示，不预过滤——让处理循环记录失败）
         valid, invalid = validate_files(collected)
@@ -1312,8 +1389,7 @@ def batch_transcribe(
         manifest_path = resume or retry_failed
         assert manifest_path is not None
         if not manifest_path.exists():
-            typer.echo(f"✗ manifest 文件不存在：{manifest_path}", err=True)
-            raise typer.Exit(1)
+            _handle_error(f"manifest 文件不存在：{manifest_path}")
 
         manifest = load_manifest(manifest_path)
         output_dir = Path(manifest["output_dir"])
@@ -1472,6 +1548,9 @@ def batch_transcribe(
                         pipeline,
                         path,
                         item_output_dir,
+                        fmt="srt",
+                        translate_to=translate_to,
+                        bilingual=bilingual or "off",
                         enhance=enhance,
                     )
             else:
@@ -1479,6 +1558,9 @@ def batch_transcribe(
                     pipeline,
                     path,
                     item_output_dir,
+                    fmt="srt",
+                    translate_to=translate_to,
+                    bilingual=bilingual or "off",
                     enhance=enhance,
                 )
 
@@ -1579,8 +1661,7 @@ def compose_subtitle(
 
     result = compose_one(video, subtitle, output, overwrite=overwrite)
     if result["status"] != "succeeded":
-        typer.echo(f"✗ 合成失败：{result['error']}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"合成失败：{result['error']}")
     typer.echo(f"✓ 合成完成：{output}")
 
 
@@ -1597,8 +1678,7 @@ def batch_compose_subtitle(
     from subtap.compose import compose_batch
 
     if not items.exists():
-        typer.echo(f"✗ 批量合成清单不存在：{items}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"批量合成清单不存在：{items}")
     payload = json.loads(items.read_text(encoding="utf-8"))
     manifest = compose_batch(payload, output_dir, overwrite=overwrite)
     if json_output:
@@ -1612,9 +1692,6 @@ def batch_compose_subtitle(
 
 @script_app.command("match")
 def script_match(
-    # TODO: 文稿匹配功能暂搁置，待LLM方案成熟后重新实现
-    # 当前实现使用rapidfuzz相似度匹配，对于品牌名、数字格式等差异较大的文本纠错能力有限
-    # 未来计划使用LLM语义理解来判断ASR句子与文稿句子的对应关系
     timeline: Path = typer.Option(..., "--timeline", help="已有时间轴 JSONL"),
     script: Path = typer.Option(..., "--script", help="文稿文本文件"),
     output: Path = typer.Option(..., "--output", "-o", help="输出 JSONL"),
@@ -1628,11 +1705,9 @@ def script_match(
     from subtap.script.match import match_script_lines
 
     if not timeline.exists():
-        typer.echo(f"✗ 时间轴文件不存在：{timeline}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"时间轴文件不存在：{timeline}")
     if not script.exists():
-        typer.echo(f"✗ 文稿文件不存在：{script}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"文稿文件不存在：{script}")
 
     segments = [
         json.loads(line)
@@ -1677,8 +1752,7 @@ def script_format(
     from subtap.script.formatter import format_script
 
     if not script.exists():
-        typer.echo(f"✗ 文稿文件不存在：{script}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"文稿文件不存在：{script}")
     for line in format_script(script.read_text(encoding="utf-8")):
         typer.echo(line)
 
@@ -1693,8 +1767,7 @@ def prepare(
     from subtap.core.pipeline import Pipeline
 
     if not input_path.exists():
-        typer.echo(f"✗ 文件未找到：{input_path}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"文件未找到：{input_path}")
 
     config = load_config(Path.home() / ".subtap" / "config.yaml")
     pipeline = Pipeline(config, work_dir=output)
@@ -1723,8 +1796,7 @@ def transcribe(
     from subtap.core.pipeline import Pipeline
 
     if not audio_path.exists():
-        typer.echo(f"✗ 文件未找到：{audio_path}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"文件未找到：{audio_path}")
 
     config = load_config(Path.home() / ".subtap" / "config.yaml")
     pipeline = Pipeline(config, work_dir=work_dir)
@@ -1734,8 +1806,7 @@ def transcribe(
     try:
         result = pipeline.run_stage("asr", backend_name=backend)
     except (ImportError, NotImplementedError) as e:
-        typer.echo(f"✗ 错误：{e}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"错误：{e}")
 
     typer.echo(f"  ✓ {result['segment_count']} 条 → {result['asr_jsonl']}")
     typer.echo(typer.style("\n✓ 完成", fg=typer.colors.GREEN))
@@ -1758,8 +1829,7 @@ def clean(
     from subtap.core.pipeline import Pipeline
 
     if not asr_path.exists():
-        typer.echo(f"✗ 文件未找到：{asr_path}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"文件未找到：{asr_path}")
 
     config = load_config(Path.home() / ".subtap" / "config.yaml")
     pipeline = Pipeline(config, work_dir=work_dir)
@@ -1774,8 +1844,7 @@ def clean(
             "clean", llm_backend=llm, glossary_path=str(glossary) if glossary else None
         )
     except ValueError as e:
-        typer.echo(f"✗ 错误：{e}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"错误：{e}")
 
     cleaned_path = Path(result["cleaned_jsonl"])
     if output:
@@ -1801,8 +1870,7 @@ def segment(
     from subtap.core.pipeline import Pipeline
 
     if not cleaned_path.exists():
-        typer.echo(f"✗ 文件未找到：{cleaned_path}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"文件未找到：{cleaned_path}")
 
     config = load_config(Path.home() / ".subtap" / "config.yaml")
     pipeline = Pipeline(config, work_dir=work_dir)
@@ -1815,8 +1883,7 @@ def segment(
     try:
         result = pipeline.run_stage("segment")
     except ValueError as e:
-        typer.echo(f"✗ 错误：{e}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"错误：{e}")
 
     sentences_path = Path(result["sentences_jsonl"])
     if output:
@@ -1843,8 +1910,7 @@ def align(
     from subtap.core.pipeline import Pipeline
 
     if not sentences_path.exists():
-        typer.echo(f"✗ 文件未找到：{sentences_path}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"文件未找到：{sentences_path}")
 
     config = load_config(Path.home() / ".subtap" / "config.yaml")
     pipeline = Pipeline(config, work_dir=work_dir)
@@ -1857,8 +1923,7 @@ def align(
     try:
         result = pipeline.run_stage("align", backend_name=backend)
     except (ImportError, ValueError) as e:
-        typer.echo(f"✗ 错误：{e}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"错误：{e}")
 
     aligned_path = Path(result["aligned_jsonl"])
     if output:
@@ -1884,15 +1949,13 @@ def export(
     from subtap.core.export import run_export
 
     if not aligned_path.exists():
-        typer.echo(f"✗ 文件未找到：{aligned_path}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"文件未找到：{aligned_path}")
 
     typer.echo(f"▸ 字幕导出（{fmt.upper()}）...")
     try:
         result = run_export(aligned_path, output_dir, fmt=fmt, stem=stem)
     except ValueError as e:
-        typer.echo(f"✗ 错误：{e}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"错误：{e}")
 
     typer.echo(f"  ✓ {result['output_path']}（{result['segment_count']} 条）")
     typer.echo(typer.style("\n✓ 完成", fg=typer.colors.GREEN))
@@ -1923,8 +1986,7 @@ def resume(
         if result:
             typer.echo(f"  ✓ 总耗时：{result.get('total_time_sec', 0):.1f}s")
     except Exception as e:
-        typer.echo(f"✗ 恢复失败：{e}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"恢复失败：{e}")
 
 
 @app.command()
@@ -1946,11 +2008,9 @@ def retry(
         ctrl.retry_stage(stage_name)
         typer.echo(f"  ✓ {stage_name} 重试成功")
     except ValueError as e:
-        typer.echo(f"✗ {e}", err=True)
-        raise typer.Exit(1)
+        _handle_error(str(e))
     except Exception as e:
-        typer.echo(f"✗ 重试失败：{e}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"重试失败：{e}")
 
 
 # ── Demo 命令 ──────────────────────────────────────────────
@@ -1975,9 +2035,7 @@ def demo(
     test_files = list(samples_dir.glob("*.mp3")) + list(samples_dir.glob("*.wav"))
 
     if not test_files:
-        typer.echo("✗ 未找到内置测试音频", err=True)
-        typer.echo(f"  请将测试音频放入：{samples_dir}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"未找到内置测试音频，请将测试音频放入：{samples_dir}")
 
     input_file = test_files[0]
     typer.echo("═══ Subtap 演示 ═══")
@@ -2002,8 +2060,7 @@ def demo(
     except SystemExit:
         raise
     except Exception as e:
-        typer.echo(f"\n✗ 演示失败：{e}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"演示失败：{e}")
 
     # 显示示例 SRT 内容
     srt_path = output_dir / "final.srt"
@@ -2096,8 +2153,7 @@ def models_install(
                 )
             typer.echo(f"  ✓ {path}")
         except ValueError as e:
-            typer.echo(f"  ✗ 错误：{e}", err=True)
-            raise typer.Exit(1)
+            _handle_error(f"错误：{e}")
         except NotImplementedError as e:
             typer.echo(f"  {e}")
             typer.echo(
@@ -2168,11 +2224,9 @@ def models_remove(
         else:
             typer.echo(f"⚠ {model_name} 不存在")
     except ValueError as e:
-        typer.echo(f"✗ 错误：{e}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"错误：{e}")
     except OSError as e:
-        typer.echo(f"✗ 删除失败：{e}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"删除失败：{e}")
 
 
 @app.command("cleanup")
@@ -2201,8 +2255,7 @@ def clean_workspace(
     from subtap.engine.cleanroom import Cleanroom
 
     if not work_dir.exists():
-        typer.echo(f"✗ 工作目录不存在：{work_dir}", err=True)
-        raise typer.Exit(1)
+        _handle_error(f"工作目录不存在：{work_dir}")
 
     cleanroom = Cleanroom(work_dir)
 

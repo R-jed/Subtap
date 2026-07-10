@@ -28,7 +28,7 @@ class MockLLMBackend:
         self.replace_hotwords_called = True
         return {s["i"]: {"text": s["t"] + " [hotword]", "ops": []} for s in segments}
 
-    def translate_srt(self, srt_text, target_language):
+    def translate_srt(self, srt_text, target_language, custom_prompt=None):
         self.translate_srt_called = True
         # 非序号行、非时间码行、非空行，加上翻译前缀
         return re.sub(

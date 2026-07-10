@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import enum
+import logging
 from dataclasses import dataclass, field
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 class StageStatus(enum.Enum):
@@ -116,8 +119,8 @@ class PipelineState:
         for cb in self._listeners:
             try:
                 cb(stage, self.stages[stage])
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Pipeline state listener callback failed for stage %s: %s", stage, e)
 
     def mark_running(self, stage: str) -> None:
         s = self.stages[stage]
