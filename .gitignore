@@ -59,6 +59,8 @@ test-workspace/
 
 # 设计文档（本地笔记）
 TUI设计.md
+HANDOFF.md
+CONTEXT.md
 
 # AI 工具本地配置
 .agents/
