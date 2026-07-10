@@ -304,13 +304,12 @@ def _inject_punct(words: list[dict], text: str) -> list[dict]:
                 result.append({"word": ch, "start_sec": t, "end_sec": t})
                 prev_end = t
 
-    # Completeness check: warn if text characters were lost
+    # Completeness check: debug if text characters were lost
     reconstructed = "".join(w["word"] for w in result)
     if reconstructed != text:
-        logger.warning(
-            "_inject_punct: 文本完整性校验失败，原始 text 有 %d 字符，"
-            "reconstructed 有 %d 字符。ASR word list 可能缺少部分字符，"
-            "请检查输出是否丢字。原始='%s' 重建='%s'",
+        logger.debug(
+            "_inject_punct: 文本完整性校验差异，原始 %d 字符 vs 重建 %d 字符。"
+            "原始='%s' 重建='%s'",
             len(text),
             len(reconstructed),
             text,
