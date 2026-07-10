@@ -70,7 +70,7 @@ class MLXQwenASR:
         """Transcribe chunks sequentially using MLX STT."""
         self._load_model()
         segments: list[ASRSegment] = []
-        system_prompt = self._build_hotword_prompt(hotwords)
+        system_prompt = self._build_hotword_prompt(hotwords or [])
         if system_prompt:
             logger.info("Hotword injection enabled: %s", system_prompt)
 

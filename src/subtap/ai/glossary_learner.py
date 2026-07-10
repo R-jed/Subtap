@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from subtap.schemas.models import ASRSegment
 

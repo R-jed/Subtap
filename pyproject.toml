@@ -50,5 +50,5 @@ pythonpath = ["src", "tests"]
 asyncio_mode = "auto"
 
 [[tool.mypy.overrides]]
-module = ["mlx_audio.*", "pydub", "pydub.*", "yaml", "openpyxl.*", "docx.*", "torch", "torch.*", "torchaudio", "torchaudio.*", "silero_vad", "silero_vad.*", "textual", "textual.*", "jieba"]
+module = ["mlx_audio.*", "pydub", "pydub.*", "yaml", "openpyxl.*", "docx.*", "torch", "torch.*", "torchaudio", "torchaudio.*", "silero_vad", "silero_vad.*", "textual", "textual.*", "jieba", "questionary"]
 ignore_missing_imports = true

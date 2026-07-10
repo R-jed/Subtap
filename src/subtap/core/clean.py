@@ -13,6 +13,7 @@ from subtap.schemas.config import SubtapConfig
 from subtap.schemas.glossary import Glossary, load_glossary as load_yaml_glossary
 from subtap.schemas.models import ASRSegment, RawCleanSegment
 from subtap.core.workspace import Workspace
+from subtap.glossary.hotword import HotwordGlossary
 
 
 def load_asr_segments(asr_jsonl: Path) -> list[ASRSegment]:

@@ -826,7 +826,7 @@ class TuiApp:
         sys.stderr.write("\033[H\033[J")
         sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}正在转录{t.NC}\r\n\r\n")
         sys.stderr.write(
-            f"\033[2K{t.GRAY}文件：{view.selected_file.name}{t.NC}\r\n\r\n"
+            f"\033[2K{t.GRAY}文件：{view.selected_file.name if view.selected_file else '未知'}{t.NC}\r\n\r\n"
         )
         sys.stderr.flush()
 
