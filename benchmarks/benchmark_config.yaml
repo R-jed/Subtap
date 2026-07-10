@@ -1,0 +1,62 @@
+# benchmarks/benchmark_config.yaml
+
+# 测试数据
+data:
+  existing:
+    - path: "/Users/qunqing/Downloads/ASR-SRT测试音频/高质量中文语音.mp3"
+      name: "中文高质量"
+    - path: "/Users/qunqing/Downloads/ASR-SRT测试音频/短的演讲音频.wav"
+      name: "中文演讲"
+    - path: "/Users/qunqing/Downloads/ASR-SRT测试音频/[10]--DLC.如何从前期到后期获得好声音.mp4"
+      name: "长视频素材"
+  edge_cases:
+    - path: "data/edge_cases/no_punctuation.txt"
+      name: "无标点文本"
+    - path: "data/edge_cases/long_sentence.txt"
+      name: "超长句"
+    - path: "data/edge_cases/colloquial.txt"
+      name: "口语化文本"
+    - path: "data/edge_cases/mixed_lang.txt"
+      name: "中英混排"
+    - path: "data/edge_cases/numbers.txt"
+      name: "数字专有名词"
+
+# 要对比的方案
+implementations:
+  - id: baseline
+    name: "现有 baseline"
+    module: "implementations.baseline"
+  - id: funasr_punct
+    name: "FunASR 标点恢复"
+    module: "implementations.funasr_punct"
+    requires:
+      - "funasr"
+      - "onnxruntime"
+  - id: regroup
+    name: "stable-ts regroup"
+    module: "implementations.regroup"
+  - id: conjunctions
+    name: "WhisperX 连词兜底"
+    module: "implementations.conjunctions"
+  - id: anomaly
+    name: "faster-whisper 异常检测"
+    module: "implementations.anomaly"
+  - id: combined
+    name: "标点恢复 + 可配置管线"
+    module: "implementations.combined"
+    requires:
+      - "funasr"
+      - "onnxruntime"
+
+# 评估维度
+evaluation:
+  metrics:
+    - sentence_length_std
+    - sentence_length_min
+    - sentence_length_max
+    - sentence_count
+    - processing_time
+  human_review:
+    - lip_sync_alignment
+    - sentence_naturalness
+    - semantic_completeness
