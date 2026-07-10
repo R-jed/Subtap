@@ -558,21 +558,20 @@ def test_run_clean_both_enabled(workspace):
     assert mock_llm.replace_hotwords_called is True
 
 
-def test_run_clean_enhance_mode_local_preserves_explicit_config(workspace):
-    """enhance_mode='local' 保留显式设置的 LLM 功能，只禁用未配置的"""
+def test_run_clean_enhance_mode_local_forces_llm_off(workspace):
+    """enhance_mode='local' 强制禁用所有 LLM 功能，忽略显式 config 设置"""
     config = SubtapConfig()
     config.llm_proofread = True
     config.llm_hotword = True
 
-    mock_llm = MockLLMBackend()
+    def fail_get_backend(*_a, **_k):
+        raise AssertionError("local 模式不应创建 LLM backend")
 
-    with patch("subtap.core.clean.get_llm_backend", return_value=mock_llm):
+    with patch("subtap.core.clean.get_llm_backend", side_effect=fail_get_backend):
         result = run_clean(workspace, config, enhance_mode="local")
 
-    # 显式设置 True 的功能应保留
-    assert mock_llm.select_suspicious_segments_called is True
-    assert mock_llm.repair_segments_called is True
-    assert mock_llm.replace_hotwords_called is True
+    # local 模式强制禁用 LLM，不创建 backend
+    assert result["segment_count"] > 0
 
 
 def test_run_clean_enhance_mode_local_disables_unset(workspace):
