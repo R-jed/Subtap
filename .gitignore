@@ -62,6 +62,9 @@ TUI设计.md
 HANDOFF.md
 CONTEXT.md
 
+# Homebrew Formula（本地开发）
+Formula/
+
 # AI 工具本地配置
 .agents/
 .codex/
