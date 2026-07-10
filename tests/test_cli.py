@@ -1278,7 +1278,7 @@ def test_first_run_wizard_skips_when_env_var_not_set(monkeypatch):
 
 def test_apply_cli_overrides_sets_values():
     """_apply_cli_overrides 应设置 config 中的 llm_proofread 和 llm_hotword"""
-    from subtap.cli import _apply_cli_overrides
+    from subtap.cli.pipeline_cli import _apply_cli_overrides
     from subtap.schemas.config import SubtapConfig
 
     config = SubtapConfig()
@@ -1293,7 +1293,7 @@ def test_apply_cli_overrides_sets_values():
 
 def test_apply_cli_overrides_preserves_when_none():
     """_apply_cli_overrides 不传参时应保留 config 原值"""
-    from subtap.cli import _apply_cli_overrides
+    from subtap.cli.pipeline_cli import _apply_cli_overrides
     from subtap.schemas.config import SubtapConfig
 
     config = SubtapConfig()
@@ -1317,7 +1317,7 @@ def test_open_file_cross_platform_macos(monkeypatch):
     monkeypatch.setattr("subtap.cli.platform.system", lambda: "Darwin")
 
     with patch("subtap.cli.subprocess.run") as mock_run:
-        from subtap.cli import _open_file_cross_platform
+        from subtap.cli.hotword_cli import _open_file_cross_platform
 
         _open_file_cross_platform(Path("/tmp/test.txt"))
 
@@ -1332,7 +1332,7 @@ def test_open_file_cross_platform_linux(monkeypatch):
     monkeypatch.setattr("subtap.cli.platform.system", lambda: "Linux")
 
     with patch("subtap.cli.subprocess.run") as mock_run:
-        from subtap.cli import _open_file_cross_platform
+        from subtap.cli.hotword_cli import _open_file_cross_platform
 
         _open_file_cross_platform(Path("/tmp/test.txt"))
 
@@ -1347,7 +1347,7 @@ def test_open_file_cross_platform_windows(monkeypatch):
     monkeypatch.setattr("subtap.cli.platform.system", lambda: "Windows")
 
     with patch("subtap.cli.subprocess.run") as mock_run:
-        from subtap.cli import _open_file_cross_platform
+        from subtap.cli.hotword_cli import _open_file_cross_platform
 
         _open_file_cross_platform(Path("C:\\test.txt"))
 
@@ -1362,7 +1362,7 @@ def test_open_file_cross_platform_unsupported_os(monkeypatch):
 
     monkeypatch.setattr("subtap.cli.platform.system", lambda: "FreeBSD")
 
-    from subtap.cli import _open_file_cross_platform
+    from subtap.cli.hotword_cli import _open_file_cross_platform
 
     try:
         _open_file_cross_platform(Path("/tmp/test.txt"))
