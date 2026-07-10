@@ -81,8 +81,8 @@ class ConjunctionSegmentation(SegmentationBenchmark):
         merged: list[str] = [segments[0]]
 
         for seg in segments[1:]:
-            # 只有当前段过长时才尝试合并后续短片段
-            if len(merged[-1]) > self.max_chars:
+            # 当前段过短时合并到前一段
+            if len(merged[-1]) < self.max_chars // 2:
                 merged[-1] += seg
             else:
                 merged.append(seg)

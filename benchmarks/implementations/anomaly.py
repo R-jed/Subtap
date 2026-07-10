@@ -7,7 +7,11 @@ _SENT_END_RE = re.compile(r"[。！？.!?]+")
 
 
 class AnomalySegmentation(SegmentationBenchmark):
-    """faster-whisper 异常检测"""
+    """faster-whisper 异常检测
+
+    NOTE: 这是 placeholder / 模拟实现。word_anomaly_score 方法存在但未被
+    segment() 调用；当前 segment() 仅按标点断句，不具备真实的异常检测能力。
+    """
 
     def __init__(self, anomaly_threshold: float = 3.0):
         self.anomaly_threshold = anomaly_threshold

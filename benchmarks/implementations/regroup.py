@@ -36,14 +36,14 @@ class RegroupSegmentation(SegmentationBenchmark):
         # Tier 2: 逗号拆分（仅超长段）
         expanded: list[_Seg] = []
         for seg in parts:
-            text = seg.text.strip()
-            if not text:
+            segment_text = seg.text.strip()
+            if not segment_text:
                 continue
-            if len(text) > self.max_chars:
-                for s in self._split_at_comma(text):
+            if len(segment_text) > self.max_chars:
+                for s in self._split_at_comma(segment_text):
                     expanded.append(_Seg(s))
             else:
-                expanded.append(_Seg(text, boundary=seg.boundary))
+                expanded.append(_Seg(segment_text, boundary=seg.boundary))
 
         # Tier 3: 长度硬切
         result: list[_Seg] = []
