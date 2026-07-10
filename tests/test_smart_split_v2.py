@@ -30,7 +30,9 @@ class TestSmartSplitV2Basic:
         from subtap.core.export import _smart_split_v2
 
         words = [_w("这是第一句。", 0.0, 1.0), _w("这是第二句。", 1.0, 2.0)]
-        result = _smart_split_v2(words, "这是第一句。这是第二句。", max_chars=25, min_chars=5)
+        result = _smart_split_v2(
+            words, "这是第一句。这是第二句。", max_chars=25, min_chars=5
+        )
         texts = [r["text"] for r in result]
         assert len(texts) >= 2
         assert any("第一句" in t for t in texts)
@@ -40,8 +42,13 @@ class TestSmartSplitV2Basic:
         """Should split at comma (，) when line is long enough."""
         from subtap.core.export import _smart_split_v2
 
-        words = [_w("很长的第一部分文本，", 0.0, 1.0), _w("以及第二部分文本。", 1.0, 2.0)]
-        result = _smart_split_v2(words, "很长的第一部分文本，以及第二部分文本。", max_chars=20, min_chars=5)
+        words = [
+            _w("很长的第一部分文本，", 0.0, 1.0),
+            _w("以及第二部分文本。", 1.0, 2.0),
+        ]
+        result = _smart_split_v2(
+            words, "很长的第一部分文本，以及第二部分文本。", max_chars=20, min_chars=5
+        )
         assert len(result) >= 2
 
     def test_no_split_when_under_max_chars(self):
@@ -150,7 +157,9 @@ class TestTimePreservation:
         from subtap.core.export import _smart_split_v2
 
         words = [_w("第一部分文本，", 0.0, 1.0), _w("第二部分文本。", 1.0, 2.0)]
-        result = _smart_split_v2(words, "第一部分文本，第二部分文本。", max_chars=10, min_chars=3)
+        result = _smart_split_v2(
+            words, "第一部分文本，第二部分文本。", max_chars=10, min_chars=3
+        )
         for i in range(1, len(result)):
             assert result[i]["start_sec"] >= result[i - 1]["end_sec"]
 
@@ -197,7 +206,12 @@ class TestCJKBoundarySplitting:
         """Long CJK text without punctuation should be split at character boundaries."""
         from subtap.core.export import _smart_split_v2
 
-        words = [_w(c, i * 0.1, (i + 1) * 0.1) for i, c in enumerate("这是一个很长的中文句子没有任何标点符号需要在字符边界处断行")]
+        words = [
+            _w(c, i * 0.1, (i + 1) * 0.1)
+            for i, c in enumerate(
+                "这是一个很长的中文句子没有任何标点符号需要在字符边界处断行"
+            )
+        ]
         text = "这是一个很长的中文句子没有任何标点符号需要在字符边界处断行"
         result = _smart_split_v2(words, text, max_chars=15, min_chars=5)
         # Should produce multiple lines
@@ -223,7 +237,11 @@ class TestRealMaterialIntegration:
         if not chinese_aligned.exists():
             pytest.skip("Test material not available")
 
-        from subtap.core.export import _smart_split_v2, _inject_punct, _filter_words_to_text
+        from subtap.core.export import (
+            _smart_split_v2,
+            _inject_punct,
+            _filter_words_to_text,
+        )
 
         with open(chinese_aligned) as f:
             segments = [json.loads(l) for l in f if l.strip()]
@@ -237,21 +255,28 @@ class TestRealMaterialIntegration:
                 _filter_words_to_text(words, word_filter_text), seg["text"]
             )
             result = _smart_split_v2(
-                words_with_punct, word_filter_text,
-                max_chars=25, min_chars=10,
-                start_sec=seg["start_sec"], end_sec=seg["end_sec"],
+                words_with_punct,
+                word_filter_text,
+                max_chars=25,
+                min_chars=10,
+                start_sec=seg["start_sec"],
+                end_sec=seg["end_sec"],
             )
             for r in result:
-                assert len(r["text"]) >= 3, (
-                    f"Fragment too short in sentence {seg['sentence_id']}: '{r['text']}'"
-                )
+                assert (
+                    len(r["text"]) >= 3
+                ), f"Fragment too short in sentence {seg['sentence_id']}: '{r['text']}'"
 
     def test_english_words_have_spaces_in_srt(self, english_aligned):
         """English SRT lines should not have words merged without spaces."""
         if not english_aligned.exists():
             pytest.skip("Test material not available")
 
-        from subtap.core.export import _smart_split_v2, _inject_punct, _filter_words_to_text
+        from subtap.core.export import (
+            _smart_split_v2,
+            _inject_punct,
+            _filter_words_to_text,
+        )
 
         with open(english_aligned) as f:
             segments = [json.loads(l) for l in f if l.strip()]
@@ -265,17 +290,21 @@ class TestRealMaterialIntegration:
                 _filter_words_to_text(words, word_filter_text), seg["text"]
             )
             result = _smart_split_v2(
-                words_with_punct, word_filter_text,
-                max_chars=25, min_chars=10,
-                start_sec=seg["start_sec"], end_sec=seg["end_sec"],
+                words_with_punct,
+                word_filter_text,
+                max_chars=25,
+                min_chars=10,
+                start_sec=seg["start_sec"],
+                end_sec=seg["end_sec"],
             )
             for r in result:
                 text = r["text"]
                 # Check: no two Latin words merged without space
                 # e.g., "thegame" should be "the game"
                 import re
+
                 # Find sequences of lowercase letters that look like merged words
-                merged = re.findall(r'[a-z]{3,}[A-Z][a-z]+', text)
-                assert not merged, (
-                    f"Merged English words in sentence {seg['sentence_id']}: {merged}"
-                )
+                merged = re.findall(r"[a-z]{3,}[A-Z][a-z]+", text)
+                assert (
+                    not merged
+                ), f"Merged English words in sentence {seg['sentence_id']}: {merged}"

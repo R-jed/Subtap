@@ -2,6 +2,7 @@
 
 移植自 Mole 的 lib/core/base.sh 和 lib/core/ui.sh。
 """
+
 import os
 import unicodedata
 

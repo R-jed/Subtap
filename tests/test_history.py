@@ -39,12 +39,16 @@ class TestHistoryScanner:
         for ts in ["2026-07-04_10-00-00", "2026-07-06_14-00-00", "2026-07-05_12-00-00"]:
             d = tmp_path / ts
             d.mkdir()
-            (d / "meta.json").write_text(json.dumps({
-                "input_path": f"/test/{ts}.mp3",
-                "duration_sec": 60,
-                "output_path": "/test/out.srt",
-                "status": "completed",
-            }))
+            (d / "meta.json").write_text(
+                json.dumps(
+                    {
+                        "input_path": f"/test/{ts}.mp3",
+                        "duration_sec": 60,
+                        "output_path": "/test/out.srt",
+                        "status": "completed",
+                    }
+                )
+            )
         scanner = HistoryScanner(tmp_path)
         records = scanner.scan()
         assert records[0].timestamp > records[-1].timestamp
@@ -52,12 +56,16 @@ class TestHistoryScanner:
     def test_duration_format(self, tmp_path):
         d = tmp_path / "2026-07-06_14-00-00"
         d.mkdir()
-        (d / "meta.json").write_text(json.dumps({
-            "input_path": "/test/a.mp3",
-            "duration_sec": 3725,
-            "output_path": "/test/out.srt",
-            "status": "completed",
-        }))
+        (d / "meta.json").write_text(
+            json.dumps(
+                {
+                    "input_path": "/test/a.mp3",
+                    "duration_sec": 3725,
+                    "output_path": "/test/out.srt",
+                    "status": "completed",
+                }
+            )
+        )
         scanner = HistoryScanner(tmp_path)
         records = scanner.scan()
         assert records[0].duration_str == "1:02:05"

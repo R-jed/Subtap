@@ -93,7 +93,9 @@ class OpenAICompatibleLLM:
         if isinstance(exc, (httpx.ReadTimeout, httpx.RemoteProtocolError)):
             return True
         if isinstance(exc, httpx.HTTPStatusError):
-            return exc.response.status_code in OpenAICompatibleLLM._RETRYABLE_STATUS_CODES
+            return (
+                exc.response.status_code in OpenAICompatibleLLM._RETRYABLE_STATUS_CODES
+            )
         return False
 
     def _chat(self, user_prompt: str, system_prompt: str) -> str:
@@ -119,12 +121,15 @@ class OpenAICompatibleLLM:
                 last_exc = exc
                 if not self._is_retryable(exc) or attempt == self._MAX_RETRIES:
                     raise
-                delay = self._BASE_DELAY * (2 ** attempt)
+                delay = self._BASE_DELAY * (2**attempt)
                 jitter = delay * random.uniform(0, 0.3)
                 sleep_sec = delay + jitter
                 logger.warning(
                     "LLM API 调用失败（第 %d/%d 次），%.1f 秒后重试: %s",
-                    attempt + 1, self._MAX_RETRIES, sleep_sec, exc,
+                    attempt + 1,
+                    self._MAX_RETRIES,
+                    sleep_sec,
+                    exc,
                 )
                 time.sleep(sleep_sec)
         raise last_exc  # type: ignore[misc]  # 不会走到这里，但让类型检查满意

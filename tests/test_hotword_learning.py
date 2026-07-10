@@ -15,7 +15,6 @@ from subtap.core.workspace import Workspace
 from subtap.schemas.config import RemoteAPIConfig, SubtapConfig
 from subtap.schemas.models import ASRSegment
 
-
 # ── FakeLLM with ops support ─────────────────────────────────
 
 
@@ -329,7 +328,9 @@ class TestBatchLLMCalls:
             # batch 2: segments [10,11] → return i=11
             batch_start = call_idx * 5
             call_idx += 1
-            return json.dumps({"segments": [{"i": batch_start + 1}]}, ensure_ascii=False)
+            return json.dumps(
+                {"segments": [{"i": batch_start + 1}]}, ensure_ascii=False
+            )
 
         llm._chat = mock_chat
         result = llm.select_suspicious_segments(segments)

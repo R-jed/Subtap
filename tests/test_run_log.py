@@ -23,7 +23,12 @@ class TestRunLogDataCollection:
 
     def test_input_info_rendered(self, tmp_path: Path) -> None:
         log = RunLog(work_dir=tmp_path)
-        log.input(path=Path("/tmp/test.mp3"), size_bytes=1048576, format="mp3", duration_sec=120.5)
+        log.input(
+            path=Path("/tmp/test.mp3"),
+            size_bytes=1048576,
+            format="mp3",
+            duration_sec=120.5,
+        )
         output = log.render()
         assert "输入文件" in output
         assert "test.mp3" in output
@@ -64,7 +69,9 @@ class TestRunLogDataCollection:
 
     def test_hotwords_rendered(self, tmp_path: Path) -> None:
         log = RunLog(work_dir=tmp_path)
-        log.hotwords(path=Path("~/.subtap/glossary/hotwords_zh.txt"), count=15, loaded=True)
+        log.hotwords(
+            path=Path("~/.subtap/glossary/hotwords_zh.txt"), count=15, loaded=True
+        )
         output = log.render()
         assert "热词表" in output
         assert "15" in output
@@ -118,9 +125,16 @@ class TestRunLogE2E:
     def test_full_lifecycle(self, tmp_path: Path) -> None:
         with RunLog(work_dir=tmp_path) as log:
             log.system(python="3.12.0", mlx="0.26.1")
-            log.input(path=Path("/audio/test.mp3"), size_bytes=5_000_000, format="mp3", duration_sec=300)
+            log.input(
+                path=Path("/audio/test.mp3"),
+                size_bytes=5_000_000,
+                format="mp3",
+                duration_sec=300,
+            )
             log.config_snapshot({"mode": "fast", "enhance": "local"})
-            log.hotwords(path=Path("~/.subtap/glossary/hotwords_zh.txt"), count=10, loaded=True)
+            log.hotwords(
+                path=Path("~/.subtap/glossary/hotwords_zh.txt"), count=10, loaded=True
+            )
             time.sleep(0.01)
             log.stage("vad", "success", duration_sec=0.5, details="5 chunks")
             log.stage("asr", "success", duration_sec=12.3, details="5/5 chunks")

@@ -208,10 +208,17 @@ def test_chat_retries_on_timeout_then_succeeds(monkeypatch):
         return _ok_response()
 
     class Client:
-        def __init__(self, timeout): pass
-        def __enter__(self): return self
-        def __exit__(self, *a): pass
-        def post(self, url, **kwargs): return fake_post(self, url, **kwargs)
+        def __init__(self, timeout):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            pass
+
+        def post(self, url, **kwargs):
+            return fake_post(self, url, **kwargs)
 
     monkeypatch.setattr("subtap.backends.llm.openai_compat.httpx.Client", Client)
     monkeypatch.setattr("subtap.backends.llm.openai_compat.time.sleep", lambda s: None)
@@ -227,9 +234,14 @@ def test_chat_no_retry_on_400_error(monkeypatch):
     call_count = 0
 
     class Client:
-        def __init__(self, timeout): pass
-        def __enter__(self): return self
-        def __exit__(self, *a): pass
+        def __init__(self, timeout):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            pass
 
         def post(self, url, **kwargs):
             nonlocal call_count
@@ -237,7 +249,9 @@ def test_chat_no_retry_on_400_error(monkeypatch):
             resp = MagicMock()
             resp.status_code = 400
             resp.raise_for_status.side_effect = httpx.HTTPStatusError(
-                "Bad Request", request=MagicMock(), response=resp,
+                "Bad Request",
+                request=MagicMock(),
+                response=resp,
             )
             return resp
 
@@ -254,9 +268,14 @@ def test_chat_retries_on_429_then_succeeds(monkeypatch):
     call_count = 0
 
     class Client:
-        def __init__(self, timeout): pass
-        def __enter__(self): return self
-        def __exit__(self, *a): pass
+        def __init__(self, timeout):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            pass
 
         def post(self, url, **kwargs):
             nonlocal call_count
@@ -265,7 +284,9 @@ def test_chat_retries_on_429_then_succeeds(monkeypatch):
                 resp = MagicMock()
                 resp.status_code = 429
                 resp.raise_for_status.side_effect = httpx.HTTPStatusError(
-                    "Too Many Requests", request=MagicMock(), response=resp,
+                    "Too Many Requests",
+                    request=MagicMock(),
+                    response=resp,
                 )
                 return resp
             return _ok_response()

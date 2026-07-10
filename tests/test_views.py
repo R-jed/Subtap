@@ -28,6 +28,7 @@ class TestNewTaskView:
 
     def test_build_run_command(self, tmp_path):
         import sys
+
         cfg = ConfigManager(tmp_path / "config.yaml")
         cfg.set("output.subtitle_formats", ["srt"])
         view = NewTaskView(config=cfg, home_dir=tmp_path)

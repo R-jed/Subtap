@@ -226,7 +226,9 @@ class GlossaryLearner:
             if _SENT_PUNCT.search(wrong) or _SENT_PUNCT.search(correct):
                 continue
             # Skip if length ratio is too large (>3x, likely bad diff)
-            ratio = max(len(wrong), len(correct)) / max(min(len(wrong), len(correct)), 1)
+            ratio = max(len(wrong), len(correct)) / max(
+                min(len(wrong), len(correct)), 1
+            )
             if ratio > 3:
                 continue
             new_terms[correct] = wrong

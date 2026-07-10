@@ -34,7 +34,12 @@ def test_script_match_stage_corrects_asr_with_script(tmp_path):
 
     sentences = [
         {"sentence_id": 0, "text": "达文西是画家", "start_sec": 0.0, "end_sec": 2.0},
-        {"sentence_id": 1, "text": "苹果公司发布了新产品", "start_sec": 2.0, "end_sec": 4.0},
+        {
+            "sentence_id": 1,
+            "text": "苹果公司发布了新产品",
+            "start_sec": 2.0,
+            "end_sec": 4.0,
+        },
     ]
     sentences_path = workspace_dir / "sentences.jsonl"
     sentences_path.write_text(

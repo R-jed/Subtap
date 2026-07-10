@@ -128,7 +128,16 @@ def test_hotword_stage_replaces_in_aligned(tmp_path):
 
     aligned = tmp_path / "aligned.jsonl"
     aligned.write_text(
-        json.dumps({"sentence_id": 0, "text": "New York", "start_sec": 0, "end_sec": 1, "words": []}) + "\n",
+        json.dumps(
+            {
+                "sentence_id": 0,
+                "text": "New York",
+                "start_sec": 0,
+                "end_sec": 1,
+                "words": [],
+            }
+        )
+        + "\n",
         encoding="utf-8",
     )
 

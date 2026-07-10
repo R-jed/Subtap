@@ -314,7 +314,10 @@ def _inject_punct(words: list[dict], text: str) -> list[dict]:
             "_inject_punct: 文本完整性校验失败，原始 text 有 %d 字符，"
             "reconstructed 有 %d 字符。ASR word list 可能缺少部分字符，"
             "请检查输出是否丢字。原始='%s' 重建='%s'",
-            len(text), len(reconstructed), text, reconstructed,
+            len(text),
+            len(reconstructed),
+            text,
+            reconstructed,
         )
 
     return result
@@ -661,6 +664,7 @@ def _smart_split_v2(
     # Use jieba to identify CJK word boundaries
     try:
         import jieba
+
         jieba_words = list(jieba.cut(display_text))
     except Exception:
         jieba_words = [display_text]
@@ -711,9 +715,13 @@ def _smart_split_v2(
             continue
 
         # CJK character boundary: only split at jieba word boundaries
-        if (not _has_latin(ch) and ch not in _PUNCT_CHARS and
-                not _has_latin(next_ch) and next_ch not in _PUNCT_CHARS and
-                next_ch != " "):
+        if (
+            not _has_latin(ch)
+            and ch not in _PUNCT_CHARS
+            and not _has_latin(next_ch)
+            and next_ch not in _PUNCT_CHARS
+            and next_ch != " "
+        ):
             if i in cjk_word_boundaries:
                 split_after[i] = True
 
@@ -738,7 +746,15 @@ def _smart_split_v2(
 
             # Cost function
             cost = dp[start] + _split_cost(
-                seg_text, seg_len, max_chars, min_chars, start, end, n, display_chars, display_char_map
+                seg_text,
+                seg_len,
+                max_chars,
+                min_chars,
+                start,
+                end,
+                n,
+                display_chars,
+                display_char_map,
             )
 
             if cost < dp[end]:
@@ -782,19 +798,19 @@ def _smart_split_v2(
             line_start = start_sec
             line_end = end_sec
 
-        lines.append({
-            "text": seg_text,
-            "start_sec": line_start,
-            "end_sec": line_end,
-        })
+        lines.append(
+            {
+                "text": seg_text,
+                "start_sec": line_start,
+                "end_sec": line_end,
+            }
+        )
 
     # --- Step 6: Post-merge short fragments ---
     lines = _merge_short_fragments(lines, min_chars, max_chars)
 
     return (
-        lines
-        if lines
-        else [{"text": text, "start_sec": start_sec, "end_sec": end_sec}]
+        lines if lines else [{"text": text, "start_sec": start_sec, "end_sec": end_sec}]
     )
 
 
@@ -830,7 +846,12 @@ def _split_cost(
     if end < total_len and seg_text:
         last_ch = seg_text[-1]
         next_ch = display_chars[end] if end < len(display_chars) else ""
-        if _has_latin(last_ch) and _has_latin(next_ch) and last_ch != " " and next_ch != " ":
+        if (
+            _has_latin(last_ch)
+            and _has_latin(next_ch)
+            and last_ch != " "
+            and next_ch != " "
+        ):
             cost += 20.0  # Heavy penalty for mid-word split
 
     # Penalty for splitting within the same word (CJK compound words)
@@ -887,7 +908,9 @@ def _merge_short_fragments(
                 # Try merging with previous line
                 prev = merged[-1]
                 prev_text = prev["text"]
-                prev_ends_sent = prev_text.rstrip() and prev_text.rstrip()[-1] in _SENT_END
+                prev_ends_sent = (
+                    prev_text.rstrip() and prev_text.rstrip()[-1] in _SENT_END
+                )
                 prev_len = len(prev_text.replace(" ", ""))
                 if prev_len + visible_len <= max_chars and not prev_ends_sent:
                     merged[-1] = {
@@ -1041,9 +1064,7 @@ class SRTExporter(BaseExporter):
                 if sub["text"].strip():
                     all_subs.append(sub)
 
-        merged_subs = _post_process_fragments(
-            all_subs, self.max_chars, self.min_chars
-        )
+        merged_subs = _post_process_fragments(all_subs, self.max_chars, self.min_chars)
 
         # Text processing + render SRT
         lines: list[str] = []
@@ -1155,9 +1176,7 @@ def run_export(
         Dict with output_path and format.
     """
     if not aligned_jsonl.exists():
-        raise FileNotFoundError(
-            f"aligned.jsonl 文件不存在: {aligned_jsonl}"
-        )
+        raise FileNotFoundError(f"aligned.jsonl 文件不存在: {aligned_jsonl}")
 
     exporter_cls = EXPORTERS.get(fmt)
     if exporter_cls is None:
@@ -1277,9 +1296,7 @@ def run_final_exports(
 ) -> dict:
     """Export aligned subtitles to the stable final.* output contract."""
     if not aligned_jsonl.exists():
-        raise FileNotFoundError(
-            f"aligned.jsonl 文件不存在: {aligned_jsonl}"
-        )
+        raise FileNotFoundError(f"aligned.jsonl 文件不存在: {aligned_jsonl}")
 
     segments = load_aligned(aligned_jsonl)
     if not segments:
@@ -1324,9 +1341,7 @@ def run_final_exports(
         vtt_lines = ["WEBVTT", ""]
         vtt_index = 0
         for seg in sorted(export_segments, key=lambda s: s.start_sec):
-            sub_lines = _process_segment(
-                seg, max_chars=max_chars, min_chars=min_chars
-            )
+            sub_lines = _process_segment(seg, max_chars=max_chars, min_chars=min_chars)
             for sub in sub_lines:
                 if not sub["text"].strip():
                     continue

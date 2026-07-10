@@ -17,7 +17,6 @@ import pytest
 
 from subtap.ui.tui import BaseRunner, RichRunner, TUIRunner, PlainRunner
 
-
 # ── helpers ──────────────────────────────────────────────────────────
 
 
@@ -89,9 +88,9 @@ class TestLearnStageInAllRunners:
         keys = [s["key"] for s in stages]
         learn_idx = keys.index("learn")
         translate_idx = keys.index("translate")
-        assert learn_idx < translate_idx, (
-            f"learn ({learn_idx}) should be before translate ({translate_idx})"
-        )
+        assert (
+            learn_idx < translate_idx
+        ), f"learn ({learn_idx}) should be before translate ({translate_idx})"
 
     def test_build_stages_learn_after_hotword(self):
         """learn should come after hotword."""
@@ -108,8 +107,16 @@ class TestLearnStageInAllRunners:
         stages = BaseRunner._build_stages(config, translate_to="en")
         keys = [s["key"] for s in stages]
         expected = [
-            "prepare", "chunk", "asr", "clean", "segment",
-            "align", "hotword", "learn", "translate", "export",
+            "prepare",
+            "chunk",
+            "asr",
+            "clean",
+            "segment",
+            "align",
+            "hotword",
+            "learn",
+            "translate",
+            "export",
         ]
         assert keys == expected
 
@@ -156,9 +163,9 @@ class TestExportFormatConsistency:
         BaseRunner._run_export(pipeline, tmp_path, "vtt", None, "off")
 
         call_kwargs = mock_export.call_args[1]
-        assert call_kwargs["formats"] == {"vtt"}, (
-            f"Expected formats={{'vtt'}}, got {call_kwargs['formats']}"
-        )
+        assert call_kwargs["formats"] == {
+            "vtt"
+        }, f"Expected formats={{'vtt'}}, got {call_kwargs['formats']}"
 
     @patch("subtap.core.export.run_final_exports")
     def test_rich_runner_uses_fmt(self, mock_export, tmp_path):
@@ -173,8 +180,11 @@ class TestExportFormatConsistency:
                 with patch("rich.progress.Progress.__exit__", return_value=False):
                     try:
                         runner.run_pipeline(
-                            pipeline, tmp_path / "in.wav", tmp_path,
-                            fmt="vtt", enhance="local",
+                            pipeline,
+                            tmp_path / "in.wav",
+                            tmp_path,
+                            fmt="vtt",
+                            enhance="local",
                         )
                     except Exception:
                         pass
@@ -193,8 +203,11 @@ class TestExportFormatConsistency:
         runner = PlainRunner()
         try:
             runner.run_pipeline(
-                pipeline, tmp_path / "in.wav", tmp_path,
-                fmt="ass", enhance="local",
+                pipeline,
+                tmp_path / "in.wav",
+                tmp_path,
+                fmt="ass",
+                enhance="local",
             )
         except Exception:
             pass
@@ -222,6 +235,7 @@ class TestPlainRunnerStepNumbering:
 
         original_echo = None
         import typer
+
         original_echo = typer.echo
 
         def capture_echo(msg):
@@ -230,8 +244,11 @@ class TestPlainRunnerStepNumbering:
         try:
             with patch("typer.echo", capture_echo):
                 runner.run_pipeline(
-                    pipeline, tmp_path / "in.wav", tmp_path,
-                    fmt="srt", enhance="local",
+                    pipeline,
+                    tmp_path / "in.wav",
+                    tmp_path,
+                    fmt="srt",
+                    enhance="local",
                 )
         except Exception:
             pass
@@ -242,6 +259,7 @@ class TestPlainRunnerStepNumbering:
 
         # Verify sequential numbering
         import re
+
         numbers = []
         for line in step_lines:
             m = re.match(r"▸ \[(\d+)/(\d+)\]", line)
@@ -250,9 +268,9 @@ class TestPlainRunnerStepNumbering:
 
         # Step numbers should be sequential
         for i, (num, total) in enumerate(numbers):
-            assert num == i + 1, (
-                f"Step {i}: expected {i + 1}, got {num} in {step_lines[i]}"
-            )
+            assert (
+                num == i + 1
+            ), f"Step {i}: expected {i + 1}, got {num} in {step_lines[i]}"
 
         # Total should be consistent
         totals = set(t for _, t in numbers)
@@ -269,17 +287,23 @@ class TestPlainRunnerStepNumbering:
         echo_calls = []
 
         import typer
+
         try:
             with patch("typer.echo", lambda msg: echo_calls.append(str(msg))):
                 runner.run_pipeline(
-                    pipeline, tmp_path / "in.wav", tmp_path,
-                    fmt="srt", enhance="local", translate_to="en",
+                    pipeline,
+                    tmp_path / "in.wav",
+                    tmp_path,
+                    fmt="srt",
+                    enhance="local",
+                    translate_to="en",
                 )
         except Exception:
             pass
 
         step_lines = [c for c in echo_calls if c.startswith("▸ [")]
         import re
+
         totals = set()
         for line in step_lines:
             m = re.match(r"▸ \[(\d+)/(\d+)\]", line)
@@ -306,17 +330,23 @@ class TestPlainRunnerStepNumbering:
         echo_calls = []
 
         import typer
+
         try:
             with patch("typer.echo", lambda msg: echo_calls.append(str(msg))):
                 runner.run_pipeline(
-                    pipeline, tmp_path / "in.wav", tmp_path,
-                    fmt="srt", enhance="local", translate_to=None,
+                    pipeline,
+                    tmp_path / "in.wav",
+                    tmp_path,
+                    fmt="srt",
+                    enhance="local",
+                    translate_to=None,
                 )
         except Exception:
             pass
 
         step_lines = [c for c in echo_calls if c.startswith("▸ [")]
         import re
+
         totals = set()
         for line in step_lines:
             m = re.match(r"▸ \[(\d+)/(\d+)\]", line)
@@ -326,9 +356,7 @@ class TestPlainRunnerStepNumbering:
         assert len(totals) == 1
         total = totals.pop()
         expected = len(BaseRunner._build_stages(config, None))
-        assert total == expected, (
-            f"Expected {expected} total steps, got {total}"
-        )
+        assert total == expected, f"Expected {expected} total steps, got {total}"
 
 
 # ── P1-5: shared base logic ─────────────────────────────────────────

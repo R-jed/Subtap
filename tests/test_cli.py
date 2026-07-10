@@ -1441,15 +1441,11 @@ def test_cli_run_parameter_validation(tmp_path):
     fake_file.touch()
 
     # 测试 --enhance 参数验证
-    result = runner.invoke(
-        app, ["run", str(fake_file), "--enhance", "invalid"]
-    )
+    result = runner.invoke(app, ["run", str(fake_file), "--enhance", "invalid"])
     assert result.exit_code == 1
     assert "--enhance" in _strip_ansi(result.output)
 
     # 测试 --bilingual 参数验证
-    result = runner.invoke(
-        app, ["run", str(fake_file), "--bilingual", "invalid"]
-    )
+    result = runner.invoke(app, ["run", str(fake_file), "--bilingual", "invalid"])
     assert result.exit_code == 1
     assert "--bilingual" in _strip_ansi(result.output)

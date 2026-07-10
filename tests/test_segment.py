@@ -240,7 +240,9 @@ class TestSplitSentencesZh:
 
     def test_no_punctuation_long_text(self):
         """无标点长文本：使用 jieba 词边界断句。"""
-        text = "理光GR4是一款非常不错的相机它的画质非常好而且体积小巧方便携带适合旅行使用"
+        text = (
+            "理光GR4是一款非常不错的相机它的画质非常好而且体积小巧方便携带适合旅行使用"
+        )
         result = _split_sentences(text, language="zh")
         assert len(result) >= 1
         for sent in result:
@@ -295,7 +297,9 @@ class TestSplitAtWordBoundary:
 
     def test_long_text_split(self):
         """长文本在词边界拆分。"""
-        text = "理光GR4是一款非常不错的相机它的画质非常好而且体积小巧方便携带适合旅行使用"
+        text = (
+            "理光GR4是一款非常不错的相机它的画质非常好而且体积小巧方便携带适合旅行使用"
+        )
         result = _split_at_word_boundary(text, max_chars=30)
         assert len(result) >= 2
         for part in result:

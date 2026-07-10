@@ -2,6 +2,7 @@
 
 用 ANSI 原生渲染实现交互式终端 UI。
 """
+
 import os
 import sys
 import time
@@ -97,7 +98,11 @@ class TuiApp:
             f"{t.CYAN}|___/\\_,_|_.__/\\__\\__,_| .__/{t.NC}",
             f"{t.CYAN}                       |_|   {t.NC}",
             f"{t.GRAY}          音频转录工具{t.NC}",
-            "", "", "", "", "",
+            "",
+            "",
+            "",
+            "",
+            "",
         ]
 
         menu = Menu(
@@ -201,7 +206,12 @@ class TuiApp:
             f"语言：{'中文' if lang == 'zh' else '英文' if lang == 'en' else '自动检测'}",
             f"模式：{'在线服务' if mode == 'online' else '本地运行'}",
         ]
-        menu = Menu(title="设置 · 语音识别", items=items, footer="↑↓ 导航  Enter 切换  Esc 返回", theme=self.theme)
+        menu = Menu(
+            title="设置 · 语音识别",
+            items=items,
+            footer="↑↓ 导航  Enter 切换  Esc 返回",
+            theme=self.theme,
+        )
         menu.render_full()
 
         while True:
@@ -238,9 +248,16 @@ class TuiApp:
                     self.config.set("mode", mode)
                     self.config.save()
                 items[0] = f"模型：{model}"
-                items[1] = f"语言：{'中文' if lang == 'zh' else '英文' if lang == 'en' else '自动检测'}"
+                items[1] = (
+                    f"语言：{'中文' if lang == 'zh' else '英文' if lang == 'en' else '自动检测'}"
+                )
                 items[2] = f"模式：{'在线服务' if mode == 'online' else '本地运行'}"
-                menu = Menu(title="设置 · 语音识别", items=items, footer="↑↓ 导航  Enter 切换  Esc 返回", theme=self.theme)
+                menu = Menu(
+                    title="设置 · 语音识别",
+                    items=items,
+                    footer="↑↓ 导航  Enter 切换  Esc 返回",
+                    theme=self.theme,
+                )
                 menu.render_full()
 
     def _view_settings_enhance(self) -> str:
@@ -257,7 +274,11 @@ class TuiApp:
                 if line and not line.startswith("#"):
                     hotwords_list.append(line)
 
-        nonlocal_vars = {"proofread": proofread, "hotword": hotword, "translate": translate}
+        nonlocal_vars = {
+            "proofread": proofread,
+            "hotword": hotword,
+            "translate": translate,
+        }
 
         def get_items():
             p = nonlocal_vars["proofread"]
@@ -272,7 +293,12 @@ class TuiApp:
             ]
 
         items = get_items()
-        menu = Menu(title="设置 · 智能优化", items=items, footer="↑↓ 导航  Enter 切换  Esc 返回", theme=self.theme)
+        menu = Menu(
+            title="设置 · 智能优化",
+            items=items,
+            footer="↑↓ 导航  Enter 切换  Esc 返回",
+            theme=self.theme,
+        )
         menu.render_full()
 
         while True:
@@ -306,12 +332,24 @@ class TuiApp:
                     # 返回后重新渲染
                 elif menu.cursor == 3:
                     targets = [("", "关闭"), ("en", "英文"), ("ja", "日文")]
-                    idx = next((i for i, (k, _) in enumerate(targets) if k == nonlocal_vars["translate"]), 0)
+                    idx = next(
+                        (
+                            i
+                            for i, (k, _) in enumerate(targets)
+                            if k == nonlocal_vars["translate"]
+                        ),
+                        0,
+                    )
                     nonlocal_vars["translate"], _ = targets[(idx + 1) % len(targets)]
                     self.config.set("translate_to", nonlocal_vars["translate"])
                     self.config.save()
                 items = get_items()
-                menu = Menu(title="设置 · 智能优化", items=items, footer="↑↓ 导航  Enter 切换  Esc 返回", theme=self.theme)
+                menu = Menu(
+                    title="设置 · 智能优化",
+                    items=items,
+                    footer="↑↓ 导航  Enter 切换  Esc 返回",
+                    theme=self.theme,
+                )
                 menu.render_full()
 
     def _view_hotword_list(self, hotwords: list[str]) -> None:
@@ -355,13 +393,20 @@ class TuiApp:
         bilingual = self.config.get("output.bilingual", "off")
 
         nonlocal_vars = {
-            "fmts": fmts, "max_chars": max_chars, "min_chars": min_chars,
-            "punctuation": punctuation, "bilingual": bilingual,
+            "fmts": fmts,
+            "max_chars": max_chars,
+            "min_chars": min_chars,
+            "punctuation": punctuation,
+            "bilingual": bilingual,
         }
 
         def get_items():
             v = nonlocal_vars
-            bi_map = {"off": "关闭", "source-first": "原文优先", "target-first": "译文优先"}
+            bi_map = {
+                "off": "关闭",
+                "source-first": "原文优先",
+                "target-first": "译文优先",
+            }
             return [
                 f"字幕格式：{', '.join(f.upper() for f in v['fmts'])}",
                 f"每行最大字数：{v['max_chars']}",
@@ -371,7 +416,12 @@ class TuiApp:
             ]
 
         items = get_items()
-        menu = Menu(title="设置 · 保存设置", items=items, footer="↑↓ 导航  Enter 切换  Esc 返回", theme=self.theme)
+        menu = Menu(
+            title="设置 · 保存设置",
+            items=items,
+            footer="↑↓ 导航  Enter 切换  Esc 返回",
+            theme=self.theme,
+        )
         menu.render_full()
 
         while True:
@@ -393,26 +443,52 @@ class TuiApp:
             elif key == Key.ENTER:
                 if menu.cursor == 0:
                     all_fmts = [["srt"], ["vtt"], ["json"], ["tsv"]]
-                    idx = next((i for i, f in enumerate(all_fmts) if f == nonlocal_vars["fmts"]), 0)
+                    idx = next(
+                        (
+                            i
+                            for i, f in enumerate(all_fmts)
+                            if f == nonlocal_vars["fmts"]
+                        ),
+                        0,
+                    )
                     nonlocal_vars["fmts"] = all_fmts[(idx + 1) % len(all_fmts)]
                     self.config.set("output.subtitle_formats", nonlocal_vars["fmts"])
                 elif menu.cursor == 1:
-                    nonlocal_vars["max_chars"] = 15 if nonlocal_vars["max_chars"] >= 60 else nonlocal_vars["max_chars"] + 5
+                    nonlocal_vars["max_chars"] = (
+                        15
+                        if nonlocal_vars["max_chars"] >= 60
+                        else nonlocal_vars["max_chars"] + 5
+                    )
                     self.config.set("output.max_chars", nonlocal_vars["max_chars"])
                 elif menu.cursor == 2:
-                    nonlocal_vars["min_chars"] = 4 if nonlocal_vars["min_chars"] >= 30 else nonlocal_vars["min_chars"] + 2
+                    nonlocal_vars["min_chars"] = (
+                        4
+                        if nonlocal_vars["min_chars"] >= 30
+                        else nonlocal_vars["min_chars"] + 2
+                    )
                     self.config.set("output.min_chars", nonlocal_vars["min_chars"])
                 elif menu.cursor == 3:
                     nonlocal_vars["punctuation"] = not nonlocal_vars["punctuation"]
-                    self.config.set("output.subtitle_punctuation", nonlocal_vars["punctuation"])
+                    self.config.set(
+                        "output.subtitle_punctuation", nonlocal_vars["punctuation"]
+                    )
                 elif menu.cursor == 4:
                     modes = ["off", "source-first", "target-first"]
-                    idx = modes.index(nonlocal_vars["bilingual"]) if nonlocal_vars["bilingual"] in modes else 0
+                    idx = (
+                        modes.index(nonlocal_vars["bilingual"])
+                        if nonlocal_vars["bilingual"] in modes
+                        else 0
+                    )
                     nonlocal_vars["bilingual"] = modes[(idx + 1) % len(modes)]
                     self.config.set("output.bilingual", nonlocal_vars["bilingual"])
                 self.config.save()
                 items = get_items()
-                menu = Menu(title="设置 · 保存设置", items=items, footer="↑↓ 导航  Enter 切换  Esc 返回", theme=self.theme)
+                menu = Menu(
+                    title="设置 · 保存设置",
+                    items=items,
+                    footer="↑↓ 导航  Enter 切换  Esc 返回",
+                    theme=self.theme,
+                )
                 menu.render_full()
 
     def _view_settings_api(self) -> str:
@@ -429,7 +505,12 @@ class TuiApp:
             ]
 
         items = get_items()
-        menu = Menu(title="设置 · 在线服务", items=items, footer="↑↓ 导航  Enter 修改  Esc 返回", theme=self.theme)
+        menu = Menu(
+            title="设置 · 在线服务",
+            items=items,
+            footer="↑↓ 导航  Enter 修改  Esc 返回",
+            theme=self.theme,
+        )
         menu.render_full()
 
         while True:
@@ -457,12 +538,18 @@ class TuiApp:
                         import questionary
                     except ImportError:
                         sys.stderr.write("\033[H\033[J")
-                        sys.stderr.write(f"\033[2K{t.RED}需要安装 questionary：pip install questionary{t.NC}\r\n")
+                        sys.stderr.write(
+                            f"\033[2K{t.RED}需要安装 questionary：pip install questionary{t.NC}\r\n"
+                        )
                         sys.stderr.flush()
-                        import time; time.sleep(2)
+                        import time
+
+                        time.sleep(2)
                         raise
                     if menu.cursor == 0:
-                        url = questionary.text("请输入接口地址：", default=nonlocal_vars["base_url"]).ask()
+                        url = questionary.text(
+                            "请输入接口地址：", default=nonlocal_vars["base_url"]
+                        ).ask()
                         if url:
                             nonlocal_vars["base_url"] = url
                             self.config.set("remote_api.base_url", url)
@@ -482,13 +569,20 @@ class TuiApp:
                     self.reader.setup_terminal()
                     self._enter_alt_screen()
                 items = get_items()
-                menu = Menu(title="设置 · 在线服务", items=items, footer="↑↓ 导航  Enter 修改  Esc 返回", theme=self.theme)
+                menu = Menu(
+                    title="设置 · 在线服务",
+                    items=items,
+                    footer="↑↓ 导航  Enter 修改  Esc 返回",
+                    theme=self.theme,
+                )
                 menu.render_full()
 
     def _view_settings_models(self) -> str:
         t = self.theme
         items = ["模型管理功能开发中..."]
-        menu = Menu(title="设置 · 语音模型", items=items, footer="Esc 返回", theme=self.theme)
+        menu = Menu(
+            title="设置 · 语音模型", items=items, footer="Esc 返回", theme=self.theme
+        )
         menu.render_full()
         while True:
             key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
@@ -506,7 +600,9 @@ class TuiApp:
         sys.stderr.write("\033[H\033[J")
         sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}新建转录{t.NC}\r\n\r\n")
         sys.stderr.write(f"\033[2K  拖入音频或视频文件到此处，按 Enter 确认\r\n\r\n")
-        sys.stderr.write(f"\033[2K{t.GRAY}支持格式：mp3, wav, m4a, mp4, mkv, avi...{t.NC}\r\n\r\n")
+        sys.stderr.write(
+            f"\033[2K{t.GRAY}支持格式：mp3, wav, m4a, mp4, mkv, avi...{t.NC}\r\n\r\n"
+        )
         sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回主菜单{t.NC}\r\n")
         sys.stderr.flush()
 
@@ -528,11 +624,15 @@ class TuiApp:
                     clean_path = path_str.strip().strip("'\"")
                     file_path = Path(clean_path).expanduser()
                     if not file_path.is_file():
-                        sys.stderr.write(f"\033[8;1H\033[2K{t.RED}文件不存在：{clean_path}{t.NC}\r\n")
+                        sys.stderr.write(
+                            f"\033[8;1H\033[2K{t.RED}文件不存在：{clean_path}{t.NC}\r\n"
+                        )
                         sys.stderr.flush()
                         raw_buf = b""
                     elif file_path.suffix.lower() not in AUDIO_VIDEO_EXTENSIONS:
-                        sys.stderr.write(f"\033[8;1H\033[2K{t.RED}不支持的格式：{file_path.suffix}{t.NC}\r\n")
+                        sys.stderr.write(
+                            f"\033[8;1H\033[2K{t.RED}不支持的格式：{file_path.suffix}{t.NC}\r\n"
+                        )
                         sys.stderr.flush()
                         raw_buf = b""
                     else:
@@ -602,7 +702,10 @@ class TuiApp:
                 return self._execute_run(view)
 
     def _run_subprocess_with_progress(
-        self, cmd: list[str], run_env: dict[str, str], log_path: Path,
+        self,
+        cmd: list[str],
+        run_env: dict[str, str],
+        log_path: Path,
         timeout: float = 3600,
     ) -> tuple[int, str, bool]:
         """启动子进程并渲染实时进度。
@@ -627,6 +730,7 @@ class TuiApp:
 
         # 守护线程持续读取 stderr 防止管道阻塞
         stderr_lines: list[str] = []
+
         def _drain_stderr():
             try:
                 if proc.stderr:
@@ -642,6 +746,7 @@ class TuiApp:
 
         # 渲染线程：轮询 JSONL + 渲染进度
         stop_event = threading.Event()
+
         def _render_loop():
             try:
                 renderer._start_time = time.time()
@@ -669,6 +774,7 @@ class TuiApp:
                     renderer._render(result)
             except Exception:
                 import traceback
+
                 traceback.print_exc(file=sys.stderr)  # 记录但不阻塞主流程
 
         render_thread = threading.Thread(target=_render_loop, daemon=True)
@@ -713,12 +819,15 @@ class TuiApp:
 
         # 确定 run.log.jsonl 路径，通过环境变量传递给子进程
         import tempfile
+
         _tmp_dir = Path(tempfile.mkdtemp(prefix="subtap_tui_"))
         log_path = _tmp_dir / "run.log.jsonl"
 
         sys.stderr.write("\033[H\033[J")
         sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}正在转录{t.NC}\r\n\r\n")
-        sys.stderr.write(f"\033[2K{t.GRAY}文件：{view.selected_file.name}{t.NC}\r\n\r\n")
+        sys.stderr.write(
+            f"\033[2K{t.GRAY}文件：{view.selected_file.name}{t.NC}\r\n\r\n"
+        )
         sys.stderr.flush()
 
         # 预留 10 行给进度渲染
@@ -761,7 +870,9 @@ class TuiApp:
                 if "No module named" in err:
                     module = err.split("'")[1] if "'" in err else ""
                     if module:
-                        sys.stderr.write(f"\033[2K{t.YELLOW}pip install {module}{t.NC}\r\n")
+                        sys.stderr.write(
+                            f"\033[2K{t.YELLOW}pip install {module}{t.NC}\r\n"
+                        )
             sys.stderr.flush()
 
         # 结果展示
@@ -796,7 +907,9 @@ class TuiApp:
         menu_items = []
         for r in records:
             status_icon = "✓" if r.is_completed else "✗"
-            menu_items.append(f"{r.timestamp[:10]}  {r.input_name:<20} {r.duration_str:>8}  {status_icon}")
+            menu_items.append(
+                f"{r.timestamp[:10]}  {r.input_name:<20} {r.duration_str:>8}  {status_icon}"
+            )
 
         menu = Menu(
             title="转录历史",
@@ -830,7 +943,9 @@ class TuiApp:
         sys.stderr.write("\033[H\033[J")
         sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}批量转录{t.NC}\r\n\r\n")
         sys.stderr.write(f"\033[2K  拖入文件夹到此处，按 Enter 确认\r\n\r\n")
-        sys.stderr.write(f"\033[2K{t.GRAY}将处理文件夹中所有音频/视频文件{t.NC}\r\n\r\n")
+        sys.stderr.write(
+            f"\033[2K{t.GRAY}将处理文件夹中所有音频/视频文件{t.NC}\r\n\r\n"
+        )
         sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回主菜单{t.NC}\r\n")
         sys.stderr.flush()
 
@@ -850,7 +965,9 @@ class TuiApp:
                     clean_path = path_str.strip().strip("'\"")
                     folder = Path(clean_path).expanduser()
                     if not folder.is_dir():
-                        sys.stderr.write(f"\033[8;1H\033[2K{t.RED}文件夹不存在：{clean_path}{t.NC}\r\n")
+                        sys.stderr.write(
+                            f"\033[8;1H\033[2K{t.RED}文件夹不存在：{clean_path}{t.NC}\r\n"
+                        )
                         sys.stderr.flush()
                         raw_buf = b""
                     else:
@@ -875,7 +992,9 @@ class TuiApp:
 
     def _execute_batch(self, folder: Path) -> str:
         t = self.theme
-        audio_files = sorted([f for f in folder.iterdir() if f.suffix.lower() in AUDIO_VIDEO_EXTENSIONS])
+        audio_files = sorted(
+            [f for f in folder.iterdir() if f.suffix.lower() in AUDIO_VIDEO_EXTENSIONS]
+        )
 
         if not audio_files:
             sys.stderr.write("\033[H\033[J")
@@ -913,7 +1032,9 @@ class TuiApp:
         try:
             for i, f in enumerate(audio_files):
                 # 标题行：[i/N] 文件名
-                sys.stderr.write(f"\033[{current_row};1H\033[2K  {t.GRAY}[{i + 1}/{total}]{t.NC} {f.name}")
+                sys.stderr.write(
+                    f"\033[{current_row};1H\033[2K  {t.GRAY}[{i + 1}/{total}]{t.NC} {f.name}"
+                )
                 sys.stderr.flush()
 
                 # 准备日志和命令（truncate 而非 unlink，保持 inode 不变）
@@ -932,8 +1053,8 @@ class TuiApp:
                 try:
                     run_env = _run_env()
                     run_env["SUBTAP_EVENT_LOG"] = str(log_path)
-                    returncode, stderr_text, user_quit = self._run_subprocess_with_progress(
-                        cmd, run_env, log_path
+                    returncode, stderr_text, user_quit = (
+                        self._run_subprocess_with_progress(cmd, run_env, log_path)
                     )
                     if user_quit:
                         return "quit"
@@ -943,11 +1064,15 @@ class TuiApp:
                 # 更新标题行为最终状态
                 if returncode == 0:
                     completed += 1
-                    sys.stderr.write(f"\033[{current_row};1H\033[2K  {t.GREEN}✓{t.NC} {f.name}")
+                    sys.stderr.write(
+                        f"\033[{current_row};1H\033[2K  {t.GREEN}✓{t.NC} {f.name}"
+                    )
                 else:
                     err = stderr_text.strip()
                     hint = err.splitlines()[-1][:60] if err else ""
-                    sys.stderr.write(f"\033[{current_row};1H\033[2K  {t.RED}✗{t.NC} {f.name} {t.GRAY}{hint}{t.NC}")
+                    sys.stderr.write(
+                        f"\033[{current_row};1H\033[2K  {t.RED}✗{t.NC} {f.name} {t.GRAY}{hint}{t.NC}"
+                    )
                 sys.stderr.flush()
 
                 # 下一个文件：标题(1) + 渲染器占用行(2) + 状态行(1) + 空行(1)

@@ -113,8 +113,12 @@ class PipelineProgressRenderer:
             self._completed_stages += 1
 
         elif event_type in (
-            "asr_draft_ready", "audio_chunk_ready", "enhancement_ready",
-            "sentence_candidate_ready", "alignment_ready", "progress",
+            "asr_draft_ready",
+            "audio_chunk_ready",
+            "enhancement_ready",
+            "sentence_candidate_ready",
+            "alignment_ready",
+            "progress",
         ):
             progress = data.get("progress", 0)
             self._stage_progress = float(progress)
@@ -222,7 +226,9 @@ class PipelineProgressRenderer:
         self._stderr.flush()
         self._rendered_lines = len(lines)
 
-    def _build_result_lines(self, success: bool, output_path: str | None = None) -> list[str]:
+    def _build_result_lines(
+        self, success: bool, output_path: str | None = None
+    ) -> list[str]:
         """Build final result lines.
 
         Args:
@@ -236,11 +242,15 @@ class PipelineProgressRenderer:
 
         if success:
             # Calculate total time
-            elapsed = self._total_time or (time.time() - self._start_time if self._start_time else 0)
+            elapsed = self._total_time or (
+                time.time() - self._start_time if self._start_time else 0
+            )
             minutes = int(elapsed // 60)
             seconds = int(elapsed % 60)
 
-            lines.append(f"  {GREEN}✓ 转录完成{RESET}  {GRAY}{minutes}:{seconds:02d}{RESET}")
+            lines.append(
+                f"  {GREEN}✓ 转录完成{RESET}  {GRAY}{minutes}:{seconds:02d}{RESET}"
+            )
             if output_path:
                 lines.append(f"  {GRAY}输出：{RESET}{output_path}")
         else:

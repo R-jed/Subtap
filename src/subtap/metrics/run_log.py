@@ -127,7 +127,9 @@ class RunLog:
         details: str = "",
     ) -> None:
         self._stages.append(
-            StageRecord(name=name, status=status, duration_sec=duration_sec, details=details)
+            StageRecord(
+                name=name, status=status, duration_sec=duration_sec, details=details
+            )
         )
 
     # ── Finalize ────────────────────────────────────────────────
@@ -154,7 +156,11 @@ class RunLog:
         thick = "═" * 60
 
         # Header
-        start_str = self._start_time.strftime("%Y-%m-%d %H:%M:%S") if self._start_time else "unknown"
+        start_str = (
+            self._start_time.strftime("%Y-%m-%d %H:%M:%S")
+            if self._start_time
+            else "unknown"
+        )
         lines.append(thick)
         lines.append(f"  Subtap Pipeline Run Log — {start_str}")
         lines.append(thick)
@@ -164,9 +170,13 @@ class RunLog:
             lines.append("")
             lines.append(f"  ▶ 源文件: {self._input_info['path']}")
             if self._input_info.get("size_mb") is not None:
-                lines.append(f"    大小: {self._input_info['size_mb']} MB  格式: {self._input_info.get('format', 'unknown')}")
+                lines.append(
+                    f"    大小: {self._input_info['size_mb']} MB  格式: {self._input_info.get('format', 'unknown')}"
+                )
                 if self._input_info.get("duration_sec"):
-                    lines.append(f"    时长: {self._input_info['duration_sec']:.1f}s  采样率: {self._input_info.get('sample_rate', 'N/A')}Hz  声道: {self._input_info.get('channels', 'N/A')}")
+                    lines.append(
+                        f"    时长: {self._input_info['duration_sec']:.1f}s  采样率: {self._input_info.get('sample_rate', 'N/A')}Hz  声道: {self._input_info.get('channels', 'N/A')}"
+                    )
 
         # System
         if self._system_info:
@@ -246,7 +256,11 @@ class RunLog:
         if self.log_path:
             target = self.log_path
         else:
-            ts = self._start_time.strftime("%Y%m%d_%H%M%S") if self._start_time else "unknown"
+            ts = (
+                self._start_time.strftime("%Y%m%d_%H%M%S")
+                if self._start_time
+                else "unknown"
+            )
             target = self.work_dir / f"run_{ts}.log"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(self.render(), encoding="utf-8")

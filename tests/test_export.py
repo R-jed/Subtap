@@ -637,7 +637,10 @@ def test_process_segment_filters_empty():
     from subtap.core.export import _process_segment
 
     seg = AlignedSegment(
-        sentence_id=0, start_sec=0.0, end_sec=1.0, text="",
+        sentence_id=0,
+        start_sec=0.0,
+        end_sec=1.0,
+        text="",
         words=[],
     )
     result = _process_segment(seg, max_chars=25, min_chars=10)
@@ -691,7 +694,9 @@ def test_srt_uses_process_segment_and_post_process():
 
     segs = [
         AlignedSegment(
-            sentence_id=0, start_sec=0.0, end_sec=3.0,
+            sentence_id=0,
+            start_sec=0.0,
+            end_sec=3.0,
             text="这是一段比较长的话",
             words=[
                 {"word": "这是", "start_sec": 0.0, "end_sec": 0.4},
@@ -701,7 +706,9 @@ def test_srt_uses_process_segment_and_post_process():
             ],
         ),
         AlignedSegment(
-            sentence_id=1, start_sec=3.0, end_sec=5.0,
+            sentence_id=1,
+            start_sec=3.0,
+            end_sec=5.0,
             text="第二段话",
             words=[
                 {"word": "第二段话", "start_sec": 3.0, "end_sec": 4.5},

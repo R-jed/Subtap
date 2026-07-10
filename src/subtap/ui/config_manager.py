@@ -1,4 +1,5 @@
 """配置文件读写管理。"""
+
 import logging
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,7 @@ class ConfigManager:
             return
         try:
             import yaml
+
             with open(self.path, "r", encoding="utf-8") as f:
                 result = yaml.safe_load(f)
                 self._data = result if isinstance(result, dict) else {}
@@ -51,6 +53,7 @@ class ConfigManager:
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         import yaml
+
         with open(self.path, "w", encoding="utf-8") as f:
             yaml.dump(self._data, f, default_flow_style=False, allow_unicode=True)
 
