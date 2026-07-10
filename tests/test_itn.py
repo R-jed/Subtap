@@ -77,3 +77,40 @@ def test_itn_approximate_context():
     """我们用他们拍了上1000张照片 → 上千张"""
     result = chinese_to_num("我们用他们拍了上1000张照片")
     assert "上千张" in result
+
+
+# --- ITN 单位规范化 ---
+
+def test_unit_mm():
+    """毫米→mm"""
+    assert chinese_to_num("二十八毫米") == "28mm"
+
+
+def test_unit_cm():
+    """厘米→cm"""
+    assert chinese_to_num("二十厘米") == "20cm"
+
+
+def test_unit_m():
+    """米→m"""
+    assert chinese_to_num("三千米") == "3000m"
+
+
+def test_unit_g():
+    """克→g"""
+    assert chinese_to_num("一百克") == "100g"
+
+
+def test_unit_yuan_kept():
+    """元保持中文"""
+    assert chinese_to_num("五十元") == "50元"
+
+
+def test_unit_kuai_kept():
+    """块保持中文"""
+    assert chinese_to_num("两百块") == "200块"
+
+
+def test_percent():
+    """百分之五十→50%"""
+    assert chinese_to_num("百分之五十") == "50%"

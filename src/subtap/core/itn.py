@@ -38,6 +38,19 @@ _UNIT_MAP = {
     "亿": 100000000,
 }
 
+# 单位缩写映射：中文单位 → 缩写（仅度量衡单位，货币/量词保持中文）
+_UNIT_ABBREV = {
+    "毫米": "mm",
+    "厘米": "cm",
+    "千米": "km",
+    "米": "m",
+    "千克": "kg",
+    "克": "g",
+}
+
+# 阿拉伯数字+中文单位 → 缩写单位（最长匹配优先）
+_UNIT_NORM_RE = re.compile(r"(\d+)(毫米|厘米|千米|米|千克|克)")
+
 # 成语/复合词保护：这些词中的数字不转换
 _IDIOMS = {"百万富翁", "万元户", "万元", "亿元", "十亿", "百亿", "千亿", "万亿"}
 
@@ -313,6 +326,13 @@ def chinese_to_num(text: str) -> str:
     if not text:
         return text
 
+    # Handle 百分之X → X%（必须在主数字转换之前）
+    text = re.sub(
+        r"百分之([零一二两三四五六七八九十百千万亿]+)",
+        lambda m: str(_parse_total(m.group(1))) + "%",
+        text,
+    )
+
     # Handle 月/日: 八月 → 8月, 六日 → 6日, 十二月 → 12月
     text = re.sub(
         r"([零一二两三四五六七八九十]+)(月|日|号)",
@@ -385,5 +405,10 @@ def chinese_to_num(text: str) -> str:
         return m.group(1) + _arabic_to_chinese(n) + m.group(3)
 
     text = _APPROX_RE.sub(_approx_repl, text)
+
+    # Handle 数字+单位 → 数字+缩写单位（毫米→mm, 厘米→cm 等）
+    text = _UNIT_NORM_RE.sub(
+        lambda m: m.group(1) + _UNIT_ABBREV[m.group(2)], text
+    )
 
     return text
