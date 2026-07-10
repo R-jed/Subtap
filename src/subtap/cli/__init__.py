@@ -78,18 +78,15 @@ def main(ctx: typer.Context) -> None:
         typer.echo(_build_root_command_deck())
 
 
-# ── Glossary 热词命令 ──────────────────────────────────────────
+# ── 子命令组 ──────────────────────────────────────────────────
 from subtap.cli.hotword_cli import hotword_app
-
-glossary_app.add_typer(hotword_app, name="hotword")
-
-
-# ── Script 文稿匹配命令 ────────────────────────────────────────
 from subtap.cli.script_cli import script_app
 
-app.add_typer(script_app, name="script")
 learn_app = typer.Typer(help="学习人工修正")
 profile_app = typer.Typer(help="本地学习档案")
+
+glossary_app.add_typer(hotword_app, name="hotword")
+app.add_typer(script_app, name="script")
 app.add_typer(learn_app, name="learn")
 app.add_typer(profile_app, name="profile")
 

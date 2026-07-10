@@ -70,6 +70,25 @@ def _apply_cli_overrides(
 # ── Run 命令 ───────────────────────────────────────────────
 
 
+def _count_jsonl(path: Path) -> int:
+    """统计 JSONL 文件行数。"""
+    if not path.exists():
+        return 0
+    return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line)
+
+
+def _audio_duration_sec(path: Path) -> float:
+    """获取音频时长（秒）。"""
+    if not path.exists():
+        return 0.0
+    try:
+        return float(
+            json.loads(path.read_text(encoding="utf-8")).get("duration", 0)
+        )
+    except Exception:
+        return 0.0
+
+
 def _generate_metrics(
     config: "SubtapConfig",
     timings: dict,
@@ -78,22 +97,6 @@ def _generate_metrics(
     enhance: str,
 ) -> None:
     """生成性能指标并写入文件。"""
-
-    def _count_jsonl(path: Path) -> int:
-        if not path.exists():
-            return 0
-        return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line)
-
-    def _audio_duration_sec(path: Path) -> float:
-        if not path.exists():
-            return 0.0
-        try:
-            return float(
-                json.loads(path.read_text(encoding="utf-8")).get("duration", 0)
-            )
-        except Exception:
-            return 0.0
-
     from subtap.metrics.performance import build_subtitle_performance_metrics
 
     asr_config = getattr(config, "asr", None)
