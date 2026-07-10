@@ -11,7 +11,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -107,22 +106,23 @@ def load_glossary(path: Path, lang: str) -> HotwordGlossary:
         return glossary
     try:
         content = path.read_text(encoding="utf-8")
-        for line in content.strip().split("\n"):
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if "=" not in line:
-                continue
-            parts = line.split("=", 1)
-            if len(parts) == 2:
-                word = parts[0].strip()
-                aliases_str = parts[1].strip()
-                if word and aliases_str:
-                    aliases = [a.strip() for a in aliases_str.split(",") if a.strip()]
-                    for alias in aliases:
-                        glossary.add_alias(word, alias)
-    except Exception as e:
-        logger.warning("Failed to load glossary from %s: %s", path, e)
+    except UnicodeDecodeError as e:
+        logger.warning("Failed to decode glossary from %s: %s", path, e)
+        return glossary
+    for line in content.strip().split("\n"):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        parts = line.split("=", 1)
+        if len(parts) == 2:
+            word = parts[0].strip()
+            aliases_str = parts[1].strip()
+            if word and aliases_str:
+                aliases = [a.strip() for a in aliases_str.split(",") if a.strip()]
+                for alias in aliases:
+                    glossary.add_alias(word, alias)
     return glossary
 
 

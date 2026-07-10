@@ -262,3 +262,114 @@ def test_run_translate_uses_chunked_translation(tmp_path, monkeypatch):
 
     assert result["translated_count"] == 2
     assert llm.call_count == 1  # 只有2句，不需要分块
+
+
+def test_write_aligned_atomic_writes_correct_content(tmp_path):
+    """原子写入后文件内容应该正确，且临时文件被清理。"""
+    from subtap.core.translate import _write_aligned
+
+    path = tmp_path / "aligned.jsonl"
+    segments = [
+        AlignedSegment(
+            sentence_id=0,
+            start_sec=1.0,
+            end_sec=2.0,
+            text="第一句",
+            words=[],
+        ),
+        AlignedSegment(
+            sentence_id=1,
+            start_sec=2.0,
+            end_sec=3.0,
+            text="第二句",
+            words=[],
+        ),
+    ]
+
+    _write_aligned(path, segments)
+
+    assert path.exists()
+    content = path.read_text(encoding="utf-8")
+    assert "第一句" in content
+    assert "第二句" in content
+    # 临时文件应该不存在（原子写入后已清理或重命名）
+    tmp_file = path.with_suffix(".jsonl.tmp")
+    assert not tmp_file.exists()
+
+
+def test_write_aligned_atomic_uses_rename(tmp_path):
+    """原子写入应该通过临时文件 + rename 实现。"""
+    from unittest.mock import patch, call
+
+    from subtap.core.translate import _write_aligned
+
+    path = tmp_path / "aligned.jsonl"
+    segments = [
+        AlignedSegment(
+            sentence_id=0,
+            start_sec=1.0,
+            end_sec=2.0,
+            text="测试",
+            words=[],
+        ),
+    ]
+
+    # 追踪 rename 调用
+    rename_calls = []
+    original_rename = Path.rename
+
+    def track_rename(self, target):
+        rename_calls.append((str(self), str(target)))
+        return original_rename(self, target)
+
+    with patch.object(Path, "rename", track_rename):
+        _write_aligned(path, segments)
+
+    # 应该有 rename 调用（从 .tmp 到目标文件）
+    assert len(rename_calls) == 1
+    src, dst = rename_calls[0]
+    assert src.endswith(".tmp")
+    assert dst == str(path)
+
+
+def test_write_aligned_atomic_preserves_original_on_failure(tmp_path):
+    """写入临时文件失败时，原文件不应该被破坏。"""
+    from unittest.mock import patch
+
+    from subtap.core.translate import _write_aligned
+
+    path = tmp_path / "aligned.jsonl"
+    original_content = '{"sentence_id":0,"start_sec":1.0,"end_sec":2.0,"text":"原始内容","words":[]}\n'
+    path.write_text(original_content, encoding="utf-8")
+
+    segments = [
+        AlignedSegment(
+            sentence_id=0,
+            start_sec=1.0,
+            end_sec=2.0,
+            text="新内容",
+            words=[],
+        ),
+    ]
+
+    # 记录原始 write_text
+    original_write_text = Path.write_text
+    call_count = 0
+
+    def failing_write_text(self, *args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        # 第一次调用是写临时文件，让它失败
+        if call_count == 1:
+            raise OSError("disk full")
+        return original_write_text(self, *args, **kwargs)
+
+    with patch.object(Path, "write_text", failing_write_text):
+        with pytest.raises(OSError, match="disk full"):
+            _write_aligned(path, segments)
+
+    # 原文件内容应该不变
+    assert path.read_text(encoding="utf-8") == original_content
+    # 临时文件应该被清理
+    tmp_file = path.with_suffix(".jsonl.tmp")
+    assert not tmp_file.exists()

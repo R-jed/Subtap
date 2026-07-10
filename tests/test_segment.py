@@ -327,3 +327,32 @@ class TestMergeShortSentences:
         """空输入返回空列表。"""
         result = _merge_short_sentences([], min_chars=10)
         assert result == []
+
+
+# ── Pipeline language config passthrough ──
+
+
+def test_pipeline_passes_language_to_run_segment(
+    test_config: SubtapConfig, tmp_path: Path, monkeypatch
+):
+    """_stage_segment reads subtitle_language from config and passes to run_segment."""
+    from subtap.core.pipeline import Pipeline
+
+    test_config.output.subtitle_language = "en"
+
+    work_dir = tmp_path / "work"
+    ws = Workspace(test_config, base_dir=work_dir)
+    _make_cleaned_jsonl(ws, ["Hello world. Goodbye."])
+
+    pipeline = Pipeline(test_config, work_dir=work_dir)
+
+    captured = {}
+
+    def fake_run_segment(workspace, chunk_start=None, chunk_end=None, language="zh"):
+        captured["language"] = language
+        return {"sentence_count": 0, "output_path": str(ws.sentences_jsonl)}
+
+    monkeypatch.setattr("subtap.core.segment.run_segment", fake_run_segment)
+    pipeline._stage_segment(chunk_start=0.0, chunk_end=10.0)
+
+    assert captured["language"] == "en"

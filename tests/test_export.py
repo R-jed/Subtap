@@ -713,3 +713,30 @@ def test_srt_uses_process_segment_and_post_process():
     # Verify both segments appear
     assert "这是一段比较长的话" in srt
     assert "第二段话" in srt
+
+
+# ── aligned_jsonl 存在性检查 ──
+
+
+def test_run_export_raises_when_aligned_jsonl_missing(tmp_path: Path):
+    """run_export 在 aligned.jsonl 不存在时抛出 FileNotFoundError，包含路径信息。"""
+    missing = tmp_path / "nonexistent" / "aligned.jsonl"
+    out_dir = tmp_path / "output"
+    try:
+        run_export(missing, out_dir, fmt="srt")
+        assert False, "Should have raised FileNotFoundError"
+    except FileNotFoundError as e:
+        assert str(missing) in str(e)
+
+
+def test_run_final_exports_raises_when_aligned_jsonl_missing(tmp_path: Path):
+    """run_final_exports 在 aligned.jsonl 不存在时抛出 FileNotFoundError，包含路径信息。"""
+    from subtap.core.export import run_final_exports
+
+    missing = tmp_path / "nonexistent" / "aligned.jsonl"
+    out_dir = tmp_path / "output"
+    try:
+        run_final_exports(missing, out_dir)
+        assert False, "Should have raised FileNotFoundError"
+    except FileNotFoundError as e:
+        assert str(missing) in str(e)

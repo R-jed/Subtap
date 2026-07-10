@@ -163,7 +163,12 @@ class Pipeline:
     ) -> dict:
         from subtap.core.segment import run_segment
 
-        result = run_segment(self.workspace, chunk_start, chunk_end)
+        result = run_segment(
+            self.workspace,
+            chunk_start,
+            chunk_end,
+            language=self.config.output.subtitle_language,
+        )
         self._publish_event(
             EventType.SENTENCE_CANDIDATE_READY,
             stage="segment",

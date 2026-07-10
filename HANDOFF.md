@@ -5,7 +5,9 @@
 
 ## 当前状态
 
-**968 测试全部通过，4 skipped，0 失败。** Pipeline 11/11 阶段可用。开发完成度 99%。
+**1022 测试全部通过，4 skipped，0 失败。** Pipeline 11/11 阶段可用。开发完成度 99%。
+
+**P0 问题已全部修复 ✅**（5/5）。**P1 核心问题已修复 ✅**（6/8）。**P2 问题已修复 ✅**（3/6）。
 
 **分支 `feat/smart-split-v2`：** `_smart_split` 已替换为 `_smart_split_v2`（Subtitle Edit 模式：枚举拆分点 + 评分选优 + jieba 分词）。待验证后合并到 main。
 
@@ -48,19 +50,19 @@
 5. ~~**TUI 配置同步率 44%**~~ — `ConfigManager` 新增 `to_subtap_config()` 和 `sync_from_config()` 方法，实现双向联动
 
 ### P1 — 短期修复（8 项）
-6. translate 原地覆盖 aligned.jsonl，无原子写入保护（先写临时文件再 rename）
+6. ~~translate 原地覆盖 aligned.jsonl，无原子写入保护~~ — ✅ 已修复：先写临时文件再 rename，异常时清理
 7. segment `source_text` 赋值逻辑有误（已修复为 `text`，但审查报告认为语义不符）
-8. batch-transcribe 缺少 `fmt`/`translate_to`/`bilingual` 参数传递
-9. glossary 词表加载静默吞错（`except Exception: pass`）
-10. 4 处未使用导入（export.py, clean.py, hotword.py, tui.py）
-11. tui_app.py 18 处重复超时值 `reader.read_key(timeout=0.05)`
+8. ~~batch-transcribe 缺少 `fmt`/`translate_to`/`bilingual` 参数传递~~ — ✅ 已修复：两处 run_pipeline 调用补全参数
+9. ~~glossary 词表加载静默吞错~~ — ✅ 已修复：仅捕获 UnicodeDecodeError，其他异常自然抛出
+10. ~~4 处未使用导入~~ — ✅ 已修复：移除 export.py `import re`、clean.py `ALL_PUNCT_RE`、hotword.py `from typing import Any`（tui.py 经 AST 分析确认无未使用导入）
+11. ~~tui_app.py 18 处重复超时值~~ — ✅ 已修复：提取 `KEY_READ_TIMEOUT = 0.05` 常量，15 处替换
 12. 29 个模块无测试（尤其 batch 6 个 + VAD 2 个）
-13. `hotword edit` 硬编码 `open -a Numbers`，仅限 macOS
+13. ~~`hotword edit` 硬编码 `open -a Numbers`~~ — ✅ 已修复：新增 `_open_file_cross_platform()` 函数，支持 macOS/Linux/Windows
 
 ### P2 — 中期优化（6 项）
-14. export 缺 aligned.jsonl 存在性检查
-15. segment `language` 参数未从配置读取，始终中文模式
-16. cli.py 12+ 处重复 `except ValueError: typer.echo(...); raise typer.Exit(1)` 模式
+14. ~~export 缺 aligned.jsonl 存在性检查~~ — ✅ 已修复：`run_export` 和 `run_final_exports` 均添加文件存在性检查，抛出 `FileNotFoundError`
+15. ~~segment `language` 参数未从配置读取~~ — ✅ 已修复：`_stage_segment` 从 `config.output.subtitle_language` 读取语言
+16. ~~cli.py 12+ 处重复 `except ValueError` 模式~~ — ✅ 已修复：提取 `_handle_error()` 辅助函数，替换 20+ 处
 17. 集成测试仅 1 个（0.8%）
 18. `glossary import` 命令名不副实（只加载计数，不从外部导入）
 19. 配置路径 CLI/TUI 不一致（CLI 直接构造 SubtapConfig，TUI 通过 ConfigManager → YAML → load_config）
@@ -95,7 +97,7 @@
 python3 -m pytest tests/ -q
 ```
 
-预期：952 passed, 4 skipped, 0 failed。
+预期：1022 passed, 4 skipped, 0 failed。
 
 ## API 配置
 
