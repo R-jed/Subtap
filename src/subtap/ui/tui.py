@@ -147,6 +147,11 @@ class BaseRunner(ABC):
     ) -> dict:
         """Core pipeline execution: build stages, run loop, export, save meta."""
         stages = self._build_stages(pipeline.config, translate_to)
+        # Inject input_path into prepare stage kwargs
+        for stage in stages:
+            if stage["key"] == "prepare":
+                stage["kwargs"] = {"input_path": input_path}
+                break
         self._run_loop(pipeline, stages, enhance)
 
         # Export stage (with UI callbacks)
