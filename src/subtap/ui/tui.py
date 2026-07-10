@@ -46,13 +46,18 @@ class BaseRunner(ABC):
             {"key": "asr", "name": "语音识别"},
             {"key": "clean", "name": "文本清洗", "kwargs": None},
             {"key": "segment", "name": "智能断句"},
-            {"key": "align", "name": "时间轴对齐"},
-            {"key": "hotword", "name": "热词替换", "kwargs": hw_kwargs},
         ]
 
         # Optional: script_match
         if getattr(config.output, "script_path", None):
             stages.append({"key": "script_match", "name": "文稿匹配"})
+
+        stages.extend(
+            [
+                {"key": "align", "name": "时间轴对齐"},
+                {"key": "hotword", "name": "热词替换", "kwargs": hw_kwargs},
+            ]
+        )
 
         # learn always runs (discovers hotwords from LLM results)
         # Must run before translate so learned hotwords can be applied

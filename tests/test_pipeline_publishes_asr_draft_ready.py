@@ -51,7 +51,9 @@ def test_pipeline_publishes_asr_draft_ready(monkeypatch, tmp_path):
     (pipeline.workspace.root / "chunks").mkdir(exist_ok=True)
     (pipeline.workspace.root / "chunks" / "chunk.wav").write_bytes(b"fake")
 
-    monkeypatch.setattr("subtap.core.asr.get_backend", lambda _cfg: MockASRBackend())
+    monkeypatch.setattr(
+        "subtap.core.asr.get_backend", lambda *_a, **_k: MockASRBackend()
+    )
 
     pipeline.run_stage("asr")
 

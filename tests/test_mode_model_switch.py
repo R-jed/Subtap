@@ -8,7 +8,7 @@ from subtap.schemas.config import load_config
 
 def test_quality_mode_overrides_asr_model():
     """--mode quality should override config.asr.model to asr_1.7b."""
-    config = load_config(Path.home() / ".subtap" / "config.yaml")
+    config = load_config()
     assert config.asr.model == "asr_0.6b", "Precondition: default is asr_0.6b"
 
     # This is the logic that should exist in cli.py run()
@@ -21,7 +21,7 @@ def test_quality_mode_overrides_asr_model():
 
 def test_fast_mode_keeps_default():
     """--mode fast should not change the model."""
-    config = load_config(Path.home() / ".subtap" / "config.yaml")
+    config = load_config()
     original = config.asr.model
 
     mode = "fast"

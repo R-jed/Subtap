@@ -218,7 +218,9 @@ def test_align_emits_model_load_and_release_events(monkeypatch, tmp_path):
 
     bus = _CollectingBus()
     backend = _MockAligner()
-    monkeypatch.setattr("subtap.core.align.get_aligner_backend", lambda _cfg: backend)
+    monkeypatch.setattr(
+        "subtap.core.align.get_aligner_backend", lambda *_a, **_k: backend
+    )
 
     run_align(workspace, config, event_bus=bus, task_id="align-test")
 
@@ -238,7 +240,9 @@ def test_align_model_events_carry_correct_payload(monkeypatch, tmp_path):
 
     bus = _CollectingBus()
     backend = _MockAligner()
-    monkeypatch.setattr("subtap.core.align.get_aligner_backend", lambda _cfg: backend)
+    monkeypatch.setattr(
+        "subtap.core.align.get_aligner_backend", lambda *_a, **_k: backend
+    )
 
     run_align(workspace, config, event_bus=bus, task_id="align-payload")
 
@@ -268,7 +272,9 @@ def test_align_no_release_events_when_keep_model_alive(monkeypatch, tmp_path):
 
     bus = _CollectingBus()
     backend = _MockAligner()
-    monkeypatch.setattr("subtap.core.align.get_aligner_backend", lambda _cfg: backend)
+    monkeypatch.setattr(
+        "subtap.core.align.get_aligner_backend", lambda *_a, **_k: backend
+    )
 
     run_align(workspace, config, event_bus=bus, task_id="align-keep-alive")
 
@@ -287,7 +293,9 @@ def test_align_release_events_emitted_on_align_failure(monkeypatch, tmp_path):
     bus = _CollectingBus()
     backend = _MockAligner()
     backend._fail = True
-    monkeypatch.setattr("subtap.core.align.get_aligner_backend", lambda _cfg: backend)
+    monkeypatch.setattr(
+        "subtap.core.align.get_aligner_backend", lambda *_a, **_k: backend
+    )
 
     with pytest.raises(RuntimeError, match="Align inference failed"):
         run_align(workspace, config, event_bus=bus, task_id="align-fail")
@@ -317,7 +325,9 @@ def test_align_no_events_when_no_event_bus(monkeypatch, tmp_path):
     config = SubtapConfig()
 
     backend = _MockAligner()
-    monkeypatch.setattr("subtap.core.align.get_aligner_backend", lambda _cfg: backend)
+    monkeypatch.setattr(
+        "subtap.core.align.get_aligner_backend", lambda *_a, **_k: backend
+    )
 
     result = run_align(workspace, config, event_bus=None)
     assert result["aligned_count"] == 1

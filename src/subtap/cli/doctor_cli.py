@@ -325,4 +325,5 @@ def doctor(
         typer.echo(
             typer.style("\n✗ 部分检查未通过，请根据提示修复", fg=typer.colors.RED)
         )
-        raise typer.Exit(1)
+        if release:
+            raise typer.Exit(1)

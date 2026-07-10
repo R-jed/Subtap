@@ -17,3 +17,9 @@ jobs:
       - run: black --check src tests
       - run: mypy src/subtap
       - run: pytest -q -p no:cacheprovider
+      - run: python -m build --no-isolation
+      - run: pytest tests/test_release_packaging.py -q
+      - run: python -m venv /tmp/subtap-wheel-smoke
+      - run: /tmp/subtap-wheel-smoke/bin/python -m pip install dist/*.whl
+      - run: /tmp/subtap-wheel-smoke/bin/subtap version
+      - run: /tmp/subtap-wheel-smoke/bin/subtap doctor

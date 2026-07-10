@@ -37,22 +37,38 @@ has_pipx() {
     command -v pipx &>/dev/null
 }
 
+ensure_local_bin_on_path() {
+    export PATH="$HOME/.local/bin:$PATH"
+}
+
+verify_installation() {
+    ensure_local_bin_on_path
+    info "验证安装..."
+    command -v subtap >/dev/null || {
+        error "subtap 未出现在 PATH 中，请检查 ~/.local/bin 或包管理器安装目录"
+        return 1
+    }
+    subtap version
+    subtap doctor
+    info "安装验证通过"
+}
+
 install_via_uv() {
     info "通过 uv 安装 subtap..."
     if ! has_uv; then
         info "正在安装 uv..."
         curl -LsSf https://astral.sh/uv/install.sh | sh
-        export PATH="$HOME/.local/bin:$PATH"
+        ensure_local_bin_on_path
     fi
     uv tool install subtap
-    info "安装完成！运行 'subtap --version' 验证"
+    verify_installation
 }
 
 install_via_brew() {
     info "通过 Homebrew 安装 subtap..."
     brew tap R-jed/tap
     brew install subtap
-    info "安装完成！运行 'subtap --version' 验证"
+    verify_installation
 }
 
 install_via_pipx() {
@@ -63,13 +79,13 @@ install_via_pipx() {
         pipx ensurepath
     fi
     pipx install subtap
-    info "安装完成！运行 'subtap --version' 验证"
+    verify_installation
 }
 
 install_via_pip() {
     info "通过 pip 安装 subtap..."
     python3 -m pip install --user subtap
-    info "安装完成！运行 'subtap --version' 验证"
+    verify_installation
 }
 
 main() {
@@ -80,20 +96,26 @@ main() {
 
     # macOS 优先 Homebrew
     if [ "$OS" = "macos" ] && has_brew; then
-        install_via_brew
-        return
+        if install_via_brew; then
+            return
+        fi
+        warn "Homebrew 安装失败，尝试其他方式..."
     fi
 
     # 优先 uv
     if has_uv; then
-        install_via_uv
-        return
+        if install_via_uv; then
+            return
+        fi
+        warn "uv 安装失败，尝试其他方式..."
     fi
 
     # 其次 pipx
     if has_pipx; then
-        install_via_pipx
-        return
+        if install_via_pipx; then
+            return
+        fi
+        warn "pipx 安装失败，尝试其他方式..."
     fi
 
     # 最后 pip
@@ -104,9 +126,9 @@ main() {
 
     error "未找到可用的包管理器"
     echo "请手动安装："
-    echo "  brew install subtap           # macOS"
-    echo "  uv tool install subtap        # 跨平台"
-    echo "  pipx install subtap           # 跨平台"
+    echo "  brew tap R-jed/tap && brew install subtap  # macOS"
+    echo "  uv tool install subtap                    # 跨平台"
+    echo "  pipx install subtap                       # 跨平台"
     echo "  pip install --user subtap     # 有 Python 环境"
     exit 1
 }

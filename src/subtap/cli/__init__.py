@@ -212,7 +212,11 @@ def tui() -> None:
 
 # ── Batch 批量处理命令 ──────────────────────────────────────
 # 函数实现位于 subtap.cli.batch_cli，此处注册到主 app
-from subtap.cli.batch_cli import batch_transcribe, compose_subtitle, batch_compose_subtitle
+from subtap.cli.batch_cli import (
+    batch_transcribe,
+    compose_subtitle,
+    batch_compose_subtitle,
+)
 
 app.command("batch-transcribe")(batch_transcribe)
 app.command("compose")(compose_subtitle)

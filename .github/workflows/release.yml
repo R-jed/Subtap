@@ -6,9 +6,28 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: brew install ffmpeg
+      - run: pip install -e ".[dev,ai]"
+      - run: black --check src tests
+      - run: mypy src/subtap
+      - run: pytest -q -p no:cacheprovider
+      - run: python -m build --no-isolation
+      - run: pytest tests/test_release_packaging.py -q
+      - run: python -m venv /tmp/subtap-wheel-smoke
+      - run: /tmp/subtap-wheel-smoke/bin/python -m pip install dist/*.whl
+      - run: /tmp/subtap-wheel-smoke/bin/subtap version
+      - run: /tmp/subtap-wheel-smoke/bin/subtap doctor
+
   build:
     runs-on: ubuntu-latest
     steps:
@@ -26,8 +45,22 @@ jobs:
           name: dist
           path: dist/
 
+  github-release:
+    needs: [test, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Upload GitHub Release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+
   publish:
-    needs: build
+    needs: [test, build]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:

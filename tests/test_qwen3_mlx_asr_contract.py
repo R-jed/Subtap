@@ -54,7 +54,7 @@ def test_run_asr_writes_asr_draft_contract(monkeypatch, tmp_path):
     (workspace.root / "chunks" / "chunk.wav").write_bytes(b"fake")
 
     backend = MockASRBackend()
-    monkeypatch.setattr("subtap.core.asr.get_backend", lambda _cfg: backend)
+    monkeypatch.setattr("subtap.core.asr.get_backend", lambda *_a, **_k: backend)
 
     result = run_asr(workspace, config)
 

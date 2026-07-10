@@ -559,14 +559,14 @@ def test_download_file_reports_progress(tmp_path, monkeypatch):
 
 
 def test_default_model_root_is_project_models():
-    """Default model root should be project-level models/ directory."""
+    """Default model root should be user-level models directory for packaged installs."""
     from subtap.schemas.config import SubtapConfig
     from subtap.core.models import _get_model_root
 
     root = _get_model_root(SubtapConfig())
 
     assert root.name == "models"
-    assert root.parent == Path(__file__).resolve().parent.parent
+    assert root.parent == Path.home() / ".subtap"
 
 
 def test_registry_uses_development_model_names():

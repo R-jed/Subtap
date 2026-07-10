@@ -57,7 +57,8 @@ def test_pipeline_publishes_alignment_ready(monkeypatch, tmp_path):
     )
 
     monkeypatch.setattr(
-        "subtap.core.align.get_aligner_backend", lambda _cfg: MockAlignerBackend()
+        "subtap.core.align.get_aligner_backend",
+        lambda *_a, **_k: MockAlignerBackend(),
     )
 
     pipeline.run_stage("align")

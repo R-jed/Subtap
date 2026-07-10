@@ -95,7 +95,9 @@ def test_run_align_writes_aligned_subtitle_contract(monkeypatch, tmp_path):
     )
 
     backend = MockAlignerBackend()
-    monkeypatch.setattr("subtap.core.align.get_aligner_backend", lambda _cfg: backend)
+    monkeypatch.setattr(
+        "subtap.core.align.get_aligner_backend", lambda *_a, **_k: backend
+    )
 
     result = run_align(workspace, config)
 
@@ -129,7 +131,9 @@ def test_run_align_passthrough_word_level_timing(monkeypatch, tmp_path):
     )
 
     backend = MockAlignerWithWords()
-    monkeypatch.setattr("subtap.core.align.get_aligner_backend", lambda _cfg: backend)
+    monkeypatch.setattr(
+        "subtap.core.align.get_aligner_backend", lambda *_a, **_k: backend
+    )
 
     result = run_align(workspace, config)
 

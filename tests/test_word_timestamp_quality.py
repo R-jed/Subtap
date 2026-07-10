@@ -70,7 +70,9 @@ def test_zero_duration_words_fixed(monkeypatch, tmp_path):
     )
 
     backend = MockAlignerWithBadTimestamps()
-    monkeypatch.setattr("subtap.core.align.get_aligner_backend", lambda _cfg: backend)
+    monkeypatch.setattr(
+        "subtap.core.align.get_aligner_backend", lambda *_a, **_k: backend
+    )
 
     run_align(workspace, config)
 
@@ -104,7 +106,9 @@ def test_monotonic_words(monkeypatch, tmp_path):
     )
 
     backend = MockAlignerWithBadTimestamps()
-    monkeypatch.setattr("subtap.core.align.get_aligner_backend", lambda _cfg: backend)
+    monkeypatch.setattr(
+        "subtap.core.align.get_aligner_backend", lambda *_a, **_k: backend
+    )
 
     run_align(workspace, config)
 
@@ -144,7 +148,9 @@ def test_normal_words_unchanged(monkeypatch, tmp_path):
     )
 
     backend = MockAlignerWithWords()
-    monkeypatch.setattr("subtap.core.align.get_aligner_backend", lambda _cfg: backend)
+    monkeypatch.setattr(
+        "subtap.core.align.get_aligner_backend", lambda *_a, **_k: backend
+    )
 
     run_align(workspace, config)
 

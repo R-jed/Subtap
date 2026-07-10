@@ -46,6 +46,15 @@ subtap = "subtap.cli:app"
 [tool.hatch.build.targets.wheel]
 packages = ["src/subtap"]
 
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "/.coverage",
+    "/.superpowers",
+    "/graphify-out",
+    "/work_test_*",
+    "/dist",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "tests"]
