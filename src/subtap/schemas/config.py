@@ -15,6 +15,9 @@ class VADConfig(BaseModel):
     # 用户配置：灵敏度（唯一用户可调参数）
     sensitivity: str = "normal"  # low/normal/high
 
+    # VAD 引擎选择
+    use_silero_vad: bool = True  # True=Silero VAD, False=pydub detect_nonsilent
+
     # 内部参数（用户无需关心）
     min_silence_sec: float = 0.4
     min_chunk_sec: float = 1.0
