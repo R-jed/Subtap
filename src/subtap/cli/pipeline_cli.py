@@ -825,7 +825,11 @@ def _demo(
     except Exception as e:
         _handle_error(f"演示失败：{e}")
 
-    # 显示示例 SRT 内容
+    _show_srt_preview(output_dir)
+
+
+def _show_srt_preview(output_dir: Path) -> None:
+    """显示示例 SRT 内容（前 20 行）"""
     srt_path = output_dir / "final.srt"
     if srt_path.exists():
         typer.echo()
