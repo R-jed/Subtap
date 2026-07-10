@@ -7,6 +7,7 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -181,7 +182,11 @@ class IncompleteWordQuery:
         if self.tail and self.tail[-1] in _PUNCT_CHARS:
             return False
         # 英文单词保护：tail 含拉丁字母且 next_start 也含拉丁字母
-        if not self.cross_sentence and _has_latin(self.tail) and _has_latin(self.next_start[:1]):
+        if (
+            not self.cross_sentence
+            and _has_latin(self.tail)
+            and _has_latin(self.next_start[:1])
+        ):
             if self.prev_char and _has_latin(self.prev_char):
                 return False
             return True
@@ -304,11 +309,11 @@ def _inject_punct(words: list[dict], text: str) -> list[dict]:
                 result.append({"word": ch, "start_sec": t, "end_sec": t})
                 prev_end = t
 
-    # Completeness check: debug if text characters were lost
+    # Completeness check: warn if text characters were lost.
     reconstructed = "".join(w["word"] for w in result)
     if reconstructed != text:
-        logger.debug(
-            "_inject_punct: 文本完整性校验差异，原始 %d 字符 vs 重建 %d 字符。"
+        logger.warning(
+            "_inject_punct: 完整性校验失败，原始 %d 字符 vs 重建 %d 字符。"
             "原始='%s' 重建='%s'",
             len(text),
             len(reconstructed),
@@ -357,7 +362,7 @@ def _flush_split_line(
 def _greedy_split(
     words: list[dict],
     text: str,
-    boundaries: list[tuple[str, float] | None],
+    boundaries: Sequence[tuple[str, float | int] | None],
     max_chars: int,
     min_chars: int,
     pause_threshold: float,
@@ -427,13 +432,21 @@ def _greedy_split(
                 if not any(cur_text.startswith(c) for c in _CONJ_PAIRS):
                     should_split_before = True
                     split_bt = "pause"
-            elif boundary_type == "conjunction" and cur_text and len(cur_text) >= min_chars:
+            elif (
+                boundary_type == "conjunction"
+                and cur_text
+                and len(cur_text) >= min_chars
+            ):
                 if i > 0:
                     gap = w["start_sec"] - words[i - 1]["end_sec"]
-                    if gap >= pause_threshold and not any(cur_text.startswith(c) for c in _CONJ_PAIRS):
+                    if gap >= pause_threshold and not any(
+                        cur_text.startswith(c) for c in _CONJ_PAIRS
+                    ):
                         should_split_before = True
                         split_bt = "conjunction"
-            elif boundary_type == "particle" and cur_text and len(cur_text) >= min_chars:
+            elif (
+                boundary_type == "particle" and cur_text and len(cur_text) >= min_chars
+            ):
                 should_split_before = True
                 split_bt = "particle"
 
@@ -463,7 +476,11 @@ def _greedy_split(
             elif boundary_type == "comma":
                 should_split_after = True
                 after_bt = "comma"
-        if should_split_after and len(cur_text) < min_chars and len(cur_text) < max_chars:
+        if (
+            should_split_after
+            and len(cur_text) < min_chars
+            and len(cur_text) < max_chars
+        ):
             if after_bt not in ("comma", "sentence_end"):
                 should_split_after = False
         if should_split_after:
@@ -480,7 +497,14 @@ def _greedy_split(
         cur_text = "".join(x["word"] for x in cur_words)
 
     if cur_words:
-        lines.append({"text": cur_text, "start_sec": cur_words[0]["start_sec"], "end_sec": cur_words[-1]["end_sec"], "break_type": "end"})
+        lines.append(
+            {
+                "text": cur_text,
+                "start_sec": cur_words[0]["start_sec"],
+                "end_sec": cur_words[-1]["end_sec"],
+                "break_type": "end",
+            }
+        )
 
     return [ln for ln in lines if ln["text"].strip()]
 
@@ -507,7 +531,9 @@ def _smart_split(
         words, marked=marked_words, pause_threshold=pause_threshold
     )
 
-    lines = _greedy_split(words, text, boundaries, max_chars, min_chars, pause_threshold)
+    lines = _greedy_split(
+        words, text, boundaries, max_chars, min_chars, pause_threshold
+    )
 
     # Merge very short fragments (≤1 char always, ≤2 char unless hard break)
     _HARD_BREAKS = {"sentence_end", "comma"}
@@ -529,7 +555,13 @@ def _smart_split(
     return (
         lines
         if lines
-        else [{"text": text, "start_sec": words[0]["start_sec"], "end_sec": words[-1]["end_sec"]}]
+        else [
+            {
+                "text": text,
+                "start_sec": words[0]["start_sec"],
+                "end_sec": words[-1]["end_sec"],
+            }
+        ]
     )
 
 
@@ -980,6 +1012,18 @@ class SRTExporter(BaseExporter):
     @property
     def extension(self) -> str:
         return "srt"
+
+    def export(self, segments: list[AlignedSegment], output_path: Path) -> Path:
+        """Write SRT subtitle file and reject broken timing."""
+        from subtap.core.subtitle_quality import validate_srt_delivery
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        content = self.render(segments)
+        report = validate_srt_delivery(content)
+        if not report.ok:
+            raise ValueError(f"SRT 交付检查失败：{report}")
+        output_path.write_text(content, encoding="utf-8")
+        return output_path
 
     def render(self, segments: list[AlignedSegment]) -> str:
         sorted_segs = sorted(segments, key=lambda s: s.start_sec)

@@ -75,7 +75,7 @@ def test_chunks_to_asr_jsonl(
     import subtap.core.asr as asr_module
 
     original = asr_module.get_backend
-    asr_module.get_backend = lambda cfg: MockASRBackend()
+    asr_module.get_backend = lambda *_a, **_k: MockASRBackend()
     try:
         result = run_asr(ws, test_config)
     finally:
@@ -106,7 +106,7 @@ def test_asr_chunk_id_alignment(
     import subtap.core.asr as asr_module
 
     original = asr_module.get_backend
-    asr_module.get_backend = lambda cfg: MockASRBackend()
+    asr_module.get_backend = lambda *_a, **_k: MockASRBackend()
     try:
         run_asr(ws, test_config)
     finally:
@@ -146,7 +146,7 @@ def test_cli_transcribe_runnable(
     # Patch get_backend to return mock (asr.py holds a local ref)
     import subtap.core.asr as asr_module
 
-    monkeypatch.setattr(asr_module, "get_backend", lambda cfg: MockASRBackend())
+    monkeypatch.setattr(asr_module, "get_backend", lambda *_a, **_k: MockASRBackend())
 
     # Patch load_config (imported locally inside CLI functions)
     import subtap.schemas.config as cfg_mod

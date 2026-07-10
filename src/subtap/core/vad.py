@@ -20,11 +20,12 @@ logger = logging.getLogger(__name__)
 class VADError(Exception):
     """VAD processing error with user-facing context."""
 
+
 # Sensitivity mapping: maps user-facing level to min_silence_duration_ms
 _SENSITIVITY_MAP = {
-    "low": 300,    # fewer, longer pauses detected
-    "normal": 150, # balanced
-    "high": 80,    # more, shorter pauses detected
+    "low": 300,  # fewer, longer pauses detected
+    "normal": 150,  # balanced
+    "high": 80,  # more, shorter pauses detected
 }
 
 
@@ -33,6 +34,7 @@ def _load_silero_vad():
     """Load Silero VAD model (cached across calls)."""
     try:
         from silero_vad import load_silero_vad
+
         return load_silero_vad()
     except Exception as e:
         raise VADError(
@@ -69,9 +71,7 @@ def _get_speech_segments_silero(
         # Normalize to [-1, 1] range (pydub samples are int16 range)
         samples = samples / 32768.0
     except Exception as e:
-        raise VADError(
-            f"音频格式转换失败（需要 16kHz 单声道）: {e}"
-        ) from e
+        raise VADError(f"音频格式转换失败（需要 16kHz 单声道）: {e}") from e
 
     try:
         model = _load_silero_vad()
@@ -115,8 +115,7 @@ def split_chunks(workspace: Workspace, config: SubtapConfig) -> list[Chunk]:
         audio = AudioSegment.from_file(workspace.source_audio)
     except Exception as e:
         raise VADError(
-            f"音频文件加载失败: {workspace.source_audio}\n"
-            f"错误: {e}"
+            f"音频文件加载失败: {workspace.source_audio}\n" f"错误: {e}"
         ) from e
 
     if vad_cfg.use_silero_vad:

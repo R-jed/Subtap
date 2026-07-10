@@ -32,6 +32,25 @@ def test_local_only_blocks_enhance_api(tmp_path):
     )
 
 
+def test_local_only_blocks_remote_asr_backend(tmp_path, monkeypatch):
+    """--local-only 模式下不能使用会外发音频的 ASR 后端。"""
+    input_file = tmp_path / "test.mp3"
+    input_file.write_bytes(b"fake audio")
+    home = tmp_path / "home"
+    (home / ".subtap").mkdir(parents=True)
+    (home / ".subtap" / "config.yaml").write_text(
+        "asr:\n  backend: http-asr\n", encoding="utf-8"
+    )
+    monkeypatch.setattr("pathlib.Path.home", lambda: home)
+
+    result = runner.invoke(app, ["run", str(input_file), "--local-only"])
+    output = _strip_ansi(result.output)
+
+    assert result.exit_code == 1
+    assert "http-asr" in output
+    assert "local-only" in output
+
+
 def test_local_only_allows_enhance_local(tmp_path, monkeypatch):
     """--local-only 模式下可以使用 --enhance local。"""
     input_file = tmp_path / "test.mp3"

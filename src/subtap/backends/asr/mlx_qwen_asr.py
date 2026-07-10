@@ -13,10 +13,7 @@ from subtap.schemas.models import Chunk, ASRSegment
 
 logger = logging.getLogger(__name__)
 
-# Local model paths (relative to project root)
-_PROJECT_ROOT = Path(__file__).resolve().parents[4]
-_MODEL_0_6B = str(_PROJECT_ROOT / "models" / "asr_0.6b")
-_MODEL_1_7B = str(_PROJECT_ROOT / "models" / "asr_1.7b")
+DEFAULT_MODEL_ROOT = Path.home() / ".subtap" / "models"
 
 
 class MLXQwenASR:
@@ -24,7 +21,7 @@ class MLXQwenASR:
 
     name = "mlx-qwen-asr"
 
-    def __init__(self, config: ASRConfig):
+    def __init__(self, config: ASRConfig, model_root: Path | None = None):
         self.config = config
         self.model_name = config.model
         self.quantization = config.quantization
@@ -32,7 +29,9 @@ class MLXQwenASR:
             f"qwen3-asr-{self.model_name.replace('asr_', '')}-{self.quantization}"
         )
         self._model = None
-        self._model_path = _MODEL_1_7B if self.model_name == "asr_1.7b" else _MODEL_0_6B
+        root = model_root or DEFAULT_MODEL_ROOT
+        model_subdir = "asr_1.7b" if self.model_name == "asr_1.7b" else "asr_0.6b"
+        self._model_path = str(root / model_subdir)
 
     def release_model(self) -> None:
         """Release the in-memory MLX model after the ASR stage."""
@@ -80,8 +79,7 @@ class MLXQwenASR:
                 audio_path = Path.cwd() / audio_path
 
             if not audio_path.exists():
-                logger.warning("Chunk file not found: %s, skipping", audio_path)
-                continue
+                raise FileNotFoundError(f"ASR chunk file not found: {audio_path}")
 
             logger.info("Transcribing chunk %d: %s", chunk.chunk_id, audio_path)
 
@@ -98,8 +96,7 @@ class MLXQwenASR:
 
                 result = generate_transcription(**gen_kwargs)
             except Exception as e:
-                logger.error("ASR failed for chunk %d: %s", chunk.chunk_id, e)
-                continue
+                raise RuntimeError(f"ASR failed for chunk {chunk.chunk_id}: {e}") from e
 
             # Extract text from result
             text = ""

@@ -85,7 +85,7 @@
        │
        ▼
   ┌─────────┐   字幕导出
-  │  export │   ────────────────────────────► output/final.srt
+  │  export │   ────────────────────────────► output/<输入文件名>.srt
   └─────────┘   SRT / VTT / JSON / TSV 多格式
                 断句：DP 最优拆分 + jieba 词边界 + 短碎片保护
                 ITN：中文数字 → 阿拉伯数字
@@ -96,13 +96,15 @@
 
 ## 安装
 
+当前首发支持：macOS 13.5+ Apple Silicon。默认 ASR / 对齐依赖本地 MLX 模型；首次运行前执行 `subtap setup`。Linux / Windows 和离线免模型包不属于当前首发范围。
+
 ### 方式零：一键安装（自动选择最佳方式）
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/R-jed/Subtap/main/scripts/install.sh | bash
 ```
 
-> 自动检测环境：macOS 用 Homebrew，有 uv 用 uvx，有 pipx 用 pipx，兜底用 pip。
+> 自动检测环境：macOS 优先 Homebrew；失败时依次尝试 uv、pipx、pip。安装后会执行 `subtap version` 和 `subtap doctor`。
 
 ### 方式一：Homebrew（推荐 macOS 用户）
 
@@ -111,7 +113,7 @@ brew tap R-jed/tap
 brew install subtap
 ```
 
-### 方式二：uvx（跨平台，无需 Python 环境）
+### 方式二：uv
 
 ```bash
 # 临时运行
@@ -147,7 +149,7 @@ subtap run audio.mp3 --script 文稿.txt   # 文稿匹配
 subtap run audio.mp3 --format vtt        # 指定格式
 subtap run audio.mp3 --translate-to en   # 翻译
 subtap run audio.mp3 --enhance api       # 启用 LLM 校对
-subtap batch /path/to/media/folder       # 批量处理
+subtap batch-transcribe --dir /path/to/media/folder  # 批量处理
 subtap demo                              # 运行演示
 subtap doctor                            # 检查环境
 subtap setup                             # 初始化向导

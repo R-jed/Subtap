@@ -953,6 +953,35 @@ def test_doctor_release_fails_when_models_missing(tmp_path, monkeypatch):
     assert "缺失" in _strip_ansi(result.output)
 
 
+def test_doctor_default_reports_missing_models_without_failing(tmp_path, monkeypatch):
+    """doctor 默认用于安装后诊断，缺模型时应提示但不阻断。"""
+    from unittest.mock import patch, MagicMock
+    from pathlib import Path
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    subtap_dir = tmp_path / ".subtap"
+    subtap_dir.mkdir()
+    (subtap_dir / "config.yaml").write_text(
+        "models:\n  root: models\n", encoding="utf-8"
+    )
+
+    missing_status = [
+        MagicMock(
+            name="asr_0.6b",
+            installed=False,
+            path=tmp_path / "models" / "asr_0.6b",
+            missing_files=["config.json"],
+        )
+    ]
+
+    with patch("subtap.core.models.ModelRegistry") as MockRegistry:
+        MockRegistry.return_value.status.return_value = missing_status
+        result = runner.invoke(app, ["doctor"])
+
+    assert result.exit_code == 0
+    assert "缺失" in _strip_ansi(result.output)
+
+
 def test_python_module_entrypoint_outputs_help():
     import os
     import subprocess

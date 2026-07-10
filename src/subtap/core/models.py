@@ -11,7 +11,7 @@ from subtap.schemas.config import SubtapConfig
 
 logger = logging.getLogger(__name__)
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_MODEL_ROOT = Path.home() / ".subtap" / "models"
 
 
 class ModelEntry(TypedDict):
@@ -71,7 +71,11 @@ MODEL_REGISTRY: dict[str, ModelEntry] = {
 def _get_model_root(config: SubtapConfig) -> Path:
     """Resolve model root path from config."""
     root = Path(config.models.root).expanduser()
-    return root if root.is_absolute() else PROJECT_ROOT / root
+    if root.is_absolute():
+        return root
+    if root == Path("models"):
+        return DEFAULT_MODEL_ROOT
+    return Path.home() / ".subtap" / root
 
 
 class ModelStatus:

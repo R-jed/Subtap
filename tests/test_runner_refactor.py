@@ -135,6 +135,13 @@ class TestLearnStageInAllRunners:
         keys = [s["key"] for s in stages]
         assert "script_match" in keys
 
+    def test_script_match_runs_before_align(self):
+        """script_match must run before align so matched text affects final timing."""
+        config = _make_config(script_path="/some/script.txt")
+        stages = BaseRunner._build_stages(config, translate_to=None)
+        keys = [s["key"] for s in stages]
+        assert keys.index("script_match") < keys.index("align")
+
     def test_build_stages_without_script_match(self):
         """script_match should be absent when script_path is None."""
         config = _make_config(script_path=None)

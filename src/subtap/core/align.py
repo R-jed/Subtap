@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from subtap.backends.align import get_aligner_backend
+from subtap.core.models import _get_model_root
 from subtap.metrics.events import EventBus, EventType, make_pipeline_event
 from subtap.schemas.alignment import AlignedSubtitle, AlignedWord
 from subtap.schemas.config import SubtapConfig
@@ -109,7 +110,7 @@ def run_align(
     if backend_name:
         align_config.backend = backend_name
 
-    backend = get_aligner_backend(align_config)
+    backend = get_aligner_backend(align_config, model_root=_get_model_root(config))
 
     # Align
     model_name = f"{align_config.model}-{align_config.quantization}"

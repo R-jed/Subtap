@@ -11,12 +11,17 @@ import sys
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 
 from subtap.cli._utils import _handle_error
 from subtap.metrics.profiler import PipelineProfiler
-from subtap.ui.tui import RichRunner
+
+if TYPE_CHECKING:
+    from subtap.core.pipeline import Pipeline
+    from subtap.metrics.run_log import RunLog
+    from subtap.schemas.config import SubtapConfig
 
 
 def check_first_run_wizard(config) -> bool:
@@ -82,9 +87,7 @@ def _audio_duration_sec(path: Path) -> float:
     if not path.exists():
         return 0.0
     try:
-        return float(
-            json.loads(path.read_text(encoding="utf-8")).get("duration", 0)
-        )
+        return float(json.loads(path.read_text(encoding="utf-8")).get("duration", 0))
     except Exception:
         return 0.0
 
@@ -134,6 +137,8 @@ def _execute_pipeline(
     run_log: "RunLog",
 ) -> dict:
     """执行 pipeline 并返回 timings。"""
+    from subtap.ui.tui import RichRunner
+
     runner = RichRunner()
     timings = {}
     import time
@@ -143,15 +148,23 @@ def _execute_pipeline(
         if json_output:
             with redirect_stdout(StringIO()):
                 result = runner.run_pipeline(
-                    pipeline, input_path, output_dir,
-                    fmt=fmt, enhance=enhance,
-                    translate_to=translate_to, bilingual=bilingual,
+                    pipeline,
+                    input_path,
+                    output_dir,
+                    fmt=fmt,
+                    enhance=enhance,
+                    translate_to=translate_to,
+                    bilingual=bilingual,
                 )
         else:
             result = runner.run_pipeline(
-                pipeline, input_path, output_dir,
-                fmt=fmt, enhance=enhance,
-                translate_to=translate_to, bilingual=bilingual,
+                pipeline,
+                input_path,
+                output_dir,
+                fmt=fmt,
+                enhance=enhance,
+                translate_to=translate_to,
+                bilingual=bilingual,
             )
         timings = result.get("timings", {})
         _run_elapsed = time.monotonic() - _run_start
@@ -245,6 +258,12 @@ def _validate_run_params(
 
     if bilingual != "off" and not translate_to:
         _handle_error("错误：--bilingual 需要同时使用 --translate-to")
+
+
+def _warn_external_api_use(enhance: str, translate_to: str | None) -> None:
+    """Warn before any stage can send subtitle text to an external API."""
+    if enhance == "api" or translate_to:
+        typer.echo("⚠ 将使用外部 LLM API 处理字幕文本。", err=True)
 
 
 def _run(
@@ -381,10 +400,21 @@ def _run(
         translate_to = config.translate_to
 
     _validate_run_params(enhance, local_only, translate_to, bilingual)
+    _warn_external_api_use(enhance, translate_to)
 
     work_dir = _apply_run_config(
-        config, input_path, timestamp, punctuation, subtitle_language,
-        max_chars, min_chars, script, script_mode, mode, hotwords, work_dir,
+        config,
+        input_path,
+        timestamp,
+        punctuation,
+        subtitle_language,
+        max_chars,
+        min_chars,
+        script,
+        script_mode,
+        mode,
+        hotwords,
+        work_dir,
     )
 
     if tui and not observer_child and not no_tui:
@@ -505,8 +535,15 @@ def _run(
     _apply_cli_overrides(config, llm_proofread, llm_hotword)
 
     timings = _execute_pipeline(
-        pipeline, input_path, output_dir, fmt, enhance,
-        translate_to, bilingual, json_output, run_log,
+        pipeline,
+        input_path,
+        output_dir,
+        fmt,
+        enhance,
+        translate_to,
+        bilingual,
+        json_output,
+        run_log,
     )
     pipeline.cleanup()
 
@@ -813,6 +850,8 @@ def _demo(
     config = load_config(Path.home() / ".subtap" / "config.yaml")
     pipeline = Pipeline(config, work_dir=Path("./demo_work"))
     pipeline.workspace.ensure_dirs()
+
+    from subtap.ui.tui import RichRunner
 
     runner = RichRunner()
 

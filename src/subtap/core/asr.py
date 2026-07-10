@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from subtap.backends.asr import get_backend
+from subtap.core.models import _get_model_root
 from subtap.metrics.events import EventBus, EventType, make_pipeline_event
 from subtap.schemas.asr import ASRDraft
 from subtap.schemas.config import SubtapConfig
@@ -114,7 +115,7 @@ def run_asr(
     if asr_config.backend == "http-asr":
         backend = get_backend(asr_config, config.remote_api)
     else:
-        backend = get_backend(asr_config)
+        backend = get_backend(asr_config, model_root=_get_model_root(config))
 
     # Resolve chunk paths to absolute
     abs_chunks: list[Chunk] = []

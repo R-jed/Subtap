@@ -19,13 +19,16 @@ def _write_wav(path: Path, samples: np.ndarray, sample_rate: int = 16000) -> Non
 
 def _make_speech_samples(duration_ms: int, sample_rate: int = 16000) -> np.ndarray:
     """Generate a sine-wave 'speech' signal as int16 samples."""
-    t = np.linspace(0, duration_ms / 1000.0, int(sample_rate * duration_ms / 1000), endpoint=False)
+    t = np.linspace(
+        0, duration_ms / 1000.0, int(sample_rate * duration_ms / 1000), endpoint=False
+    )
     return (np.sin(2 * np.pi * 440 * t) * 30000).astype(np.int16)
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def speech_with_pauses(tmp_path: Path) -> Path:
@@ -56,6 +59,7 @@ def single_burst(tmp_path: Path) -> Path:
 # ---------------------------------------------------------------------------
 # VADConfig tests
 # ---------------------------------------------------------------------------
+
 
 def test_vad_config_silero_field():
     """VADConfig should have use_silero_vad field with default True."""
@@ -98,6 +102,7 @@ def test_vad_config_custom_min_speech():
 # Silero VAD integration tests
 # ---------------------------------------------------------------------------
 
+
 def test_no_sentence_truncation(speech_with_pauses: Path):
     """Chunks should not truncate sentences at boundaries.
 
@@ -110,6 +115,7 @@ def test_no_sentence_truncation(speech_with_pauses: Path):
     workspace = Workspace(config, base_dir=Path("work_test_vad_truncation"))
     workspace.ensure_dirs()
     import shutil
+
     shutil.copy2(speech_with_pauses, workspace.source_audio)
 
     chunks = split_chunks(workspace, config)
@@ -121,9 +127,9 @@ def test_no_sentence_truncation(speech_with_pauses: Path):
     # 1.5s speech segments, so nothing should be tiny.
     for chunk in chunks:
         duration = chunk.end_sec - chunk.start_sec
-        assert duration >= 0.5, (
-            f"Chunk {chunk.chunk_id} 太短 ({duration:.2f}s)，可能截断了句子"
-        )
+        assert (
+            duration >= 0.5
+        ), f"Chunk {chunk.chunk_id} 太短 ({duration:.2f}s)，可能截断了句子"
 
 
 def test_silero_vad_finds_natural_pauses(speech_with_pauses: Path):
@@ -135,6 +141,7 @@ def test_silero_vad_finds_natural_pauses(speech_with_pauses: Path):
     workspace = Workspace(config, base_dir=Path("work_test_vad"))
     workspace.ensure_dirs()
     import shutil
+
     shutil.copy2(speech_with_pauses, workspace.source_audio)
 
     chunks = split_chunks(workspace, config)
@@ -155,6 +162,7 @@ def test_silero_vad_single_burst(single_burst: Path):
     workspace = Workspace(config, base_dir=Path("work_test_vad_single"))
     workspace.ensure_dirs()
     import shutil
+
     shutil.copy2(single_burst, workspace.source_audio)
 
     chunks = split_chunks(workspace, config)
@@ -182,6 +190,7 @@ def test_vad_error_on_corrupt_file(tmp_path: Path):
     workspace = Workspace(config, base_dir=Path("work_test_vad_corrupt"))
     workspace.ensure_dirs()
     import shutil
+
     shutil.copy2(corrupt, workspace.source_audio)
 
     with pytest.raises(VADError, match="音频文件加载失败"):
@@ -192,6 +201,7 @@ def test_vad_error_on_corrupt_file(tmp_path: Path):
 # pydub fallback tests
 # ---------------------------------------------------------------------------
 
+
 def test_pydub_fallback_speech_with_pauses(speech_with_pauses: Path):
     """pydub fallback should also produce chunks from speech + silence audio."""
     config = SubtapConfig()
@@ -200,6 +210,7 @@ def test_pydub_fallback_speech_with_pauses(speech_with_pauses: Path):
     workspace = Workspace(config, base_dir=Path("work_test_pydub"))
     workspace.ensure_dirs()
     import shutil
+
     shutil.copy2(speech_with_pauses, workspace.source_audio)
 
     chunks = split_chunks(workspace, config)
@@ -208,9 +219,7 @@ def test_pydub_fallback_speech_with_pauses(speech_with_pauses: Path):
 
     for chunk in chunks:
         duration = chunk.end_sec - chunk.start_sec
-        assert duration >= 0.5, (
-            f"Chunk {chunk.chunk_id} 太短 ({duration:.2f}s)"
-        )
+        assert duration >= 0.5, f"Chunk {chunk.chunk_id} 太短 ({duration:.2f}s)"
 
 
 def test_pydub_fallback_single_burst(single_burst: Path):
@@ -221,6 +230,7 @@ def test_pydub_fallback_single_burst(single_burst: Path):
     workspace = Workspace(config, base_dir=Path("work_test_pydub_single"))
     workspace.ensure_dirs()
     import shutil
+
     shutil.copy2(single_burst, workspace.source_audio)
 
     chunks = split_chunks(workspace, config)
