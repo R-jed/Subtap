@@ -1,0 +1,12 @@
+# SDD Progress
+- Task 24: complete (hotword_cli.py extracted, review approved)
+- Task 25: complete (models_cli.py extracted, review approved)
+- Task 28: complete (script_cli.py extracted, review approved)
+- Task 27: complete (batch_cli.py extracted, review approved after fixes)
+- Task 26: complete (pipeline_cli.py extracted, review approved with notes)
+- Final review: complete (8 pre-existing failures, 0 new failures)
+- Task 29: complete (_run split into 4 functions, 417→150 lines)
+- Task 30: complete (doctor_cli.py extracted, review approved)
+- Task 31: complete (setup_cli.py extracted, review approved)
+- Task 32: complete (remaining small functions kept in __init__.py)
+- Task 33: complete (5 code quality fixes, 91/91 tests passed)
