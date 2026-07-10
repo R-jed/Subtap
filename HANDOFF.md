@@ -5,9 +5,11 @@
 
 ## 当前状态
 
-**1022 测试全部通过，4 skipped，0 失败。** Pipeline 11/11 阶段可用。开发完成度 99%。
+**1029 测试全部通过，4 skipped，0 失败。** Pipeline 11/11 阶段可用。开发完成度 99%。
 
 **P0 问题已全部修复 ✅**（5/5）。**P1 核心问题已修复 ✅**（6/8）。**P2 问题已修复 ✅**（3/6）。
+
+**分支 `feat/smart-split-v2` 已合并到 main。**
 
 **分支 `feat/smart-split-v2`：** `_smart_split` 已替换为 `_smart_split_v2`（Subtitle Edit 模式：枚举拆分点 + 评分选优 + jieba 分词）。待验证后合并到 main。
 
@@ -97,7 +99,7 @@
 python3 -m pytest tests/ -q
 ```
 
-预期：1022 passed, 4 skipped, 0 failed。
+预期：1029 passed, 4 skipped, 0 failed。
 
 ## API 配置
 
