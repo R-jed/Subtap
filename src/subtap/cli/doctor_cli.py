@@ -256,8 +256,9 @@ def doctor(
             "warmup": False,  # 预热功能未启用
             "device_backend": "mlx-metal",
         }
+        external_audio_sent = getattr(config.asr, "backend", "") == "http-asr"
         report["privacy"] = {
-            "external_audio_sent": False,
+            "external_audio_sent": external_audio_sent,
             "local_only_available": True,
             "default_local": True,
         }
@@ -280,7 +281,12 @@ def doctor(
                 f"对齐：{config.align.model} / {config.align.quantization}"
             )
             typer.echo("  模型策略：任务阶段加载，阶段结束释放，不默认常驻或预热")
-            typer.echo("  隐私：音频不外发；--local-only 可用")
+            privacy_text = (
+                "当前 ASR 会外发音频；--local-only 会阻止该配置"
+                if external_audio_sent
+                else "音频不外发；--local-only 可用"
+            )
+            typer.echo(f"  隐私：{privacy_text}")
             typer.echo("  输出：默认写入 ./output，精对齐生成 final.*")
 
         registry = ModelRegistry(config)

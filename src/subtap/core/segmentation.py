@@ -19,7 +19,7 @@ _MAX_CHARS = 60
 
 # Min chars for a sentence to be considered valid
 # 低于此值的句子会被合并到相邻句子，减少字幕碎片
-_MIN_CHARS = 10
+_MIN_CHARS = 20
 
 # Sentence-ending punctuation
 _SENT_END_RE = re.compile(r"[。！？.!?]+")

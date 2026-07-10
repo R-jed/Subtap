@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING
 import typer
 
 from subtap.cli._utils import _handle_error
+
+REMOTE_ASR_BACKENDS = {"http-asr"}
 from subtap.metrics.profiler import PipelineProfiler
 
 if TYPE_CHECKING:
@@ -240,10 +242,16 @@ def _validate_run_params(
     local_only: bool,
     translate_to: str | None,
     bilingual: str,
+    asr_backend: str = "mlx-qwen-asr",
 ) -> None:
     """验证 run 命令参数。"""
     if enhance not in ("local", "api"):
         _handle_error(f"错误：--enhance 必须是 local/api，收到：{enhance}")
+
+    if local_only and asr_backend in REMOTE_ASR_BACKENDS:
+        _handle_error(
+            f"错误：--local-only 模式下不能使用会外发音频的 ASR 后端：{asr_backend}"
+        )
 
     if local_only and enhance == "api":
         _handle_error("错误：--local-only 模式下不能使用 --enhance api")
@@ -260,8 +268,12 @@ def _validate_run_params(
         _handle_error("错误：--bilingual 需要同时使用 --translate-to")
 
 
-def _warn_external_api_use(enhance: str, translate_to: str | None) -> None:
-    """Warn before any stage can send subtitle text to an external API."""
+def _warn_external_api_use(
+    enhance: str, translate_to: str | None, asr_backend: str = "mlx-qwen-asr"
+) -> None:
+    """Warn before any stage can send data to an external API."""
+    if asr_backend in REMOTE_ASR_BACKENDS:
+        typer.echo("⚠ 将使用外部 ASR API 处理音频。", err=True)
     if enhance == "api" or translate_to:
         typer.echo("⚠ 将使用外部 LLM API 处理字幕文本。", err=True)
 
@@ -399,8 +411,9 @@ def _run(
     if translate_to is None and getattr(config, "translate_to", ""):  # type: ignore[arg-type]
         translate_to = config.translate_to
 
-    _validate_run_params(enhance, local_only, translate_to, bilingual)
-    _warn_external_api_use(enhance, translate_to)
+    asr_backend = getattr(getattr(config, "asr", None), "backend", "mlx-qwen-asr")
+    _validate_run_params(enhance, local_only, translate_to, bilingual, asr_backend)
+    _warn_external_api_use(enhance, translate_to, asr_backend)
 
     work_dir = _apply_run_config(
         config,
