@@ -185,10 +185,9 @@ def resolve_llm_flags(
         if not llm_hotword:
             llm_hotword = True
     elif enhance_mode == "local":
-        if llm_proofread is None:
-            llm_proofread = False
-        if llm_hotword is None:
-            llm_hotword = False
+        # local 模式强制禁用所有 LLM 功能，无需 API key
+        llm_proofread = False
+        llm_hotword = False
 
     # Default: proofread on, hotword off
     if llm_proofread is None:
