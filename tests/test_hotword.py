@@ -117,3 +117,29 @@ class TestLoadSaveGlossary:
 
         content = path.read_text(encoding="utf-8")
         assert content == "达芬奇=达文西,大芬奇\n"
+
+    def test_load_encoding_error_returns_empty(self, tmp_path, caplog):
+        """UnicodeDecodeError should log warning and return empty glossary."""
+        path = tmp_path / "bad_encoding.txt"
+        path.write_bytes(b"\xff\xfe\x00\x01invalid utf-8 content")
+
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            glossary = load_glossary(path, lang="zh")
+
+        assert len(glossary.hotwords) == 0
+        assert "Failed to decode glossary" in caplog.text
+
+    def test_load_permission_error_propagates(self, tmp_path, monkeypatch):
+        """PermissionError (non-recoverable) should propagate, not be swallowed."""
+        path = tmp_path / "glossary.txt"
+        path.write_text("达芬奇=达文西\n", encoding="utf-8")
+
+        def raise_permission_error(*args, **kwargs):
+            raise PermissionError("Permission denied")
+
+        monkeypatch.setattr("pathlib.Path.read_text", raise_permission_error)
+
+        with pytest.raises(PermissionError, match="Permission denied"):
+            load_glossary(path, lang="zh")

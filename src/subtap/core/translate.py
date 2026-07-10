@@ -19,10 +19,17 @@ CONTEXT_OVERLAP = 3
 
 
 def _write_aligned(path: Path, segments: list[AlignedSegment]) -> None:
-    path.write_text(
-        "".join(segment.model_dump_json() + "\n" for segment in segments),
-        encoding="utf-8",
-    )
+    tmp_path = path.with_suffix(".jsonl.tmp")
+    try:
+        tmp_path.write_text(
+            "".join(segment.model_dump_json() + "\n" for segment in segments),
+            encoding="utf-8",
+        )
+        tmp_path.rename(path)
+    except Exception:
+        if tmp_path.exists():
+            tmp_path.unlink()
+        raise
 
 
 def render_srt_from_aligned(aligned_jsonl: Path) -> str:

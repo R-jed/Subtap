@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -1155,6 +1154,11 @@ def run_export(
     Returns:
         Dict with output_path and format.
     """
+    if not aligned_jsonl.exists():
+        raise FileNotFoundError(
+            f"aligned.jsonl 文件不存在: {aligned_jsonl}"
+        )
+
     exporter_cls = EXPORTERS.get(fmt)
     if exporter_cls is None:
         raise ValueError(
@@ -1273,7 +1277,9 @@ def run_final_exports(
 ) -> dict:
     """Export aligned subtitles to the stable final.* output contract."""
     if not aligned_jsonl.exists():
-        return run_export(aligned_jsonl, output_dir, fmt="srt", stem=stem)
+        raise FileNotFoundError(
+            f"aligned.jsonl 文件不存在: {aligned_jsonl}"
+        )
 
     segments = load_aligned(aligned_jsonl)
     if not segments:

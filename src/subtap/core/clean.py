@@ -7,7 +7,7 @@ import unicodedata
 from pathlib import Path
 
 from subtap.backends.llm import get_llm_backend
-from subtap.core.text_utils import ALL_PUNCT_RE, normalize_punct
+from subtap.core.text_utils import normalize_punct
 from subtap.core.replacement import apply_replacements
 from subtap.schemas.config import SubtapConfig
 from subtap.schemas.glossary import Glossary, load_glossary as load_yaml_glossary

@@ -389,6 +389,20 @@ def test_local_clean_removes_extra_spaces():
     assert result == "你好 世界"
 
 
+def test_normalize_punct_preserves_decimals():
+    """P1-4: normalize_punct 不应破坏小数点。"""
+    from subtap.core.text_utils import normalize_punct
+
+    # 单位数小数
+    assert normalize_punct("0.6秒", "zh") == "0.6秒"
+    # 两位数小数
+    assert normalize_punct("3.14", "zh") == "3.14"
+    # 三位数小数
+    assert normalize_punct("123.456", "zh") == "123.456"
+    # 普通标点仍然正常转换（句号 → 句号）
+    assert normalize_punct("你好.世界", "zh") == "你好。世界"
+
+
 def test_local_clean_applies_glossary():
     """Local clean should apply glossary replacements."""
     from subtap.core.clean import local_clean_text

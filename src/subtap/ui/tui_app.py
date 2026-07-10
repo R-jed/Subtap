@@ -17,6 +17,8 @@ from .file_picker import FilePicker, AUDIO_VIDEO_EXTENSIONS
 from .views.new_task import NewTaskView
 from .history import HistoryScanner
 
+KEY_READ_TIMEOUT = 0.05
+
 
 def _run_env() -> dict[str, str]:
     """返回带 PYTHONPATH 的环境变量，支持从源码直接运行。"""
@@ -113,7 +115,7 @@ class TuiApp:
         menu.render_full()
         while True:
             old_cursor = menu.cursor
-            key = self.reader.read_key(timeout=0.05)
+            key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
             if key is None:
                 continue
             if key == Key.QUIT:
@@ -161,7 +163,7 @@ class TuiApp:
         menu.render_full()
         while True:
             old_cursor = menu.cursor
-            key = self.reader.read_key(timeout=0.05)
+            key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
             if key is None:
                 continue
             if key == Key.QUIT:
@@ -204,7 +206,7 @@ class TuiApp:
 
         while True:
             old_cursor = menu.cursor
-            key = self.reader.read_key(timeout=0.05)
+            key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
             if key is None:
                 continue
             if key == Key.ESCAPE:
@@ -275,7 +277,7 @@ class TuiApp:
 
         while True:
             old_cursor = menu.cursor
-            key = self.reader.read_key(timeout=0.05)
+            key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
             if key is None:
                 continue
             if key == Key.ESCAPE:
@@ -330,7 +332,7 @@ class TuiApp:
         menu.render_full()
         while True:
             old_cursor = menu.cursor
-            key = self.reader.read_key(timeout=0.05)
+            key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
             if key is None:
                 continue
             if key in (Key.ESCAPE,):
@@ -374,7 +376,7 @@ class TuiApp:
 
         while True:
             old_cursor = menu.cursor
-            key = self.reader.read_key(timeout=0.05)
+            key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
             if key is None:
                 continue
             if key in (Key.ESCAPE,):
@@ -432,7 +434,7 @@ class TuiApp:
 
         while True:
             old_cursor = menu.cursor
-            key = self.reader.read_key(timeout=0.05)
+            key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
             if key is None:
                 continue
             if key in (Key.ESCAPE,):
@@ -489,7 +491,7 @@ class TuiApp:
         menu = Menu(title="设置 · 语音模型", items=items, footer="Esc 返回", theme=self.theme)
         menu.render_full()
         while True:
-            key = self.reader.read_key(timeout=0.05)
+            key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
             if key in (Key.ESCAPE,):
                 self._pop_state()
                 return "continue"
@@ -588,7 +590,7 @@ class TuiApp:
         menu.render_full()
 
         while True:
-            key = self.reader.read_key(timeout=0.05)
+            key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
             if key is None:
                 continue
             if key == Key.QUIT:
@@ -740,7 +742,7 @@ class TuiApp:
             sys.stderr.write(f"\033[2K\r\n{t.GRAY}Esc 返回{t.NC}\r\n")
             sys.stderr.flush()
             while True:
-                key = self.reader.read_key(timeout=0.05)
+                key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
                 if key in (Key.ESCAPE, Key.ENTER):
                     self._pop_state()
                     return "continue"
@@ -767,7 +769,7 @@ class TuiApp:
         sys.stderr.flush()
 
         while True:
-            key = self.reader.read_key(timeout=0.05)
+            key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
             if key in (Key.ESCAPE, Key.ENTER):
                 self._pop_state()
                 return "continue"
@@ -786,7 +788,7 @@ class TuiApp:
             sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回{t.NC}\r\n")
             sys.stderr.flush()
             while True:
-                key = self.reader.read_key(timeout=0.05)
+                key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
                 if key in (Key.ESCAPE, Key.QUIT):
                     self._pop_state()
                     return "continue" if key == Key.ESCAPE else "quit"
@@ -806,7 +808,7 @@ class TuiApp:
 
         while True:
             old_cursor = menu.cursor
-            key = self.reader.read_key(timeout=0.05)
+            key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
             if key is None:
                 continue
             if key == Key.QUIT:
@@ -881,7 +883,7 @@ class TuiApp:
             sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回{t.NC}\r\n")
             sys.stderr.flush()
             while True:
-                key = self.reader.read_key(timeout=0.05)
+                key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
                 if key in (Key.ESCAPE, Key.QUIT):
                     self._pop_state()
                     return "continue" if key == Key.ESCAPE else "quit"
@@ -960,7 +962,7 @@ class TuiApp:
         sys.stderr.flush()
 
         while True:
-            key = self.reader.read_key(timeout=0.05)
+            key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
             if key in (Key.ESCAPE, Key.ENTER):
                 self._pop_state()
                 return "continue"
