@@ -918,7 +918,7 @@ def _process_segment(
     """
     word_filter_text = getattr(seg, "aligned_text", None) or seg.text
     words_with_punct = _inject_punct(
-        _filter_words_to_text(seg.words, word_filter_text), seg.text
+        _filter_words_to_text(seg.words, word_filter_text), word_filter_text
     )
     sub_lines = _smart_split_v2(
         words_with_punct,
