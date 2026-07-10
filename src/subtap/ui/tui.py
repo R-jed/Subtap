@@ -11,7 +11,6 @@ from typing import Any, Callable
 from subtap.ui.progress import PipelineProgress
 from subtap.ui.state import STAGE_CN, reset_state
 
-
 # ── BaseRunner ──────────────────────────────────────────────────────
 
 
@@ -61,11 +60,13 @@ class BaseRunner(ABC):
 
         # Optional: translate
         if translate_to:
-            stages.append({
-                "key": "translate",
-                "name": "字幕翻译",
-                "kwargs": {"target_language": translate_to},
-            })
+            stages.append(
+                {
+                    "key": "translate",
+                    "name": "字幕翻译",
+                    "kwargs": {"target_language": translate_to},
+                }
+            )
 
         stages.append({"key": "export", "name": "字幕导出"})
         return stages
@@ -80,15 +81,17 @@ class BaseRunner(ABC):
         return runner()
 
     @abstractmethod
-    def _before_stage(
-        self, stage: dict, step_num: int, total_steps: int
-    ) -> None:
+    def _before_stage(self, stage: dict, step_num: int, total_steps: int) -> None:
         """Called before each stage executes."""
 
     @abstractmethod
     def _after_stage(
-        self, stage: dict, result: dict, elapsed: float,
-        step_num: int, total_steps: int,
+        self,
+        stage: dict,
+        result: dict,
+        elapsed: float,
+        step_num: int,
+        total_steps: int,
     ) -> None:
         """Called after each stage completes."""
 
@@ -159,10 +162,14 @@ class BaseRunner(ABC):
         export_idx = len(stages) - 1  # export is always last
         self._before_stage(export_stage, export_idx + 1, len(stages))
         t = time.time()
-        export_result = self._run_export(pipeline, output_dir, fmt, translate_to, bilingual)
+        export_result = self._run_export(
+            pipeline, output_dir, fmt, translate_to, bilingual
+        )
         elapsed = time.time() - t
         self.timings["export"] = elapsed
-        self._after_stage(export_stage, export_result, elapsed, export_idx + 1, len(stages))
+        self._after_stage(
+            export_stage, export_result, elapsed, export_idx + 1, len(stages)
+        )
 
         total_time = time.time() - self.total_start
         self._on_complete(output_dir, fmt, total_time)
@@ -259,8 +266,13 @@ class RichRunner(BaseRunner):
 
         def _run() -> dict:
             return self._run_pipeline_inner(
-                pipeline, input_path, output_dir, fmt,
-                enhance, translate_to, bilingual,
+                pipeline,
+                input_path,
+                output_dir,
+                fmt,
+                enhance,
+                translate_to,
+                bilingual,
             )
 
         # Wrap in rich Progress context
@@ -295,14 +307,16 @@ class RichRunner(BaseRunner):
     def _wrap_context(self, runner: Callable[[], Any]) -> Any:
         return runner()
 
-    def _before_stage(
-        self, stage: dict, step_num: int, total_steps: int
-    ) -> None:
+    def _before_stage(self, stage: dict, step_num: int, total_steps: int) -> None:
         self._task_id = self._progress.add_task(stage["name"], total=1)
 
     def _after_stage(
-        self, stage: dict, result: dict, elapsed: float,
-        step_num: int, total_steps: int,
+        self,
+        stage: dict,
+        result: dict,
+        elapsed: float,
+        step_num: int,
+        total_steps: int,
     ) -> None:
         self._progress.update(self._task_id, completed=1)
         key = stage["key"]
@@ -337,21 +351,15 @@ class RichRunner(BaseRunner):
                         self._console.print(f"    [yellow]⚠[/] {w}")
         elif key == "learn":
             if result.get("learned", 0) > 0:
-                self._console.print(
-                    f"  [green]✓[/] 学习 {result['learned']} 个热词"
-                )
+                self._console.print(f"  [green]✓[/] 学习 {result['learned']} 个热词")
             else:
                 self._console.print("  [dim]·[/] 无新热词")
         elif key == "translate":
-            self._console.print(
-                f"  [green]✓[/] 翻译 {result['translated_count']} 条"
-            )
+            self._console.print(f"  [green]✓[/] 翻译 {result['translated_count']} 条")
         elif key == "export":
             self._console.print(f"  [green]✓[/] {result['output_path']}")
 
-    def _on_complete(
-        self, output_dir: Path, fmt: str, total_time: float
-    ) -> None:
+    def _on_complete(self, output_dir: Path, fmt: str, total_time: float) -> None:
         pass  # Summary is printed in run_pipeline after Progress context exits
 
     def _on_error(self, error: Exception) -> None:
@@ -395,8 +403,13 @@ class TUIRunner(BaseRunner):
 
         try:
             meta = self._run_pipeline_inner(
-                pipeline, input_path, output_dir, fmt,
-                enhance, translate_to, bilingual,
+                pipeline,
+                input_path,
+                output_dir,
+                fmt,
+                enhance,
+                translate_to,
+                bilingual,
             )
         except Exception as e:
             self.state.update(
@@ -415,9 +428,7 @@ class TUIRunner(BaseRunner):
 
         return meta
 
-    def _before_stage(
-        self, stage: dict, step_num: int, total_steps: int
-    ) -> None:
+    def _before_stage(self, stage: dict, step_num: int, total_steps: int) -> None:
         key = stage["key"]
         extra: dict[str, Any] = {}
         if key == "asr":
@@ -437,8 +448,12 @@ class TUIRunner(BaseRunner):
             self.progress.print_stage_start(self.state)
 
     def _after_stage(
-        self, stage: dict, result: dict, elapsed: float,
-        step_num: int, total_steps: int,
+        self,
+        stage: dict,
+        result: dict,
+        elapsed: float,
+        step_num: int,
+        total_steps: int,
     ) -> None:
         key = stage["key"]
         extra: dict[str, Any] = {}
@@ -457,9 +472,7 @@ class TUIRunner(BaseRunner):
                 return  # Don't print skipped script_match
             self.progress.print_stage_result(self.state, result)
 
-    def _on_complete(
-        self, output_dir: Path, fmt: str, total_time: float
-    ) -> None:
+    def _on_complete(self, output_dir: Path, fmt: str, total_time: float) -> None:
         pass  # Summary is printed in run_pipeline
 
     def _on_error(self, error: Exception) -> None:
@@ -527,8 +540,13 @@ class PlainRunner(BaseRunner):
 
         try:
             meta = self._run_pipeline_inner(
-                pipeline, input_path, output_dir, fmt,
-                enhance, translate_to, bilingual,
+                pipeline,
+                input_path,
+                output_dir,
+                fmt,
+                enhance,
+                translate_to,
+                bilingual,
             )
         except Exception as e:
             self._echo(f"\n✗ 处理失败：{e}")
@@ -544,15 +562,17 @@ class PlainRunner(BaseRunner):
 
         return meta
 
-    def _before_stage(
-        self, stage: dict, step_num: int, total_steps: int
-    ) -> None:
+    def _before_stage(self, stage: dict, step_num: int, total_steps: int) -> None:
         self._completed += 1
         self._echo(f"▸ [{self._completed}/{total_steps}] {stage['name']}...")
 
     def _after_stage(
-        self, stage: dict, result: dict, elapsed: float,
-        step_num: int, total_steps: int,
+        self,
+        stage: dict,
+        result: dict,
+        elapsed: float,
+        step_num: int,
+        total_steps: int,
     ) -> None:
         key = stage["key"]
         if key == "prepare":
@@ -592,9 +612,7 @@ class PlainRunner(BaseRunner):
         elif key == "export":
             self._echo(f"  ✓ {result['output_path']}")
 
-    def _on_complete(
-        self, output_dir: Path, fmt: str, total_time: float
-    ) -> None:
+    def _on_complete(self, output_dir: Path, fmt: str, total_time: float) -> None:
         pass  # Summary is printed in run_pipeline
 
     def _on_error(self, error: Exception) -> None:

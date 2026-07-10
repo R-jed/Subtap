@@ -135,12 +135,14 @@ def _make_blocks(n: int) -> list[dict]:
     """Generate n SRT blocks for testing."""
     blocks = []
     for i in range(1, n + 1):
-        blocks.append({
-            "index": i,
-            "start": f"00:00:{i:02d},000",
-            "end": f"00:00:{i + 1:02d},000",
-            "text": f"原文第{i}句",
-        })
+        blocks.append(
+            {
+                "index": i,
+                "start": f"00:00:{i:02d},000",
+                "end": f"00:00:{i + 1:02d},000",
+                "text": f"原文第{i}句",
+            }
+        )
     return blocks
 
 
@@ -339,7 +341,9 @@ def test_write_aligned_atomic_preserves_original_on_failure(tmp_path):
     from subtap.core.translate import _write_aligned
 
     path = tmp_path / "aligned.jsonl"
-    original_content = '{"sentence_id":0,"start_sec":1.0,"end_sec":2.0,"text":"原始内容","words":[]}\n'
+    original_content = (
+        '{"sentence_id":0,"start_sec":1.0,"end_sec":2.0,"text":"原始内容","words":[]}\n'
+    )
     path.write_text(original_content, encoding="utf-8")
 
     segments = [

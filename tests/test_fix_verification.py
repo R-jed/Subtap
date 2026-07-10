@@ -66,9 +66,9 @@ class TestFormatParameterPassing:
 
             if mock_export.called:
                 call_kwargs = mock_export.call_args[1]
-                assert "vtt" in call_kwargs.get("formats", set()), (
-                    f"Expected formats to contain 'vtt', got {call_kwargs.get('formats')}"
-                )
+                assert "vtt" in call_kwargs.get(
+                    "formats", set()
+                ), f"Expected formats to contain 'vtt', got {call_kwargs.get('formats')}"
 
 
 class TestHotwordLoadedStatus:
@@ -80,10 +80,14 @@ class TestHotwordLoadedStatus:
 
         glossary = HotwordGlossary("zh", [Hotword("测试", ["测试别名"])])
         # Verify .hotwords exists
-        assert hasattr(glossary, "hotwords"), "HotwordGlossary should have .hotwords attribute"
+        assert hasattr(
+            glossary, "hotwords"
+        ), "HotwordGlossary should have .hotwords attribute"
         assert len(glossary.hotwords) == 1
         # Verify .entries does NOT exist
-        assert not hasattr(glossary, "entries"), "HotwordGlossary should NOT have .entries attribute"
+        assert not hasattr(
+            glossary, "entries"
+        ), "HotwordGlossary should NOT have .entries attribute"
 
 
 class TestSourceTextGranularity:
@@ -102,7 +106,9 @@ class TestSourceTextGranularity:
             cleaned_text="大家好欢迎来到我们的节目。今天给大家分享一个有趣的话题。希望大家喜欢。",
         )
 
-        sentences = segment_clean_segments([seg], chunk_start=0.0, chunk_end=10.0, language="zh")
+        sentences = segment_clean_segments(
+            [seg], chunk_start=0.0, chunk_end=10.0, language="zh"
+        )
 
         assert len(sentences) > 1, f"Expected multiple sentences, got {len(sentences)}"
 

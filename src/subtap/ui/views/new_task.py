@@ -1,8 +1,8 @@
 """新建转录视图 — 文件选择和确认。"""
+
 import sys
 from pathlib import Path
 from ..config_manager import ConfigManager
-
 
 LANG_MAP = {"zh": "中文", "en": "英文", "ja": "日文"}
 

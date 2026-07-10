@@ -13,7 +13,10 @@ from subtap.ui.progress_renderer import PipelineProgressRenderer, _model_display
 def test_parse_stage_start_event():
     """解析 STAGE_START 事件。"""
     renderer = PipelineProgressRenderer(stderr=MagicMock())
-    event = {"event_type": "stage_start", "data": {"stage": "asr", "message_zh": "语音识别"}}
+    event = {
+        "event_type": "stage_start",
+        "data": {"stage": "asr", "message_zh": "语音识别"},
+    }
     renderer._handle_event(event)
     assert renderer._current_stage == "asr"
     assert renderer._current_stage_cn == "语音识别"
@@ -30,13 +33,20 @@ def test_parse_stage_end_event():
 def test_parse_progress_event():
     renderer = PipelineProgressRenderer(stderr=MagicMock())
     renderer._handle_event({"event_type": "stage_start", "data": {"stage": "asr"}})
-    renderer._handle_event({"event_type": "asr_draft_ready", "data": {"stage": "asr", "chunk_id": 5, "progress": 50}})
+    renderer._handle_event(
+        {
+            "event_type": "asr_draft_ready",
+            "data": {"stage": "asr", "chunk_id": 5, "progress": 50},
+        }
+    )
     assert renderer._stage_progress == 50.0
 
 
 def test_parse_model_load_event():
     renderer = PipelineProgressRenderer(stderr=MagicMock())
-    renderer._handle_event({"event_type": "model_load_start", "data": {"model": "asr_0.6b"}})
+    renderer._handle_event(
+        {"event_type": "model_load_start", "data": {"model": "asr_0.6b"}}
+    )
     assert renderer._model_name == "asr_0.6b"
 
 
@@ -49,9 +59,21 @@ def test_model_display_name_mapping():
 
 def test_render_line_contains_stage_info():
     renderer = PipelineProgressRenderer(stderr=MagicMock())
-    renderer._handle_event({"event_type": "stage_start", "data": {"stage": "asr", "message_zh": "语音识别"}})
-    renderer._handle_event({"event_type": "model_load_start", "data": {"model": "asr_0.6b"}})
-    renderer._handle_event({"event_type": "asr_draft_ready", "data": {"stage": "asr", "chunk_id": 3, "progress": 60}})
+    renderer._handle_event(
+        {
+            "event_type": "stage_start",
+            "data": {"stage": "asr", "message_zh": "语音识别"},
+        }
+    )
+    renderer._handle_event(
+        {"event_type": "model_load_start", "data": {"model": "asr_0.6b"}}
+    )
+    renderer._handle_event(
+        {
+            "event_type": "asr_draft_ready",
+            "data": {"stage": "asr", "chunk_id": 3, "progress": 60},
+        }
+    )
     lines = renderer._build_lines()
     assert any("语音识别" in line for line in lines)
     assert any("60%" in line for line in lines)
@@ -60,8 +82,15 @@ def test_render_line_contains_stage_info():
 
 def test_render_contains_colors():
     renderer = PipelineProgressRenderer(stderr=MagicMock())
-    renderer._handle_event({"event_type": "stage_start", "data": {"stage": "asr", "message_zh": "语音识别"}})
-    renderer._handle_event({"event_type": "asr_draft_ready", "data": {"stage": "asr", "progress": 50}})
+    renderer._handle_event(
+        {
+            "event_type": "stage_start",
+            "data": {"stage": "asr", "message_zh": "语音识别"},
+        }
+    )
+    renderer._handle_event(
+        {"event_type": "asr_draft_ready", "data": {"stage": "asr", "progress": 50}}
+    )
     lines = renderer._build_lines()
     combined = "\n".join(lines)
     assert "\033[" in combined
@@ -71,15 +100,24 @@ def test_render_contains_colors():
 
 def test_read_jsonl_file():
     with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
-        f.write(json.dumps({"event_type": "stage_start", "data": {"stage": "prepare"}}) + "\n")
-        f.write(json.dumps({"event_type": "stage_end", "data": {"stage": "prepare"}}) + "\n")
-        f.write(json.dumps({"event_type": "stage_start", "data": {"stage": "chunk"}}) + "\n")
+        f.write(
+            json.dumps({"event_type": "stage_start", "data": {"stage": "prepare"}})
+            + "\n"
+        )
+        f.write(
+            json.dumps({"event_type": "stage_end", "data": {"stage": "prepare"}}) + "\n"
+        )
+        f.write(
+            json.dumps({"event_type": "stage_start", "data": {"stage": "chunk"}}) + "\n"
+        )
         path = Path(f.name)
     renderer = PipelineProgressRenderer(stderr=MagicMock())
     events = renderer._read_new_events(path)
     assert len(events) == 3
     with open(path, "a") as f:
-        f.write(json.dumps({"event_type": "stage_end", "data": {"stage": "chunk"}}) + "\n")
+        f.write(
+            json.dumps({"event_type": "stage_end", "data": {"stage": "chunk"}}) + "\n"
+        )
     events = renderer._read_new_events(path)
     assert len(events) == 1
     path.unlink()

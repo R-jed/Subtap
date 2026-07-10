@@ -8,6 +8,7 @@
 - 后台线程尾读 run.log.jsonl，主线程定时渲染
 - 就地刷新：用 \\r + \\033[K 覆写当前行
 """
+
 from __future__ import annotations
 
 import json
@@ -16,7 +17,6 @@ import threading
 import time
 from pathlib import Path
 from typing import Any
-
 
 # ANSI 颜色（与 theme.py 保持一致）
 _CYAN = "\033[1;36m"
@@ -247,9 +247,7 @@ class ANSIProgressBar:
         sys.stderr.write("\r\033[2K")
 
         if state.get("error"):
-            sys.stderr.write(
-                f"{_YELLOW}✗{_NC} 转录失败：{state['error']}\r\n"
-            )
+            sys.stderr.write(f"{_YELLOW}✗{_NC} 转录失败：{state['error']}\r\n")
         else:
             # 统计完成阶段数
             completed = len(state.get("completed_stages", []))

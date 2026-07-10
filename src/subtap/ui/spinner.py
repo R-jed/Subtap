@@ -3,6 +3,7 @@
 移植自 Mole 的 start_inline_spinner/stop_inline_spinner。
 用 threading.Event 实现协作式停止。
 """
+
 import sys
 import threading
 
@@ -18,9 +19,7 @@ class Spinner:
 
     def start(self, message: str) -> None:
         self._stop_event.clear()
-        self._thread = threading.Thread(
-            target=self._spin, args=(message,), daemon=True
-        )
+        self._thread = threading.Thread(target=self._spin, args=(message,), daemon=True)
         self._thread.start()
 
     def _spin(self, message: str) -> None:

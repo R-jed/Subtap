@@ -986,18 +986,20 @@ def run(
     )
     asr_cfg = getattr(config, "asr", None)
     align_cfg = getattr(config, "align", None)
-    run_log.config_snapshot({
-        "mode": mode,
-        "enhance": enhance,
-        "asr_model": getattr(asr_cfg, "model", "asr_0.6b"),
-        "aligner_model": getattr(align_cfg, "model", "aligner"),
-        "quantization": getattr(asr_cfg, "quantization", "q8"),
-        "translate_to": translate_to or "",
-        "bilingual": bilingual,
-        "script": script or "",
-        "llm_proofread": getattr(config, "llm_proofread", None),
-        "llm_hotword": getattr(config, "llm_hotword", False),
-    })
+    run_log.config_snapshot(
+        {
+            "mode": mode,
+            "enhance": enhance,
+            "asr_model": getattr(asr_cfg, "model", "asr_0.6b"),
+            "aligner_model": getattr(align_cfg, "model", "aligner"),
+            "quantization": getattr(asr_cfg, "quantization", "q8"),
+            "translate_to": translate_to or "",
+            "bilingual": bilingual,
+            "script": script or "",
+            "llm_proofread": getattr(config, "llm_proofread", None),
+            "llm_hotword": getattr(config, "llm_hotword", False),
+        }
+    )
 
     # Record hotword glossary info
     _glossary_dir = Path.home() / ".subtap" / "glossary"
@@ -1007,6 +1009,7 @@ def run(
     if _hw_path.exists():
         try:
             from subtap.glossary.hotword import load_glossary
+
             _hw_g = load_glossary(_hw_path, "zh")
             run_log.hotwords(path=_hw_path, count=len(_hw_g.hotwords), loaded=True)
         except Exception:
@@ -1195,6 +1198,7 @@ def observe(
 def tui() -> None:
     """启动交互式终端界面"""
     from subtap.ui.tui_app import TuiApp
+
     app = TuiApp()
     app.run()
 

@@ -120,7 +120,9 @@ class PipelineState:
             try:
                 cb(stage, self.stages[stage])
             except Exception as e:
-                logger.warning("Pipeline state listener callback failed for stage %s: %s", stage, e)
+                logger.warning(
+                    "Pipeline state listener callback failed for stage %s: %s", stage, e
+                )
 
     def mark_running(self, stage: str) -> None:
         s = self.stages[stage]

@@ -59,7 +59,9 @@ def build_root_command_deck_renderable(selected_index: int = 0) -> Text:
         text.append(line, style=STYLE_LOGO)
     text.append("       Subtap Command Deck  ", style=STYLE_TEXT)
     text.append("\n")
-    text.append("                           本地优先字幕生成流水线。\n\n", style=STYLE_MUTED)
+    text.append(
+        "                           本地优先字幕生成流水线。\n\n", style=STYLE_MUTED
+    )
     text.append(PROJECT_URL, style=STYLE_LINK)
     for index, option in enumerate(OPTIONS):
         marker = ">" if index == selected_index else " "
@@ -113,7 +115,9 @@ try:
             return OPTIONS[self.selected_index]
 
         def compose(self) -> ComposeResult:
-            yield Static(build_root_command_deck_renderable(self.selected_index), id="deck")
+            yield Static(
+                build_root_command_deck_renderable(self.selected_index), id="deck"
+            )
 
         def action_cursor_down(self) -> None:
             self.selected_index = (self.selected_index + 1) % len(OPTIONS)

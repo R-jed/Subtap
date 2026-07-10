@@ -407,8 +407,6 @@ def chinese_to_num(text: str) -> str:
     text = _APPROX_RE.sub(_approx_repl, text)
 
     # Handle 数字+单位 → 数字+缩写单位（毫米→mm, 厘米→cm 等）
-    text = _UNIT_NORM_RE.sub(
-        lambda m: m.group(1) + _UNIT_ABBREV[m.group(2)], text
-    )
+    text = _UNIT_NORM_RE.sub(lambda m: m.group(1) + _UNIT_ABBREV[m.group(2)], text)
 
     return text

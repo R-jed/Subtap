@@ -113,7 +113,9 @@ def _segments_for_llm(segments: list[RawCleanSegment]) -> list[dict]:
     return [{"i": idx, "t": seg.cleaned_text} for idx, seg in enumerate(segments)]
 
 
-def _apply_text_updates(segments: list[RawCleanSegment], updates: dict[int, str]) -> None:
+def _apply_text_updates(
+    segments: list[RawCleanSegment], updates: dict[int, str]
+) -> None:
     for idx, text in updates.items():
         if idx < 0 or idx >= len(segments):
             raise ValueError(f"LLM 返回非法索引：{idx}")
@@ -239,9 +241,7 @@ def run_clean(
     # 注意：标点始终保留用于 segment 断句，移除在 export 阶段进行
     language = config.output.subtitle_language
     for seg in replaced:
-        seg.cleaned_text = local_clean_text(
-            seg.cleaned_text, language=language
-        )
+        seg.cleaned_text = local_clean_text(seg.cleaned_text, language=language)
 
     # 确定 LLM 功能开关
     llm_proofread, llm_hotword = resolve_llm_flags(

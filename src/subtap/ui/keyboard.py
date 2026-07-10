@@ -6,6 +6,7 @@
 - drain_pending_input 防抖
 - atexit + signal 三层终端恢复保护
 """
+
 import atexit
 import os
 import select
@@ -16,6 +17,7 @@ from typing import Optional
 
 class Key:
     """语义按键常量"""
+
     UP = "UP"
     DOWN = "DOWN"
     LEFT = "LEFT"
@@ -33,12 +35,18 @@ class Key:
 
 
 CSI_MAP = {
-    ord("A"): Key.UP, ord("B"): Key.DOWN,
-    ord("C"): Key.RIGHT, ord("D"): Key.LEFT,
+    ord("A"): Key.UP,
+    ord("B"): Key.DOWN,
+    ord("C"): Key.RIGHT,
+    ord("D"): Key.LEFT,
 }
 TILDE_MAP = {
-    1: Key.ESCAPE, 2: Key.OTHER, 3: Key.DELETE,
-    4: Key.OTHER, 5: Key.OTHER, 6: Key.OTHER,
+    1: Key.ESCAPE,
+    2: Key.OTHER,
+    3: Key.DELETE,
+    4: Key.OTHER,
+    5: Key.OTHER,
+    6: Key.OTHER,
 }
 
 
@@ -60,6 +68,7 @@ class KeyReader:
             return
         import termios
         import tty
+
         self._original_attrs = termios.tcgetattr(self._fd)
         tty.setraw(self._fd)
         attrs = termios.tcgetattr(self._fd)
@@ -80,6 +89,7 @@ class KeyReader:
             return
         try:
             import termios
+
             termios.tcsetattr(self._fd, termios.TCSADRAIN, self._original_attrs)
         except termios.error:
             pass
@@ -142,8 +152,10 @@ class KeyReader:
         if byte is None:
             return Key.OTHER
         SS3_MAP = {
-            b"A": Key.UP, b"B": Key.DOWN,
-            b"C": Key.RIGHT, b"D": Key.LEFT,
+            b"A": Key.UP,
+            b"B": Key.DOWN,
+            b"C": Key.RIGHT,
+            b"D": Key.LEFT,
         }
         return SS3_MAP.get(byte, Key.OTHER)
 

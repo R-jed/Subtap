@@ -174,7 +174,10 @@ def _chunk_and_translate(
         total_chunks = (total + CHUNK_SIZE - 1) // CHUNK_SIZE
         logger.info(
             "翻译分块 %d/%d (句 %d-%d)",
-            chunk_num, total_chunks, chunk_start + 1, chunk_end,
+            chunk_num,
+            total_chunks,
+            chunk_start + 1,
+            chunk_end,
         )
 
         translated_srt = llm.translate_srt(

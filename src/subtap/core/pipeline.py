@@ -266,7 +266,9 @@ class Pipeline:
             ops_path.unlink(missing_ok=True)
             return {"learned": 0}
 
-        gdir = Path(glossary_dir) if glossary_dir else Path.home() / ".subtap" / "glossary"
+        gdir = (
+            Path(glossary_dir) if glossary_dir else Path.home() / ".subtap" / "glossary"
+        )
         hotwords_path = gdir / f"hotwords_{hotword_lang}.txt"
         save_learned_hotwords(update, hotwords_path)
 

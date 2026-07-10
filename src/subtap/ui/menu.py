@@ -5,6 +5,7 @@
 - 分页滚动
 - 状态栏
 """
+
 import os
 import sys
 from .theme import Theme, ICON_ARROW, get_display_width
@@ -119,7 +120,9 @@ class Menu:
             row = start_row + i
             is_current = idx == self.cursor
             if is_current:
-                buf.append(f"\033[{row};1H\033[2K{t.CYAN}{ICON_ARROW} {self.items[idx]}{t.NC}")
+                buf.append(
+                    f"\033[{row};1H\033[2K{t.CYAN}{ICON_ARROW} {self.items[idx]}{t.NC}"
+                )
             else:
                 buf.append(f"\033[{row};1H\033[2K  {self.items[idx]}")
         sys.stderr.write("".join(buf))

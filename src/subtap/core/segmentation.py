@@ -218,7 +218,11 @@ def _merge_short_sentences(sentences: list[str], min_chars: int) -> list[str]:
             buffer = sent
 
     if buffer:
-        if merged and len(buffer) < min_chars and (not merged[-1] or merged[-1][-1] not in _SENT_END_CHARS):
+        if (
+            merged
+            and len(buffer) < min_chars
+            and (not merged[-1] or merged[-1][-1] not in _SENT_END_CHARS)
+        ):
             merged[-1] += buffer
         else:
             merged.append(buffer)
