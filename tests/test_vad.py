@@ -18,6 +18,38 @@ def test_vad_config_silero_false():
     assert config.use_silero_vad is False
 
 
+def test_no_sentence_truncation():
+    """Chunks should not truncate sentences at boundaries.
+
+    Verifies that Silero VAD produces chunks with no undersized segments
+    (which would indicate a sentence was split mid-speech).
+    """
+    test_audio = Path("/Users/qunqing/Downloads/ASR-SRT测试音频/短的演讲音频.wav")
+    if not test_audio.exists():
+        pytest.skip("测试音频不存在")
+
+    config = SubtapConfig()
+    config.audio.vad.use_silero_vad = True
+
+    workspace = Workspace(config, base_dir=Path("work_test_vad_truncation"))
+    workspace.ensure_dirs()
+    import shutil
+    shutil.copy2(test_audio, workspace.source_audio)
+
+    chunks = split_chunks(workspace, config)
+
+    # Must have chunks
+    assert len(chunks) > 0, "至少应产生一个 chunk"
+
+    # No chunk should be shorter than 1.0s — shorter chunks indicate
+    # the VAD split mid-speech, truncating a sentence.
+    for chunk in chunks:
+        duration = chunk.end_sec - chunk.start_sec
+        assert duration >= 1.0, (
+            f"Chunk {chunk.chunk_id} 太短 ({duration:.2f}s)，可能截断了句子"
+        )
+
+
 def test_silero_vad_finds_natural_pauses():
     """Silero VAD should find natural pause points, not mechanical splits."""
     test_audio = Path("/Users/qunqing/Downloads/ASR-SRT测试音频/短的演讲音频.wav")
