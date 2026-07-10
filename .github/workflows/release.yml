@@ -27,6 +27,9 @@ jobs:
       - run: /tmp/subtap-wheel-smoke/bin/python -m pip install dist/*.whl
       - run: /tmp/subtap-wheel-smoke/bin/subtap version
       - run: /tmp/subtap-wheel-smoke/bin/subtap doctor
+      - run: /tmp/subtap-wheel-smoke/bin/python -c "import textual"
+      - run: /tmp/subtap-wheel-smoke/bin/subtap tui --help
+      - run: /tmp/subtap-wheel-smoke/bin/subtap run --help | grep -- --tui
 
   build:
     runs-on: ubuntu-latest

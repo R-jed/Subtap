@@ -78,7 +78,9 @@ def validate_srt_delivery(
 
         previous_end = max(previous_end, end)
 
-    ok = not any((parse_errors, overlaps, reversed_ranges, zero_duration))
+    ok = bool(blocks) and not any(
+        (parse_errors, overlaps, reversed_ranges, zero_duration)
+    )
     return SubtitleQualityReport(
         ok=ok,
         cues=len(blocks),

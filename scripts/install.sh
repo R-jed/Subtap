@@ -50,7 +50,7 @@ verify_installation() {
     }
     subtap version
     subtap doctor
-    info "安装验证通过"
+    info "基础安装验证通过；模型完整性请以 doctor 输出或 doctor --release 为准"
 }
 
 install_via_uv() {

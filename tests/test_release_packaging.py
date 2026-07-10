@@ -28,3 +28,18 @@ def test_runtime_dependencies_include_textual_for_tui():
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
 
     assert '"textual>=' in pyproject
+
+
+def test_runtime_dependencies_include_mlx_for_local_pipeline():
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+
+    assert '"mlx>=' in pyproject
+    assert '"mlx-audio==0.4.3' in pyproject
+    assert "platform_system == 'Darwin'" in pyproject
+
+
+def test_install_script_does_not_claim_release_verification_after_plain_doctor():
+    install_script = Path("scripts/install.sh").read_text(encoding="utf-8")
+
+    assert 'info "安装验证通过"' not in install_script
+    assert "doctor --release" in install_script or "doctor 输出" in install_script
