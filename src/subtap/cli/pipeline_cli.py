@@ -70,6 +70,180 @@ def _apply_cli_overrides(
 # ── Run 命令 ───────────────────────────────────────────────
 
 
+def _generate_metrics(
+    config: "SubtapConfig",
+    timings: dict,
+    work_dir: Path,
+    output_dir: Path,
+    enhance: str,
+) -> None:
+    """生成性能指标并写入文件。"""
+
+    def _count_jsonl(path: Path) -> int:
+        if not path.exists():
+            return 0
+        return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line)
+
+    def _audio_duration_sec(path: Path) -> float:
+        if not path.exists():
+            return 0.0
+        try:
+            return float(
+                json.loads(path.read_text(encoding="utf-8")).get("duration", 0)
+            )
+        except Exception:
+            return 0.0
+
+    from subtap.metrics.performance import build_subtitle_performance_metrics
+
+    asr_config = getattr(config, "asr", None)
+    align_config = getattr(config, "align", None)
+    performance_metrics = build_subtitle_performance_metrics(
+        timings=timings,
+        audio_duration_sec=_audio_duration_sec(work_dir / "media_info.json"),
+        chunks_total=_count_jsonl(work_dir / "chunks" / "chunks.jsonl"),
+        subtitles_total=_count_jsonl(work_dir / "aligned.jsonl"),
+        alignment_enabled=True,
+        asr_model=getattr(asr_config, "model", "asr_0.6b"),
+        aligner_model=getattr(align_config, "model", "aligner"),
+        quantization=getattr(asr_config, "quantization", "q8"),
+        enhance_mode=enhance,
+    )
+    if config.output.generate_metrics:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        metrics_payload = performance_metrics | {"output_contract": "final"}
+        metrics_path = work_dir / config.metrics.output_path
+        metrics_path.write_text(
+            json.dumps(metrics_payload, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+
+def _execute_pipeline(
+    pipeline: "Pipeline",
+    input_path: Path,
+    output_dir: Path,
+    fmt: str,
+    enhance: str,
+    translate_to: str | None,
+    bilingual: str,
+    json_output: bool,
+    run_log: "RunLog",
+) -> dict:
+    """执行 pipeline 并返回 timings。"""
+    runner = RichRunner()
+    timings = {}
+    import time
+
+    _run_start = time.monotonic()
+    try:
+        if json_output:
+            with redirect_stdout(StringIO()):
+                result = runner.run_pipeline(
+                    pipeline, input_path, output_dir,
+                    fmt=fmt, enhance=enhance,
+                    translate_to=translate_to, bilingual=bilingual,
+                )
+        else:
+            result = runner.run_pipeline(
+                pipeline, input_path, output_dir,
+                fmt=fmt, enhance=enhance,
+                translate_to=translate_to, bilingual=bilingual,
+            )
+        timings = result.get("timings", {})
+        _run_elapsed = time.monotonic() - _run_start
+        for _stage_name, _stage_dur in timings.items():
+            run_log.stage(_stage_name, "success", duration_sec=_stage_dur)
+        _output_stem = input_path.stem
+        run_log.finalize(
+            True,
+            total_duration_sec=_run_elapsed,
+            output_path=str(output_dir / f"{_output_stem}.{fmt}"),
+        )
+    except SystemExit:
+        raise
+    except Exception as e:
+        _run_elapsed = time.monotonic() - _run_start
+        import traceback
+
+        run_log.finalize(
+            False,
+            total_duration_sec=_run_elapsed,
+            error=traceback.format_exc(),
+        )
+        _handle_error(f"处理失败：{e}")
+
+    return timings
+
+
+def _apply_run_config(
+    config: "SubtapConfig",
+    input_path: Path,
+    timestamp: bool | None,
+    punctuation: bool | None,
+    subtitle_language: str | None,
+    max_chars: int | None,
+    min_chars: int | None,
+    script: str | None,
+    script_mode: str,
+    mode: str,
+    hotwords: str | None,
+    work_dir: Path | None,
+) -> Path:
+    """应用 CLI 参数到配置，返回 work_dir。"""
+    if timestamp is not None:
+        config.output.timestamp = timestamp
+    if punctuation is not None:
+        config.output.subtitle_punctuation = punctuation
+    if subtitle_language is not None:
+        config.output.subtitle_language = subtitle_language
+    if max_chars is not None:
+        config.output.max_chars = max_chars
+    if min_chars is not None:
+        config.output.min_chars = min_chars
+    config.output.subtitle_stem = input_path.stem
+
+    if script:
+        config.output.script_path = script
+        config.output.script_mode = script_mode
+
+    if mode == "quality":
+        config.asr.model = "asr_1.7b"
+
+    if hotwords:
+        config.asr.hotwords = [w.strip() for w in hotwords.split(",") if w.strip()]
+
+    if work_dir is None:
+        work_dir = Path(config.workspace.root)
+
+    return work_dir
+
+
+def _validate_run_params(
+    enhance: str,
+    local_only: bool,
+    translate_to: str | None,
+    bilingual: str,
+) -> None:
+    """验证 run 命令参数。"""
+    if enhance not in ("local", "api"):
+        _handle_error(f"错误：--enhance 必须是 local/api，收到：{enhance}")
+
+    if local_only and enhance == "api":
+        _handle_error("错误：--local-only 模式下不能使用 --enhance api")
+
+    if local_only and translate_to:
+        _handle_error("错误：--local-only 模式下不能使用 --translate-to")
+
+    if bilingual not in ("off", "source-first", "target-first"):
+        _handle_error(
+            f"错误：--bilingual 必须是 off/source-first/target-first，收到：{bilingual}"
+        )
+
+    if bilingual != "off" and not translate_to:
+        _handle_error("错误：--bilingual 需要同时使用 --translate-to")
+
+
 def _run(
     input_path: Path = typer.Argument(
         ..., help="输入媒体文件路径（支持 mp3/mp4/wav/mkv 等）"
@@ -203,56 +377,12 @@ def _run(
     if translate_to is None and getattr(config, "translate_to", ""):  # type: ignore[arg-type]
         translate_to = config.translate_to
 
-    # ── 参数验证（在 config 回退之后） ───────────────────────
-    if enhance not in ("local", "api"):
-        _handle_error(f"错误：--enhance 必须是 local/api，收到：{enhance}")
+    _validate_run_params(enhance, local_only, translate_to, bilingual)
 
-    if local_only and enhance == "api":
-        _handle_error("错误：--local-only 模式下不能使用 --enhance api")
-
-    if local_only and translate_to:
-        _handle_error("错误：--local-only 模式下不能使用 --translate-to")
-
-    if bilingual not in ("off", "source-first", "target-first"):
-        _handle_error(
-            f"错误：--bilingual 必须是 off/source-first/target-first，收到：{bilingual}"
-        )
-
-    if bilingual != "off" and not translate_to:
-        _handle_error("错误：--bilingual 需要同时使用 --translate-to")
-
-    if enhance == "api":
-        typer.echo("⚠ 增强模式为 api，字幕文本将发送到外部 LLM API（音频不会发送）")
-
-    # CLI overrides config only when explicitly provided (not None)
-    if timestamp is not None:
-        config.output.timestamp = timestamp
-    if punctuation is not None:
-        config.output.subtitle_punctuation = punctuation
-    if subtitle_language is not None:
-        config.output.subtitle_language = subtitle_language
-    if max_chars is not None:
-        config.output.max_chars = max_chars
-    if min_chars is not None:
-        config.output.min_chars = min_chars
-    config.output.subtitle_stem = input_path.stem
-
-    # Script matching parameters
-    if script:
-        config.output.script_path = script
-        config.output.script_mode = script_mode
-
-    # Mode-based model override
-    if mode == "quality":
-        config.asr.model = "asr_1.7b"
-
-    # Hotwords: CLI overrides config
-    if hotwords:
-        config.asr.hotwords = [w.strip() for w in hotwords.split(",") if w.strip()]
-
-    # work_dir: CLI overrides config; if CLI not provided, fall back to config
-    if work_dir is None:
-        work_dir = Path(config.workspace.root)
+    work_dir = _apply_run_config(
+        config, input_path, timestamp, punctuation, subtitle_language,
+        max_chars, min_chars, script, script_mode, mode, hotwords, work_dir,
+    )
 
     if tui and not observer_child and not no_tui:
         from subtap.cli import _build_observer_child_command
@@ -371,98 +501,13 @@ def _run(
 
     _apply_cli_overrides(config, llm_proofread, llm_hotword)
 
-    runner = RichRunner()
-
-    timings = {}
-    import time
-
-    _run_start = time.monotonic()
-    try:
-        if json_output:
-            with redirect_stdout(StringIO()):
-                result = runner.run_pipeline(
-                    pipeline,
-                    input_path,
-                    output_dir,
-                    fmt=fmt,
-                    enhance=enhance,
-                    translate_to=translate_to,
-                    bilingual=bilingual,
-                )
-        else:
-            result = runner.run_pipeline(
-                pipeline,
-                input_path,
-                output_dir,
-                fmt=fmt,
-                enhance=enhance,
-                translate_to=translate_to,
-                bilingual=bilingual,
-            )
-        timings = result.get("timings", {})
-        _run_elapsed = time.monotonic() - _run_start
-        for _stage_name, _stage_dur in timings.items():
-            run_log.stage(_stage_name, "success", duration_sec=_stage_dur)
-        _output_stem = input_path.stem
-        run_log.finalize(
-            True,
-            total_duration_sec=_run_elapsed,
-            output_path=str(output_dir / f"{_output_stem}.{fmt}"),
-        )
-    except SystemExit:
-        raise
-    except Exception as e:
-        _run_elapsed = time.monotonic() - _run_start
-        import traceback
-
-        run_log.finalize(
-            False,
-            total_duration_sec=_run_elapsed,
-            error=traceback.format_exc(),
-        )
-        _handle_error(f"处理失败：{e}")
-
-    # Pipeline 执行成功后清理 L1 临时文件
+    timings = _execute_pipeline(
+        pipeline, input_path, output_dir, fmt, enhance,
+        translate_to, bilingual, json_output, run_log,
+    )
     pipeline.cleanup()
 
-    def _count_jsonl(path: Path) -> int:
-        if not path.exists():
-            return 0
-        return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line)
-
-    def _audio_duration_sec(path: Path) -> float:
-        if not path.exists():
-            return 0.0
-        try:
-            return float(
-                json.loads(path.read_text(encoding="utf-8")).get("duration", 0)
-            )
-        except Exception:
-            return 0.0
-
-    from subtap.metrics.performance import build_subtitle_performance_metrics
-
-    asr_config = getattr(config, "asr", None)
-    align_config = getattr(config, "align", None)
-    performance_metrics = build_subtitle_performance_metrics(
-        timings=timings,
-        audio_duration_sec=_audio_duration_sec(work_dir / "media_info.json"),
-        chunks_total=_count_jsonl(work_dir / "chunks" / "chunks.jsonl"),
-        subtitles_total=_count_jsonl(work_dir / "aligned.jsonl"),
-        alignment_enabled=True,
-        asr_model=getattr(asr_config, "model", "asr_0.6b"),
-        aligner_model=getattr(align_config, "model", "aligner"),
-        quantization=getattr(asr_config, "quantization", "q8"),
-        enhance_mode=enhance,
-    )
-    if config.output.generate_metrics:
-        output_dir.mkdir(parents=True, exist_ok=True)
-        metrics_payload = performance_metrics | {"output_contract": "final"}
-        metrics_path = work_dir / config.metrics.output_path
-        metrics_path.write_text(
-            json.dumps(metrics_payload, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
+    _generate_metrics(config, timings, work_dir, output_dir, enhance)
 
     if json_output:
         output_path = output_dir / "final.srt"
