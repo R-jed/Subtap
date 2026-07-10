@@ -18,6 +18,19 @@ class VADConfig(BaseModel):
     # VAD 引擎选择
     use_silero_vad: bool = True  # True=Silero VAD, False=pydub detect_nonsilent
 
+    # Silero VAD 参数（可通过配置调整）
+    silero_threshold: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Silero VAD 语音检测阈值（越高越严格）",
+    )
+    silero_min_speech_duration_ms: int = Field(
+        default=250,
+        ge=0,
+        description="Silero VAD 最短语音段时长（ms）",
+    )
+
     # 内部参数（用户无需关心）
     min_silence_sec: float = 0.4
     min_chunk_sec: float = 1.0
