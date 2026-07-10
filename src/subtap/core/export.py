@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -13,18 +14,25 @@ from subtap.core.clauses import identify_clause_boundaries, _CONJ_PAIRS
 from subtap.core.itn import chinese_to_num
 from subtap.core.phrases import mark_phrase_boundaries
 from subtap.core.text_utils import (
-    ALL_PUNCT_RE,
     normalize_punct,
     remove_cjk_spaces,
     strip_punct,
 )
 from subtap.schemas.models import AlignedSegment, ASRSegment
 
-# Backward-compatible private aliases (delegate to text_utils)
-_ALL_PUNCT_RE = ALL_PUNCT_RE
+# Module-level aliases for text_utils functions used throughout this module
+_strip_punct = strip_punct
 _normalize_punct = normalize_punct
 _remove_cjk_spaces = remove_cjk_spaces
-_strip_punct = strip_punct
+
+# Sentence-ending punctuation (shared across split functions)
+_SENT_END = frozenset("。！？.!?")
+
+# Number characters for numeral sequence detection
+_NUM_CHARS = frozenset("零一二两三四五六七八九十百千万亿")
+
+# Comma / clause punctuation
+_COMMA_PUNCT = frozenset("，、,;")
 
 # Trailing words that should not appear at line end
 _TRAILING_WORDS = {
@@ -161,42 +169,36 @@ def _has_latin(s: str) -> bool:
     return any("A" <= c <= "Z" or "a" <= c <= "z" for c in s)
 
 
-def _is_incomplete_word(
-    tail: str,
-    next_start: str,
-    cross_sentence: bool = False,
-    prev_char: str = "",
-) -> bool:
-    """检查 tail 是否是不完整词，next_start 能否组成完整词
+@dataclass
+class IncompleteWordQuery:
+    """Encapsulates parameters for incomplete-word detection."""
 
-    Args:
-        tail: 上一行末尾的 1-2 个字符
-        next_start: 下一行开头的字符
-        cross_sentence: 是否跨句
-        prev_char: tail 前面的字符（用于判断 tail 是否在单词开头）
-    """
-    if not next_start:
-        return False
-    # 标点结尾的 tail 不是断词（如 "e，" 是单词末尾+标点，不是断词）
-    if tail and tail[-1] in _PUNCT_CHARS:
-        return False
-    # 英文单词保护：tail 含拉丁字母且 next_start 也含拉丁字母
-    # 仅当 tail 是单词开头（前面不是拉丁字母）时才算断词
-    # 如果 tail 在单词中间（前面也是拉丁字母），说明是 max_chars 切断，不应移动
-    if not cross_sentence and _has_latin(tail) and _has_latin(next_start[:1]):
-        # 如果 prev_char 也是拉丁字母，说明 tail 在单词中间，不是断词
-        if prev_char and _has_latin(prev_char):
+    tail: str
+    next_start: str
+    cross_sentence: bool = False
+    prev_char: str = ""
+
+    def is_incomplete(self) -> bool:
+        """检查 tail 是否是不完整词，next_start 能否组成完整词"""
+        if not self.next_start:
             return False
-        return True
-    # 如果 tail + next_start 是常见断词模式
-    if (tail, next_start[:1]) in _SPLIT_WORD_PATTERNS:
-        return True
-    # 如果 tail 是数字且 next_start 也是数字/单位
-    if tail.isdigit() and (
-        next_start[0].isdigit() or next_start[0] in "零一二两三四五六七八九十百千万亿"
-    ):
-        return True
-    return False
+        # 标点结尾的 tail 不是断词（如 "e，" 是单词末尾+标点，不是断词）
+        if self.tail and self.tail[-1] in _PUNCT_CHARS:
+            return False
+        # 英文单词保护：tail 含拉丁字母且 next_start 也含拉丁字母
+        if not self.cross_sentence and _has_latin(self.tail) and _has_latin(self.next_start[:1]):
+            if self.prev_char and _has_latin(self.prev_char):
+                return False
+            return True
+        # 常见断词模式
+        if (self.tail, self.next_start[:1]) in _SPLIT_WORD_PATTERNS:
+            return True
+        # 数字序列
+        if self.tail.isdigit() and (
+            self.next_start[0].isdigit() or self.next_start[0] in _NUM_CHARS
+        ):
+            return True
+        return False
 
 
 def _fix_split_words(
@@ -228,12 +230,12 @@ def _fix_split_words(
             tail = prev_text[-take:]
             # tail 前面的字符，用于判断 tail 是否在单词开头
             prev_char = prev_text[-(take + 1)] if len(prev_text) > take else ""
-            if _is_incomplete_word(
-                tail,
-                curr_text[:2] if len(curr_text) >= 2 else curr_text,
+            if IncompleteWordQuery(
+                tail=tail,
+                next_start=curr_text[:2] if len(curr_text) >= 2 else curr_text,
                 cross_sentence=cross_sentence,
                 prev_char=prev_char,
-            ):
+            ).is_incomplete():
                 # 移动 tail 到 curr 开头
                 prev["text"] = prev_text[:-take]
                 curr["text"] = tail + curr_text
@@ -367,9 +369,6 @@ def _greedy_split(
     pause_threshold: float,
 ) -> list[dict]:
     """Greedy accumulation split using clause boundaries."""
-    _SENT_END = set("。！？.!?")
-    _NUM_CHARS = set("零一二两三四五六七八九十百千万亿")
-
     lines: list[dict] = []
     cur_text = ""
     cur_words: list[dict] = []
@@ -565,9 +564,6 @@ def _smart_split_v2(
     """
     if not words:
         return [{"text": text, "start_sec": start_sec, "end_sec": end_sec}]
-
-    _SENT_END = set("。！？.!?")
-    _COMMA_PUNCT = set("，、,;")
 
     # --- Step 1: Build display text with word-level tracking ---
     # Each entry: (char, word_index, is_latin)
@@ -815,7 +811,6 @@ def _merge_short_fragments(
     Never merge lines ending with sentence-ending punctuation (。！？.!?)
     since those are intentional semantic boundaries.
     """
-    _SENT_END = set("。！？.!?")
     if len(lines) <= 1:
         return lines
 
