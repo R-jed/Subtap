@@ -112,23 +112,34 @@ def test_enhance_local_ignores_user_home_hotwords_without_explicit_dir(
     assert "Big Apple" not in payload
 
 
-def test_enhance_local_uses_explicit_hotword_glossary_dir(tmp_path):
+def test_hotword_stage_replaces_in_aligned(tmp_path):
+    """热词替换统一由 hotword 阶段负责，不再在 clean 阶段执行。"""
+    from subtap.core.hotword import run_hotword
+
     glossary_dir = tmp_path / "glossary"
     glossary_dir.mkdir()
     (glossary_dir / "hotwords_zh.txt").write_text(
         "Big Apple=New York\n",
         encoding="utf-8",
     )
-    workspace = _workspace(tmp_path, ["New York"])
 
-    run_clean(
-        workspace,
-        SubtapConfig(),
-        enhance_mode="local",
-        hotword_glossary_dir=str(glossary_dir),
+    # 构造 aligned.jsonl
+    import json
+
+    aligned = tmp_path / "aligned.jsonl"
+    aligned.write_text(
+        json.dumps({"sentence_id": 0, "text": "New York", "start_sec": 0, "end_sec": 1, "words": []}) + "\n",
+        encoding="utf-8",
     )
 
-    payload = workspace.cleaned_jsonl.read_text(encoding="utf-8")
+    config = SubtapConfig()
+    from subtap.core.workspace import Workspace
+
+    workspace = Workspace(config, base_dir=tmp_path)
+    result = run_hotword(workspace, glossary_dir=glossary_dir)
+
+    assert result["replaced"] == 1
+    payload = workspace.aligned_jsonl.read_text(encoding="utf-8")
     assert "Big Apple" in payload
 
 

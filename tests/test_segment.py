@@ -14,7 +14,7 @@ from subtap.core.segmentation import (
 )
 from subtap.core.workspace import Workspace
 from subtap.schemas.config import SubtapConfig
-from subtap.schemas.models import CleanSegment, SentenceSegment
+from subtap.schemas.models import RawCleanSegment, SentenceSegment
 
 # ── Sentence splitting tests ──
 
@@ -80,11 +80,11 @@ def test_allocate_time_empty():
 
 
 def _make_cleaned_jsonl(ws: Workspace, texts: list[str]) -> None:
-    """Write mock CleanSegments to cleaned.jsonl and a single-chunk chunks.jsonl."""
+    """Write mock RawCleanSegments to cleaned.jsonl and a single-chunk chunks.jsonl."""
     ws.ensure_dirs()
     with open(ws.cleaned_jsonl, "w") as f:
         for i, text in enumerate(texts):
-            seg = CleanSegment(
+            seg = RawCleanSegment(
                 segment_id=i,
                 source_chunk_id=0,
                 original_text=f"orig {i}",
@@ -103,13 +103,13 @@ def _make_cleaned_jsonl(ws: Workspace, texts: list[str]) -> None:
 def test_segment_clean_segments_basic(test_config: SubtapConfig, tmp_path: Path):
     """segment_clean_segments splits and assigns time."""
     segments = [
-        CleanSegment(
+        RawCleanSegment(
             segment_id=0,
             original_text="a",
             cleaned_text="First sentence。Second sentence。",
             glossary_applied=[],
         ),
-        CleanSegment(
+        RawCleanSegment(
             segment_id=1,
             original_text="b",
             cleaned_text="Third sentence.",
@@ -127,7 +127,7 @@ def test_segment_clean_segments_basic(test_config: SubtapConfig, tmp_path: Path)
 def test_time_monotonic_in_segment(test_config: SubtapConfig, tmp_path: Path):
     """Sentence times are monotonic within a chunk."""
     segments = [
-        CleanSegment(
+        RawCleanSegment(
             segment_id=0,
             original_text="a",
             cleaned_text="Aa。Bb。Cc。",
@@ -143,7 +143,7 @@ def test_time_monotonic_in_segment(test_config: SubtapConfig, tmp_path: Path):
 def test_chunk_id_integrity(test_config: SubtapConfig, tmp_path: Path):
     """chunk_id in SentenceSegment matches source_chunk_id."""
     segments = [
-        CleanSegment(
+        RawCleanSegment(
             segment_id=5,
             source_chunk_id=3,
             original_text="a",
@@ -173,13 +173,13 @@ def test_jsonl_valid_schema(test_config: SubtapConfig, tmp_path: Path):
 def test_sentence_ids_sequential(test_config: SubtapConfig, tmp_path: Path):
     """sentence_ids are 0-based sequential across all segments."""
     segments = [
-        CleanSegment(
+        RawCleanSegment(
             segment_id=0,
             original_text="a",
             cleaned_text="One。Two。",
             glossary_applied=[],
         ),
-        CleanSegment(
+        RawCleanSegment(
             segment_id=1, original_text="b", cleaned_text="Three。", glossary_applied=[]
         ),
     ]
@@ -327,3 +327,32 @@ class TestMergeShortSentences:
         """空输入返回空列表。"""
         result = _merge_short_sentences([], min_chars=10)
         assert result == []
+
+
+# ── Pipeline language config passthrough ──
+
+
+def test_pipeline_passes_language_to_run_segment(
+    test_config: SubtapConfig, tmp_path: Path, monkeypatch
+):
+    """_stage_segment reads subtitle_language from config and passes to run_segment."""
+    from subtap.core.pipeline import Pipeline
+
+    test_config.output.subtitle_language = "en"
+
+    work_dir = tmp_path / "work"
+    ws = Workspace(test_config, base_dir=work_dir)
+    _make_cleaned_jsonl(ws, ["Hello world. Goodbye."])
+
+    pipeline = Pipeline(test_config, work_dir=work_dir)
+
+    captured = {}
+
+    def fake_run_segment(workspace, chunk_start=None, chunk_end=None, language="zh"):
+        captured["language"] = language
+        return {"sentence_count": 0, "output_path": str(ws.sentences_jsonl)}
+
+    monkeypatch.setattr("subtap.core.segment.run_segment", fake_run_segment)
+    pipeline._stage_segment(chunk_start=0.0, chunk_end=10.0)
+
+    assert captured["language"] == "en"

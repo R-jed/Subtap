@@ -19,7 +19,7 @@ from subtap.schemas.glossary import (
     GlossaryReplacement,
     load_glossary,
 )
-from subtap.schemas.models import ASRSegment, CleanSegment
+from subtap.schemas.models import ASRSegment, RawCleanSegment
 
 # ── Glossary tests ──
 
@@ -199,7 +199,7 @@ replacements:
     assert ws.cleaned_jsonl.exists()
 
     lines = ws.cleaned_jsonl.read_text().strip().split("\n")
-    segs = [CleanSegment.model_validate_json(line) for line in lines]
+    segs = [RawCleanSegment.model_validate_json(line) for line in lines]
     assert segs[0].cleaned_text == "machine learning is great"
     assert segs[1].cleaned_text == "New York city"
     assert "maching learning→machine learning" in segs[0].glossary_applied
@@ -224,7 +224,7 @@ def test_clean_local_mode_does_not_call_llm(
 
     assert result["segment_count"] == 1
     assert called["count"] == 0
-    seg = CleanSegment.model_validate_json(ws.cleaned_jsonl.read_text().strip())
+    seg = RawCleanSegment.model_validate_json(ws.cleaned_jsonl.read_text().strip())
     assert seg.cleaned_text == "hello world"
 
 
@@ -234,7 +234,7 @@ def test_segments_for_llm_uses_global_index(test_config: SubtapConfig, tmp_path:
 
     # 模拟多个 chunk 的情况，每个 chunk 的 segment_id 都从 0 开始
     segments = [
-        CleanSegment(
+        RawCleanSegment(
             chunk_id=0,
             segment_id=0,
             start_sec=0.0,
@@ -242,7 +242,7 @@ def test_segments_for_llm_uses_global_index(test_config: SubtapConfig, tmp_path:
             original_text="text0",
             cleaned_text="clean0",
         ),
-        CleanSegment(
+        RawCleanSegment(
             chunk_id=1,
             segment_id=0,  # 同样的 segment_id
             start_sec=1.0,
@@ -250,7 +250,7 @@ def test_segments_for_llm_uses_global_index(test_config: SubtapConfig, tmp_path:
             original_text="text1",
             cleaned_text="clean1",
         ),
-        CleanSegment(
+        RawCleanSegment(
             chunk_id=2,
             segment_id=0,  # 同样的 segment_id
             start_sec=2.0,
@@ -280,7 +280,7 @@ def test_apply_text_updates_uses_global_index(
 
     # 模拟多个 chunk 的情况，每个 chunk 的 segment_id 都从 0 开始
     segments = [
-        CleanSegment(
+        RawCleanSegment(
             chunk_id=0,
             segment_id=0,
             start_sec=0.0,
@@ -288,7 +288,7 @@ def test_apply_text_updates_uses_global_index(
             original_text="text0",
             cleaned_text="clean0",
         ),
-        CleanSegment(
+        RawCleanSegment(
             chunk_id=1,
             segment_id=0,  # 同样的 segment_id
             start_sec=1.0,
@@ -296,7 +296,7 @@ def test_apply_text_updates_uses_global_index(
             original_text="text1",
             cleaned_text="clean1",
         ),
-        CleanSegment(
+        RawCleanSegment(
             chunk_id=2,
             segment_id=0,  # 同样的 segment_id
             start_sec=2.0,
@@ -318,7 +318,7 @@ def test_apply_text_updates_uses_global_index(
 
 
 def test_clean_jsonl_valid_schema(test_config: SubtapConfig, tmp_path: Path):
-    """cleaned.jsonl contains valid CleanSegment JSONL."""
+    """cleaned.jsonl contains valid RawCleanSegment JSONL."""
     ws = Workspace(test_config, base_dir=tmp_path / "work")
     ws.ensure_dirs()
     _make_asr_jsonl(ws, ["test text one", "test text two"])
@@ -334,7 +334,7 @@ def test_clean_jsonl_valid_schema(test_config: SubtapConfig, tmp_path: Path):
 
     with open(ws.cleaned_jsonl) as f:
         for line in f:
-            seg = CleanSegment.model_validate_json(line.strip())
+            seg = RawCleanSegment.model_validate_json(line.strip())
             assert seg.segment_id >= 0
             assert seg.original_text
             assert seg.cleaned_text
@@ -387,6 +387,20 @@ def test_local_clean_removes_extra_spaces():
 
     result = local_clean_text("你好  世界")
     assert result == "你好 世界"
+
+
+def test_normalize_punct_preserves_decimals():
+    """P1-4: normalize_punct 不应破坏小数点。"""
+    from subtap.core.text_utils import normalize_punct
+
+    # 单位数小数
+    assert normalize_punct("0.6秒", "zh") == "0.6秒"
+    # 两位数小数
+    assert normalize_punct("3.14", "zh") == "3.14"
+    # 三位数小数
+    assert normalize_punct("123.456", "zh") == "123.456"
+    # 普通标点仍然正常转换（句号 → 句号）
+    assert normalize_punct("你好.世界", "zh") == "你好。世界"
 
 
 def test_local_clean_applies_glossary():
@@ -493,7 +507,7 @@ def test_run_clean_uses_llm_hotword_config(workspace):
 
     with (
         patch("subtap.core.clean.get_llm_backend", return_value=mock_llm),
-        patch("subtap.core.clean.load_glossary", return_value=mock_glossary),
+        patch("subtap.core.clean.load_yaml_glossary", return_value=mock_glossary),
     ):
         result = run_clean(workspace, config)
 
@@ -534,7 +548,7 @@ def test_run_clean_both_enabled(workspace):
 
     with (
         patch("subtap.core.clean.get_llm_backend", return_value=mock_llm),
-        patch("subtap.core.clean.load_glossary", return_value=mock_glossary),
+        patch("subtap.core.clean.load_yaml_glossary", return_value=mock_glossary),
     ):
         result = run_clean(workspace, config)
 
@@ -544,21 +558,20 @@ def test_run_clean_both_enabled(workspace):
     assert mock_llm.replace_hotwords_called is True
 
 
-def test_run_clean_enhance_mode_local_preserves_explicit_config(workspace):
-    """enhance_mode='local' 保留显式设置的 LLM 功能，只禁用未配置的"""
+def test_run_clean_enhance_mode_local_forces_llm_off(workspace):
+    """enhance_mode='local' 强制禁用所有 LLM 功能，忽略显式 config 设置"""
     config = SubtapConfig()
     config.llm_proofread = True
     config.llm_hotword = True
 
-    mock_llm = MockLLMBackend()
+    def fail_get_backend(*_a, **_k):
+        raise AssertionError("local 模式不应创建 LLM backend")
 
-    with patch("subtap.core.clean.get_llm_backend", return_value=mock_llm):
+    with patch("subtap.core.clean.get_llm_backend", side_effect=fail_get_backend):
         result = run_clean(workspace, config, enhance_mode="local")
 
-    # 显式设置 True 的功能应保留
-    assert mock_llm.select_suspicious_segments_called is True
-    assert mock_llm.repair_segments_called is True
-    assert mock_llm.replace_hotwords_called is True
+    # local 模式强制禁用 LLM，不创建 backend
+    assert result["segment_count"] > 0
 
 
 def test_run_clean_enhance_mode_local_disables_unset(workspace):

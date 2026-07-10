@@ -70,5 +70,10 @@ class Workspace:
     def media_info_path(self) -> Path:
         return self.root / "media_info.json"
 
+    @property
+    def run_latest_log(self) -> Path:
+        """Path to the latest run log symlink."""
+        return self.root / "run_latest.log"
+
     def chunk_path(self, chunk_id: int) -> Path:
         return self.chunks_dir / f"chunk_{chunk_id:04d}.wav"

@@ -66,6 +66,7 @@ def load_glossary(path: Optional[Path]) -> Glossary:
         return Glossary()
 
     with open(path) as f:
-        data = yaml.safe_load(f) or {}
+        result = yaml.safe_load(f)
+        data = result if isinstance(result, dict) else {}
 
     return Glossary.model_validate(data)

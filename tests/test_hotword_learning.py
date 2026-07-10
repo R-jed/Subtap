@@ -291,6 +291,7 @@ class TestBatchLLMCalls:
                     base_url="https://api.example.com/v1",
                     model="test-model",
                     api_key_env="SUBTAP_API_KEY",
+                    batch_size=batch_size,
                 ),
                 batch_size=batch_size,
             )

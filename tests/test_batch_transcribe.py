@@ -43,6 +43,8 @@ def test_batch_transcribe_writes_manifest_and_keeps_failed_items(tmp_path, monke
             output_dir,
             fmt="srt",
             enhance="local",
+            translate_to=None,
+            bilingual="off",
         ):
             calls.append((pipeline.work_dir, input_path, output_dir, fmt))
             return {"output_dir": str(output_dir), "timings": {"asr": 1.0}}

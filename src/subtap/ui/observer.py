@@ -6,6 +6,15 @@ import json
 from pathlib import Path
 from typing import Any
 
+SUBTAP_ASCII = r"""
+  ____        _              _
+ / ___| _   _| |_ __ _ _ __ | |_
+ \___ \| | | | __/ _` | '_ \| __|
+  ___) | |_| | || (_| | |_) | |_
+ |____/ \__, |\__\__,_| .__/ \__|
+        |___/         |_|
+"""
+
 
 def iter_event_log(log_path: Path) -> list[dict[str, Any]]:
     """Read run.log.jsonl rows that were fully written."""
@@ -48,6 +57,17 @@ def summarize_event_log(log_path: Path) -> dict[str, Any]:
         if event_type == "alignment_ready":
             state["aligned"] += 1
     return state
+
+
+def build_command_deck_text(state: dict[str, Any]) -> str:
+    """Format pipeline state as human-readable text for CLI output."""
+    return (
+        f"当前阶段：{state['stage']}\n"
+        f"进度：{state['progress']}%\n"
+        f"当前 Chunk：{state['chunk_id']}\n"
+        f"当前模型：{state['model']}\n"
+        f"ASR 草稿：{state['asr_drafts']}  已对齐：{state['aligned']}"
+    )
 
 
 def _make_observer_dashboard(log_path: Path, process, refresh_interval: float = 1.0):

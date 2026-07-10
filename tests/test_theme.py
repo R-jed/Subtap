@@ -28,10 +28,11 @@ class TestThemeColors:
         assert t.RED == ""
         assert t.GRAY == ""
 
-    def test_empty_no_color_keeps_colors(self, monkeypatch):
+    def test_empty_no_color_disables_colors(self, monkeypatch):
+        """no-color.org 规范：NO_COLOR 存在即禁用颜色，无论值是什么。"""
         monkeypatch.setenv("NO_COLOR", "")
         t = Theme()
-        assert t.GREEN != ""
+        assert t.GREEN == ""
 
 
 class TestColorizeSize:

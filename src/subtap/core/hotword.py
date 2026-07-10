@@ -5,8 +5,19 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from subtap.glossary.engine import HotwordEngine
+from subtap.glossary.hotword import HotwordGlossary, load_glossary
 from subtap.core.workspace import Workspace
+
+
+def _load_glossary_for_lang(
+    lang: str, glossary_dir: Path | None = None
+) -> HotwordGlossary:
+    """Load glossary for language, trying .txt then .tsv."""
+    gdir = glossary_dir or Path.home() / ".subtap" / "glossary"
+    path = gdir / f"hotwords_{lang}.txt"
+    if not path.exists():
+        path = gdir / f"hotwords_{lang}.tsv"
+    return load_glossary(path, lang)
 
 
 def run_hotword(
@@ -24,7 +35,7 @@ def run_hotword(
     if not input_path.exists():
         return {"replaced": 0, "total": 0}
 
-    engine = HotwordEngine(mode=mode, glossary_dir=glossary_dir)
+    glossary = _load_glossary_for_lang(lang, glossary_dir)
 
     # Read segments
     segments = []
@@ -39,9 +50,9 @@ def run_hotword(
     replaced_count = 0
     for seg in segments:
         original = seg.get("text", "")
-        corrected = engine.process(original, lang=lang)
+        corrected = glossary.replace_in_text(original)
         if corrected != original:
-            replacements = engine.get_applied_replacements(original, lang=lang)
+            replacements = glossary.get_applied_replacements(original)
             seg["aligned_text"] = original  # preserve for word filtering
             seg["text"] = corrected
             seg["hotword_replacements"] = replacements  # for post-split application

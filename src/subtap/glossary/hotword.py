@@ -8,9 +8,11 @@ Format (one row per hotword):
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -61,6 +63,38 @@ class HotwordGlossary:
             result[hw.word] = hw.word
         return result
 
+    def replace_in_text(self, text: str) -> str:
+        """Replace all hotwords in text. Sorts by length descending to avoid partial matches.
+
+        Skips self-replacements (alias == word) and prevents duplicate creation
+        when the word already appears adjacent to the alias.
+        """
+        aliases = self.get_all_aliases()
+        if not aliases:
+            return text
+        sorted_aliases = sorted(aliases.keys(), key=len, reverse=True)
+        for alias in sorted_aliases:
+            word = aliases[alias]
+            if alias == word or alias not in text:
+                continue
+            # Prevent duplicate: skip if word already adjacent to alias
+            # e.g., "VITURE维图尔" should not become "VITUREVITURE"
+            new_text = text.replace(alias, word)
+            if word + word not in new_text:
+                text = new_text
+        return text
+
+    def get_applied_replacements(self, text: str) -> dict[str, str]:
+        """Get the replacement pairs that would be applied to text."""
+        aliases = self.get_all_aliases()
+        result = {}
+        sorted_aliases = sorted(aliases.keys(), key=len, reverse=True)
+        for alias in sorted_aliases:
+            word = aliases[alias]
+            if alias in text and alias != word:
+                result[alias] = word
+        return result
+
 
 def load_glossary(path: Path, lang: str) -> HotwordGlossary:
     """Load glossary from equals format file.
@@ -72,22 +106,23 @@ def load_glossary(path: Path, lang: str) -> HotwordGlossary:
         return glossary
     try:
         content = path.read_text(encoding="utf-8")
-        for line in content.strip().split("\n"):
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if "=" not in line:
-                continue
-            parts = line.split("=", 1)
-            if len(parts) == 2:
-                word = parts[0].strip()
-                aliases_str = parts[1].strip()
-                if word and aliases_str:
-                    aliases = [a.strip() for a in aliases_str.split(",") if a.strip()]
-                    for alias in aliases:
-                        glossary.add_alias(word, alias)
-    except Exception:
-        pass
+    except UnicodeDecodeError as e:
+        logger.warning("Failed to decode glossary from %s: %s", path, e)
+        return glossary
+    for line in content.strip().split("\n"):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        parts = line.split("=", 1)
+        if len(parts) == 2:
+            word = parts[0].strip()
+            aliases_str = parts[1].strip()
+            if word and aliases_str:
+                aliases = [a.strip() for a in aliases_str.split(",") if a.strip()]
+                for alias in aliases:
+                    glossary.add_alias(word, alias)
     return glossary
 
 
