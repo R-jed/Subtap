@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 
 import numpy as np
@@ -23,24 +24,27 @@ _SENSITIVITY_MAP = {
 }
 
 
+@functools.lru_cache(maxsize=1)
 def _load_silero_vad():
-    """Load Silero VAD model (cached by silero_vad internally)."""
+    """Load Silero VAD model (cached across calls)."""
     from silero_vad import load_silero_vad
     return load_silero_vad()
 
 
 def _get_speech_segments_silero(
-    audio_path,
+    audio: AudioSegment,
     threshold: float = 0.5,
     min_silence_ms: int = 150,
 ) -> list[list[float]]:
     """Get speech segments using Silero VAD.
 
+    Args:
+        audio: Already-loaded AudioSegment to avoid double-loading.
+
     Returns list of [start_sec, end_sec] pairs.
     """
     from silero_vad import get_speech_timestamps
 
-    audio = AudioSegment.from_file(audio_path)
     # Silero VAD requires 16kHz mono
     audio = audio.set_frame_rate(16000).set_channels(1)
     samples = np.array(audio.get_array_of_samples(), dtype=np.float32)
@@ -82,7 +86,7 @@ def split_chunks(workspace: Workspace, config: SubtapConfig) -> list[Chunk]:
             min_silence_ms,
         )
         nonsilent = _get_speech_segments_silero(
-            workspace.source_audio,
+            audio,
             threshold=0.5,
             min_silence_ms=min_silence_ms,
         )
