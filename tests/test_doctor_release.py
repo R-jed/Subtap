@@ -11,9 +11,7 @@ from subtap.cli import app
 from subtap.core.models import MODEL_REGISTRY
 
 
-def make_config(
-    asr_model: str, aligner_model: str, tmp_path
-) -> SimpleNamespace:
+def make_config(asr_model: str, aligner_model: str, tmp_path) -> SimpleNamespace:
     """Return a minimal SubtapConfig mock for doctor tests.
 
     Uses an absolute models.root so _get_model_root does not fall through to
@@ -51,7 +49,9 @@ def install_model(tmp_path, model_name: str) -> None:
 
 def configure_complete_release_environment(monkeypatch, tmp_path):
     """Set up a complete release doctor environment with all dependencies satisfied."""
-    config = make_config(asr_model="asr_1.7b", aligner_model="aligner", tmp_path=tmp_path)
+    config = make_config(
+        asr_model="asr_1.7b", aligner_model="aligner", tmp_path=tmp_path
+    )
     install_model(tmp_path, "asr_1.7b")
     install_model(tmp_path, "aligner")
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
@@ -65,7 +65,9 @@ def configure_complete_release_environment(monkeypatch, tmp_path):
 
 def test_release_doctor_ignores_unselected_optional_asr(monkeypatch, tmp_path):
     """asr_0.6b is not selected → required=False, missing does not fail."""
-    config = make_config(asr_model="asr_1.7b", aligner_model="aligner", tmp_path=tmp_path)
+    config = make_config(
+        asr_model="asr_1.7b", aligner_model="aligner", tmp_path=tmp_path
+    )
     install_model(tmp_path, "asr_1.7b")
     install_model(tmp_path, "aligner")
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
@@ -88,7 +90,9 @@ def test_release_doctor_ignores_unselected_optional_asr(monkeypatch, tmp_path):
 
 def test_release_doctor_fails_when_selected_model_is_missing(monkeypatch, tmp_path):
     """asr_1.7b is selected but missing → required=True, exit_code=1."""
-    config = make_config(asr_model="asr_1.7b", aligner_model="aligner", tmp_path=tmp_path)
+    config = make_config(
+        asr_model="asr_1.7b", aligner_model="aligner", tmp_path=tmp_path
+    )
     install_model(tmp_path, "aligner")
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
     monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
@@ -112,9 +116,7 @@ def test_doctor_combines_release_and_workspace_json(monkeypatch, tmp_path):
     configure_complete_release_environment(monkeypatch, tmp_path)
     monkeypatch.chdir(tmp_path)
 
-    result = CliRunner().invoke(
-        app, ["doctor", "--release", "--workspace", "--json"]
-    )
+    result = CliRunner().invoke(app, ["doctor", "--release", "--workspace", "--json"])
 
     assert result.exit_code == 0
     payload = json.loads(result.output)
