@@ -89,30 +89,19 @@ class TuiApp:
             sys.stderr.flush()
 
     def _view_home(self) -> str:
-        t = self.theme
-        # Logo 作为 prefix，尾部空行提供 logo 和菜单之间的间距（5行）
-        prefix = [
-            f"{t.CYAN} ___      _    _             {t.NC}",
-            f"{t.CYAN}/ __|_  _| |__| |_ __ _ _ __ {t.NC}",
-            f"{t.CYAN}\\__ \\ || | '_ \\  _/ _` | '_ \\{t.NC}",
-            f"{t.CYAN}|___/\\_,_|_.__/\\__\\__,_| .__/{t.NC}",
-            f"{t.CYAN}                       |_|   {t.NC}",
-            f"{t.GRAY}          音频转录工具{t.NC}",
-            "",
-            "",
-            "",
-            "",
-            "",
-        ]
+        from .views.home import HomeView
 
+        home = HomeView()
+
+        # First run check
+        if home.is_first_run():
+            self._push_state("first_run")
+            return "continue"
+
+        prefix = home.build_prefix_lines()
         menu = Menu(
             title="",
-            items=[
-                "1. 新建转录    从音频/视频生成文字稿",
-                "2. 转录历史    查看记录、重新保存",
-                "3. 批量转录    一次处理多个文件",
-                "4. 设置        模型、接口、偏好",
-            ],
+            items=home.build_menu_items(),
             footer="↑↓ 导航  Enter 确认  Q 退出",
             theme=self.theme,
             prefix_lines=prefix,
@@ -132,18 +121,9 @@ class TuiApp:
                 menu.move_down()
                 menu.render_incremental(old_cursor)
             elif key == Key.ENTER:
-                selected = menu.cursor
-                if selected == 0:
-                    self._push_state("new_task")
-                    return "continue"
-                elif selected == 1:
-                    self._push_state("history")
-                    return "continue"
-                elif selected == 2:
-                    self._push_state("batch")
-                    return "continue"
-                elif selected == 3:
-                    self._push_state("settings")
+                state = home.map_selection_to_state(menu.cursor)
+                if state:
+                    self._push_state(state)
                     return "continue"
             elif key.startswith("CHAR:"):
                 digit = key[5:]
