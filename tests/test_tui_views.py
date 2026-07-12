@@ -541,3 +541,64 @@ def test_recent_tasks_page_get_actions():
     actions = page.get_actions()
     assert any("查看" in a for a in actions)
     assert any("返回" in a for a in actions)
+
+
+# --- CompletionPage tests ---
+
+
+def test_completion_page_builds_items():
+    from subtap.ui.views.completion import CompletionPage
+
+    page = CompletionPage()
+    items = page.build_items(
+        output_path="/output/final.srt",
+        duration_sec=120,
+    )
+    assert len(items) >= 4
+    assert any("打开字幕" in item for item in items)
+    assert any("输出目录" in item for item in items)
+
+
+def test_completion_page_format_duration():
+    from subtap.ui.views.completion import CompletionPage
+
+    page = CompletionPage()
+    assert page.format_duration(65) == "1 分 5 秒"
+    assert page.format_duration(30) == "30 秒"
+    assert page.format_duration(3661) == "61 分 1 秒"
+
+
+def test_completion_page_get_actions():
+    from subtap.ui.views.completion import CompletionPage
+
+    page = CompletionPage()
+    actions = page.get_actions()
+    assert len(actions) == 5
+    assert "打开字幕" in actions
+    assert "打开输出目录" in actions
+    assert "重新生成" in actions
+    assert "处理另一个文件" in actions
+    assert "返回" in actions
+
+
+def test_completion_page_format_duration_zero():
+    from subtap.ui.views.completion import CompletionPage
+
+    page = CompletionPage()
+    assert page.format_duration(0) == "0 秒"
+
+
+def test_completion_page_format_duration_exact_minute():
+    from subtap.ui.views.completion import CompletionPage
+
+    page = CompletionPage()
+    assert page.format_duration(60) == "1 分 0 秒"
+
+
+def test_tui_app_render_and_read_has_completion_state():
+    """Verify completion state is routed in _render_and_read."""
+    import inspect
+    from subtap.ui.tui_app import TuiApp
+
+    source = inspect.getsource(TuiApp._render_and_read)
+    assert "completion" in source
