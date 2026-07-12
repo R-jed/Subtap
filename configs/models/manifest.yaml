@@ -1,14 +1,14 @@
 version: "1.0.0"
 models:
   asr_0.6b:
-    description: "Qwen3 ASR 0.6B MLX 8bit"
+    description: "Qwen3 ASR 0.6B MLX 8bit（未发布：完整性清单未完成）"
     subdir: "asr_0.6b"
     hf_repo: "aufklarer/Qwen3-ASR-0.6B-MLX-8bit"
     modelscope_repo: "aufklarer/Qwen3-ASR-0.6B-MLX-8bit"
     min_disk_bytes: 500000000
     compatibility:
       subtap_min: "0.1.0"
-    tags: ["asr", "fast"]
+    tags: ["asr", "fast", "unpublished"]
     required_files:
       - name: "config.json"
         sha256: "5d104a945fed08728ab010f12bf3ce5ab4d0794bba276d81bff5bd83ae9d2be0"

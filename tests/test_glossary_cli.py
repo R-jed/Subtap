@@ -10,6 +10,13 @@ from subtap.schemas.glossary import load_glossary
 runner = CliRunner()
 
 
+def test_default_glossary_path_uses_canonical_directory(tmp_path, monkeypatch):
+    from subtap.glossary.cli import _default_path
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    assert _default_path() == tmp_path / ".subtap" / "glossaries" / "default.yaml"
+
+
 def test_glossary_command_exists():
     """subtap glossary should expose add, list and import commands."""
     result = runner.invoke(app, ["glossary", "--help"])

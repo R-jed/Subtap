@@ -49,6 +49,9 @@ subtap = "subtap.cli:app"
 [tool.hatch.build.targets.wheel]
 packages = ["src/subtap"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"configs/models/manifest.yaml" = "subtap/resources/model_manifest.yaml"
+
 [tool.hatch.build.targets.sdist]
 exclude = [
     "/.coverage",
@@ -57,7 +60,6 @@ exclude = [
     "/tests/fixtures/workspaces",
     "/dist",
     "/models",
-    "/configs",
 ]
 
 [tool.pytest.ini_options]

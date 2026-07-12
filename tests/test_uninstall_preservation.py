@@ -35,7 +35,10 @@ def test_user_data_not_in_sdist(pattern):
     with tarfile.open(sdists[-1]) as tf:
         names = tf.getnames()
 
-    assert not any(pattern in name for name in names)
+    matches = [name for name in names if pattern in name]
+    if pattern == "/models/":
+        matches = [name for name in matches if "/configs/models/" not in name]
+    assert not matches
 
 
 def test_safe_delete_refuses_user_home():

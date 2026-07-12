@@ -70,5 +70,7 @@ def get_manifest_path(config: Any) -> Path:
         if p.is_absolute():
             return p
         return Path.cwd() / p
-    # Default: configs/models/manifest.yaml relative to project root
+    packaged = Path(__file__).resolve().parents[1] / "resources" / "model_manifest.yaml"
+    if packaged.exists():
+        return packaged
     return Path(__file__).resolve().parents[3] / "configs" / "models" / "manifest.yaml"

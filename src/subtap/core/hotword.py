@@ -12,11 +12,13 @@ from subtap.core.workspace import Workspace
 def _load_glossary_for_lang(
     lang: str, glossary_dir: Path | None = None
 ) -> HotwordGlossary:
-    """Load glossary for language, trying .txt then .tsv."""
-    gdir = glossary_dir or Path.home() / ".subtap" / "glossary"
-    path = gdir / f"hotwords_{lang}.txt"
-    if not path.exists():
-        path = gdir / f"hotwords_{lang}.tsv"
+    """Load the canonical default glossary."""
+    if glossary_dir is None:
+        path = Path.home() / ".subtap" / "glossaries" / "default.yaml"
+    else:
+        path = glossary_dir / f"hotwords_{lang}.txt"
+        if not path.exists():
+            path = glossary_dir / f"hotwords_{lang}.tsv"
     return load_glossary(path, lang)
 
 

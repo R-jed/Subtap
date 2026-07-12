@@ -11,6 +11,10 @@ import typer
 hotword_app = typer.Typer(help="热词管理")
 
 
+def _default_path() -> Path:
+    return Path.home() / ".subtap" / "glossaries" / "default.yaml"
+
+
 @hotword_app.command("add")
 def hotword_add(
     word: str = typer.Argument(..., help="热词（正确写法）"),
@@ -24,8 +28,7 @@ def hotword_add(
         save_glossary,
     )
 
-    glossary_dir = Path.home() / ".subtap" / "glossary"
-    path = glossary_dir / f"hotwords_{lang}.txt"
+    path = _default_path()
     glossary = load_glossary(path, lang)
     glossary.add(Hotword(word=word, aliases=[a.strip() for a in aliases.split(",")]))
     save_glossary(glossary, path)
@@ -39,8 +42,7 @@ def hotword_list(
     """查看热词"""
     from subtap.glossary.hotword import load_glossary
 
-    glossary_dir = Path.home() / ".subtap" / "glossary"
-    path = glossary_dir / f"hotwords_{lang}.txt"
+    path = _default_path()
     glossary = load_glossary(path, lang)
 
     if not glossary.hotwords:
@@ -61,8 +63,7 @@ def hotword_delete(
     """删除热词"""
     from subtap.glossary.hotword import load_glossary, save_glossary
 
-    glossary_dir = Path.home() / ".subtap" / "glossary"
-    path = glossary_dir / f"hotwords_{lang}.txt"
+    path = _default_path()
     glossary = load_glossary(path, lang)
     glossary.remove(word)
     save_glossary(glossary, path)
@@ -74,8 +75,7 @@ def hotword_edit(
     lang: str = typer.Option("zh", "--lang", "-l", help="语言"),
 ) -> None:
     """编辑热词（用默认应用打开）"""
-    glossary_dir = Path.home() / ".subtap" / "glossary"
-    path = glossary_dir / f"hotwords_{lang}.txt"
+    path = _default_path()
 
     if not path.exists():
         from subtap.glossary.hotword import HotwordGlossary, save_glossary

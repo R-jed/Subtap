@@ -1,5 +1,7 @@
 """JobStore 测试 — 任务目录创建、列出、大小计算、删除。"""
 
+from pathlib import Path
+
 from subtap.core.job_store import JobStore
 
 
@@ -90,3 +92,44 @@ def test_remove_rejects_path_traversal(tmp_path):
 
     with pytest.raises(ValueError, match="invalid task_id"):
         store.remove("../../../etc")
+
+
+def test_create_rejects_symlink_outside_jobs_root(tmp_path):
+    """任务名不能借符号链接逃逸 jobs 根目录。"""
+    import pytest
+
+    root = tmp_path / "jobs"
+    outside = tmp_path / "jobs-escape"
+    root.mkdir()
+    outside.mkdir()
+    (root / "task-link").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="invalid task_id"):
+        JobStore(root).create("task-link")
+
+
+def test_remove_uses_shared_safe_delete(tmp_path, monkeypatch):
+    """任务删除必须经过统一安全删除入口。"""
+    store = JobStore(tmp_path / "jobs")
+    job_dir = store.create("task-001")
+    calls = []
+
+    monkeypatch.setattr(
+        "subtap.core.job_store.safe_delete",
+        lambda path, *, allowed_roots: calls.append((path, allowed_roots)) or True,
+    )
+
+    assert store.remove("task-001") is True
+    assert calls == [(job_dir, [store._root])]
+
+
+def test_job_store_normalizes_relative_root(tmp_path, monkeypatch):
+    """相对 jobs 根目录的创建与删除必须使用同一绝对路径。"""
+    monkeypatch.chdir(tmp_path)
+    store = JobStore(Path("jobs"))
+
+    job_dir = store.create("task-001")
+
+    assert store._root == (tmp_path / "jobs").resolve()
+    assert job_dir.is_absolute()
+    assert store.remove("task-001") is True

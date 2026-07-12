@@ -76,8 +76,8 @@ def _load_hotwords_from_glossary(lang: str = "zh") -> list[str]:
     from subtap.glossary.hotword import load_glossary
     from pathlib import Path
 
-    glossary_dir = Path.home() / ".subtap" / "glossary"
-    glossary = load_glossary(glossary_dir / f"hotwords_{lang}.txt", lang)
+    glossary_dir = Path.home() / ".subtap" / "glossaries"
+    glossary = load_glossary(glossary_dir / "default.yaml", lang)
     return [hw.word for hw in glossary.hotwords]
 
 

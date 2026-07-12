@@ -110,10 +110,8 @@ def test_model_registry_loads_from_manifest(tmp_path: Path) -> None:
     assert registry._manifest is not None
 
 
-def test_model_registry_falls_back_without_manifest(
-    tmp_path: Path, monkeypatch
-) -> None:
-    """ModelRegistry falls back to MODEL_REGISTRY when no manifest exists."""
+def test_model_registry_fails_without_manifest(tmp_path: Path, monkeypatch) -> None:
+    """ModelRegistry 缺少可信清单时必须明确失败。"""
     config = _make_config(tmp_path, "")
 
     import subtap.core.models as models_mod
@@ -124,10 +122,8 @@ def test_model_registry_falls_back_without_manifest(
 
     from subtap.core.models import ModelRegistry
 
-    registry = ModelRegistry(config)
-    assert registry._manifest is None
-    names = registry.list_available()
-    assert "asr_0.6b" in names
+    with pytest.raises(FileNotFoundError, match="模型清单不存在"):
+        ModelRegistry(config)
 
 
 def test_get_sha256_returns_hash_from_manifest(tmp_path: Path) -> None:
@@ -142,20 +138,77 @@ def test_get_sha256_returns_hash_from_manifest(tmp_path: Path) -> None:
     assert registry.get_sha256("test_model", "config.json") == "abc123"
 
 
-def test_get_sha256_returns_none_without_manifest(tmp_path: Path, monkeypatch) -> None:
-    """get_sha256 returns None when no manifest is loaded."""
+def test_model_registry_reports_invalid_manifest(tmp_path: Path, monkeypatch) -> None:
+    """清单格式错误必须传递给调用方。"""
     config = _make_config(tmp_path, "")
 
     import subtap.core.models as models_mod
 
-    monkeypatch.setattr(
-        models_mod, "get_manifest_path", lambda _: tmp_path / "nonexistent.yaml"
-    )
+    invalid = tmp_path / "manifest.yaml"
+    invalid.write_text("models: [invalid", encoding="utf-8")
+    monkeypatch.setattr(models_mod, "get_manifest_path", lambda _: invalid)
 
     from subtap.core.models import ModelRegistry
 
-    registry = ModelRegistry(config)
-    assert registry.get_sha256("asr_0.6b", "config.json") is None
+    with pytest.raises(Exception):
+        ModelRegistry(config)
+
+
+def test_download_refuses_file_without_manifest_hash(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """下载主流程缺少可信哈希时必须失败。"""
+    from subtap.core.models import ModelDownloader, ModelRegistry
+
+    monkeypatch.setattr(
+        ModelDownloader,
+        "_download_file_with_resume",
+        lambda self, url, dest, progress=None: dest.write_bytes(b"unverified"),
+    )
+    monkeypatch.setattr(ModelRegistry, "get_sha256", lambda *args: None)
+
+    downloader = ModelDownloader(_make_config(tmp_path, ""))
+    with pytest.raises(RuntimeError, match="缺少 SHA256"):
+        downloader.download("asr_0.6b", max_retries=1)
+
+
+def test_download_validates_all_hashes_before_network(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """清单末尾缺哈希也必须在任何网络请求前失败。"""
+    from subtap.core.models import ModelDownloader, ModelRegistry
+
+    downloaded = []
+    monkeypatch.setattr(
+        ModelDownloader,
+        "_download_file_with_resume",
+        lambda self, url, dest, progress=None: downloaded.append(dest),
+    )
+    monkeypatch.setattr(
+        ModelRegistry,
+        "get_sha256",
+        lambda self, model, filename: None if filename == "merges.txt" else "0" * 64,
+    )
+
+    with pytest.raises(RuntimeError, match="merges.txt"):
+        ModelDownloader(_make_config(tmp_path, "")).download("asr_0.6b", max_retries=1)
+
+    assert downloaded == []
+
+
+def test_default_manifest_resolves_packaged_resource(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """安装包内的 manifest 是默认可信清单。"""
+    import subtap.core.manifest as manifest_mod
+
+    module_path = tmp_path / "subtap" / "core" / "manifest.py"
+    packaged = tmp_path / "subtap" / "resources" / "model_manifest.yaml"
+    packaged.parent.mkdir(parents=True)
+    packaged.write_text("version: '1.0.0'\nmodels: {}\n", encoding="utf-8")
+    monkeypatch.setattr(manifest_mod, "__file__", str(module_path))
+
+    assert manifest_mod.get_manifest_path(object()) == packaged
 
 
 def test_manifest_sha256_not_empty() -> None:

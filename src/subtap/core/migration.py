@@ -147,9 +147,8 @@ def execute_migration(plan: MigrationPlan, subtap_root: Path) -> bool:
     Creates directories listed in ``plan.creates`` and moves files listed in
     ``plan.moves``.  Files in ``plan.skips`` are left untouched.
 
-    Safe to call repeatedly: directories are created with ``exist_ok=True``,
-    and moves that have already been applied (source missing, destination
-    present) are silently skipped.
+    Safe to call repeatedly after a completed migration. A destination conflict
+    raises ``FileExistsError`` before any directory or file is changed.
 
     Args:
         plan: The migration plan (from plan_migration).
@@ -158,6 +157,13 @@ def execute_migration(plan: MigrationPlan, subtap_root: Path) -> bool:
     Returns:
         True if the migration completed without errors.
     """
+    active_moves = [move for move in plan.moves if move.src.exists()]
+    destinations: set[Path] = set()
+    for move in active_moves:
+        if move.dst.exists() or move.dst in destinations:
+            raise FileExistsError(f"迁移目标已存在: {move.dst}")
+        destinations.add(move.dst)
+
     # 1. Create directories
     for rel in plan.creates:
         (subtap_root / rel).mkdir(parents=True, exist_ok=True)
@@ -168,9 +174,6 @@ def execute_migration(plan: MigrationPlan, subtap_root: Path) -> bool:
         dst = move.dst
         # Idempotent: skip if source already gone (already moved)
         if not src.exists():
-            continue
-        # Never overwrite existing destination — preserve user data
-        if dst.exists():
             continue
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(src), str(dst))

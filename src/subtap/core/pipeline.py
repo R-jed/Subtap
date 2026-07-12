@@ -267,9 +267,15 @@ class Pipeline:
             return {"learned": 0}
 
         gdir = (
-            Path(glossary_dir) if glossary_dir else Path.home() / ".subtap" / "glossary"
+            Path(glossary_dir)
+            if glossary_dir
+            else Path.home() / ".subtap" / "glossaries"
         )
-        hotwords_path = gdir / f"hotwords_{hotword_lang}.txt"
+        hotwords_path = (
+            gdir / f"hotwords_{hotword_lang}.txt"
+            if glossary_dir
+            else gdir / "learned.yaml"
+        )
         save_learned_hotwords(update, hotwords_path)
 
         # Clean up ops file after learning

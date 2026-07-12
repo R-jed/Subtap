@@ -472,7 +472,7 @@ class TestGlossaryDirPropagation:
         assert "VITURE" in expected_path.read_text(encoding="utf-8")
 
     def test_pipeline_stage_learn_fallback_default(self, tmp_path):
-        """Pipeline._stage_learn should fallback to ~/.subtap/glossary when no dir given."""
+        """Pipeline._stage_learn should use the canonical learned glossary."""
         import json
 
         from subtap.core.pipeline import Pipeline
@@ -492,5 +492,5 @@ class TestGlossaryDirPropagation:
             result = pipeline.run_stage("learn")
 
         assert result["learned"] >= 1
-        default_path = tmp_path / ".subtap" / "glossary" / "hotwords_zh.txt"
+        default_path = tmp_path / ".subtap" / "glossaries" / "learned.yaml"
         assert default_path.exists(), f"Expected hotwords at {default_path}"

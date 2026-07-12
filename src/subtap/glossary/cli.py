@@ -13,7 +13,7 @@ app = typer.Typer(help="热词/术语管理")
 
 
 def _default_path() -> Path:
-    return Path.home() / ".subtap" / "profile" / "glossary.yaml"
+    return Path.home() / ".subtap" / "glossaries" / "default.yaml"
 
 
 def _save_glossary(path: Path, glossary: Glossary) -> None:
