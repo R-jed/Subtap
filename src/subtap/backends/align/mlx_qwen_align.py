@@ -133,7 +133,9 @@ class MLXQwenAligner:
                 chunk_words: list[dict] = []
                 for item in align_result:
                     if _visible_len(item.text) == 0:
-                        raise RuntimeError("aligner returned a word with no visible text")
+                        raise RuntimeError(
+                            "aligner returned a word with no visible text"
+                        )
                     start = chunk_offset + item.start_time + time_offset
                     end = chunk_offset + item.end_time + time_offset
                     # Enforce minimum duration (model may output start==end)

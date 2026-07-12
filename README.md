@@ -8,6 +8,29 @@
 
 > ⚠️ 开发中，尚未发布。
 
+## 支持范围
+
+Subtap 当前支持 Apple Silicon Mac，使用 MLX 在本地生成字幕。项目仍处于开发阶段，Homebrew 正式分发尚未完成。
+
+## 开发环境使用
+
+```bash
+uv sync --extra dev
+uv run subtap setup
+uv run subtap doctor
+uv run subtap run input.mp3 --mode quality --enhance local --local-only
+```
+
+## 常用命令
+
+- `subtap run`：运行完整字幕流程
+- `subtap setup`：初始化配置与模型
+- `subtap doctor`：检查本地环境
+- `subtap demo`：运行演示
+- `subtap glossary`：管理热词
+- `subtap learn`：学习人工修正
+- `subtap profile`：查看本地学习档案
+
 ## 许可证
 
 [MIT](./LICENSE)
