@@ -474,3 +474,70 @@ def test_glossary_page_get_actions():
     assert "删除 (D)" in actions
     assert "编辑 (E)" in actions
     assert "返回 (Esc)" in actions
+
+
+# --- ManuscriptsPage tests ---
+
+
+def test_manuscripts_page_builds_items():
+    from subtap.ui.views.manuscripts_page import ManuscriptsPage
+
+    page = ManuscriptsPage()
+    items = page.build_items([
+        {"name": "讲稿.docx", "path": "/test/讲稿.docx", "exists": True, "recent_use_time": None},
+        {"name": "旧稿.txt", "path": "/test/旧稿.txt", "exists": False, "recent_use_time": None},
+    ])
+    assert len(items) == 2
+    assert "✓" in items[0]
+    assert "✗" in items[1]
+
+
+def test_manuscripts_page_empty():
+    from subtap.ui.views.manuscripts_page import ManuscriptsPage
+
+    page = ManuscriptsPage()
+    items = page.build_items([])
+    assert len(items) == 1
+    assert "暂无" in items[0]
+
+
+def test_manuscripts_page_get_actions():
+    from subtap.ui.views.manuscripts_page import ManuscriptsPage
+
+    page = ManuscriptsPage()
+    actions = page.get_actions()
+    assert "添加" in actions[0]
+    assert "删除" in actions[1]
+    assert "返回" in actions[2]
+
+
+# --- RecentTasksPage tests ---
+
+
+def test_recent_tasks_page_builds_items():
+    from subtap.ui.views.recent_tasks import RecentTasksPage
+
+    page = RecentTasksPage()
+    items = page.build_items([
+        {"task_id": "task-001", "input_name": "视频.srt", "output_path": "/out/final.srt", "time": "2026-07-12T10:00:00"},
+    ])
+    assert len(items) == 1
+    assert "task-001" in items[0] or "视频" in items[0]
+
+
+def test_recent_tasks_page_empty():
+    from subtap.ui.views.recent_tasks import RecentTasksPage
+
+    page = RecentTasksPage()
+    items = page.build_items([])
+    assert len(items) == 1
+    assert "暂无" in items[0]
+
+
+def test_recent_tasks_page_get_actions():
+    from subtap.ui.views.recent_tasks import RecentTasksPage
+
+    page = RecentTasksPage()
+    actions = page.get_actions()
+    assert any("查看" in a for a in actions)
+    assert any("返回" in a for a in actions)

@@ -73,6 +73,10 @@ class TuiApp:
             return self._view_wizard()
         elif self._state == "glossary_page":
             return self._view_glossary_page()
+        elif self._state == "manuscripts_page":
+            return self._view_manuscripts_page()
+        elif self._state == "recent_tasks":
+            return self._view_recent_tasks()
         return "quit"
 
     def _push_state(self, state: str) -> None:
@@ -520,6 +524,102 @@ class TuiApp:
             elif key == "CHAR:E" or key == "CHAR:e":
                 self._show_placeholder("编辑功能开发中...")
                 menu.render_full()
+
+    def _view_manuscripts_page(self) -> str:
+        from .views.manuscripts_page import ManuscriptsPage
+        from subtap.core.manuscript_index import ManuscriptIndex
+
+        t = self.theme
+        page = ManuscriptsPage()
+        index = ManuscriptIndex(Path.home() / ".subtap" / "manuscripts" / "index.json")
+        manuscripts = index.list_all()
+        items = page.build_items(manuscripts)
+
+        menu = Menu(
+            title="文稿库",
+            items=items,
+            footer="↑↓ 导航  A 添加  D 删除  Esc 返回",
+            theme=self.theme,
+        )
+        menu.render_full()
+
+        while True:
+            old_cursor = menu.cursor
+            key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
+            if key is None:
+                continue
+            if key == Key.ESCAPE:
+                self._pop_state()
+                return "continue"
+            elif key == Key.QUIT:
+                return "quit"
+            elif key == Key.UP:
+                menu.move_up()
+                menu.render_incremental(old_cursor)
+            elif key == Key.DOWN:
+                menu.move_down()
+                menu.render_incremental(old_cursor)
+            elif key == "CHAR:A" or key == "CHAR:a":
+                self._show_placeholder("添加文稿功能开发中...")
+                menu.render_full()
+            elif key == "CHAR:D" or key == "CHAR:d":
+                if manuscripts and menu.cursor < len(manuscripts):
+                    name = manuscripts[menu.cursor]["name"]
+                    index.remove(name)
+                    manuscripts = index.list_all()
+                    items = page.build_items(manuscripts)
+                    menu = Menu(
+                        title="文稿库",
+                        items=items,
+                        footer="↑↓ 导航  A 添加  D 删除  Esc 返回",
+                        theme=self.theme,
+                    )
+                    menu.render_full()
+
+    def _view_recent_tasks(self) -> str:
+        from .views.recent_tasks import RecentTasksPage
+        from subtap.core.state_store import StateStore
+
+        t = self.theme
+        page = RecentTasksPage()
+        store = StateStore(Path.home() / ".subtap" / "state.json")
+        tasks = store.load().recent_tasks
+        items = page.build_items(tasks)
+
+        menu = Menu(
+            title="最近任务",
+            items=items,
+            footer="↑↓ 导航  Enter 详情  Esc 返回",
+            theme=self.theme,
+        )
+        menu.render_full()
+
+        while True:
+            old_cursor = menu.cursor
+            key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
+            if key is None:
+                continue
+            if key == Key.ESCAPE:
+                self._pop_state()
+                return "continue"
+            elif key == Key.QUIT:
+                return "quit"
+            elif key == Key.UP:
+                menu.move_up()
+                menu.render_incremental(old_cursor)
+            elif key == Key.DOWN:
+                menu.move_down()
+                menu.render_incremental(old_cursor)
+            elif key == Key.ENTER:
+                if tasks and menu.cursor < len(tasks):
+                    task = tasks[menu.cursor]
+                    detail = [
+                        f"任务ID：{task.get('task_id', '?')}",
+                        f"输入文件：{task.get('input_name', '?')}",
+                        f"输出路径：{task.get('output_path', '?')}",
+                    ]
+                    self._show_detail(detail)
+                    menu.render_full()
 
     def _view_settings_format(self) -> str:
         t = self.theme
