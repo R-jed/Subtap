@@ -817,7 +817,7 @@ class TuiApp:
         t = self.theme
         glossaries = wiz.list_glossaries()
 
-        items = ["跳过（不使用热词表）"] + [f"  {g}" for g in glossaries]
+        items = ["跳过（不使用热词表）"] + [f"  {g.stem}" for g in glossaries]
         menu = Menu(
             title=f"[3/6] {WizardView.STEPS[2]}",
             items=items,
@@ -852,7 +852,7 @@ class TuiApp:
         t = self.theme
         manuscripts = wiz.list_manuscripts()
 
-        items = ["跳过（不使用参考文稿）"] + [f"  {m}" for m in manuscripts]
+        items = ["跳过（不使用参考文稿）"] + [f"  {m.stem}" for m in manuscripts]
         menu = Menu(
             title=f"[4/6] {WizardView.STEPS[3]}",
             items=items,

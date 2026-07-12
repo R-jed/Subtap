@@ -259,7 +259,7 @@ def test_wizard_view_build_command_includes_glossary(tmp_path, monkeypatch):
     view = WizardView()
     view.select_file(audio)
     view.select_quality("fast")
-    view.select_glossary("my_terms")
+    view.select_glossary(glossary_dir / "my_terms.yaml")
     cmd = view.build_run_command()
     assert "--glossary" in cmd
     assert str(glossary_dir / "my_terms.yaml") in cmd
@@ -278,7 +278,7 @@ def test_wizard_view_build_command_includes_manuscript(tmp_path, monkeypatch):
     view = WizardView()
     view.select_file(audio)
     view.select_quality("fast")
-    view.select_manuscript("draft")
+    view.select_manuscript(ms_dir / "draft.txt")
     cmd = view.build_run_command()
     assert "--script" in cmd
     assert str(ms_dir / "draft.txt") in cmd
@@ -295,9 +295,10 @@ def test_wizard_view_list_glossaries(tmp_path, monkeypatch):
     (glossary_dir / "c.md").write_text("")  # not a supported suffix
 
     result = WizardView.list_glossaries()
-    assert "a" in result
-    assert "b" in result
-    assert "c" not in result
+    names = [p.stem for p in result]
+    assert "a" in names
+    assert "b" in names
+    assert "c" not in names
 
 
 def test_wizard_view_list_manuscripts(tmp_path, monkeypatch):
@@ -311,9 +312,10 @@ def test_wizard_view_list_manuscripts(tmp_path, monkeypatch):
     (ms_dir / "doc3.pdf").write_text("")  # not a supported suffix
 
     result = WizardView.list_manuscripts()
-    assert "doc1" in result
-    assert "doc2" in result
-    assert "doc3" not in result
+    names = [p.stem for p in result]
+    assert "doc1" in names
+    assert "doc2" in names
+    assert "doc3" not in names
 
 
 def test_wizard_view_next_prev_step():
@@ -345,19 +347,25 @@ def test_wizard_view_next_step_clamps_at_max():
 
 
 def test_wizard_view_select_glossary():
+    from pathlib import Path
+
     from subtap.ui.views.wizard import WizardView
 
     view = WizardView()
-    view.select_glossary("my_glossary")
-    assert view.get_state()["glossary_name"] == "my_glossary"
+    p = Path("/tmp/my_glossary.yaml")
+    view.select_glossary(p)
+    assert view.get_state()["glossary_path"] == p
 
 
 def test_wizard_view_select_manuscript():
+    from pathlib import Path
+
     from subtap.ui.views.wizard import WizardView
 
     view = WizardView()
-    view.select_manuscript("my_manuscript")
-    assert view.get_state()["manuscript_name"] == "my_manuscript"
+    p = Path("/tmp/my_manuscript.txt")
+    view.select_manuscript(p)
+    assert view.get_state()["manuscript_path"] == p
 
 
 def test_wizard_view_select_output_dir():
