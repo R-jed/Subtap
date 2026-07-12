@@ -7,6 +7,7 @@ import shutil
 from pathlib import Path
 from typing import Any, TypedDict, cast
 
+from subtap.core.manifest import ModelManifest, get_manifest_path, load_manifest
 from subtap.schemas.config import SubtapConfig
 
 logger = logging.getLogger(__name__)
@@ -108,15 +109,38 @@ class ModelRegistry:
     def __init__(self, config: SubtapConfig):
         self.config = config
         self.root = _get_model_root(config)
+        self._manifest = self._load_manifest_if_available(config)
+
+    def _load_manifest_if_available(
+        self, config: SubtapConfig
+    ) -> ModelManifest | None:
+        """Try loading manifest; return None on any failure."""
+        try:
+            path = get_manifest_path(config)
+            if not path.exists():
+                return None
+            return load_manifest(path)
+        except Exception:
+            logger.debug("Failed to load manifest, falling back to MODEL_REGISTRY")
+            return None
+
+    def _registry(self) -> dict[str, dict[str, Any]]:
+        """Return model registry: manifest-backed or legacy hardcoded."""
+        if self._manifest is not None:
+            return {
+                name: entry.to_legacy_dict()
+                for name, entry in self._manifest.models.items()
+            }
+        return MODEL_REGISTRY  # type: ignore[return-value]
 
     def list_available(self) -> list[str]:
         """List all available model names."""
-        return list(MODEL_REGISTRY.keys())
+        return list(self._registry().keys())
 
     def status(self) -> list[ModelStatus]:
         """Check status of all registered models."""
         results: list[ModelStatus] = []
-        for name, info in MODEL_REGISTRY.items():
+        for name, info in self._registry().items():
             model_dir = self.root / info["subdir"]
             missing = []
             for f in info["required_files"]:
@@ -134,18 +158,33 @@ class ModelRegistry:
 
     def get_path(self, model_name: str) -> Path:
         """Get the directory path for a specific model."""
-        info = MODEL_REGISTRY.get(model_name)
+        info = self._registry().get(model_name)
         if info is None:
             raise ValueError(f"Unknown model: {model_name}")
         return self.root / info["subdir"]
 
     def is_available(self, model_name: str) -> bool:
         """Check if a model is installed and complete."""
-        info = MODEL_REGISTRY.get(model_name)
+        info = self._registry().get(model_name)
         if info is None:
             return False
         model_dir = self.root / info["subdir"]
         return all((model_dir / f).exists() for f in info["required_files"])
+
+    def get_sha256(self, model_name: str, filename: str) -> str | None:
+        """Get SHA256 hash for a model file from the manifest.
+
+        Returns None when no manifest is loaded or the file has no hash.
+        """
+        if self._manifest is None:
+            return None
+        entry = self._manifest.models.get(model_name)
+        if entry is None:
+            return None
+        for f in entry.required_files:
+            if f.name == filename:
+                return f.sha256 or None
+        return None
 
 
 DEFAULT_TIMEOUT = 5
