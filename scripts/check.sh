@@ -24,4 +24,7 @@ uv build
 echo "==> release packaging test"
 uv run pytest -q tests/test_release_packaging.py
 
+echo "==> release acceptance tests"
+uv run pytest -q tests/test_download_recovery.py tests/test_upgrade_rollback.py tests/test_uninstall_preservation.py tests/test_cold_install.py tests/test_smoke_offline.py
+
 echo "==> check.sh passed"
