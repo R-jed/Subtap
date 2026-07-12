@@ -1,9 +1,10 @@
 """Tests for versioned model manifest."""
 
+import pytest
 from pathlib import Path
 from types import SimpleNamespace
 
-from subtap.core.manifest import load_manifest
+from subtap.core.manifest import load_manifest, get_manifest_path
 
 
 def test_load_manifest_parses_all_models(tmp_path: Path) -> None:
@@ -155,3 +156,25 @@ def test_get_sha256_returns_none_without_manifest(tmp_path: Path, monkeypatch) -
 
     registry = ModelRegistry(config)
     assert registry.get_sha256("asr_0.6b", "config.json") is None
+
+
+def test_manifest_sha256_not_empty() -> None:
+    """清单中已下载模型文件的 SHA256 不应为空。"""
+    config = SimpleNamespace(models=SimpleNamespace(root="models"))
+    manifest_path = get_manifest_path(config)
+
+    if not manifest_path.exists():
+        pytest.skip("manifest not found")
+
+    manifest = load_manifest(manifest_path)
+    models_root = Path.home() / ".subtap" / "models"
+    if not models_root.exists():
+        pytest.skip("model files not available")
+
+    for model_id, entry in manifest.models.items():
+        model_dir = models_root / entry.subdir
+        if not model_dir.exists():
+            pytest.skip(f"model {model_id} not downloaded")
+        for file_info in entry.required_files:
+            if (model_dir / file_info.name).exists():
+                assert file_info.sha256, f"{model_id}/{file_info.name} SHA256 为空"
