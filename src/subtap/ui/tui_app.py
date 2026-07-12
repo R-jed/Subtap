@@ -231,6 +231,7 @@ class TuiApp:
         if confirmed:
             try:
                 from subtap.core.models import ModelDownloader
+
                 downloader = ModelDownloader(self.config._config)
                 downloader.download(model_name)
                 _line(3, f"{t.GREEN}✓ 模型下载完成{t.NC}")
@@ -539,10 +540,16 @@ class TuiApp:
                         sys.stderr.write(f"\n{t.YELLOW}热词 '{word}' 已存在{t.NC}\n")
                     else:
                         from subtap.glossary.hotword import Hotword
+
                         glossary.add(Hotword(word=word, aliases=aliases))
                         save_glossary(glossary, glossary_path)
                         items = page.build_glossary_items(glossary.hotwords)
-                        menu = Menu(title="热词库", items=items, footer="↑↓ 导航  A 添加  D 删除  E 编辑  Esc 返回", theme=self.theme)
+                        menu = Menu(
+                            title="热词库",
+                            items=items,
+                            footer="↑↓ 导航  A 添加  D 删除  E 编辑  Esc 返回",
+                            theme=self.theme,
+                        )
                         sys.stderr.write(f"\n{t.GREEN}✓ 已添加 '{word}'{t.NC}\n")
                 menu.render_full()
             elif key == "CHAR:D" or key == "CHAR:d":
@@ -554,7 +561,12 @@ class TuiApp:
                         glossary.remove(hw.word)
                         save_glossary(glossary, glossary_path)
                         items = page.build_glossary_items(glossary.hotwords)
-                        menu = Menu(title="热词库", items=items, footer="↑↓ 导航  A 添加  D 删除  E 编辑  Esc 返回", theme=self.theme)
+                        menu = Menu(
+                            title="热词库",
+                            items=items,
+                            footer="↑↓ 导航  A 添加  D 删除  E 编辑  Esc 返回",
+                            theme=self.theme,
+                        )
                     menu.render_full()
             elif key == "CHAR:E" or key == "CHAR:e":
                 if glossary.hotwords and menu.cursor < len(glossary.hotwords):
@@ -564,10 +576,17 @@ class TuiApp:
                     sys.stderr.write("新别名（逗号分隔，直接回车保留）：")
                     aliases_raw = input().strip()
                     if aliases_raw:
-                        hw.aliases = [a.strip() for a in aliases_raw.split(",") if a.strip()]
+                        hw.aliases = [
+                            a.strip() for a in aliases_raw.split(",") if a.strip()
+                        ]
                         save_glossary(glossary, glossary_path)
                         items = page.build_glossary_items(glossary.hotwords)
-                        menu = Menu(title="热词库", items=items, footer="↑↓ 导航  A 添加  D 删除  E 编辑  Esc 返回", theme=self.theme)
+                        menu = Menu(
+                            title="热词库",
+                            items=items,
+                            footer="↑↓ 导航  A 添加  D 删除  E 编辑  Esc 返回",
+                            theme=self.theme,
+                        )
                     menu.render_full()
 
     def _view_manuscripts_page(self) -> str:
@@ -615,8 +634,15 @@ class TuiApp:
                         index.add(doc_path.stem, str(doc_path))
                         manuscripts = index.list_all()
                         items = page.build_items(manuscripts)
-                        menu = Menu(title="文稿库", items=items, footer="↑↓ 导航  A 添加  D 删除  Esc 返回", theme=self.theme)
-                        sys.stderr.write(f"\n{t.GREEN}✓ 已添加 '{doc_path.name}'{t.NC}\n")
+                        menu = Menu(
+                            title="文稿库",
+                            items=items,
+                            footer="↑↓ 导航  A 添加  D 删除  Esc 返回",
+                            theme=self.theme,
+                        )
+                        sys.stderr.write(
+                            f"\n{t.GREEN}✓ 已添加 '{doc_path.name}'{t.NC}\n"
+                        )
                     else:
                         sys.stderr.write(f"\n{t.RED}文件不存在：{path_str}{t.NC}\n")
                 menu.render_full()
@@ -733,7 +759,9 @@ class TuiApp:
                     menu.render_full()
                 elif selected == "打开输出目录":
                     try:
-                        subprocess.run(["open", str(Path(output_path).parent)], check=True)
+                        subprocess.run(
+                            ["open", str(Path(output_path).parent)], check=True
+                        )
                     except subprocess.CalledProcessError as e:
                         sys.stderr.write(f"{t.RED}打开失败：{e}{t.NC}\n")
                     menu.render_full()
@@ -1023,21 +1051,29 @@ class TuiApp:
                 elif selected_action == "安装":
                     try:
                         from subtap.core.models import ModelDownloader
+
                         downloader = ModelDownloader(self.config._config)
                         downloader.download(model_status.name)
-                        sys.stderr.write(f"\n{t.GREEN}✓ {model_status.name} 安装完成{t.NC}\n")
+                        sys.stderr.write(
+                            f"\n{t.GREEN}✓ {model_status.name} 安装完成{t.NC}\n"
+                        )
                     except Exception as e:
                         sys.stderr.write(f"\n{t.RED}安装失败：{e}{t.NC}\n")
                     return "back"
                 elif selected_action == "删除":
-                    sys.stderr.write(f"\n{t.YELLOW}确认删除 {model_status.name}？(Y/N){t.NC} ")
+                    sys.stderr.write(
+                        f"\n{t.YELLOW}确认删除 {model_status.name}？(Y/N){t.NC} "
+                    )
                     confirm = input().strip().upper()
                     if confirm == "Y":
                         try:
                             from subtap.core.models import ModelRemover
+
                             remover = ModelRemover(self.config._config)
                             remover.remove(model_status.name)
-                            sys.stderr.write(f"\n{t.GREEN}✓ {model_status.name} 已删除{t.NC}\n")
+                            sys.stderr.write(
+                                f"\n{t.GREEN}✓ {model_status.name} 已删除{t.NC}\n"
+                            )
                         except Exception as e:
                             sys.stderr.write(f"\n{t.RED}删除失败：{e}{t.NC}\n")
                     return "back"
