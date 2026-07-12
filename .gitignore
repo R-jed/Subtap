@@ -76,3 +76,9 @@ lazygit/
 
 # 外部参考源码（clone）
 docs/reference/
+
+# AI 工具产出（plans/specs/evidence）
+docs/superpowers/
+
+# Benchmark 产物
+benchmarks/results/
