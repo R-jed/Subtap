@@ -7,8 +7,10 @@ import tempfile
 from pathlib import Path
 
 import yaml
+import pytest
+from pydantic import ValidationError
 
-from subtap.schemas.config import SubtapConfig, load_config
+from subtap.schemas.config import OutputConfig, SubtapConfig, load_config
 
 
 def test_subtap_config_has_llm_proofread_field():
@@ -27,6 +29,11 @@ def test_subtap_config_translate_to_field():
     """SubtapConfig 应包含 translate_to 字段"""
     config = SubtapConfig()
     assert config.translate_to == ""  # 默认空值
+
+
+def test_output_config_rejects_min_chars_above_max_chars():
+    with pytest.raises(ValidationError, match="min_chars 不能大于 max_chars"):
+        OutputConfig(max_chars=10, min_chars=11)
 
 
 def test_config_load_round_trip():
