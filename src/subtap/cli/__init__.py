@@ -121,7 +121,7 @@ def init() -> None:
 
     # 2. 迁移旧布局（仅在旧结构存在时执行）
     plan = plan_migration(subtap_dir)
-    if plan.moves or plan.creates:
+    if plan.moves:
         execute_migration(plan, subtap_dir)
         typer.echo(f"✓ 已迁移旧目录布局：{len(plan.moves)} 个文件迁移")
 
