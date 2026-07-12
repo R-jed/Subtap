@@ -17,7 +17,6 @@ warn()  { echo -e "${YELLOW}[cold-install]${NC} $*"; }
 # 隔离环境
 TMP_DIR="$(mktemp -d)"
 MOCK_HOME="$TMP_DIR/home"
-MOCK_BREW="$TMP_DIR/brew-prefix"
 WHEEL_PATH="${1:-}"
 
 cleanup() {

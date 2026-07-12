@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 
 def test_smoke_offline_script_exists():
     script = Path("scripts/smoke_offline.sh")
