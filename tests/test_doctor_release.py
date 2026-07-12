@@ -49,6 +49,20 @@ def install_model(tmp_path, model_name: str) -> None:
         (model_dir / fname).write_text("stub", encoding="utf-8")
 
 
+def configure_complete_release_environment(monkeypatch, tmp_path):
+    """Set up a complete release doctor environment with all dependencies satisfied."""
+    config = make_config(asr_model="asr_1.7b", aligner_model="aligner", tmp_path=tmp_path)
+    install_model(tmp_path, "asr_1.7b")
+    install_model(tmp_path, "aligner")
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
+    monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/tool")
+
+    subtap_dir = tmp_path / ".subtap"
+    subtap_dir.mkdir(exist_ok=True)
+    (subtap_dir / "config.yaml").write_text("mode: offline\n", encoding="utf-8")
+
+
 def test_release_doctor_ignores_unselected_optional_asr(monkeypatch, tmp_path):
     """asr_0.6b is not selected → required=False, missing does not fail."""
     config = make_config(asr_model="asr_1.7b", aligner_model="aligner", tmp_path=tmp_path)
@@ -91,3 +105,20 @@ def test_release_doctor_fails_when_selected_model_is_missing(monkeypatch, tmp_pa
     selected = next(m for m in payload["models"] if m["name"] == "asr_1.7b")
     assert selected["required"] is True
     assert selected["installed"] is False
+
+
+def test_doctor_combines_release_and_workspace_json(monkeypatch, tmp_path):
+    """--release --workspace --json outputs single JSON with both release and workspace data."""
+    configure_complete_release_environment(monkeypatch, tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(
+        app, ["doctor", "--release", "--workspace", "--json"]
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["release"] is True
+    assert "workspace_status" in payload
+    assert "checks" in payload
+    assert "models" in payload
