@@ -62,6 +62,30 @@ class WizardView:
             and self._state["quality"] is not None
         )
 
+    @staticmethod
+    def list_glossaries() -> list[str]:
+        """Return available glossary names from ~/.subtap/glossary."""
+        glossary_dir = Path.home() / ".subtap" / "glossary"
+        if not glossary_dir.is_dir():
+            return []
+        return sorted(
+            f.stem
+            for f in glossary_dir.iterdir()
+            if f.is_file() and f.suffix in (".txt", ".yaml", ".yml", ".json")
+        )
+
+    @staticmethod
+    def list_manuscripts() -> list[str]:
+        """Return available manuscript names from ~/.subtap/manuscripts."""
+        ms_dir = Path.home() / ".subtap" / "manuscripts"
+        if not ms_dir.is_dir():
+            return []
+        return sorted(
+            f.stem
+            for f in ms_dir.iterdir()
+            if f.is_file() and f.suffix in (".txt", ".md", ".docx")
+        )
+
     def build_run_command(self) -> list[str]:
         """Build the CLI command to execute."""
         if not self._state["file_path"]:
@@ -73,6 +97,28 @@ class WizardView:
         lang = self._state["subtitle_lang"]
         if lang:
             cmd.extend(["--subtitle-language", lang])
+        # glossary -> resolve to YAML path under ~/.subtap/glossary/
+        glossary_name = self._state["glossary_name"]
+        if glossary_name:
+            glossary_dir = Path.home() / ".subtap" / "glossary"
+            for suffix in (".yaml", ".yml", ".json", ".txt"):
+                candidate = glossary_dir / f"{glossary_name}{suffix}"
+                if candidate.is_file():
+                    cmd.extend(["--glossary", str(candidate)])
+                    break
+        # manuscript -> --script
+        manuscript_name = self._state["manuscript_name"]
+        if manuscript_name:
+            ms_dir = Path.home() / ".subtap" / "manuscripts"
+            for suffix in (".txt", ".md", ".docx"):
+                candidate = ms_dir / f"{manuscript_name}{suffix}"
+                if candidate.is_file():
+                    cmd.extend(["--script", str(candidate)])
+                    break
+        # output directory
+        output_dir = self._state["output_dir"]
+        if output_dir:
+            cmd.extend(["--output-dir", str(output_dir)])
         return cmd
 
     def get_confirm_items(self) -> list[str]:
