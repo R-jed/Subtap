@@ -74,11 +74,10 @@ Formula/
 macos/
 lazygit/
 
-# 外部参考源码（clone）
-docs/reference/
+# 文档（本地维护）
+docs/
 
-# AI 工具产出（plans/specs/evidence）
-docs/superpowers/
+# 外部参考源码（clone）
 
 # Benchmark 产物
 benchmarks/results/
