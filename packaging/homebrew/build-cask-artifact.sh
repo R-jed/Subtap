@@ -127,7 +127,11 @@ echo ">>> SHA256:  $(cat "$DIST_DIR/${ARTIFACT_NAME}.sha256")"
 echo ">>> Running relocatable validation"
 
 TEST_HOME=$(mktemp -d /tmp/subtap-build-validate.XXXXXX)
-trap 'rm -rf "$TEST_HOME" "$STAGING"' EXIT
+trap 'if [[ $? -ne 0 ]]; then
+  echo "FAIL: preserved staging=$STAGING validate_dir=$TEST_HOME" >&2
+else
+  rm -rf "$TEST_HOME" "$STAGING"
+fi' EXIT
 
 # 解压到临时目录模拟安装
 VALIDATE_DIR="$TEST_HOME/install"
