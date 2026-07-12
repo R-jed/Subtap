@@ -636,11 +636,7 @@ class TuiApp:
         output_path = ui.get("last_output_path", "未知")
         duration_sec = ui.get("last_duration_sec", 0)
 
-        info_items = [
-            f"✓ 字幕已生成",
-            f"  耗时：{page.format_duration(duration_sec)}",
-            f"  输出：{output_path}",
-        ]
+        info_items = page.build_items(output_path, duration_sec)[:3]
         actions = page.get_actions()
 
         # Render info lines statically, then show action menu
