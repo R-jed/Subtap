@@ -17,6 +17,7 @@
 | 6 | check.sh | `./scripts/check.sh` | 全部通过 |
 | 7 | 冷安装 | `./scripts/cold_install_test.sh` | 全部 ✓ |
 | 8 | 离线 pipeline | `./scripts/smoke_offline.sh` | SRT 交付检查通过 |
+| 8a | Homebrew 验收 | `./scripts/homebrew_acceptance.sh` | 全部 ✓（需 tap 已配置） |
 
 ## 人工验收（真实设备）
 
