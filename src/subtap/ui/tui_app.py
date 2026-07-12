@@ -177,16 +177,29 @@ class TuiApp:
         device = view.check_device()
         _line(3, f"  Apple Silicon：{'是' if device['is_apple_silicon'] else '否'}")
         _line(4, f"  ffmpeg：{'已安装' if device['has_ffmpeg'] else '未安装'}")
-        _line(5, f"  可用磁盘：{device['free_gb']:.1f} GB")
-        _line(7, f"{t.GRAY}按任意键继续...{t.NC}")
+        _line(5, f"  MLX：{'可用' if device['has_mlx'] else '不可用'}")
+        _line(6, f"  内存：{device['memory_gb']:.1f} GB")
+        _line(7, f"  可用磁盘：{device['free_gb']:.1f} GB")
+        _line(9, f"{t.GRAY}按任意键继续...{t.NC}")
         sys.stderr.flush()
         self.reader.read_key(timeout=60)
 
         # Step 3: Model recommendation
         _clear()
         _line(1, f"{t.CYAN}[3/7] 模型推荐{t.NC}")
-        quality_ok = device["is_apple_silicon"] and device["free_gb"] > 5
-        model_name = view.recommend_model(fast_ok=True, quality_ok=quality_ok)
+        runtime_ok = (
+            device["is_apple_silicon"] and device["has_ffmpeg"] and device["has_mlx"]
+        )
+        fast_ok = runtime_ok and device["free_gb"] > 2
+        quality_ok = fast_ok and device["memory_gb"] >= 16 and device["free_gb"] > 5
+        if not fast_ok:
+            _line(
+                3, f"{t.RED}设备未满足本地离线运行要求，请根据上一步修复后重试。{t.NC}"
+            )
+            _line(5, f"{t.GRAY}按任意键返回...{t.NC}")
+            self.reader.read_key(timeout=60)
+            return "continue"
+        model_name = view.recommend_model(fast_ok=fast_ok, quality_ok=quality_ok)
         _line(3, f"推荐模型：{t.GREEN}{model_name}{t.NC}")
         if quality_ok:
             _line(4, f"{t.GRAY}设备性能充足，推荐高质量模型{t.NC}")
@@ -203,6 +216,7 @@ class TuiApp:
         _line(3, f"模型：{info['model_name']}")
         _line(4, f"大小：{info['size_display']}")
         _line(5, f"路径：{info['target_dir']}")
+        _line(6, f"预计耗时：约 {info['estimated_seconds']} 秒（按 10 MB/s）")
         _line(7, f"{t.GRAY}按任意键继续...{t.NC}")
         sys.stderr.flush()
         self.reader.read_key(timeout=60)
@@ -225,21 +239,42 @@ class TuiApp:
             if key in ("CHAR:N", "CHAR:n", Key.ESCAPE):
                 break
 
-        # Step 6: Download
+        # Step 6: Download and minimal offline verification
         _clear()
         _line(1, f"{t.CYAN}[6/7] 下载模型{t.NC}")
-        if confirmed:
+        if not confirmed:
+            _line(3, f"{t.YELLOW}尚未完成模型安装，初始化不会标记为完成。{t.NC}")
+            _line(5, f"{t.GRAY}按任意键返回...{t.NC}")
+            self.reader.read_key(timeout=60)
+            return "continue"
+
+        config = self.config.to_subtap_config()
+        sources = ("hf", "hf-mirror", "modelscope")
+        source_index = 0
+        while True:
             try:
                 from subtap.core.models import ModelDownloader
 
-                downloader = ModelDownloader(self.config._config)
-                downloader.download(model_name)
-                _line(3, f"{t.GREEN}✓ 模型下载完成{t.NC}")
+                downloader = ModelDownloader(config)
+                downloader.download(model_name, source=sources[source_index])
+                view.run_offline_self_check(config, model_name)
+                _line(3, f"{t.GREEN}✓ 模型下载及离线自检完成{t.NC}")
+                break
             except Exception as e:
                 _line(3, f"{t.RED}下载失败：{e}{t.NC}")
-        else:
-            _line(3, f"{t.YELLOW}已跳过下载{t.NC}")
-            _line(4, f"{t.GRAY}可稍后在「模型管理」中下载{t.NC}")
+                _line(5, "R 重试  S 切换下载源  D 查看详情  Esc 返回")
+                while True:
+                    key = self.reader.read_key(timeout=60)
+                    if key in ("CHAR:R", "CHAR:r"):
+                        break
+                    if key in ("CHAR:S", "CHAR:s"):
+                        source_index = (source_index + 1) % len(sources)
+                        _line(6, f"已切换到：{sources[source_index]}")
+                        break
+                    if key in ("CHAR:D", "CHAR:d"):
+                        _line(7, f"{type(e).__name__}: {e}")
+                    if key == Key.ESCAPE:
+                        return "continue"
         _line(6, f"{t.GRAY}按任意键继续...{t.NC}")
         sys.stderr.flush()
         self.reader.read_key(timeout=60)
@@ -374,7 +409,7 @@ class TuiApp:
         hotword = self.config.get("llm_hotword", False)
         translate = self.config.get("translate_to", "")
         # 热词列表
-        hotwords_path = Path.home() / ".subtap" / "glossary" / "hotwords_zh.txt"
+        hotwords_path = Path.home() / ".subtap" / "glossaries" / "default.yaml"
         hotwords_list = []
         if hotwords_path.exists():
             for line in hotwords_path.read_text(encoding="utf-8").strip().splitlines():
@@ -498,7 +533,7 @@ class TuiApp:
 
         t = self.theme
         page = GlossaryPage()
-        glossary_path = Path.home() / ".subtap" / "glossary" / "hotwords_zh.txt"
+        glossary_path = Path.home() / ".subtap" / "glossaries" / "default.yaml"
         glossary = load_glossary(glossary_path, "zh")
         items = page.build_glossary_items(glossary.hotwords)
 
@@ -1052,7 +1087,7 @@ class TuiApp:
                     try:
                         from subtap.core.models import ModelDownloader
 
-                        downloader = ModelDownloader(self.config._config)
+                        downloader = ModelDownloader(self.config.to_subtap_config())
                         downloader.download(model_status.name)
                         sys.stderr.write(
                             f"\n{t.GREEN}✓ {model_status.name} 安装完成{t.NC}\n"
@@ -1069,7 +1104,7 @@ class TuiApp:
                         try:
                             from subtap.core.models import ModelRemover
 
-                            remover = ModelRemover(self.config._config)
+                            remover = ModelRemover(self.config.to_subtap_config())
                             remover.remove(model_status.name)
                             sys.stderr.write(
                                 f"\n{t.GREEN}✓ {model_status.name} 已删除{t.NC}\n"

@@ -104,7 +104,8 @@ def test_init(tmp_path, monkeypatch):
     subtap_dir = fake_home / ".subtap"
     assert subtap_dir.exists()
     assert (subtap_dir / "config.yaml").exists()
-    assert (subtap_dir / "glossary" / "global.yaml").exists()
+    assert (subtap_dir / "glossaries" / "default.yaml").exists()
+    assert not (subtap_dir / "glossary").exists()
     assert (subtap_dir / "subtap.db").exists()
 
 

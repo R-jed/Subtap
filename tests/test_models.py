@@ -159,8 +159,9 @@ def test_downloader_download_calls_urlopen(tmp_path: Path, monkeypatch):
 
     monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
     monkeypatch.setattr(
-        "subtap.core.models.ModelRegistry.get_sha256", lambda *args: None
+        "subtap.core.models.ModelRegistry.get_sha256", lambda *args: "0" * 64
     )
+    monkeypatch.setattr(ModelDownloader, "_verify_sha256", lambda *args: True)
     result = downloader.download("asr_0.6b")
     assert result.name == "asr_0.6b"
     assert call_count == 5  # config.json + model.safetensors + tokenizer files
@@ -207,6 +208,10 @@ def test_download_cleans_up_on_failure(tmp_path: Path, monkeypatch):
         raise urllib.error.URLError("connection reset")
 
     monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
+    monkeypatch.setattr(
+        "subtap.core.models.ModelRegistry.get_sha256", lambda *args: "0" * 64
+    )
+    monkeypatch.setattr(ModelDownloader, "_verify_sha256", lambda *args: True)
 
     model_dir = tmp_path / "models" / "asr_0.6b"
     with pytest.raises(urllib.error.URLError):
@@ -247,6 +252,32 @@ def test_verifier_corrupt(tmp_path: Path):
     verifier = ModelVerifier(config)
     result = verifier.verify("asr_0.6b")
     assert result["status"] == "corrupt"
+
+
+def test_verifier_strict_rejects_sha256_mismatch(tmp_path: Path):
+    """Strict verification rejects a non-empty file with the wrong content."""
+    import hashlib
+
+    config = _config_with_model_root(tmp_path)
+    manifest = tmp_path / "manifest.yaml"
+    expected = hashlib.sha256(b"expected").hexdigest()
+    manifest.write_text(f"""version: '1'
+models:
+  test:
+    description: test
+    subdir: test
+    required_files:
+      - name: model.bin
+        sha256: {expected}
+""")
+    config.models.manifest_path = str(manifest)
+    model_dir = Path(config.models.root) / "test"
+    model_dir.mkdir(parents=True)
+    (model_dir / "model.bin").write_bytes(b"wrong")
+
+    assert (
+        ModelVerifier(config).verify("test", require_hash=True)["status"] == "corrupt"
+    )
 
 
 def test_verifier_unknown_model(tmp_path: Path):
@@ -324,8 +355,9 @@ def test_cli_models_install_shows_path(tmp_path: Path, monkeypatch):
 
     monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
     monkeypatch.setattr(
-        "subtap.core.models.ModelRegistry.get_sha256", lambda *args: None
+        "subtap.core.models.ModelRegistry.get_sha256", lambda *args: "0" * 64
     )
+    monkeypatch.setattr(ModelDownloader, "_verify_sha256", lambda *args: True)
     runner = CliRunner()
     result = runner.invoke(app, ["models", "install", "asr_0.6b"])
     assert result.exit_code == 0

@@ -138,15 +138,13 @@ def init() -> None:
         else:
             config_path.write_text("# Subtap 配置\n")
 
-    # 5. 向后兼容：旧 glossary/ 目录
+    # 5. 初始化兼容数据库与默认热词库
     if not db_path.exists():
         db_path.touch()
 
-    glossary_dir = subtap_dir / "glossary"
-    glossary_global = glossary_dir / "global.yaml"
-    if not glossary_global.exists():
-        glossary_dir.mkdir(parents=True, exist_ok=True)
-        glossary_global.write_text("# 全局术语表\nentries: []\n")
+    glossary_default = dirs["glossaries"] / "default.yaml"
+    if not glossary_default.exists():
+        glossary_default.write_text("")
 
     typer.echo(f"✓ 工作空间已初始化：{subtap_dir}")
     typer.echo(f"  配置文件：{config_path}")

@@ -33,7 +33,7 @@ if [[ ! -f "$MODEL_ROOT/asr_1.7b/config.json" || ! -f "$MODEL_ROOT/aligner/confi
     exit 1
 fi
 
-mkdir -p "$SMOKE_HOME/.subtap/glossary"
+mkdir -p "$SMOKE_HOME/.subtap/glossaries"
 cat > "$SMOKE_HOME/.subtap/config.yaml" <<EOF
 mode: offline
 models:

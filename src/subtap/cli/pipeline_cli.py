@@ -486,10 +486,8 @@ def _run(
     )
 
     # Record hotword glossary info
-    _glossary_dir = Path.home() / ".subtap" / "glossary"
-    _hw_path = _glossary_dir / f"hotwords_zh.txt"
-    if not _hw_path.exists():
-        _hw_path = _glossary_dir / f"hotwords_zh.tsv"
+    _glossary_dir = Path.home() / ".subtap" / "glossaries"
+    _hw_path = _glossary_dir / "default.yaml"
     if _hw_path.exists():
         try:
             from subtap.glossary.hotword import load_glossary

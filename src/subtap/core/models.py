@@ -114,15 +114,11 @@ class ModelRegistry:
         self._manifest = self._load_manifest_if_available(config)
 
     def _load_manifest_if_available(self, config: SubtapConfig) -> ModelManifest | None:
-        """Try loading manifest; return None on any failure."""
-        try:
-            path = get_manifest_path(config)
-            if not path.exists():
-                return None
-            return load_manifest(path)
-        except Exception:
-            logger.debug("Failed to load manifest, falling back to MODEL_REGISTRY")
-            return None
+        """Load the trusted manifest or fail before model operations continue."""
+        path = get_manifest_path(config)
+        if not path.exists():
+            raise FileNotFoundError(f"模型清单不存在: {path}")
+        return load_manifest(path)
 
     def _registry(self) -> dict[str, dict[str, Any]]:
         """Return model registry: manifest-backed or legacy hardcoded."""
@@ -258,12 +254,20 @@ class ModelDownloader:
             )
 
         registry = ModelRegistry(self.config)
+        expected_hashes: dict[str, str] = {}
+        for filename in info["required_files"]:
+            expected_sha256 = registry.get_sha256(model_name, filename)
+            if expected_sha256 is None:
+                raise RuntimeError(f"缺少 SHA256，拒绝下载: {model_name}/{filename}")
+            expected_hashes[filename] = expected_sha256
+
         model_dir = self.root / info["subdir"]
         model_dir.mkdir(parents=True, exist_ok=True)
         try:
             for filename in info["required_files"]:
                 url = self.build_file_url(source, repo, filename)
                 dest = model_dir / filename
+                expected_sha256 = expected_hashes[filename]
                 last_error: Exception | None = None
                 for attempt in range(1, max_retries + 1):
                     try:
@@ -278,20 +282,17 @@ class ModelDownloader:
                             exc,
                         )
                         continue
-                    expected_sha256 = registry.get_sha256(model_name, filename)
-                    if expected_sha256 is not None:
-                        if self._verify_sha256(dest, expected_sha256):
-                            break
-                        last_error = RuntimeError(f"SHA256 校验失败: {filename}")
-                        logger.warning(
-                            "SHA256 校验失败 %s 第 %d/%d 次",
-                            filename,
-                            attempt,
-                            max_retries,
-                        )
-                        dest.unlink(missing_ok=True)
-                        continue
-                    break  # no SHA256 in manifest, trust the download
+                    if self._verify_sha256(dest, expected_sha256):
+                        break
+                    last_error = RuntimeError(f"SHA256 校验失败: {filename}")
+                    logger.warning(
+                        "SHA256 校验失败 %s 第 %d/%d 次",
+                        filename,
+                        attempt,
+                        max_retries,
+                    )
+                    dest.unlink(missing_ok=True)
+                    continue
                 else:
                     # all retries exhausted
                     raise last_error or RuntimeError(f"下载失败: {filename}")
@@ -393,12 +394,13 @@ class ModelVerifier:
         self.config = config
         self.root = _get_model_root(config)
 
-    def verify(self, model_name: str) -> dict:
-        """Verify a model's files exist and are non-empty.
+    def verify(self, model_name: str, *, require_hash: bool = False) -> dict:
+        """Verify a model's files exist, are non-empty, and optionally match SHA256.
 
         Returns dict with status and details.
         """
-        info = MODEL_REGISTRY.get(model_name)
+        registry = ModelRegistry(self.config)
+        info = registry._registry().get(model_name)
         if info is None:
             return {
                 "name": model_name,
@@ -408,7 +410,6 @@ class ModelVerifier:
 
         model_dir = self.root / info["subdir"]
         results: dict[str, Any] = {"name": model_name, "status": "ok", "files": {}}
-
         for f in info["required_files"]:
             fpath = model_dir / f
             if fpath.exists():
@@ -416,6 +417,20 @@ class ModelVerifier:
                 results["files"][f] = {"exists": True, "size": size}
                 if size == 0:
                     results["status"] = "corrupt"
+                elif require_hash:
+                    expected = registry.get_sha256(model_name, f)
+                    if expected is None:
+                        results["files"][f]["sha256_ok"] = False
+                        results["status"] = "unverified"
+                    else:
+                        with fpath.open("rb") as handle:
+                            matches = (
+                                hashlib.file_digest(handle, "sha256").hexdigest()
+                                == expected
+                            )
+                        results["files"][f]["sha256_ok"] = matches
+                        if not matches:
+                            results["status"] = "corrupt"
             else:
                 results["files"][f] = {"exists": False, "size": 0}
                 results["status"] = "missing"

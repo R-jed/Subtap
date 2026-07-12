@@ -8,9 +8,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   test:
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
@@ -30,15 +35,15 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.12"
-      - name: Install build tools
-        run: pip install build
+      - uses: astral-sh/setup-uv@e4db8464a088ece1b920f60402e813ea4de65b8f  # v4
       - name: Build package
-        run: python -m build
+        run: uv build --frozen
       - name: Generate SHA256SUMS
         run: |
           cd dist
@@ -52,8 +57,11 @@ jobs:
   attest:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
+      contents: read
       id-token: write
+      attestations: write
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
@@ -66,8 +74,9 @@ jobs:
           subject-path: dist/
 
   github-release:
-    needs: [test, build]
+    needs: [test, build, attest]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
@@ -82,8 +91,9 @@ jobs:
           files: dist/*
 
   publish:
-    needs: [test, build]
+    needs: [test, build, attest]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: pypi
     permissions:
       id-token: write  # trusted publishing
@@ -95,30 +105,3 @@ jobs:
           path: dist/
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # release/v1
-
-  homebrew:
-    needs: [github-release, publish]
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
-        with:
-          repository: R-jed/homebrew-tap
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-      - name: Update formula version and SHA256
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          SHA256=$(curl -sL "https://pypi.org/pypi/subtap/${VERSION}/json" | python3 -c "import sys,json; d=json.load(sys.stdin); print([f['digests']['sha256'] for f in d['urls'] if f['packagetype']=='sdist'][0])")
-          sed -i "s|url \".*\"|url \"https://files.pythonhosted.org/packages/source/s/subtap/subtap-${VERSION}.tar.gz\"|" Formula/subtap.rb
-          sed -i "s|sha256 \".*\"|sha256 \"${SHA256}\"|" Formula/subtap.rb
-      - name: Validate formula (audit + install + test)
-        run: |
-          brew audit --strict R-jed/tap/subtap
-          brew install R-jed/tap/subtap
-          brew test R-jed/tap/subtap
-      - name: Commit and push
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/subtap.rb
-          git diff --cached --quiet || git commit -m "Update subtap to ${GITHUB_REF#refs/tags/v}"
-          git push

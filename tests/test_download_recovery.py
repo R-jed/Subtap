@@ -148,7 +148,7 @@ def test_download_sha256_mismatch_triggers_retry(tmp_path):
         with pytest.raises(RuntimeError, match="SHA256"):
             downloader.download(model_name, max_retries=2)
 
-        assert mock_reg_instance.get_sha256.call_count == 2
+        assert mock_reg_instance.get_sha256.call_count == len(info["required_files"])
 
 
 def test_download_cleans_model_dir_on_failure(tmp_path):
@@ -158,9 +158,13 @@ def test_download_cleans_model_dir_on_failure(tmp_path):
     info = MODEL_REGISTRY[model_name]
     model_dir = downloader.root / info["subdir"]
 
-    with patch.object(
-        downloader, "_download_file_with_resume", side_effect=IOError("网络错误")
+    with (
+        patch.object(
+            downloader, "_download_file_with_resume", side_effect=IOError("网络错误")
+        ),
+        patch("subtap.core.models.ModelRegistry") as MockRegistry,
     ):
+        MockRegistry.return_value.get_sha256.return_value = "0" * 64
         with pytest.raises(IOError, match="网络错误"):
             downloader.download(model_name, max_retries=1)
 
@@ -180,7 +184,9 @@ def test_download_success_returns_model_dir(tmp_path):
         patch.object(downloader, "_download_file_with_resume") as mock_dl,
         patch("subtap.core.models.ModelRegistry") as MockRegistry,
     ):
-        MockRegistry.return_value.get_sha256.return_value = None  # no SHA check
+        MockRegistry.return_value.get_sha256.return_value = hashlib.sha256(
+            file_content
+        ).hexdigest()
 
         def fake_download(url, dest, progress=None):
             dest.parent.mkdir(parents=True, exist_ok=True)

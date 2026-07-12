@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
+
+from subtap.core.safe_delete import safe_delete
 
 
 class JobStore:
     """任务目录存储管理器。"""
 
     def __init__(self, jobs_root: Path) -> None:
-        self._root = jobs_root
+        self._root = jobs_root.expanduser().resolve()
 
     def _validate_task_id(self, task_id: str) -> None:
         """验证 task_id 不含路径穿越字符。"""
@@ -18,8 +19,11 @@ class JobStore:
             raise ValueError(f"invalid task_id: {task_id!r}")
         if "/" in task_id or "\\" in task_id or ".." in task_id:
             raise ValueError(f"invalid task_id: {task_id!r}")
-        resolved = (self._root / task_id).resolve()
-        if not str(resolved).startswith(str(self._root.resolve())):
+        candidate = self._root / task_id
+        resolved_root = self._root.resolve()
+        if candidate.is_symlink() or not candidate.resolve().is_relative_to(
+            resolved_root
+        ):
             raise ValueError(f"invalid task_id: {task_id!r}")
 
     def create(self, task_id: str) -> Path:
@@ -53,5 +57,4 @@ class JobStore:
         job_dir = self._root / task_id
         if not job_dir.exists():
             return False
-        shutil.rmtree(job_dir)
-        return True
+        return safe_delete(job_dir, allowed_roots=[self._root])

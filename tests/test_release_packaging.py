@@ -21,7 +21,8 @@ def test_sdist_excludes_runtime_test_artifacts():
     assert not any(name.endswith("/.coverage") for name in names)
     assert not any("/.superpowers/" in name for name in names)
     assert not any("/graphify-out/" in name for name in names)
-    assert not any("/models/" in name for name in names)
+    assert not any("/models/model.safetensors" in name for name in names)
+    assert any(name.endswith("/configs/models/manifest.yaml") for name in names)
 
 
 def test_runtime_dependencies_include_textual_for_tui():

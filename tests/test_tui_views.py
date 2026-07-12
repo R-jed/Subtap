@@ -149,6 +149,8 @@ def test_first_run_view_checks_device():
     result = view.check_device()
     assert "is_apple_silicon" in result
     assert "has_ffmpeg" in result
+    assert "memory_gb" in result
+    assert "has_mlx" in result
 
 
 def test_first_run_view_recommends_model():
@@ -177,15 +179,108 @@ def test_first_run_view_recommends_raises_when_both_false():
         view.recommend_model(fast_ok=False, quality_ok=False)
 
 
-def test_first_run_view_get_download_info():
+def test_first_run_view_get_download_info(tmp_path):
     from subtap.ui.views.first_run import FirstRunView
 
+    manifest = tmp_path / "manifest.yaml"
+    manifest.write_text("""version: '1'
+models:
+  asr_0.6b:
+    description: fast
+    subdir: asr_0.6b
+    min_disk_bytes: 1000
+    required_files:
+      - name: model.safetensors
+        size_bytes: 400
+      - name: config.json
+        size_bytes: 100
+""")
     view = FirstRunView()
-    info = view.get_download_info("asr_0.6b")
+    info = view.get_download_info("asr_0.6b", manifest_path=manifest)
     assert "model_name" in info
     assert "size_bytes" in info
     assert "size_display" in info
+    assert "estimated_seconds" in info
     assert info["model_name"] == "asr_0.6b"
+    assert info["size_bytes"] == 500
+
+
+def test_first_run_offline_self_check_rejects_missing_model(monkeypatch):
+    from subtap.schemas.config import SubtapConfig
+    from subtap.ui.views.first_run import FirstRunView
+
+    monkeypatch.setattr(
+        "subtap.core.models.ModelRegistry.is_available", lambda self, name: False
+    )
+
+    import pytest
+
+    with pytest.raises(RuntimeError, match="离线自检失败"):
+        FirstRunView().run_offline_self_check(SubtapConfig(), "asr_0.6b")
+
+
+def test_first_run_offline_self_check_rejects_corrupt_model(monkeypatch):
+    from subtap.schemas.config import SubtapConfig
+    from subtap.ui.views.first_run import FirstRunView
+
+    monkeypatch.setattr(
+        "subtap.core.models.ModelRegistry.is_available", lambda self, name: True
+    )
+    monkeypatch.setattr(
+        "subtap.core.models.ModelVerifier.verify",
+        lambda self, name, require_hash=False: {"status": "corrupt"},
+    )
+
+    import pytest
+
+    with pytest.raises(RuntimeError, match="离线自检失败"):
+        FirstRunView().run_offline_self_check(SubtapConfig(), "asr_0.6b")
+
+
+def test_first_run_failure_actions_are_explicit():
+    from subtap.ui.views.first_run import FirstRunView
+
+    assert FirstRunView().failure_actions() == ("重试", "切换下载源", "查看详情")
+
+
+def test_first_run_download_failure_does_not_mark_complete(tmp_path, monkeypatch):
+    from subtap.ui.keyboard import Key
+    from subtap.ui.tui_app import TuiApp
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.setattr(
+        "subtap.ui.views.first_run.FirstRunView.check_device",
+        lambda self: {
+            "is_apple_silicon": True,
+            "has_ffmpeg": True,
+            "has_mlx": True,
+            "memory_gb": 32,
+            "free_gb": 100,
+        },
+    )
+    monkeypatch.setattr(
+        "subtap.ui.views.first_run.FirstRunView.get_download_info",
+        lambda self, name: {
+            "model_name": name,
+            "size_display": "1 GB",
+            "target_dir": str(tmp_path / ".subtap" / "models"),
+            "estimated_seconds": 1,
+        },
+    )
+    monkeypatch.setattr(
+        "subtap.core.models.ModelDownloader.download",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("network down")),
+    )
+
+    keys = iter(["continue", "continue", "continue", "continue", "CHAR:Y", Key.ESCAPE])
+    monkeypatch.setattr(
+        "subtap.ui.tui_app.KeyReader",
+        lambda: type("Reader", (), {"read_key": lambda self, timeout: next(keys)})(),
+    )
+    app = TuiApp()
+
+    assert app._view_first_run() == "continue"
+    assert not (tmp_path / ".subtap" / "state.json").exists()
 
 
 def test_first_run_view_mark_complete(tmp_path, monkeypatch):
@@ -252,7 +347,7 @@ def test_wizard_view_build_command_includes_glossary(tmp_path, monkeypatch):
     from subtap.ui.views.wizard import WizardView
 
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
-    glossary_dir = tmp_path / ".subtap" / "glossary"
+    glossary_dir = tmp_path / ".subtap" / "glossaries"
     glossary_dir.mkdir(parents=True)
     (glossary_dir / "my_terms.yaml").write_text("terms: []")
 
@@ -290,7 +385,7 @@ def test_wizard_view_list_glossaries(tmp_path, monkeypatch):
     from subtap.ui.views.wizard import WizardView
 
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
-    glossary_dir = tmp_path / ".subtap" / "glossary"
+    glossary_dir = tmp_path / ".subtap" / "glossaries"
     glossary_dir.mkdir(parents=True)
     (glossary_dir / "a.yaml").write_text("")
     (glossary_dir / "b.txt").write_text("")

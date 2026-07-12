@@ -63,8 +63,8 @@ class WizardView:
 
     @staticmethod
     def list_glossaries() -> list[Path]:
-        """Return available glossary file paths from ~/.subtap/glossary."""
-        glossary_dir = Path.home() / ".subtap" / "glossary"
+        """Return available glossary file paths from ~/.subtap/glossaries."""
+        glossary_dir = Path.home() / ".subtap" / "glossaries"
         if not glossary_dir.is_dir():
             return []
         return sorted(
