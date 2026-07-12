@@ -92,7 +92,9 @@ def test_resume_sends_range_header(tmp_path):
 
     response = _make_http_response(b"Y" * 50, status=206)
 
-    with patch("subtap.core.models.urllib.request.urlopen", return_value=response) as mock_urlopen:
+    with patch(
+        "subtap.core.models.urllib.request.urlopen", return_value=response
+    ) as mock_urlopen:
         downloader._download_file_with_resume("https://example.com/f", dest)
 
     call_args = mock_urlopen.call_args
@@ -156,7 +158,9 @@ def test_download_cleans_model_dir_on_failure(tmp_path):
     info = MODEL_REGISTRY[model_name]
     model_dir = downloader.root / info["subdir"]
 
-    with patch.object(downloader, "_download_file_with_resume", side_effect=IOError("网络错误")):
+    with patch.object(
+        downloader, "_download_file_with_resume", side_effect=IOError("网络错误")
+    ):
         with pytest.raises(IOError, match="网络错误"):
             downloader.download(model_name, max_retries=1)
 

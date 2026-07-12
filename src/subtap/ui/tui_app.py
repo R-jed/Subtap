@@ -965,7 +965,7 @@ class TuiApp:
                     self._show_placeholder("删除功能开发中...")
                     return "back"
                 elif selected_action == "查看详情":
-                    info = MODEL_REGISTRY.get(model_status.name, {})
+                    info: dict[str, object] = MODEL_REGISTRY.get(model_status.name, {})  # type: ignore[assignment]
                     detail_info = {
                         "description": info.get("description", ""),
                         "path": str(model_status.path),
@@ -1201,12 +1201,8 @@ class TuiApp:
         t = self.theme
         sys.stderr.write("\033[H\033[J")
         sys.stderr.write(f"\033[2K{t.CYAN}[5/6] {WizardView.STEPS[4]}{t.NC}\r\n\r\n")
-        sys.stderr.write(
-            f"\033[2K  输入输出目录路径，或按 Enter 使用默认目录\r\n\r\n"
-        )
-        sys.stderr.write(
-            f"\033[2K{t.GRAY}默认：与源文件相同目录{t.NC}\r\n\r\n"
-        )
+        sys.stderr.write(f"\033[2K  输入输出目录路径，或按 Enter 使用默认目录\r\n\r\n")
+        sys.stderr.write(f"\033[2K{t.GRAY}默认：与源文件相同目录{t.NC}\r\n\r\n")
         sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回上一步  Q 退出{t.NC}\r\n")
         sys.stderr.flush()
 

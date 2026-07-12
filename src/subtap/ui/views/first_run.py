@@ -36,7 +36,9 @@ class FirstRunView:
             return "asr_1.7b"
         if fast_ok:
             return "asr_0.6b"
-        raise ValueError("设备不满足任何模型运行条件（fast_ok 和 quality_ok 均为 False）")
+        raise ValueError(
+            "设备不满足任何模型运行条件（fast_ok 和 quality_ok 均为 False）"
+        )
 
     def get_download_info(self, model_name: str) -> dict:
         """Get download size and estimated time for a model."""

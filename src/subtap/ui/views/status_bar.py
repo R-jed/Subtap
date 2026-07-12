@@ -41,9 +41,7 @@ class StatusBar:
     def check_disk(self) -> dict:
         """Check ~/.subtap disk usage."""
         try:
-            total = sum(
-                f.stat().st_size for f in self.root.rglob("*") if f.is_file()
-            )
+            total = sum(f.stat().st_size for f in self.root.rglob("*") if f.is_file())
             usage = shutil.disk_usage(self.root)
             return {
                 "used_bytes": total,
