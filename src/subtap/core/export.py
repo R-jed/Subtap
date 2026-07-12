@@ -947,8 +947,7 @@ def _post_process_fragments(
                     prev_text[-1] in _COMMA_PUNCT
                     and (
                         current_ends_sentence
-                        or sub["start_sec"] - prev["end_sec"]
-                        >= pause_threshold - 1e-6
+                        or sub["start_sec"] - prev["end_sec"] >= pause_threshold - 1e-6
                     )
                 )
             )
