@@ -179,10 +179,12 @@ def batch_transcribe(
         config.output.subtitle_punctuation = punctuation
     if subtitle_language is not None:
         config.output.subtitle_language = subtitle_language
-    if max_chars is not None:
-        config.output.max_chars = max_chars
-    if min_chars is not None:
-        config.output.min_chars = min_chars
+    if max_chars is not None or min_chars is not None:
+        from subtap.schemas.config import with_output_character_limits
+
+        config.output = with_output_character_limits(
+            config.output, max_chars=max_chars, min_chars=min_chars
+        )
     config.output.subtitle_stem = "batch"
 
     if mode == "quality":
@@ -335,10 +337,12 @@ def batch_transcribe(
                 item_config.output.subtitle_punctuation = punctuation
             if subtitle_language is not None:
                 item_config.output.subtitle_language = subtitle_language
-            if max_chars is not None:
-                item_config.output.max_chars = max_chars
-            if min_chars is not None:
-                item_config.output.min_chars = min_chars
+            if max_chars is not None or min_chars is not None:
+                from subtap.schemas.config import with_output_character_limits
+
+                item_config.output = with_output_character_limits(
+                    item_config.output, max_chars=max_chars, min_chars=min_chars
+                )
             item_config.output.subtitle_stem = path.stem
 
             if mode == "quality":

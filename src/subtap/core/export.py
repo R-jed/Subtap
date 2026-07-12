@@ -941,17 +941,19 @@ def _post_process_fragments(
             prev_visible = strip_punct(prev["text"]).replace(" ", "")
             prev_text = prev["text"].rstrip()
             current_ends_sentence = bool(txt) and txt[-1] in _SENT_END
-            preserve_comma_pause = (
-                bool(prev_text)
-                and prev_text[-1] in _COMMA_PUNCT
-                and (
-                    current_ends_sentence
-                    or sub["start_sec"] - prev["end_sec"]
-                    >= pause_threshold - 1e-6
+            preserve_semantic_boundary = bool(prev_text) and (
+                prev_text[-1] in _SENT_END
+                or (
+                    prev_text[-1] in _COMMA_PUNCT
+                    and (
+                        current_ends_sentence
+                        or sub["start_sec"] - prev["end_sec"]
+                        >= pause_threshold - 1e-6
+                    )
                 )
             )
             if (
-                not preserve_comma_pause
+                not preserve_semantic_boundary
                 and len(prev_visible) > len(visible)
                 and len(prev_visible) + len(visible) <= max_chars
             ):

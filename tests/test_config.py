@@ -10,7 +10,12 @@ import yaml
 import pytest
 from pydantic import ValidationError
 
-from subtap.schemas.config import OutputConfig, SubtapConfig, load_config
+from subtap.schemas.config import (
+    OutputConfig,
+    SubtapConfig,
+    load_config,
+    with_output_character_limits,
+)
 
 
 def test_subtap_config_has_llm_proofread_field():
@@ -34,6 +39,18 @@ def test_subtap_config_translate_to_field():
 def test_output_config_rejects_min_chars_above_max_chars():
     with pytest.raises(ValidationError, match="min_chars 不能大于 max_chars"):
         OutputConfig(max_chars=10, min_chars=11)
+
+
+def test_output_config_validates_assignment_and_atomic_limit_updates():
+    output = OutputConfig(max_chars=25, min_chars=20)
+
+    updated = with_output_character_limits(output, max_chars=15, min_chars=10)
+
+    assert (updated.max_chars, updated.min_chars) == (15, 10)
+    with pytest.raises(ValidationError, match="min_chars 不能大于 max_chars"):
+        updated.min_chars = 20
+    with pytest.raises(ValidationError, match="min_chars 不能大于 max_chars"):
+        with_output_character_limits(output, max_chars=10, min_chars=11)
 
 
 def test_config_load_round_trip():

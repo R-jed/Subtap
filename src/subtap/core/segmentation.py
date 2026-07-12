@@ -75,7 +75,7 @@ def _split_sentences_zh(
     result: list[str] = []
     for seg in expanded:
         if len(seg) > max_chars:
-            result.extend(_split_by_length(seg, max_chars))
+            result.extend(_split_at_word_boundary(seg, max_chars))
         else:
             result.append(seg)
 
@@ -151,7 +151,7 @@ def _split_at_comma(text: str, max_chars: int = _DEFAULT_MAX_CHARS) -> list[str]
     result: list[str] = []
     for seg in segments:
         if len(seg) > max_chars:
-            result.extend(_split_by_length(seg, max_chars))
+            result.extend(_split_at_word_boundary(seg, max_chars))
         else:
             result.append(seg)
 
@@ -176,6 +176,30 @@ def _split_by_length(text: str, max_chars: int) -> list[str]:
         segments.append(text[i : i + max_chars])
 
     return segments
+
+
+def _split_at_word_boundary(text: str, max_chars: int) -> list[str]:
+    """Split long text without cutting words when a boundary is available."""
+    import jieba
+
+    result: list[str] = []
+    current = ""
+    for word in jieba.cut(text):
+        if len(word) > max_chars:
+            if current:
+                result.append(current)
+                current = ""
+            result.extend(_split_by_length(word, max_chars))
+            continue
+        if current and len(current) + len(word) > max_chars:
+            result.append(current)
+            current = word
+        else:
+            current += word
+
+    if current:
+        result.append(current)
+    return result
 
 
 def _merge_short_sentences(sentences: list[str], min_chars: int) -> list[str]:
