@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import shutil
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class StatusBar:
@@ -32,6 +35,7 @@ class StatusBar:
                 "total": len(statuses),
             }
         except Exception:
+            logger.exception("check_models failed")
             return {"all_ready": False, "installed_count": 0, "total": 0}
 
     def check_disk(self) -> dict:
@@ -46,6 +50,7 @@ class StatusBar:
                 "free_bytes": usage.free,
             }
         except Exception:
+            logger.exception("check_disk failed")
             return {"used_bytes": 0, "free_bytes": 0}
 
     def check_pending_jobs(self) -> int:
