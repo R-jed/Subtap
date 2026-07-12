@@ -126,6 +126,7 @@ def doctor(
 
     # Standalone workspace without --release and --json: text output and return
     if workspace and not release and not json_output:
+        assert workspace_status is not None  # workspace=True guarantees collection
         _render_workspace_status(workspace_status)
         return
 

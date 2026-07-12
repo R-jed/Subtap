@@ -929,20 +929,15 @@ def test_doctor_release_fails_when_models_missing(tmp_path, monkeypatch):
     )
 
     # 模拟 registry.status() 返回缺失模型
-    missing_status = [
-        MagicMock(
-            name="asr_0.6b",
-            installed=False,
-            path=tmp_path / "models" / "asr_0.6b",
-            missing_files=["config.json", "model.safetensors"],
-        ),
-        MagicMock(
-            name="aligner",
-            installed=True,
-            path=tmp_path / "models" / "aligner",
-            missing_files=[],
-        ),
-    ]
+    mock_asr = MagicMock(installed=False)
+    mock_asr.name = "asr_0.6b"
+    mock_asr.path = tmp_path / "models" / "asr_0.6b"
+    mock_asr.missing_files = ["config.json", "model.safetensors"]
+    mock_aligner = MagicMock(installed=True)
+    mock_aligner.name = "aligner"
+    mock_aligner.path = tmp_path / "models" / "aligner"
+    mock_aligner.missing_files = []
+    missing_status = [mock_asr, mock_aligner]
 
     with patch("subtap.core.models.ModelRegistry") as MockRegistry:
         MockRegistry.return_value.status.return_value = missing_status
@@ -965,14 +960,11 @@ def test_doctor_default_reports_missing_models_without_failing(tmp_path, monkeyp
         "models:\n  root: models\n", encoding="utf-8"
     )
 
-    missing_status = [
-        MagicMock(
-            name="asr_0.6b",
-            installed=False,
-            path=tmp_path / "models" / "asr_0.6b",
-            missing_files=["config.json"],
-        )
-    ]
+    mock_asr = MagicMock(installed=False)
+    mock_asr.name = "asr_0.6b"
+    mock_asr.path = tmp_path / "models" / "asr_0.6b"
+    mock_asr.missing_files = ["config.json"]
+    missing_status = [mock_asr]
 
     with patch("subtap.core.models.ModelRegistry") as MockRegistry:
         MockRegistry.return_value.status.return_value = missing_status
