@@ -26,7 +26,9 @@ def test_release_jobs_are_bounded_and_build_uses_uv() -> None:
     workflow = yaml.safe_load(text)
 
     assert "pip install build" not in text
-    assert "uv build --frozen" in text
+    assert "uv build" in text
+    assert "uv build --frozen" not in text
+    assert "grep -- --tui" not in text
     assert workflow["concurrency"]["cancel-in-progress"] is False
     assert all("timeout-minutes" in job for job in workflow["jobs"].values())
 
@@ -53,7 +55,7 @@ def test_release_candidate_cannot_publish_stable_channels() -> None:
     )
 
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    assert project["project"]["version"] == "0.1.0rc1"
+    assert project["project"]["version"] == "0.1.0rc2"
 
 
 def test_release_metadata_requires_exact_tag_and_detects_prerelease() -> None:

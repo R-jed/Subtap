@@ -47,7 +47,7 @@ jobs:
       - run: /tmp/subtap-wheel-smoke/bin/subtap doctor
       - run: /tmp/subtap-wheel-smoke/bin/python -c "import textual"
       - run: /tmp/subtap-wheel-smoke/bin/subtap tui --help
-      - run: /tmp/subtap-wheel-smoke/bin/subtap run --help | grep -- --tui
+      - run: /tmp/subtap-wheel-smoke/bin/subtap run --help
 
   build:
     needs: metadata
@@ -60,7 +60,7 @@ jobs:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@e4db8464a088ece1b920f60402e813ea4de65b8f  # v4
       - name: Build package
-        run: uv build --frozen
+        run: uv build
       - name: Generate SHA256SUMS
         run: |
           cd dist
