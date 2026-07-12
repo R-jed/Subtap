@@ -1,7 +1,20 @@
 #!/usr/bin/env bash
 # Run real local-only short-sample smoke checks with network disabled.
+#
+# Exit codes:
+#   0 — all samples processed and SRT delivery checks passed
+#   1 — missing models, missing samples, or SRT delivery failure
+#
+# Environment:
+#   SUBTAP_SMOKE_AUDIO_DIR  — override test audio directory
+#   SUBTAP_SMOKE_MODEL_ROOT — override local model root
+#   SUBTAP_SMOKE_JSON       — write structured JSON result to this path
 
 set -euo pipefail
+
+info() {
+    echo "[subtap-smoke] $*" >&2
+}
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 AUDIO_DIR="${SUBTAP_SMOKE_AUDIO_DIR:-/Users/qunqing/Downloads/ASR-SRT测试音频}"
@@ -65,3 +78,19 @@ run_sample "$AUDIO_DIR/数字测试.mp3" "number"
 run_sample "$AUDIO_DIR/短的演讲音频.wav" "speech"
 
 python3 "$ROOT/scripts/check_srt_delivery.py" "$TMP_DIR"/out-*/*.srt
+
+JSON_OUTPUT="${SUBTAP_SMOKE_JSON:-}"
+if [[ -n "$JSON_OUTPUT" ]]; then
+    cat > "$JSON_OUTPUT" <<ENDJSON
+{
+  "ok": true,
+  "samples": [
+    {"name": "number", "input": "$AUDIO_DIR/数字测试.mp3", "output_dir": "$TMP_DIR/out-number"},
+    {"name": "speech", "input": "$AUDIO_DIR/短的演讲音频.wav", "output_dir": "$TMP_DIR/out-speech"}
+  ],
+  "output_dirs": ["$TMP_DIR/out-number", "$TMP_DIR/out-speech"],
+  "srt_check": "passed"
+}
+ENDJSON
+    info "JSON 结果写入: $JSON_OUTPUT"
+fi
