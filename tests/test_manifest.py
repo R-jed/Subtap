@@ -141,9 +141,7 @@ def test_get_sha256_returns_hash_from_manifest(tmp_path: Path) -> None:
     assert registry.get_sha256("test_model", "config.json") == "abc123"
 
 
-def test_get_sha256_returns_none_without_manifest(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_get_sha256_returns_none_without_manifest(tmp_path: Path, monkeypatch) -> None:
     """get_sha256 returns None when no manifest is loaded."""
     config = _make_config(tmp_path, "")
 

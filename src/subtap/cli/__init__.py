@@ -107,15 +107,28 @@ def version() -> None:
 @app.command(hidden=True)
 def init() -> None:
     """初始化工作空间（~/.subtap/）"""
+    from subtap.core.migration import execute_migration, plan_migration
+    from subtap.core.safe_delete import ensure_directory_structure
+    from subtap.core.state_store import StateStore
+
     home = Path.home()
     subtap_dir = home / ".subtap"
     config_path = subtap_dir / "config.yaml"
-    glossary_dir = subtap_dir / "glossary"
     db_path = subtap_dir / "subtap.db"
 
-    subtap_dir.mkdir(parents=True, exist_ok=True)
-    glossary_dir.mkdir(parents=True, exist_ok=True)
+    # 1. 创建新目录结构
+    dirs = ensure_directory_structure(subtap_dir)
 
+    # 2. 迁移旧布局（仅在旧结构存在时执行）
+    plan = plan_migration(subtap_dir)
+    if plan.moves or plan.creates:
+        execute_migration(plan, subtap_dir)
+        typer.echo(f"✓ 已迁移旧目录布局：{len(plan.moves)} 个文件迁移")
+
+    # 3. 初始化 state.json
+    StateStore(subtap_dir / "state.json").load()
+
+    # 4. 复制默认配置（保留向后兼容）
     if not config_path.exists():
         default_config = (
             Path(__file__).resolve().parents[2] / "configs" / "default.yaml"
@@ -125,17 +138,21 @@ def init() -> None:
         else:
             config_path.write_text("# Subtap 配置\n")
 
+    # 5. 向后兼容：旧 glossary/ 目录
     if not db_path.exists():
         db_path.touch()
 
+    glossary_dir = subtap_dir / "glossary"
     glossary_global = glossary_dir / "global.yaml"
     if not glossary_global.exists():
+        glossary_dir.mkdir(parents=True, exist_ok=True)
         glossary_global.write_text("# 全局术语表\nentries: []\n")
 
     typer.echo(f"✓ 工作空间已初始化：{subtap_dir}")
     typer.echo(f"  配置文件：{config_path}")
-    typer.echo(f"  术语表：  {glossary_dir}")
+    typer.echo(f"  术语表：  {dirs['glossaries']}")
     typer.echo(f"  数据库：  {db_path}")
+    typer.echo(f"  状态文件：{subtap_dir / 'state.json'}")
 
 
 @learn_app.command("import")

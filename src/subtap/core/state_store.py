@@ -37,9 +37,7 @@ class StateStore:
         self._save(state)
         return state
 
-    def add_recent_task(
-        self, task_id: str, input_name: str, output_path: str
-    ) -> None:
+    def add_recent_task(self, task_id: str, input_name: str, output_path: str) -> None:
         """添加一条最近任务记录，超过 MAX_RECENT_TASKS 时移除最旧的。"""
         state = self.load()
         state.recent_tasks.insert(
@@ -55,6 +53,4 @@ class StateStore:
 
     def _save(self, state: SubtapState) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(
-            state.model_dump_json(indent=2), encoding="utf-8"
-        )
+        self._path.write_text(state.model_dump_json(indent=2), encoding="utf-8")

@@ -300,7 +300,9 @@ def doctor(
     manifest_info: dict[str, Any] = {"exists": False}
     try:
         # Resolve manifest path using a minimal config stub
-        _config_stub = SimpleNamespace(models=SimpleNamespace(root=str(subtap_dir / "models")))
+        _config_stub = SimpleNamespace(
+            models=SimpleNamespace(root=str(subtap_dir / "models"))
+        )
         manifest_path = get_manifest_path(_config_stub)
         if manifest_path.exists():
             mm = load_manifest(manifest_path)
@@ -317,7 +319,9 @@ def doctor(
     if not json_output:
         typer.echo("\n▸ 清单版本")
         if manifest_info.get("exists"):
-            typer.echo(f"  ✓ 版本: {manifest_info['version']}，模型数: {manifest_info['model_count']}")
+            typer.echo(
+                f"  ✓ 版本: {manifest_info['version']}，模型数: {manifest_info['model_count']}"
+            )
         else:
             err = manifest_info.get("error", "文件不存在")
             typer.echo(f"  ⚠ 清单不可用: {err}")

@@ -6,7 +6,6 @@ for the ~/.subtap directory structure.
 
 from pathlib import Path
 
-
 _EXPECTED_DIRS = [
     "models",
     "glossaries",
@@ -101,6 +100,7 @@ def safe_delete(path: Path, *, allowed_roots: list[Path]) -> bool:
         resolved.unlink()
     elif resolved.is_dir():
         import shutil
+
         shutil.rmtree(resolved)
     else:
         # Path doesn't exist, consider it already deleted
