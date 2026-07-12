@@ -65,6 +65,7 @@ _MIGRATION_MAP: dict[str, tuple[str, str]] = {
 _REQUIRED_DIRS: list[str] = [
     "models",
     "glossaries",
+    "glossaries/imported",
     "manuscripts",
     "jobs",
     "cache/downloads",
@@ -123,6 +124,9 @@ def plan_migration(subtap_root: Path) -> MigrationPlan:
             # Part of a move
             rel = entry.relative_to(subtap_root)
             if any(m.src == entry for m in plan.moves):
+                continue
+            # Parent of a move source (e.g. glossary/ contains files being moved)
+            if any(m.src.parent == entry for m in plan.moves):
                 continue
             # Known skip
             if name in _KNOWN_SKIP_NAMES:

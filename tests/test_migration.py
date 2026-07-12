@@ -60,7 +60,7 @@ def test_plan_migration_creates_missing_dirs(tmp_path: Path) -> None:
 
     plan = plan_migration(subtap)
 
-    expected = {"models", "glossaries", "manuscripts", "jobs", "cache/downloads", "logs"}
+    expected = {"models", "glossaries", "glossaries/imported", "manuscripts", "jobs", "cache/downloads", "logs"}
     assert set(plan.creates) == expected
 
 
