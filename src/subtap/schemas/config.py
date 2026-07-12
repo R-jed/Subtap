@@ -97,6 +97,7 @@ class ModelConfig(BaseModel):
     """Model management configuration."""
 
     root: str = "models"
+    manifest_path: str = ""
     hf_endpoint: str = "https://huggingface.co"
     hf_mirror_endpoint: str = "https://hf-mirror.com"
 

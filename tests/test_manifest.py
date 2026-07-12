@@ -1,6 +1,7 @@
 """Tests for versioned model manifest."""
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from subtap.core.manifest import load_manifest
 
@@ -62,3 +63,97 @@ models:
     assert legacy["subdir"] == "aligner"
     assert legacy["required_files"] == ["config.json"]
     assert legacy["hf_repo"] == "repo/aligner"
+
+
+def _make_config(tmp_path: Path, manifest_path: str) -> SimpleNamespace:
+    """Build a minimal config-like object for ModelRegistry."""
+    return SimpleNamespace(
+        models=SimpleNamespace(
+            root=str(tmp_path / "models"),
+            manifest_path=manifest_path,
+            hf_endpoint="https://huggingface.co",
+            hf_mirror_endpoint="https://hf-mirror.com",
+        )
+    )
+
+
+_MANIFEST_YAML = """\
+version: "1.0.0"
+models:
+  test_model:
+    description: "Test"
+    subdir: "test_model"
+    hf_repo: "repo/test"
+    modelscope_repo: "repo/test"
+    min_disk_bytes: 100
+    compatibility:
+      subtap_min: "0.1.0"
+    tags: ["test"]
+    required_files:
+      - name: "config.json"
+        sha256: "abc123"
+        size_bytes: 50
+"""
+
+
+def test_model_registry_loads_from_manifest(tmp_path: Path) -> None:
+    """ModelRegistry prefers manifest.yaml over hardcoded MODEL_REGISTRY."""
+    manifest_file = tmp_path / "manifest.yaml"
+    manifest_file.write_text(_MANIFEST_YAML)
+    config = _make_config(tmp_path, str(manifest_file))
+
+    from subtap.core.models import ModelRegistry
+
+    registry = ModelRegistry(config)
+    assert "test_model" in registry.list_available()
+    assert registry._manifest is not None
+
+
+def test_model_registry_falls_back_without_manifest(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """ModelRegistry falls back to MODEL_REGISTRY when no manifest exists."""
+    config = _make_config(tmp_path, "")
+
+    import subtap.core.models as models_mod
+
+    monkeypatch.setattr(
+        models_mod, "get_manifest_path", lambda _: tmp_path / "nonexistent.yaml"
+    )
+
+    from subtap.core.models import ModelRegistry
+
+    registry = ModelRegistry(config)
+    assert registry._manifest is None
+    names = registry.list_available()
+    assert "asr_0.6b" in names
+
+
+def test_get_sha256_returns_hash_from_manifest(tmp_path: Path) -> None:
+    """get_sha256 returns file hash when manifest is loaded."""
+    manifest_file = tmp_path / "manifest.yaml"
+    manifest_file.write_text(_MANIFEST_YAML)
+    config = _make_config(tmp_path, str(manifest_file))
+
+    from subtap.core.models import ModelRegistry
+
+    registry = ModelRegistry(config)
+    assert registry.get_sha256("test_model", "config.json") == "abc123"
+
+
+def test_get_sha256_returns_none_without_manifest(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """get_sha256 returns None when no manifest is loaded."""
+    config = _make_config(tmp_path, "")
+
+    import subtap.core.models as models_mod
+
+    monkeypatch.setattr(
+        models_mod, "get_manifest_path", lambda _: tmp_path / "nonexistent.yaml"
+    )
+
+    from subtap.core.models import ModelRegistry
+
+    registry = ModelRegistry(config)
+    assert registry.get_sha256("asr_0.6b", "config.json") is None
