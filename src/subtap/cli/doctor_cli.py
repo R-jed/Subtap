@@ -289,8 +289,10 @@ def doctor(
             typer.echo(f"  隐私：{privacy_text}")
             typer.echo("  输出：默认写入 ./output，精对齐生成 final.*")
 
+        required_models = {config.asr.model, config.align.model}
         registry = ModelRegistry(config)
         for ms in registry.status():
+            required = ms.name in required_models
             icon = (
                 typer.style("✓", fg=typer.colors.GREEN)
                 if ms.installed
@@ -299,6 +301,7 @@ def doctor(
             report["models"].append(
                 {
                     "name": ms.name,
+                    "required": required,
                     "installed": ms.installed,
                     "path": str(ms.path),
                     "missing_files": ms.missing_files,
@@ -306,7 +309,7 @@ def doctor(
             )
             if not json_output:
                 typer.echo(f"  {icon} {ms.name}")
-            if not ms.installed:
+            if required and not ms.installed:
                 all_ok = False
                 if not json_output:
                     typer.echo(f"    路径：{ms.path}")
