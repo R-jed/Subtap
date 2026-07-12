@@ -57,6 +57,7 @@ exclude = [
     "/tests/fixtures/workspaces",
     "/dist",
     "/models",
+    "/configs",
 ]
 
 [tool.pytest.ini_options]
