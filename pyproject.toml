@@ -54,7 +54,7 @@ exclude = [
     "/.coverage",
     "/.superpowers",
     "/graphify-out",
-    "/work_test_*",
+    "/tests/fixtures/workspaces",
     "/dist",
     "/models",
 ]
