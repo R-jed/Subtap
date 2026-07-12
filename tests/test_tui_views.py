@@ -230,6 +230,92 @@ def test_wizard_view_build_command(tmp_path):
     assert "--format" in cmd or "run" in cmd
 
 
+def test_wizard_view_build_command_includes_output_dir(tmp_path, monkeypatch):
+    from subtap.ui.views.wizard import WizardView
+
+    audio = tmp_path / "test.mp3"
+    audio.write_bytes(b"fake")
+    out_dir = tmp_path / "my_output"
+    out_dir.mkdir()
+    view = WizardView()
+    view.select_file(audio)
+    view.select_quality("fast")
+    view.select_output_dir(out_dir)
+    cmd = view.build_run_command()
+    assert "--output-dir" in cmd
+    assert str(out_dir) in cmd
+
+
+def test_wizard_view_build_command_includes_glossary(tmp_path, monkeypatch):
+    from subtap.ui.views.wizard import WizardView
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    glossary_dir = tmp_path / ".subtap" / "glossary"
+    glossary_dir.mkdir(parents=True)
+    (glossary_dir / "my_terms.yaml").write_text("terms: []")
+
+    audio = tmp_path / "test.mp3"
+    audio.write_bytes(b"fake")
+    view = WizardView()
+    view.select_file(audio)
+    view.select_quality("fast")
+    view.select_glossary("my_terms")
+    cmd = view.build_run_command()
+    assert "--glossary" in cmd
+    assert str(glossary_dir / "my_terms.yaml") in cmd
+
+
+def test_wizard_view_build_command_includes_manuscript(tmp_path, monkeypatch):
+    from subtap.ui.views.wizard import WizardView
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    ms_dir = tmp_path / ".subtap" / "manuscripts"
+    ms_dir.mkdir(parents=True)
+    (ms_dir / "draft.txt").write_text("hello")
+
+    audio = tmp_path / "test.mp3"
+    audio.write_bytes(b"fake")
+    view = WizardView()
+    view.select_file(audio)
+    view.select_quality("fast")
+    view.select_manuscript("draft")
+    cmd = view.build_run_command()
+    assert "--script" in cmd
+    assert str(ms_dir / "draft.txt") in cmd
+
+
+def test_wizard_view_list_glossaries(tmp_path, monkeypatch):
+    from subtap.ui.views.wizard import WizardView
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    glossary_dir = tmp_path / ".subtap" / "glossary"
+    glossary_dir.mkdir(parents=True)
+    (glossary_dir / "a.yaml").write_text("")
+    (glossary_dir / "b.txt").write_text("")
+    (glossary_dir / "c.md").write_text("")  # not a supported suffix
+
+    result = WizardView.list_glossaries()
+    assert "a" in result
+    assert "b" in result
+    assert "c" not in result
+
+
+def test_wizard_view_list_manuscripts(tmp_path, monkeypatch):
+    from subtap.ui.views.wizard import WizardView
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    ms_dir = tmp_path / ".subtap" / "manuscripts"
+    ms_dir.mkdir(parents=True)
+    (ms_dir / "doc1.txt").write_text("")
+    (ms_dir / "doc2.md").write_text("")
+    (ms_dir / "doc3.pdf").write_text("")  # not a supported suffix
+
+    result = WizardView.list_manuscripts()
+    assert "doc1" in result
+    assert "doc2" in result
+    assert "doc3" not in result
+
+
 def test_wizard_view_next_prev_step():
     from subtap.ui.views.wizard import WizardView
 

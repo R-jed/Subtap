@@ -815,13 +815,7 @@ class TuiApp:
 
     def _wizard_step_glossary(self, wiz: WizardView) -> str:
         t = self.theme
-        # Scan available glossaries
-        glossary_dir = Path.home() / ".subtap" / "glossary"
-        glossaries = []
-        if glossary_dir.is_dir():
-            for f in sorted(glossary_dir.iterdir()):
-                if f.is_file() and f.suffix in (".txt", ".yaml", ".yml", ".json"):
-                    glossaries.append(f.stem)
+        glossaries = wiz.list_glossaries()
 
         items = ["跳过（不使用热词表）"] + [f"  {g}" for g in glossaries]
         menu = Menu(
@@ -856,13 +850,7 @@ class TuiApp:
 
     def _wizard_step_manuscript(self, wiz: WizardView) -> str:
         t = self.theme
-        # Scan available manuscripts
-        ms_dir = Path.home() / ".subtap" / "manuscripts"
-        manuscripts = []
-        if ms_dir.is_dir():
-            for f in sorted(ms_dir.iterdir()):
-                if f.is_file() and f.suffix in (".txt", ".md", ".docx"):
-                    manuscripts.append(f.stem)
+        manuscripts = wiz.list_manuscripts()
 
         items = ["跳过（不使用参考文稿）"] + [f"  {m}" for m in manuscripts]
         menu = Menu(
@@ -971,80 +959,22 @@ class TuiApp:
             elif key == Key.ESCAPE:
                 return "back"
             elif key == Key.ENTER:
+                if not wiz.is_complete():
+                    sys.stderr.write(
+                        f"\033[2K{t.RED}配置不完整，请返回补全必选项{t.NC}\r\n"
+                    )
+                    sys.stderr.flush()
+                    continue
                 return "run"
 
     def _execute_wizard_run(self, wiz: WizardView) -> str:
-        t = self.theme
         cmd = wiz.build_run_command()
         if not cmd:
             self._pop_state()
             return "continue"
-
-        import tempfile
-        _tmp_dir = Path(tempfile.mkdtemp(prefix="subtap_tui_"))
-        log_path = _tmp_dir / "run.log.jsonl"
-
         state = wiz.get_state()
         file_name = Path(state["file_path"]).name if state["file_path"] else "未知"
-
-        sys.stderr.write("\033[H\033[J")
-        sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}正在转录{t.NC}\r\n\r\n")
-        sys.stderr.write(f"\033[2K{t.GRAY}文件：{file_name}{t.NC}\r\n\r\n")
-        sys.stderr.flush()
-
-        for _ in range(10):
-            sys.stderr.write("\r\n")
-        sys.stderr.flush()
-
-        returncode = -1
-        stderr_text = ""
-        try:
-            run_env = _run_env()
-            run_env["SUBTAP_EVENT_LOG"] = str(log_path)
-            returncode, stderr_text, user_quit = self._run_subprocess_with_progress(
-                cmd, run_env, log_path
-            )
-            if user_quit:
-                return "quit"
-        except OSError as e:
-            sys.stderr.write("\033[H\033[J")
-            sys.stderr.write(f"\033[2K{t.RED}✗ 转录程序启动失败：{e}{t.NC}\r\n")
-            sys.stderr.write(f"\033[2K\r\n{t.GRAY}Esc 返回{t.NC}\r\n")
-            sys.stderr.flush()
-            while True:
-                key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
-                if key in (Key.ESCAPE, Key.ENTER):
-                    self._pop_state()
-                    return "continue"
-                elif key == Key.QUIT:
-                    return "quit"
-        finally:
-            shutil.rmtree(_tmp_dir, ignore_errors=True)
-
-        if returncode != 0:
-            err = stderr_text.strip()
-            if err:
-                lines = err.splitlines()
-                key_line = lines[-1] if lines else err[:200]
-                sys.stderr.write(f"\033[2K{t.RED}{key_line}{t.NC}\r\n")
-                if "No module named" in err:
-                    module = err.split("'")[1] if "'" in err else ""
-                    if module:
-                        sys.stderr.write(
-                            f"\033[2K{t.YELLOW}pip install {module}{t.NC}\r\n"
-                        )
-            sys.stderr.flush()
-
-        sys.stderr.write(f"\033[2K\r\n{t.GRAY}Esc 返回  Q 退出{t.NC}\r\n")
-        sys.stderr.flush()
-
-        while True:
-            key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
-            if key in (Key.ESCAPE, Key.ENTER):
-                self._pop_state()
-                return "continue"
-            elif key == Key.QUIT:
-                return "quit"
+        return self._execute_subprocess(cmd, file_name)
 
     def _view_new_task(self) -> str:
         t = self.theme
@@ -1265,13 +1195,17 @@ class TuiApp:
         return (proc.returncode, "".join(stderr_lines), False)
 
     def _execute_run(self, view: NewTaskView) -> str:
-        t = self.theme
         cmd = view.build_run_command()
         if not cmd:
             self._pop_state()
             return "continue"
+        file_name = view.selected_file.name if view.selected_file else "未知"
+        return self._execute_subprocess(cmd, file_name)
 
-        # 确定 run.log.jsonl 路径，通过环境变量传递给子进程
+    def _execute_subprocess(self, cmd: list[str], file_display_name: str) -> str:
+        """Shared subprocess execution with progress rendering."""
+        t = self.theme
+
         import tempfile
 
         _tmp_dir = Path(tempfile.mkdtemp(prefix="subtap_tui_"))
@@ -1279,9 +1213,7 @@ class TuiApp:
 
         sys.stderr.write("\033[H\033[J")
         sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}正在转录{t.NC}\r\n\r\n")
-        sys.stderr.write(
-            f"\033[2K{t.GRAY}文件：{view.selected_file.name if view.selected_file else '未知'}{t.NC}\r\n\r\n"
-        )
+        sys.stderr.write(f"\033[2K{t.GRAY}文件：{file_display_name}{t.NC}\r\n\r\n")
         sys.stderr.flush()
 
         # 预留 10 行给进度渲染
@@ -1314,7 +1246,6 @@ class TuiApp:
         finally:
             shutil.rmtree(_tmp_dir, ignore_errors=True)
 
-        # 失败时追加 stderr 详情
         if returncode != 0:
             err = stderr_text.strip()
             if err:
@@ -1329,7 +1260,6 @@ class TuiApp:
                         )
             sys.stderr.flush()
 
-        # 结果展示
         sys.stderr.write(f"\033[2K\r\n{t.GRAY}Esc 返回  Q 退出{t.NC}\r\n")
         sys.stderr.flush()
 
