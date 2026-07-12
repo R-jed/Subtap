@@ -66,6 +66,8 @@ class TuiApp:
             return self._view_history()
         elif self._state == "batch":
             return self._view_batch()
+        elif self._state == "first_run":
+            return self._view_first_run()
         return "quit"
 
     def _push_state(self, state: str) -> None:
@@ -131,6 +133,108 @@ class TuiApp:
                     menu.cursor = int(digit) - 1
                     menu.render_incremental(old_cursor)
                 continue
+
+    def _view_first_run(self) -> str:
+        from .views.first_run import FirstRunView
+
+        t = self.theme
+        view = FirstRunView()
+
+        def _clear():
+            sys.stderr.write("\033[H\033[J")
+            sys.stderr.flush()
+
+        def _line(row: int, text: str):
+            sys.stderr.write(f"\033[{row};1H\033[2K{text}")
+            sys.stderr.flush()
+
+        # Step 1: Welcome
+        _clear()
+        _line(1, f"{t.CYAN}[1/7] 欢迎使用 Subtap{t.NC}")
+        _line(3, "首次启动需要完成简单配置。")
+        _line(5, f"{t.GRAY}按任意键继续...{t.NC}")
+        sys.stderr.flush()
+        self.reader.read_key(timeout=60)
+
+        # Step 2: Device check
+        _clear()
+        _line(1, f"{t.CYAN}[2/7] 设备检查{t.NC}")
+        _line(3, "正在检测设备信息...")
+        sys.stderr.flush()
+        device = view.check_device()
+        _line(3, f"  Apple Silicon：{'是' if device['is_apple_silicon'] else '否'}")
+        _line(4, f"  ffmpeg：{'已安装' if device['has_ffmpeg'] else '未安装'}")
+        _line(5, f"  可用磁盘：{device['free_gb']:.1f} GB")
+        _line(7, f"{t.GRAY}按任意键继续...{t.NC}")
+        sys.stderr.flush()
+        self.reader.read_key(timeout=60)
+
+        # Step 3: Model recommendation
+        _clear()
+        _line(1, f"{t.CYAN}[3/7] 模型推荐{t.NC}")
+        quality_ok = device["is_apple_silicon"] and device["free_gb"] > 5
+        model_name = view.recommend_model(fast_ok=True, quality_ok=quality_ok)
+        _line(3, f"推荐模型：{t.GREEN}{model_name}{t.NC}")
+        if quality_ok:
+            _line(4, f"{t.GRAY}设备性能充足，推荐高质量模型{t.NC}")
+        else:
+            _line(4, f"{t.GRAY}设备条件有限，推荐轻量模型{t.NC}")
+        _line(6, f"{t.GRAY}按任意键继续...{t.NC}")
+        sys.stderr.flush()
+        self.reader.read_key(timeout=60)
+
+        # Step 4: Download info
+        _clear()
+        _line(1, f"{t.CYAN}[4/7] 下载信息{t.NC}")
+        info = view.get_download_info(model_name)
+        _line(3, f"模型：{info['model_name']}")
+        _line(4, f"大小：{info['size_display']}")
+        _line(5, f"路径：{info['target_dir']}")
+        _line(7, f"{t.GRAY}按任意键继续...{t.NC}")
+        sys.stderr.flush()
+        self.reader.read_key(timeout=60)
+
+        # Step 5: Confirm download
+        _clear()
+        _line(1, f"{t.CYAN}[5/7] 确认下载{t.NC}")
+        _line(3, f"即将下载模型 {t.GREEN}{model_name}{t.NC}（{info['size_display']}）")
+        _line(5, "Y 确认下载  N 跳过")
+        sys.stderr.flush()
+
+        confirmed = False
+        while True:
+            key = self.reader.read_key(timeout=60)
+            if key is None:
+                continue
+            if key == "CHAR:Y" or key == "CHAR:y":
+                confirmed = True
+                break
+            if key in ("CHAR:N", "CHAR:n", Key.ESCAPE):
+                break
+
+        # Step 6: Download (placeholder)
+        _clear()
+        _line(1, f"{t.CYAN}[6/7] 下载模型{t.NC}")
+        if confirmed:
+            _line(3, "下载将在此开始...")
+        else:
+            _line(3, f"{t.YELLOW}已跳过下载{t.NC}")
+            _line(4, f"{t.GRAY}可稍后在「模型管理」中下载{t.NC}")
+        _line(6, f"{t.GRAY}按任意键继续...{t.NC}")
+        sys.stderr.flush()
+        self.reader.read_key(timeout=60)
+
+        # Step 7: Completion
+        _clear()
+        _line(1, f"{t.GREEN}[7/7] 配置完成{t.NC}")
+        _line(3, "初始化向导已完成！")
+        _line(5, f"{t.GRAY}按任意键进入主界面...{t.NC}")
+        sys.stderr.flush()
+        self.reader.read_key(timeout=60)
+
+        view.mark_complete()
+        self._pop_state()
+        return "continue"
 
     def _view_settings(self) -> str:
         menu = Menu(

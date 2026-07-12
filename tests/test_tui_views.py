@@ -137,3 +137,51 @@ def test_home_view_not_first_run(tmp_path, monkeypatch):
 
     view = HomeView()
     assert view.is_first_run() is False
+
+
+# --- FirstRunView tests ---
+
+def test_first_run_view_checks_device():
+    from subtap.ui.views.first_run import FirstRunView
+
+    view = FirstRunView()
+    result = view.check_device()
+    assert "is_apple_silicon" in result
+    assert "has_ffmpeg" in result
+
+
+def test_first_run_view_recommends_model():
+    from subtap.ui.views.first_run import FirstRunView
+
+    view = FirstRunView()
+    recommendation = view.recommend_model(fast_ok=True, quality_ok=True)
+    assert recommendation in ("asr_0.6b", "asr_1.7b")
+
+
+def test_first_run_view_recommends_fast_when_low_disk():
+    from subtap.ui.views.first_run import FirstRunView
+
+    view = FirstRunView()
+    recommendation = view.recommend_model(fast_ok=True, quality_ok=False)
+    assert recommendation == "asr_0.6b"
+
+
+def test_first_run_view_get_download_info():
+    from subtap.ui.views.first_run import FirstRunView
+
+    view = FirstRunView()
+    info = view.get_download_info("asr_0.6b")
+    assert "model_name" in info
+    assert "size_bytes" in info
+    assert "size_display" in info
+    assert info["model_name"] == "asr_0.6b"
+
+
+def test_first_run_view_mark_complete(tmp_path, monkeypatch):
+    from subtap.ui.views.first_run import FirstRunView
+    from subtap.core.state_store import StateStore
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    view = FirstRunView()
+    view.mark_complete()
+    assert (tmp_path / ".subtap" / "state.json").exists()
