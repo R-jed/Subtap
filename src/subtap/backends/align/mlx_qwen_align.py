@@ -93,7 +93,7 @@ class MLXQwenAligner:
 
         Each source chunk is aligned once with all sentences in that chunk,
         then word timestamps are assigned back to sentences by visible character count.
-        Falls back to sentence timing if alignment fails.
+        Raises if alignment cannot produce word timestamps.
         """
         self._load_model()
         if self._model is None:
@@ -116,15 +116,7 @@ class MLXQwenAligner:
             chunk_audio = self._get_chunk_audio_path(chunk_id, work_dir)
 
             if chunk_audio is None:
-                logger.warning("Chunk %d audio not found, using fallback", chunk_id)
-                for sent in chunk_sentences:
-                    results_by_id[sent.sentence_id] = AlignedSegment(
-                        sentence_id=sent.sentence_id,
-                        start_sec=sent.start_sec,
-                        end_sec=sent.end_sec,
-                        text=sent.text,
-                    )
-                continue
+                raise FileNotFoundError(f"Chunk {chunk_id} audio not found")
 
             try:
                 # ForcedAlignerModel.generate() returns word-level timestamps.
@@ -140,6 +132,8 @@ class MLXQwenAligner:
                 time_offset = self.config.time_offset_sec
                 chunk_words: list[dict] = []
                 for item in align_result:
+                    if _visible_len(item.text) == 0:
+                        raise RuntimeError("aligner returned a word with no visible text")
                     start = chunk_offset + item.start_time + time_offset
                     end = chunk_offset + item.end_time + time_offset
                     # Enforce minimum duration (model may output start==end)
@@ -177,13 +171,10 @@ class MLXQwenAligner:
 
                         words = chunk_words[start_word:word_idx]
                         if not words:
-                            results_by_id[sent.sentence_id] = AlignedSegment(
-                                sentence_id=sent.sentence_id,
-                                start_sec=sent.start_sec,
-                                end_sec=sent.end_sec,
-                                text=sent.text,
+                            raise RuntimeError(
+                                f"Failed to align sentence {sent.sentence_id} "
+                                f"in chunk {chunk_id}: no words returned"
                             )
-                            continue
 
                         start = max(chunk_offset, min(words[0]["start_sec"], chunk_end))
                         end = max(start + 0.01, min(words[-1]["end_sec"], chunk_end))
@@ -204,19 +195,8 @@ class MLXQwenAligner:
                     continue
 
             except Exception as e:
-                logger.warning(
-                    "Alignment failed for chunk %d: %s, using fallback",
-                    chunk_id,
-                    e,
-                )
+                raise RuntimeError(f"Failed to align chunk {chunk_id}: {e}") from e
 
-            # Fallback: use sentence timing
-            for sent in chunk_sentences:
-                results_by_id[sent.sentence_id] = AlignedSegment(
-                    sentence_id=sent.sentence_id,
-                    start_sec=sent.start_sec,
-                    end_sec=sent.end_sec,
-                    text=sent.text,
-                )
+            raise RuntimeError(f"Failed to align chunk {chunk_id}: no words returned")
 
         return [results_by_id[sent.sentence_id] for sent in sentences]

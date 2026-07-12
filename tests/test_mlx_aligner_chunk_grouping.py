@@ -6,6 +6,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+import pytest
+
 from subtap.backends.align.mlx_qwen_align import MLXQwenAligner
 from subtap.core.export import run_export
 from subtap.schemas.config import AlignConfig
@@ -31,6 +33,88 @@ class FakeModel:
             FakeWord("世", 0.6, 0.8),
             FakeWord("界", 0.8, 1.0),
         ]
+
+
+def _single_sentence(tmp_path: Path, *, create_chunk: bool = True):
+    work_dir = tmp_path / "work"
+    chunks_dir = work_dir / "chunks"
+    audio_dir = work_dir / "audio"
+    chunks_dir.mkdir(parents=True)
+    audio_dir.mkdir()
+    if create_chunk:
+        (chunks_dir / "chunk.wav").write_bytes(b"fake")
+    (chunks_dir / "chunks.jsonl").write_text(
+        json.dumps(
+            {
+                "chunk_id": 0,
+                "start_sec": 0.0,
+                "end_sec": 1.0,
+                "path": "chunks/chunk.wav",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    sentence = SentenceSegment(
+        sentence_id=0,
+        chunk_id=0,
+        start_sec=0.0,
+        end_sec=1.0,
+        text="你好",
+        source_text="你好",
+    )
+    return audio_dir / "source.wav", sentence
+
+
+def test_mlx_aligner_raises_when_chunk_audio_is_missing(tmp_path):
+    audio_path, sentence = _single_sentence(tmp_path, create_chunk=False)
+    aligner = MLXQwenAligner(AlignConfig(time_offset_sec=0))
+    aligner._model = FakeModel()
+
+    with pytest.raises(FileNotFoundError, match="Chunk 0 audio not found"):
+        aligner.align([sentence], audio_path)
+
+
+@pytest.mark.parametrize(
+    "model_result",
+    [RuntimeError("model failed"), [], [FakeWord("", 0.0, 0.1)]],
+)
+def test_mlx_aligner_raises_when_model_cannot_align(tmp_path, model_result):
+    audio_path, sentence = _single_sentence(tmp_path)
+
+    class FailingModel:
+        def generate(self, **_):
+            if isinstance(model_result, Exception):
+                raise model_result
+            return model_result
+
+    aligner = MLXQwenAligner(AlignConfig(time_offset_sec=0))
+    aligner._model = FailingModel()
+
+    with pytest.raises(RuntimeError, match="Failed to align chunk 0"):
+        aligner.align([sentence], audio_path)
+
+
+def test_mlx_aligner_raises_when_a_sentence_receives_no_words(tmp_path):
+    audio_path, first = _single_sentence(tmp_path)
+    second = SentenceSegment(
+        sentence_id=1,
+        chunk_id=0,
+        start_sec=0.5,
+        end_sec=1.0,
+        text="世界",
+        source_text="世界",
+    )
+
+    class PartialModel:
+        def generate(self, **_):
+            return [FakeWord("你好", 0.0, 0.4)]
+
+    aligner = MLXQwenAligner(AlignConfig(time_offset_sec=0))
+    aligner._model = PartialModel()
+
+    with pytest.raises(RuntimeError, match="sentence 1.*no words returned"):
+        aligner.align([first, second], audio_path)
 
 
 def test_mlx_aligner_aligns_chunk_once_and_splits_sentence_times(tmp_path):
