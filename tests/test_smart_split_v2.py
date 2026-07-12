@@ -103,11 +103,11 @@ def test_split_keeps_short_clause_after_comma_pause(text: str, expected: list[st
     assert _srt_text_lines(content) == expected
 
 
-def test_split_keeps_short_comma_clause_merged_without_pause():
+def test_split_keeps_incomplete_comma_fragment_merged_without_pause():
     from subtap.core.export import SRTExporter
     from subtap.schemas.models import AlignedSegment
 
-    text = "它实际市场售价都已经到万元了，很难原价买到。"
+    text = "它实际市场售价都已经到万元了，很难"
     segment = AlignedSegment(
         sentence_id=0,
         start_sec=0.0,
