@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import shutil
+import urllib.request
 from pathlib import Path
 from typing import Any, TypedDict, cast
 
@@ -216,8 +218,6 @@ class ModelDownloader:
 
     def check_connectivity(self, source: str, repo: str) -> bool:
         """Check if source is reachable by HEAD request."""
-        import urllib.request
-
         filename = "config.json"
         url = self.build_file_url(source, repo, filename)
         request = urllib.request.Request(url, method="HEAD")
@@ -227,16 +227,26 @@ class ModelDownloader:
         except Exception:
             return False
 
-    def download(self, model_name: str, source: str = "hf", progress=None) -> Path:
-        """Download model files from source.
+    def download(
+        self,
+        model_name: str,
+        source: str = "hf",
+        progress=None,
+        max_retries: int = 3,
+    ) -> Path:
+        """Download model files from source with resume and SHA256 verification.
 
         Args:
             model_name: Name from MODEL_REGISTRY
             source: Download source (hf, hf-mirror, modelscope)
             progress: Optional callback(filename, downloaded_bytes, total_bytes)
+            max_retries: Maximum retry attempts per file (default 3)
 
         Returns:
             Path to downloaded model directory
+
+        Raises:
+            RuntimeError: If SHA256 verification fails after all retries
         """
         if model_name not in MODEL_REGISTRY:
             raise ValueError(f"未知模型：{model_name}")
@@ -249,22 +259,126 @@ class ModelDownloader:
                 f"{model_name} 未配置 {source} / ModelScope 下载仓库，请手动放入 models/"
             )
 
+        registry = ModelRegistry(self.config)
         model_dir = self.root / info["subdir"]
         model_dir.mkdir(parents=True, exist_ok=True)
         try:
             for filename in info["required_files"]:
                 url = self.build_file_url(source, repo, filename)
-                self._download_file(url, model_dir / filename, progress=progress)
+                dest = model_dir / filename
+                last_error: Exception | None = None
+                for attempt in range(1, max_retries + 1):
+                    try:
+                        self._download_file_with_resume(
+                            url, dest, progress=progress
+                        )
+                    except Exception as exc:
+                        last_error = exc
+                        logger.warning(
+                            "下载 %s 第 %d/%d 次失败: %s",
+                            filename,
+                            attempt,
+                            max_retries,
+                            exc,
+                        )
+                        continue
+                    expected_sha256 = registry.get_sha256(model_name, filename)
+                    if expected_sha256 is not None:
+                        if self._verify_sha256(dest, expected_sha256):
+                            break
+                        last_error = RuntimeError(
+                            f"SHA256 校验失败: {filename}"
+                        )
+                        logger.warning(
+                            "SHA256 校验失败 %s 第 %d/%d 次",
+                            filename,
+                            attempt,
+                            max_retries,
+                        )
+                        dest.unlink(missing_ok=True)
+                        continue
+                    break  # no SHA256 in manifest, trust the download
+                else:
+                    # all retries exhausted
+                    raise last_error or RuntimeError(
+                        f"下载失败: {filename}"
+                    )
         except Exception:
             if model_dir.exists():
                 shutil.rmtree(model_dir)
             raise
         return model_dir
 
+    def _download_file_with_resume(
+        self, url: str, dest: Path, progress=None
+    ) -> None:
+        """Download a single file with HTTP Range resume support.
+
+        If dest already exists and is non-empty, sends a Range header to
+        resume from where it left off. Server must respond with 206 Partial
+        Content for resume to work; otherwise the file is re-downloaded
+        from scratch.
+        """
+        existing_size = dest.stat().st_size if dest.exists() else 0
+        headers: dict[str, str] = {}
+        if existing_size > 0:
+            headers["Range"] = f"bytes={existing_size}-"
+
+        request = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(request, timeout=DEFAULT_TIMEOUT) as response:
+            status = response.status
+            if status == 206 and existing_size > 0:
+                # Resume: append to existing file
+                downloaded = existing_size
+                total_header = response.getheader("content-range", "")
+                # Content-Range: bytes start-end/total
+                total = existing_size
+                if "/" in total_header:
+                    total = int(total_header.split("/")[-1])
+                if progress:
+                    progress(dest.name, downloaded, total)
+                with open(dest, "ab") as f:
+                    while True:
+                        chunk = response.read(8192)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if progress:
+                            progress(dest.name, downloaded, total)
+            else:
+                # Fresh download (server returned 200 or no prior file)
+                total = int(response.getheader("content-length", "0"))
+                downloaded = 0
+                if progress:
+                    progress(dest.name, downloaded, total)
+                with open(dest, "wb") as f:
+                    while True:
+                        chunk = response.read(8192)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if progress:
+                            progress(dest.name, downloaded, total)
+
+    def _verify_sha256(self, path: Path, expected_sha256: str) -> bool:
+        """Verify file integrity by comparing SHA256 hash.
+
+        Computes hash in 8192-byte chunks to avoid loading entire file
+        into memory.
+        """
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            while True:
+                chunk = f.read(8192)
+                if not chunk:
+                    break
+                h.update(chunk)
+        return h.hexdigest() == expected_sha256
+
     def _download_file(self, url: str, dest: Path, progress=None) -> None:
         """Download a single file with optional progress callback."""
-        import urllib.request
-
         request = urllib.request.Request(url)
         with urllib.request.urlopen(request, timeout=DEFAULT_TIMEOUT) as response:
             total = int(response.getheader("content-length", "0"))
