@@ -354,6 +354,8 @@ def doctor(
                         typer.echo(f"    缺失：{', '.join(ms.missing_files)}")
     except Exception as e:
         report["models_error"] = str(e)
+        if release:
+            all_ok = False
         if not json_output:
             typer.echo(f"  ⚠ 无法检查模型状态：{e}")
 

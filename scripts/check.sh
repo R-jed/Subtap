@@ -5,6 +5,9 @@ set -euo pipefail
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "$REPO_ROOT"
 
+echo "==> sync locked development environment"
+uv sync --frozen --extra dev --extra ai
+
 echo "==> black format check"
 uv run black --check src tests
 
