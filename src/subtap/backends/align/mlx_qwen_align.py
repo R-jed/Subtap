@@ -16,12 +16,9 @@ from subtap.schemas.models import SentenceSegment, AlignedSegment
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL_ROOT = Path.home() / ".subtap" / "models"
-_PUNCT = set("，。？！、,.?! ")
-
-
 def _visible_len(text: str) -> int:
-    """Count non-punctuation visible characters."""
-    return sum(1 for ch in text if ch not in _PUNCT)
+    """Count characters represented by forced-alignment words."""
+    return sum(ch.isalnum() for ch in text)
 
 
 class MLXQwenAligner:
