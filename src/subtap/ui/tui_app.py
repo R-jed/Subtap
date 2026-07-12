@@ -78,7 +78,7 @@ class TuiApp:
         elif self._state == "recent_tasks":
             return self._view_recent_tasks()
         elif self._state == "models_page":
-            return self._view_settings_models()
+            return self._view_models_page()
         elif self._state == "completion":
             return self._view_completion()
         return "quit"
@@ -294,7 +294,7 @@ class TuiApp:
                 elif selected == 3:
                     return self._view_settings_api()
                 elif selected == 4:
-                    return self._view_settings_models()
+                    return self._view_models_page()
 
     def _view_settings_asr(self) -> str:
         t = self.theme
@@ -489,7 +489,6 @@ class TuiApp:
         from .views.glossary_page import GlossaryPage
         from subtap.glossary.hotword import load_glossary
 
-        t = self.theme
         page = GlossaryPage()
         glossary_path = Path.home() / ".subtap" / "glossary" / "hotwords_zh.txt"
         glossary = load_glossary(glossary_path, "zh")
@@ -533,7 +532,6 @@ class TuiApp:
         from .views.manuscripts_page import ManuscriptsPage
         from subtap.core.manuscript_index import ManuscriptIndex
 
-        t = self.theme
         page = ManuscriptsPage()
         index = ManuscriptIndex(Path.home() / ".subtap" / "manuscripts" / "index.json")
         manuscripts = index.list_all()
@@ -584,7 +582,6 @@ class TuiApp:
         from .views.recent_tasks import RecentTasksPage
         from subtap.core.state_store import StateStore
 
-        t = self.theme
         page = RecentTasksPage()
         store = StateStore(Path.home() / ".subtap" / "state.json")
         tasks = store.load().recent_tasks
@@ -879,11 +876,10 @@ class TuiApp:
                 )
                 menu.render_full()
 
-    def _view_settings_models(self) -> str:
+    def _view_models_page(self) -> str:
         from .views.models_page import ModelsPage
         from subtap.core.models import ModelRegistry, MODEL_REGISTRY
 
-        t = self.theme
         page = ModelsPage()
         registry = ModelRegistry(self.config._config)
         statuses = registry.status()
@@ -931,7 +927,6 @@ class TuiApp:
 
     def _model_action_menu(self, model_status, page, registry) -> str:
         """Show action menu for a selected model."""
-        from .views.models_page import ModelsPage
         from subtap.core.models import MODEL_REGISTRY
 
         t = self.theme
