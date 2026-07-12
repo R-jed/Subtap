@@ -1,25 +1,26 @@
 """Sentence segmentation: RawCleanSegment → SentenceSegment.
 
-Three-tier segmentation strategy for Chinese colloquial content:
+Stable-ts style segmentation strategy for Chinese colloquial content:
 1. Sentence-ending punctuation (。！？.!?)
 2. Comma/pause punctuation (，、,;) for long sentences
-3. jieba word boundary splitting for unpunctuated text
+3. Force split by max_chars
+4. Merge short segments
+
+Algorithm reference: https://github.com/jianfch/stable-ts
 """
 
 from __future__ import annotations
 
 import re
 
-import jieba
-
 from subtap.schemas.models import RawCleanSegment, SentenceSegment
 
 # Max chars per sentence before forced split
-_MAX_CHARS = 60
+_MAX_CHARS = 45
 
 # Min chars for a sentence to be considered valid
 # 低于此值的句子会被合并到相邻句子，减少字幕碎片
-_MIN_CHARS = 20
+_MIN_CHARS = 15
 
 # Sentence-ending punctuation
 _SENT_END_RE = re.compile(r"[。！？.!?]+")
@@ -48,29 +49,29 @@ def _split_sentences(text: str, language: str = "zh") -> list[str]:
 
 
 def _split_sentences_zh(text: str) -> list[str]:
-    """Chinese sentence segmentation with three-tier strategy."""
+    """Chinese sentence segmentation with stable-ts style strategy."""
 
     # Tier 1: Split at sentence-ending punctuation
-    parts = _split_at_pattern(text, _SENT_END_RE)
+    segments = _split_at_pattern(text, _SENT_END_RE)
 
-    # Tier 2: For each part, split long sentences at comma/pause
+    # Tier 2: For long segments, split at comma/pause
     expanded: list[str] = []
-    for part in parts:
-        part = part.strip()
-        if not part:
+    for seg in segments:
+        seg = seg.strip()
+        if not seg:
             continue
-        if len(part) > _MAX_CHARS:
-            expanded.extend(_split_at_comma(part))
+        if len(seg) > _MAX_CHARS:
+            expanded.extend(_split_at_comma(seg))
         else:
-            expanded.append(part)
+            expanded.append(seg)
 
-    # Tier 3: For any remaining long segments, split at word boundary
+    # Tier 3: Force split any remaining long segments by max_chars
     result: list[str] = []
-    for sent in expanded:
-        if len(sent) > _MAX_CHARS:
-            result.extend(_split_at_word_boundary(sent, _MAX_CHARS))
+    for seg in expanded:
+        if len(seg) > _MAX_CHARS:
+            result.extend(_split_by_length(seg, _MAX_CHARS))
         else:
-            result.append(sent)
+            result.append(seg)
 
     # Merge very short sentences
     result = _merge_short_sentences(result, _MIN_CHARS)
@@ -140,19 +141,19 @@ def _split_at_comma(text: str) -> list[str]:
     if current.strip():
         segments.append(current.strip())
 
-    # If any segment is still too long, fall back to word boundary splitting
+    # If any segment is still too long, force split by max_chars
     result: list[str] = []
     for seg in segments:
         if len(seg) > _MAX_CHARS:
-            result.extend(_split_at_word_boundary(seg, _MAX_CHARS))
+            result.extend(_split_by_length(seg, _MAX_CHARS))
         else:
             result.append(seg)
 
     return result
 
 
-def _split_at_word_boundary(text: str, max_chars: int) -> list[str]:
-    """Split long text at Chinese word boundaries using jieba.
+def _split_by_length(text: str, max_chars: int) -> list[str]:
+    """Force split text by max_chars length.
 
     Args:
         text: Text to split.
@@ -164,22 +165,11 @@ def _split_at_word_boundary(text: str, max_chars: int) -> list[str]:
     if len(text) <= max_chars:
         return [text]
 
-    words = list(jieba.cut(text))
+    segments: list[str] = []
+    for i in range(0, len(text), max_chars):
+        segments.append(text[i : i + max_chars])
 
-    parts: list[str] = []
-    current = ""
-
-    for word in words:
-        if len(current) + len(word) > max_chars and current:
-            parts.append(current.strip())
-            current = word
-        else:
-            current += word
-
-    if current.strip():
-        parts.append(current.strip())
-
-    return parts
+    return segments
 
 
 def _merge_short_sentences(sentences: list[str], min_chars: int) -> list[str]:
@@ -200,29 +190,34 @@ def _merge_short_sentences(sentences: list[str], min_chars: int) -> list[str]:
 
     _SENT_END_CHARS = set("。！？.!?")
 
+    # If all sentences are short, don't merge (preserve original structure)
+    if all(len(s) < min_chars for s in sentences):
+        return sentences
+
     merged: list[str] = []
     buffer = ""
 
-    for sent in sentences:
+    for seg in sentences:
         if buffer:
-            # Don't merge if buffer ends with sentence-ending punctuation
+            # If buffer ends with sentence-ending punctuation, don't merge
             if buffer and buffer[-1] in _SENT_END_CHARS:
                 merged.append(buffer)
-                buffer = sent
-            elif len(buffer) < min_chars:
-                buffer += sent
-            else:
+                buffer = seg
+            # If buffer is long enough, output and start new segment
+            elif len(buffer) >= min_chars:
                 merged.append(buffer)
-                buffer = sent
+                buffer = seg
+            # Otherwise merge
+            else:
+                buffer += seg
         else:
-            buffer = sent
+            buffer = seg
 
     if buffer:
-        if (
-            merged
-            and len(buffer) < min_chars
-            and (not merged[-1] or merged[-1][-1] not in _SENT_END_CHARS)
-        ):
+        # If last buffer ends with sentence-ending punctuation, don't merge
+        if buffer[-1] in _SENT_END_CHARS:
+            merged.append(buffer)
+        elif merged and len(buffer) < min_chars:
             merged[-1] += buffer
         else:
             merged.append(buffer)

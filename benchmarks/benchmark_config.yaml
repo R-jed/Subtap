@@ -1,13 +1,15 @@
 # benchmarks/benchmark_config.yaml
 
-# 测试数据
+# 测试数据（路径相对于 CLAUDE.md 中定义的测试素材目录）
+TEST_MEDIA_DIR: "/Users/qunqing/Downloads/ASR-SRT测试音频"
+
 data:
   existing:
-    - path: "/Users/qunqing/Downloads/ASR-SRT测试音频/高质量中文语音.mp3"
+    - path: "高质量中文语音.mp3"
       name: "中文高质量"
-    - path: "/Users/qunqing/Downloads/ASR-SRT测试音频/短的演讲音频.wav"
+    - path: "短的演讲音频.wav"
       name: "中文演讲"
-    - path: "/Users/qunqing/Downloads/ASR-SRT测试音频/[10]--DLC.如何从前期到后期获得好声音.mp4"
+    - path: "[10]--DLC.如何从前期到后期获得好声音.mp4"
       name: "长视频素材"
   edge_cases:
     - path: "data/edge_cases/no_punctuation.txt"
@@ -26,12 +28,6 @@ implementations:
   - id: baseline
     name: "现有 baseline"
     module: "implementations.baseline"
-  - id: funasr_punct
-    name: "FunASR 标点恢复"
-    module: "implementations.funasr_punct"
-    requires:
-      - "funasr"
-      - "onnxruntime"
   - id: regroup
     name: "stable-ts regroup"
     module: "implementations.regroup"
@@ -41,12 +37,9 @@ implementations:
   - id: anomaly
     name: "faster-whisper 异常检测"
     module: "implementations.anomaly"
-  - id: combined
-    name: "标点恢复 + 可配置管线"
-    module: "implementations.combined"
-    requires:
-      - "funasr"
-      - "onnxruntime"
+  - id: stable_ts
+    name: "stable-ts 算法复用"
+    module: "implementations.stable_ts"
 
 # 评估维度
 evaluation:

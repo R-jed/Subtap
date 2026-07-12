@@ -165,10 +165,12 @@ class MLXQwenAligner:
                         while word_idx < len(chunk_words) and (
                             matched < target or is_last
                         ):
-                            matched += _visible_len(chunk_words[word_idx]["word"])
-                            word_idx += 1
-                            if not is_last and matched >= target:
+                            word_len = _visible_len(chunk_words[word_idx]["word"])
+                            # Check if adding this word would exceed target
+                            if not is_last and matched + word_len > target and matched > 0:
                                 break
+                            matched += word_len
+                            word_idx += 1
 
                         words = chunk_words[start_word:word_idx]
                         if not words:

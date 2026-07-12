@@ -7,7 +7,7 @@ from pathlib import Path
 from subtap.core.segment import run_segment
 from subtap.core.segmentation import (
     _split_sentences,
-    _split_at_word_boundary,
+    _split_by_length,
     _merge_short_sentences,
     _allocate_time,
     segment_clean_segments,
@@ -286,21 +286,21 @@ class TestSplitSentencesZh:
         assert len(result) == 2
 
 
-class TestSplitAtWordBoundary:
-    """Test _split_at_word_boundary with jieba."""
+class TestSplitByLength:
+    """Test fixed-length splitting."""
 
     def test_short_text_no_split(self):
         """短文本不拆分。"""
         text = "理光GR4相机"
-        result = _split_at_word_boundary(text, max_chars=60)
+        result = _split_by_length(text, max_chars=60)
         assert result == [text]
 
     def test_long_text_split(self):
-        """长文本在词边界拆分。"""
+        """长文本按最大长度拆分。"""
         text = (
             "理光GR4是一款非常不错的相机它的画质非常好而且体积小巧方便携带适合旅行使用"
         )
-        result = _split_at_word_boundary(text, max_chars=30)
+        result = _split_by_length(text, max_chars=30)
         assert len(result) >= 2
         for part in result:
             assert len(part) <= 30
@@ -308,7 +308,7 @@ class TestSplitAtWordBoundary:
     def test_preserves_all_characters(self):
         """拆分后所有字符都保留，不丢字。"""
         text = "理光GR4是一款非常不错的相机它的画质非常好而且体积小巧方便携带"
-        result = _split_at_word_boundary(text, max_chars=20)
+        result = _split_by_length(text, max_chars=20)
         assert "".join(result) == text
 
 
