@@ -166,6 +166,16 @@ def test_first_run_view_recommends_fast_when_low_disk():
     assert recommendation == "asr_0.6b"
 
 
+def test_first_run_view_recommends_raises_when_both_false():
+    from subtap.ui.views.first_run import FirstRunView
+
+    view = FirstRunView()
+    import pytest
+
+    with pytest.raises(ValueError, match="fast_ok 和 quality_ok 均为 False"):
+        view.recommend_model(fast_ok=False, quality_ok=False)
+
+
 def test_first_run_view_get_download_info():
     from subtap.ui.views.first_run import FirstRunView
 
@@ -179,9 +189,9 @@ def test_first_run_view_get_download_info():
 
 def test_first_run_view_mark_complete(tmp_path, monkeypatch):
     from subtap.ui.views.first_run import FirstRunView
-    from subtap.core.state_store import StateStore
 
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
     view = FirstRunView()
-    view.mark_complete()
-    assert (tmp_path / ".subtap" / "state.json").exists()
+    state_path = view.mark_complete()
+    assert state_path == tmp_path / ".subtap" / "state.json"
+    assert state_path.suffix == ".json"

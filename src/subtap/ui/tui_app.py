@@ -232,7 +232,11 @@ class TuiApp:
         sys.stderr.flush()
         self.reader.read_key(timeout=60)
 
-        view.mark_complete()
+        from subtap.core.state_store import StateStore
+
+        state_path = view.mark_complete()
+        store = StateStore(state_path)
+        store.load()  # creates with first_run_time
         self._pop_state()
         return "continue"
 
