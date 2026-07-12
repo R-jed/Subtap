@@ -1032,15 +1032,16 @@ class SRTExporter(BaseExporter):
             sub_lines = _process_segment(
                 seg, max_chars=self.max_chars, min_chars=self.min_chars
             )
-            for sub in sub_lines:
+            processed_lines = _post_process_fragments(
+                sub_lines, self.max_chars, self.min_chars
+            )
+            for sub in processed_lines:
                 if sub["text"].strip():
                     all_subs.append(sub)
 
-        merged_subs = _post_process_fragments(all_subs, self.max_chars, self.min_chars)
-
         # Text processing + render SRT
         lines: list[str] = []
-        for index, sub in enumerate(merged_subs, 1):
+        for index, sub in enumerate(all_subs, 1):
             start = _fmt_srt_time(sub["start_sec"])
             end = _fmt_srt_time(sub["end_sec"])
             text = chinese_to_num(sub["text"])

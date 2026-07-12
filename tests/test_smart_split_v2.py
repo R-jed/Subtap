@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,48 @@ import pytest
 # Helper: build a word dict
 def _w(word: str, start: float, end: float) -> dict:
     return {"word": word, "start_sec": start, "end_sec": end}
+
+
+def _aligned(sentence_id: int, text: str, start: float):
+    from subtap.schemas.models import AlignedSegment
+
+    words = []
+    cursor = start
+    for word in re.findall(r"[A-Za-z0-9]+|[\u4e00-\u9fff]", text):
+        words.append(_w(word, cursor, cursor + 0.08))
+        cursor += 0.1
+    return AlignedSegment(
+        sentence_id=sentence_id,
+        start_sec=start,
+        end_sec=cursor,
+        text=text,
+        words=words,
+    )
+
+
+def _srt_text_lines(content: str) -> list[str]:
+    return [block.splitlines()[2] for block in content.strip().split("\n\n")]
+
+
+def test_export_never_merges_across_sentence_segments():
+    from subtap.core.export import SRTExporter
+
+    segments = [
+        _aligned(
+            0,
+            "这台相机从二零二五年八月发布到今天，一直是一机难求的状态。",
+            0.0,
+        ),
+        _aligned(1, "它叫做理光GR4。", 4.0),
+    ]
+
+    content = SRTExporter(max_chars=25, min_chars=10).render(segments)
+
+    assert _srt_text_lines(content) == [
+        "这台相机从2025年8月发布到今天",
+        "一直是一机难求的状态",
+        "它叫做理光GR4",
+    ]
 
 
 class TestSmartSplitV2Basic:
