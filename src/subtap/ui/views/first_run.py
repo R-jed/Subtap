@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import shutil
-import sys
 from pathlib import Path
 
 
@@ -35,7 +34,9 @@ class FirstRunView:
         """Recommend model based on device capabilities."""
         if quality_ok:
             return "asr_1.7b"
-        return "asr_0.6b"
+        if fast_ok:
+            return "asr_0.6b"
+        raise ValueError("设备不满足任何模型运行条件（fast_ok 和 quality_ok 均为 False）")
 
     def get_download_info(self, model_name: str) -> dict:
         """Get download size and estimated time for a model."""
@@ -53,9 +54,9 @@ class FirstRunView:
             "target_dir": str(Path.home() / ".subtap" / "models"),
         }
 
-    def mark_complete(self) -> None:
-        """Mark first-run as complete in state.json."""
-        from subtap.core.state_store import StateStore
+    def mark_complete(self) -> Path:
+        """Return the state file path for marking first-run complete.
 
-        store = StateStore(Path.home() / ".subtap" / "state.json")
-        store.load()  # creates with first_run_time
+        The caller is responsible for creating StateStore and calling load().
+        """
+        return Path.home() / ".subtap" / "state.json"
