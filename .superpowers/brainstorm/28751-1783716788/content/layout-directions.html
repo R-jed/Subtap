@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Subtap TUI 布局方向</title>
+<style>
+:root{--bg:#0c1018;--panel:#141a25;--line:#2a3445;--text:#e7edf5;--muted:#8996aa;--cyan:#4dd6c7;--blue:#6ca8ff;--amber:#f3ba63;--red:#ff7272}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -20%,#1a2c43 0,#0c1018 42%);color:var(--text);font:14px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}.page{max-width:1500px;margin:auto;padding:34px}h1{font:700 28px/1.2 system-ui,sans-serif;margin:0 0 8px}.lead{color:var(--muted);margin:0 0 26px}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}.choice{background:#101621;border:1px solid var(--line);border-radius:12px;padding:14px;cursor:pointer;transition:.16s}.choice:hover{transform:translateY(-2px);border-color:#587399}.choice.selected{outline:2px solid var(--cyan);border-color:transparent}.meta{display:flex;align-items:center;gap:10px;margin:2px 2px 13px}.letter{display:grid;place-items:center;width:25px;height:25px;border-radius:6px;background:#243047;color:var(--cyan);font-weight:800}.meta strong{font:700 16px system-ui,sans-serif}.meta span{margin-left:auto;color:var(--muted);font-size:12px}.terminal{height:520px;background:#090d14;border:1px solid #303b4c;border-radius:8px;overflow:hidden;box-shadow:0 18px 34px #0007}.top{height:34px;display:flex;align-items:center;padding:0 11px;background:#161d29;border-bottom:1px solid #2b3545;color:#8f9bad;font-size:11px}.dots{color:#66758b;margin-right:10px}.body{height:calc(100% - 34px);padding:10px}.bar{display:flex;align-items:center;height:28px;padding:0 9px;background:#17202e;border:1px solid #2d394a;color:#b9c4d5}.brand{color:var(--cyan);font-weight:800}.tag{margin-left:auto;color:#7e8da3}.row{display:grid;gap:8px;margin-top:8px}.two{grid-template-columns:35% 1fr}.three{grid-template-columns:27% 1fr 29%}.pane{border:1px solid #2b3647;background:#111721;min-height:160px}.head{height:27px;padding:5px 8px;background:#192230;border-bottom:1px solid #2b3647;color:#93a2b7;font-size:11px;text-transform:uppercase;letter-spacing:.08em}.head.active{color:var(--cyan);border-bottom-color:#3a8f89}.content{padding:9px;color:#aeb9ca;font-size:11px}.item{padding:6px 7px;margin-bottom:3px}.item.on{background:#243348;color:#f1f6fc}.ok{color:var(--cyan)}.run{color:var(--blue)}.wait{color:#68778e}.warn{color:var(--amber)}.line{height:8px;background:#202b3b;margin:7px 0;border-radius:2px}.line.hot{background:linear-gradient(90deg,var(--cyan) 72%,#202b3b 72%)}.caption{margin:12px 3px 2px;color:#a8b4c5;min-height:62px}.keys{display:flex;gap:10px;border-top:1px solid #283344;margin-top:8px;padding:8px;color:#7f8da2;font-size:10px}.keys b{color:#ccd7e6}.timeline{display:flex;gap:3px;padding:9px 6px}.step{flex:1;height:5px;background:#293547}.step.done{background:var(--cyan)}.step.now{background:var(--blue);box-shadow:0 0 9px #6ca8ff88}.wave{height:64px;margin:8px;background:repeating-linear-gradient(90deg,#33546e 0 2px,transparent 2px 5px);clip-path:polygon(0 48%,4% 32%,8% 60%,12% 20%,16% 74%,20% 40%,24% 57%,28% 12%,32% 78%,36% 42%,40% 64%,44% 29%,48% 71%,52% 39%,56% 54%,60% 18%,64% 73%,68% 34%,72% 65%,76% 27%,80% 60%,84% 36%,88% 72%,92% 22%,96% 57%,100% 44%,100% 100%,0 100%)}.subtitle{padding:6px 8px;border-left:2px solid var(--cyan);background:#151e2a;margin:7px 0;color:#d3dce8}.metric{display:grid;grid-template-columns:1fr auto;gap:5px;padding:5px 0;border-bottom:1px dotted #2b3647}.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}.stat{padding:7px;background:#17202d;border:1px solid #283446;text-align:center}.stat b{display:block;color:#e8eef6;font-size:15px}.stat small{color:#75859b}.foot{margin-top:24px;color:#7e8da3}.sources{margin-top:5px;font-size:11px}@media(max-width:1100px){.grid{grid-template-columns:1fr}.terminal{height:470px}}
+</style>
+</head>
+<body><main class="page">
+<h1>Subtap TUI：主工作台方向</h1>
+<p class="lead">三种方案都保留本地观察者架构。请选择你希望用户运行转录时看到的核心体验。</p>
+<section class="grid">
+  <article class="choice" data-choice="a" onclick="toggleSelect(this)">
+    <div class="meta"><span class="letter">A</span><strong>任务控制台</strong><span>推荐</span></div>
+    <div class="terminal"><div class="top"><span class="dots">● ● ●</span>subtap · 数字测试.mp3</div><div class="body">
+      <div class="bar"><span class="brand">SUBTAP</span><span class="tag">LOCAL · 00:42 · ⌁ 72%</span></div>
+      <div class="timeline"><i class="step done"></i><i class="step done"></i><i class="step now"></i><i class="step"></i><i class="step"></i></div>
+      <div class="row three">
+        <div class="pane"><div class="head active">Pipeline</div><div class="content"><div class="item"><span class="ok">✓</span> 音频预处理</div><div class="item"><span class="ok">✓</span> VAD 切分</div><div class="item on"><span class="run">◆</span> ASR 识别</div><div class="item"><span class="wait">○</span> 时间轴对齐</div><div class="item"><span class="wait">○</span> 字幕导出</div></div></div>
+        <div class="pane"><div class="head">Live transcript</div><div class="content"><div class="wave"></div><div class="subtitle">00:34.200 → 00:38.840<br><b>今天我们测试 Gemini2 和 5Pro。</b></div><div class="subtitle" style="opacity:.55">00:38.840 → …<br>正在识别下一段音频…</div></div></div>
+        <div class="pane"><div class="head">Telemetry</div><div class="content"><div class="metric"><span>实时率 RTF</span><b class="ok">0.72×</b></div><div class="metric"><span>已完成片段</span><b>18 / 25</b></div><div class="metric"><span>峰值内存</span><b>4.8 GB</b></div><div class="metric"><span>当前模型</span><b>0.6B Q8</b></div><div class="summary"><div class="stat"><b>18</b><small>字幕</small></div><div class="stat"><b>0</b><small>错误</small></div><div class="stat"><b>12s</b><small>预计</small></div></div></div></div>
+      </div><div class="keys"><b>Space</b> 暂停跟随 <b>L</b> 日志 <b>D</b> 详情 <b>?</b> 帮助 <b>Q</b> 退出</div>
+    </div></div>
+    <p class="caption">阶段、实时字幕和性能并列；最适合长音频与专业用户。借鉴 k9s 的资源联动和 lazygit 的焦点面板。</p>
+  </article>
+  <article class="choice" data-choice="b" onclick="toggleSelect(this)">
+    <div class="meta"><span class="letter">B</span><strong>字幕工作台</strong><span>内容优先</span></div>
+    <div class="terminal"><div class="top"><span class="dots">● ● ●</span>subtap · transcript studio</div><div class="body">
+      <div class="bar"><span class="brand">SUBTAP / TRANSCRIPT</span><span class="tag">ASR · 72%</span></div>
+      <div class="row two">
+        <div class="pane"><div class="head active">Segments · 18/25</div><div class="content"><div class="item">00:25 <span class="ok">✓</span><br>首先检查音频质量。</div><div class="item on">00:34 <span class="run">◆</span><br>今天我们测试 Gemini2…</div><div class="item">00:39 <span class="wait">○</span><br>等待识别</div><div class="item">00:44 <span class="wait">○</span><br>等待识别</div></div></div>
+        <div><div class="pane" style="min-height:250px"><div class="head">Selected segment</div><div class="content"><div class="wave" style="height:95px"></div><div class="subtitle">00:34.200 — 00:38.840<br><br><b style="font-size:14px">今天我们测试 Gemini2 和 5Pro。</b></div><div class="metric"><span>置信状态</span><b class="ok">已对齐</b></div><div class="metric"><span>时间跨度</span><b>4.64s</b></div></div></div><div class="pane" style="min-height:126px;margin-top:8px"><div class="head">Pipeline</div><div class="content"><div class="line hot"></div><span class="ok">✓ 音频</span> · <span class="ok">✓ VAD</span> · <span class="run">◆ ASR</span> · <span class="wait">○ Align</span></div></div></div>
+      </div><div class="keys"><b>J/K</b> 片段 <b>Enter</b> 展开 <b>/</b> 搜索 <b>L</b> 日志 <b>?</b> 帮助</div>
+    </div></div>
+    <p class="caption">把字幕文本置于中心，能快速发现空白、过长和异常段；运行控制信息更弱。</p>
+  </article>
+  <article class="choice" data-choice="c" onclick="toggleSelect(this)">
+    <div class="meta"><span class="letter">C</span><strong>引导式流程</strong><span>新手优先</span></div>
+    <div class="terminal"><div class="top"><span class="dots">● ● ●</span>subtap · new task</div><div class="body">
+      <div class="bar"><span class="brand">SUBTAP</span><span class="tag">新建字幕任务 · 3 / 4</span></div>
+      <div style="padding:24px 30px">
+        <div style="color:var(--cyan);font-size:11px;letter-spacing:.1em">REVIEW</div><div style="font:700 18px system-ui;margin:5px 0 18px">确认任务设置</div>
+        <div class="pane"><div class="head">输入</div><div class="content"><div class="metric"><span>音频</span><b>数字测试.mp3</b></div><div class="metric"><span>时长</span><b>02:48</b></div><div class="metric"><span>输出</span><b>数字测试.srt</b></div></div></div>
+        <div class="pane" style="margin-top:8px"><div class="head">处理</div><div class="content"><div class="metric"><span>识别</span><b>本地 · 0.6B Q8</b></div><div class="metric"><span>增强</span><b>关闭</b></div><div class="metric"><span>翻译</span><b>关闭</b></div></div></div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px"><span style="padding:8px 12px;border:1px solid #344156">返回修改</span><span style="padding:8px 12px;background:var(--cyan);color:#07110f;font-weight:800">开始转录 ↵</span></div>
+      </div><div class="keys"><b>Tab</b> 切换 <b>Enter</b> 确认 <b>Esc</b> 返回 <b>?</b> 帮助</div>
+    </div></div>
+    <p class="caption">配置路径清楚，学习成本最低；丰富的是步骤反馈，而不是监控密度，专业用户会觉得慢。</p>
+  </article>
+</section>
+<p class="foot">点击一个方案。建议以 A 为主骨架，吸收 B 的字幕片段视图，并保留 C 作为新建任务流程。</p>
+<p class="sources">参考：Textual Command Palette / Footer、lazygit 上下文面板、k9s 资源与日志联动、Posting 命令工作流。</p>
+</main>
+<script>function toggleSelect(el){document.querySelectorAll('.choice').forEach(x=>x.classList.remove('selected'));el.classList.add('selected');fetch('/event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'click',choice:el.dataset.choice,text:el.querySelector('strong').textContent,timestamp:Date.now()/1000})}).catch(()=>{})}</script>
+</body></html>

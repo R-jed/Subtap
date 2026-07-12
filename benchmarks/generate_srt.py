@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""生成各方案的 SRT 文件"""
+"""生成各方案的 SRT 文件
+
+Pipeline 跟真实导出流程对齐：
+1. local_clean_text() — 规范化数字、标点、空格等
+2. segment() — 纯断句逻辑
+3. strip_punct() + remove_cjk_spaces() — 输出清洗（不带标点）
+"""
 
 import sys
 import time
@@ -14,7 +20,11 @@ from benchmarks.implementations.baseline import BaselineSegmentation
 from benchmarks.implementations.regroup import RegroupSegmentation
 from benchmarks.implementations.conjunctions import ConjunctionSegmentation
 from benchmarks.implementations.anomaly import AnomalySegmentation
+from benchmarks.implementations.stable_ts import StableTsSegmentation
 from benchmarks.utils.srt_generator import generate_srt
+from subtap.core.clean import local_clean_text
+from subtap.core.itn import chinese_to_num
+from subtap.core.text_utils import strip_punct, remove_cjk_spaces
 
 
 # 方案映射
@@ -23,6 +33,7 @@ IMPLEMENTATIONS = {
     "regroup": RegroupSegmentation(),
     "conjunctions": ConjunctionSegmentation(),
     "anomaly": AnomalySegmentation(),
+    "stable_ts": StableTsSegmentation(),
 }
 
 
@@ -33,30 +44,47 @@ def load_config():
 
 
 def generate_srt_for_text(impl, text: str, output_path: Path):
-    """为文本生成 SRT"""
+    """为文本生成 SRT
+
+    Pipeline 对齐真实导出流程：
+    1. local_clean_text() — 规范化数字、标点
+    2. segment() — 纯断句
+    3. strip_punct() + remove_cjk_spaces() — 输出清洗
+    """
+    # Step 1: 规范化输入（跟 clean stage 一致）
+    cleaned_text = local_clean_text(text)
+
+    # Step 2: 断句
     start_time = time.time()
-    result = impl.segment(text)
+    result = impl.segment(cleaned_text)
     elapsed = time.time() - start_time
 
+    # Step 3: 输出清洗（跟 export stage 一致）
+    # chinese_to_num → strip_punct → remove_cjk_spaces
+    sentences = [
+        remove_cjk_spaces(strip_punct(chinese_to_num(s)))
+        for s in result.sentences
+    ]
+
     # 生成伪时间戳（基于字符比例）
-    total_chars = max(sum(len(s) for s in result.sentences), 1)
+    total_chars = max(sum(len(s) for s in sentences), 1)
     timestamps = []
     cursor = 0.0
     duration = 10.0  # 假设 10 秒
 
-    for i, sent in enumerate(result.sentences):
+    for i, sent in enumerate(sentences):
         seg_dur = duration * len(sent) / total_chars
-        seg_end = duration if i == len(result.sentences) - 1 else cursor + seg_dur
+        seg_end = duration if i == len(sentences) - 1 else cursor + seg_dur
         timestamps.append((cursor, seg_end))
         cursor = seg_end
 
-    srt_content = generate_srt(result.sentences, timestamps)
+    srt_content = generate_srt(sentences, timestamps)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(srt_content, encoding="utf-8")
 
     return {
         "implementation": impl.name(),
-        "sentence_count": len(result.sentences),
+        "sentence_count": len(sentences),
         "elapsed": elapsed,
         "metadata": result.metadata,
     }
