@@ -10,6 +10,8 @@ from typer.testing import CliRunner
 from subtap.cli import app
 from subtap.core.models import MODEL_REGISTRY
 
+runner = CliRunner()
+
 
 def make_config(asr_model: str, aligner_model: str, tmp_path) -> SimpleNamespace:
     """Return a minimal SubtapConfig mock for doctor tests.
@@ -78,7 +80,7 @@ def test_release_doctor_ignores_unselected_optional_asr(monkeypatch, tmp_path):
     subtap_dir.mkdir(exist_ok=True)
     (subtap_dir / "config.yaml").write_text("mode: offline\n", encoding="utf-8")
 
-    result = CliRunner().invoke(app, ["doctor", "--release", "--json"])
+    result = runner.invoke(app, ["doctor", "--release", "--json"])
 
     assert result.exit_code == 0
     payload = json.loads(result.output)
@@ -102,7 +104,7 @@ def test_release_doctor_fails_when_selected_model_is_missing(monkeypatch, tmp_pa
     subtap_dir.mkdir(exist_ok=True)
     (subtap_dir / "config.yaml").write_text("mode: offline\n", encoding="utf-8")
 
-    result = CliRunner().invoke(app, ["doctor", "--release", "--json"])
+    result = runner.invoke(app, ["doctor", "--release", "--json"])
 
     assert result.exit_code == 1
     payload = json.loads(result.output)
@@ -116,7 +118,7 @@ def test_doctor_combines_release_and_workspace_json(monkeypatch, tmp_path):
     configure_complete_release_environment(monkeypatch, tmp_path)
     monkeypatch.chdir(tmp_path)
 
-    result = CliRunner().invoke(app, ["doctor", "--release", "--workspace", "--json"])
+    result = runner.invoke(app, ["doctor", "--release", "--workspace", "--json"])
 
     assert result.exit_code == 0
     payload = json.loads(result.output)
@@ -124,3 +126,16 @@ def test_doctor_combines_release_and_workspace_json(monkeypatch, tmp_path):
     assert "workspace_status" in payload
     assert "checks" in payload
     assert "models" in payload
+
+
+def test_release_doctor_fails_when_model_status_cannot_be_checked(monkeypatch):
+    """ModelRegistry.status raises → release mode must fail."""
+    monkeypatch.setattr(
+        "subtap.core.models.ModelRegistry.status",
+        lambda _self: (_ for _ in ()).throw(RuntimeError("registry unavailable")),
+    )
+    result = runner.invoke(app, ["doctor", "--release", "--json"])
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["ok"] is False
+    assert payload["models_error"] == "registry unavailable"
