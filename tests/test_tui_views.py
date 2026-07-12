@@ -405,3 +405,37 @@ def test_wizard_view_steps_count():
     from subtap.ui.views.wizard import WizardView
 
     assert len(WizardView.STEPS) == 6
+
+
+# --- ModelsPage tests ---
+
+
+def test_models_page_builds_items():
+    from subtap.ui.views.models_page import ModelsPage
+
+    page = ModelsPage()
+    items = page.build_model_items([
+        type("S", (), {"name": "asr_1.7b", "installed": True, "path": "/m", "missing_files": []})(),
+        type("S", (), {"name": "aligner", "installed": False, "path": "/m", "missing_files": ["config.json"]})(),
+    ])
+    assert len(items) == 2
+    assert "✓" in items[0]
+    assert "✗" in items[1]
+
+
+def test_models_page_action_install():
+    from subtap.ui.views.models_page import ModelsPage
+
+    page = ModelsPage()
+    actions = page.get_actions(installed=False)
+    assert "安装" in actions
+    assert "删除" not in actions
+
+
+def test_models_page_action_delete():
+    from subtap.ui.views.models_page import ModelsPage
+
+    page = ModelsPage()
+    actions = page.get_actions(installed=True)
+    assert "删除" in actions
+    assert "安装" not in actions

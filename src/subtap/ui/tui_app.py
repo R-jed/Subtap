@@ -669,19 +669,127 @@ class TuiApp:
                 menu.render_full()
 
     def _view_settings_models(self) -> str:
+        from .views.models_page import ModelsPage
+        from subtap.core.models import ModelRegistry, MODEL_REGISTRY
+
         t = self.theme
-        items = ["模型管理功能开发中..."]
+        page = ModelsPage()
+        registry = ModelRegistry(self.config._config)
+        statuses = registry.status()
+        items = page.build_model_items(statuses)
+
         menu = Menu(
-            title="设置 · 语音模型", items=items, footer="Esc 返回", theme=self.theme
+            title="设置 · 语音模型",
+            items=items,
+            footer="↑↓ 导航  Enter 操作  Esc 返回",
+            theme=self.theme,
         )
         menu.render_full()
+
         while True:
+            old_cursor = menu.cursor
             key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
-            if key in (Key.ESCAPE,):
+            if key is None:
+                continue
+            if key == Key.ESCAPE:
                 self._pop_state()
                 return "continue"
             elif key == Key.QUIT:
                 return "quit"
+            elif key == Key.UP:
+                menu.move_up()
+                menu.render_incremental(old_cursor)
+            elif key == Key.DOWN:
+                menu.move_down()
+                menu.render_incremental(old_cursor)
+            elif key == Key.ENTER:
+                sel = statuses[menu.cursor]
+                result = self._model_action_menu(sel, page, registry)
+                if result == "quit":
+                    return "quit"
+                # Re-render after action
+                statuses = registry.status()
+                items = page.build_model_items(statuses)
+                menu = Menu(
+                    title="设置 · 语音模型",
+                    items=items,
+                    footer="↑↓ 导航  Enter 操作  Esc 返回",
+                    theme=self.theme,
+                )
+                menu.render_full()
+
+    def _model_action_menu(self, model_status, page, registry) -> str:
+        """Show action menu for a selected model."""
+        from .views.models_page import ModelsPage
+        from subtap.core.models import MODEL_REGISTRY
+
+        t = self.theme
+        actions = page.get_actions(model_status.installed)
+        menu = Menu(
+            title=f"模型：{model_status.name}",
+            items=actions,
+            footer="↑↓ 导航  Enter 确认  Esc 返回",
+            theme=self.theme,
+        )
+        menu.render_full()
+
+        while True:
+            old_cursor = menu.cursor
+            key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
+            if key is None:
+                continue
+            if key == Key.ESCAPE:
+                return "back"
+            elif key == Key.QUIT:
+                return "quit"
+            elif key == Key.UP:
+                menu.move_up()
+                menu.render_incremental(old_cursor)
+            elif key == Key.DOWN:
+                menu.move_down()
+                menu.render_incremental(old_cursor)
+            elif key == Key.ENTER:
+                selected_action = actions[menu.cursor]
+                if selected_action == "返回":
+                    return "back"
+                elif selected_action == "安装":
+                    self._show_placeholder("安装功能开发中...")
+                    return "back"
+                elif selected_action == "删除":
+                    self._show_placeholder("删除功能开发中...")
+                    return "back"
+                elif selected_action == "查看详情":
+                    info = MODEL_REGISTRY.get(model_status.name, {})
+                    detail_info = {
+                        "description": info.get("description", ""),
+                        "path": str(model_status.path),
+                        "hf_repo": info.get("hf_repo", ""),
+                    }
+                    detail_lines = page.format_model_detail(
+                        model_status.name, detail_info
+                    )
+                    self._show_detail(detail_lines)
+                    # After viewing detail, continue the action menu loop
+                    menu.render_full()
+
+    def _show_placeholder(self, message: str) -> None:
+        """Show a placeholder message and wait for key."""
+        t = self.theme
+        sys.stderr.write("\033[H\033[J")
+        sys.stderr.write(f"\033[2K{t.YELLOW}{message}{t.NC}\r\n\r\n")
+        sys.stderr.write(f"\033[2K{t.GRAY}按任意键返回...{t.NC}\r\n")
+        sys.stderr.flush()
+        self.reader.read_key(timeout=60)
+
+    def _show_detail(self, lines: list[str]) -> None:
+        """Show detail info and wait for key."""
+        t = self.theme
+        sys.stderr.write("\033[H\033[J")
+        for line in lines:
+            sys.stderr.write(f"\033[2K{line}\r\n")
+        sys.stderr.write(f"\r\n\033[2K{t.GRAY}按任意键返回...{t.NC}\r\n")
+        sys.stderr.flush()
+        self.reader.read_key(timeout=60)
 
     def _view_wizard(self) -> str:
         t = self.theme
