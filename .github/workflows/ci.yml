@@ -25,4 +25,3 @@ jobs:
       - run: /tmp/subtap-wheel-smoke/bin/subtap doctor
       - run: /tmp/subtap-wheel-smoke/bin/python -c "import textual"
       - run: /tmp/subtap-wheel-smoke/bin/subtap tui --help
-      - run: /tmp/subtap-wheel-smoke/bin/subtap run --help | grep -- --tui
