@@ -112,7 +112,7 @@ def test_no_sentence_truncation(speech_with_pauses: Path):
     config = SubtapConfig()
     config.audio.vad.use_silero_vad = True
 
-    workspace = Workspace(config, base_dir=Path("work_test_vad_truncation"))
+    workspace = Workspace(config, base_dir=Path("tests/fixtures/workspaces/work_test_vad_truncation"))
     workspace.ensure_dirs()
     import shutil
 
@@ -138,7 +138,7 @@ def test_silero_vad_finds_natural_pauses(speech_with_pauses: Path):
     config.audio.vad.use_silero_vad = True
     config.audio.vad.max_chunk_sec = 3.0
 
-    workspace = Workspace(config, base_dir=Path("work_test_vad"))
+    workspace = Workspace(config, base_dir=Path("tests/fixtures/workspaces/work_test_vad"))
     workspace.ensure_dirs()
     import shutil
 
@@ -159,7 +159,7 @@ def test_silero_vad_single_burst(single_burst: Path):
     config = SubtapConfig()
     config.audio.vad.use_silero_vad = True
 
-    workspace = Workspace(config, base_dir=Path("work_test_vad_single"))
+    workspace = Workspace(config, base_dir=Path("tests/fixtures/workspaces/work_test_vad_single"))
     workspace.ensure_dirs()
     import shutil
 
@@ -174,7 +174,7 @@ def test_silero_vad_single_burst(single_burst: Path):
 def test_vad_error_on_missing_file():
     """split_chunks should raise VADError for a nonexistent audio file."""
     config = SubtapConfig()
-    workspace = Workspace(config, base_dir=Path("work_test_vad_missing"))
+    workspace = Workspace(config, base_dir=Path("tests/fixtures/workspaces/work_test_vad_missing"))
     workspace.ensure_dirs()
 
     with pytest.raises(VADError, match="音频文件加载失败"):
@@ -187,7 +187,7 @@ def test_vad_error_on_corrupt_file(tmp_path: Path):
     corrupt.write_bytes(b"RIFF\x00\x00\x00\x00WAVEfmt NOT_A_WAV")
 
     config = SubtapConfig()
-    workspace = Workspace(config, base_dir=Path("work_test_vad_corrupt"))
+    workspace = Workspace(config, base_dir=Path("tests/fixtures/workspaces/work_test_vad_corrupt"))
     workspace.ensure_dirs()
     import shutil
 
@@ -207,7 +207,7 @@ def test_pydub_fallback_speech_with_pauses(speech_with_pauses: Path):
     config = SubtapConfig()
     config.audio.vad.use_silero_vad = False
 
-    workspace = Workspace(config, base_dir=Path("work_test_pydub"))
+    workspace = Workspace(config, base_dir=Path("tests/fixtures/workspaces/work_test_pydub"))
     workspace.ensure_dirs()
     import shutil
 
@@ -227,7 +227,7 @@ def test_pydub_fallback_single_burst(single_burst: Path):
     config = SubtapConfig()
     config.audio.vad.use_silero_vad = False
 
-    workspace = Workspace(config, base_dir=Path("work_test_pydub_single"))
+    workspace = Workspace(config, base_dir=Path("tests/fixtures/workspaces/work_test_pydub_single"))
     workspace.ensure_dirs()
     import shutil
 

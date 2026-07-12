@@ -54,8 +54,7 @@ venv/
 *.bak
 graphify-out/
 output_test/
-test-workspace/
-work_test_*/
+tests/fixtures/workspaces/
 
 # 测试产物
 .coverage
@@ -74,3 +73,6 @@ Formula/
 .superpowers/
 macos/
 lazygit/
+
+# 外部参考源码（clone）
+docs/reference/
