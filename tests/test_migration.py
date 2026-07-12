@@ -176,3 +176,25 @@ def test_execute_migration_preserves_unknown_files(tmp_path: Path) -> None:
 
     assert (subtap / "mystery_file.txt").exists()
     assert (subtap / "mystery_file.txt").read_text() == "don't delete me"
+
+
+def test_migration_does_not_overwrite_existing_target(tmp_path: Path) -> None:
+    """目标文件已存在时，迁移应跳过而非覆盖。"""
+    subtap = tmp_path / ".subtap"
+    subtap.mkdir()
+
+    # 旧热词文件
+    glossary_dir = subtap / "glossary"
+    glossary_dir.mkdir()
+    (glossary_dir / "hotwords_zh.txt").write_text("old hotwords")
+
+    # 新目录已存在且有用户新数据
+    glossaries_dir = subtap / "glossaries"
+    glossaries_dir.mkdir()
+    (glossaries_dir / "default.yaml").write_text("new user hotwords")
+
+    plan = plan_migration(subtap)
+    execute_migration(plan, subtap)
+
+    # 新文件不应被旧数据覆盖
+    assert (glossaries_dir / "default.yaml").read_text() == "new user hotwords"

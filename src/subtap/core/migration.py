@@ -169,6 +169,9 @@ def execute_migration(plan: MigrationPlan, subtap_root: Path) -> bool:
         # Idempotent: skip if source already gone (already moved)
         if not src.exists():
             continue
+        # Never overwrite existing destination — preserve user data
+        if dst.exists():
+            continue
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(src), str(dst))
 
