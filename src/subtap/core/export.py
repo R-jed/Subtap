@@ -921,7 +921,10 @@ def _process_segment(
 
 
 def _post_process_fragments(
-    lines: list[dict], max_chars: int, min_chars: int = 10
+    lines: list[dict],
+    max_chars: int,
+    min_chars: int = 10,
+    pause_threshold: float = 0.2,
 ) -> list[dict]:
     """Three-layer post-processing in a single pass.
 
@@ -936,8 +939,15 @@ def _post_process_fragments(
         if merged_subs and len(visible) <= min_chars - 1:
             prev = merged_subs[-1]
             prev_visible = strip_punct(prev["text"]).replace(" ", "")
+            prev_text = prev["text"].rstrip()
+            preserve_comma_pause = (
+                bool(prev_text)
+                and prev_text[-1] in _COMMA_PUNCT
+                and sub["start_sec"] - prev["end_sec"] >= pause_threshold
+            )
             if (
-                len(prev_visible) > len(visible)
+                not preserve_comma_pause
+                and len(prev_visible) > len(visible)
                 and len(prev_visible) + len(visible) <= max_chars
             ):
                 merged_text = prev["text"].rstrip() + txt

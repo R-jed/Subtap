@@ -35,6 +35,21 @@ def _srt_text_lines(content: str) -> list[str]:
     return [block.splitlines()[2] for block in content.strip().split("\n\n")]
 
 
+def _words_with_comma_pause(text: str, pause_sec: float) -> list[dict]:
+    words = []
+    cursor = 0.0
+    for token in re.findall(r"[A-Za-z0-9]+|[\u4e00-\u9fff]|[，。]", text):
+        if token == "，":
+            words.append(_w(token, cursor, cursor))
+            cursor += pause_sec
+        elif token == "。":
+            words.append(_w(token, cursor, cursor))
+        else:
+            words.append(_w(token, cursor, cursor + 0.08))
+            cursor += 0.1
+    return words
+
+
 def test_export_never_merges_across_sentence_segments():
     from subtap.core.export import SRTExporter
 
@@ -54,6 +69,57 @@ def test_export_never_merges_across_sentence_segments():
         "一直是一机难求的状态",
         "它叫做理光GR4",
     ]
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (
+            "它实际市场售价都已经到万元了，很难原价买到。",
+            ["它实际市场售价都已经到万元了，", "很难原价买到。"],
+        ),
+        (
+            "但GR4又加了钱以后还是被抢爆，真的有点看不懂。",
+            ["但GR4又加了钱以后还是被抢爆，", "真的有点看不懂。"],
+        ),
+    ],
+)
+def test_split_keeps_short_clause_after_comma_pause(text: str, expected: list[str]):
+    from subtap.core.export import SRTExporter
+    from subtap.schemas.models import AlignedSegment
+
+    segment = AlignedSegment(
+        sentence_id=0,
+        start_sec=0.0,
+        end_sec=3.0,
+        text=text,
+        words=_words_with_comma_pause(text, pause_sec=0.3),
+    )
+
+    content = SRTExporter(max_chars=25, min_chars=10, punctuation=True).render(
+        [segment]
+    )
+
+    assert _srt_text_lines(content) == expected
+
+
+def test_split_keeps_short_comma_clause_merged_without_pause():
+    from subtap.core.export import SRTExporter
+    from subtap.schemas.models import AlignedSegment
+
+    text = "它实际市场售价都已经到万元了，很难原价买到。"
+    segment = AlignedSegment(
+        sentence_id=0,
+        start_sec=0.0,
+        end_sec=3.0,
+        text=text,
+        words=_words_with_comma_pause(text, pause_sec=0.0),
+    )
+    content = SRTExporter(max_chars=25, min_chars=10, punctuation=True).render(
+        [segment]
+    )
+
+    assert _srt_text_lines(content) == [text]
 
 
 class TestSmartSplitV2Basic:
