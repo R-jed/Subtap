@@ -1,0 +1,79 @@
+version: "1.0.0"
+models:
+  asr_0.6b:
+    description: "Qwen3 ASR 0.6B MLX 8bit"
+    subdir: "asr_0.6b"
+    hf_repo: "aufklarer/Qwen3-ASR-0.6B-MLX-8bit"
+    modelscope_repo: "aufklarer/Qwen3-ASR-0.6B-MLX-8bit"
+    min_disk_bytes: 500000000
+    compatibility:
+      subtap_min: "0.1.0"
+    tags: ["asr", "fast"]
+    required_files:
+      - name: "config.json"
+        sha256: ""
+        size_bytes: 0
+      - name: "model.safetensors"
+        sha256: ""
+        size_bytes: 0
+      - name: "tokenizer_config.json"
+        sha256: ""
+        size_bytes: 0
+      - name: "vocab.json"
+        sha256: ""
+        size_bytes: 0
+      - name: "merges.txt"
+        sha256: ""
+        size_bytes: 0
+
+  asr_1.7b:
+    description: "Qwen3 ASR 1.7B MLX 8bit"
+    subdir: "asr_1.7b"
+    hf_repo: "aufklarer/Qwen3-ASR-1.7B-MLX-8bit"
+    modelscope_repo: "aufklarer/Qwen3-ASR-1.7B-MLX-8bit"
+    min_disk_bytes: 2000000000
+    compatibility:
+      subtap_min: "0.1.0"
+    tags: ["asr", "quality"]
+    required_files:
+      - name: "config.json"
+        sha256: ""
+        size_bytes: 0
+      - name: "model.safetensors"
+        sha256: ""
+        size_bytes: 0
+      - name: "tokenizer_config.json"
+        sha256: ""
+        size_bytes: 0
+      - name: "vocab.json"
+        sha256: ""
+        size_bytes: 0
+      - name: "merges.txt"
+        sha256: ""
+        size_bytes: 0
+
+  aligner:
+    description: "Qwen3 ForcedAligner 0.6B MLX 8bit"
+    subdir: "aligner"
+    hf_repo: "mlx-community/Qwen3-ForcedAligner-0.6B-8bit"
+    modelscope_repo: "mlx-community/Qwen3-ForcedAligner-0.6B-8bit"
+    min_disk_bytes: 500000000
+    compatibility:
+      subtap_min: "0.1.0"
+    tags: ["aligner"]
+    required_files:
+      - name: "config.json"
+        sha256: ""
+        size_bytes: 0
+      - name: "model.safetensors"
+        sha256: ""
+        size_bytes: 0
+      - name: "tokenizer_config.json"
+        sha256: ""
+        size_bytes: 0
+      - name: "vocab.json"
+        sha256: ""
+        size_bytes: 0
+      - name: "merges.txt"
+        sha256: ""
+        size_bytes: 0
