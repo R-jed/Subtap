@@ -3,8 +3,11 @@
 import os
 from pathlib import Path
 import subprocess
+import tomllib
+import importlib.util
 
 import yaml
+import pytest
 
 ROOT = Path(__file__).parents[1]
 
@@ -26,6 +29,45 @@ def test_release_jobs_are_bounded_and_build_uses_uv() -> None:
     assert "uv build --frozen" in text
     assert workflow["concurrency"]["cancel-in-progress"] is False
     assert all("timeout-minutes" in job for job in workflow["jobs"].values())
+
+
+def test_release_candidate_cannot_publish_stable_channels() -> None:
+    workflow = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
+    jobs = workflow["jobs"]
+
+    assert (
+        jobs["publish"]["if"]
+        == "${{ needs.metadata.outputs.is_prerelease == 'false' }}"
+    )
+    assert "homebrew" not in jobs
+    assert "metadata" in jobs["publish"]["needs"]
+    assert "metadata" in jobs["github-release"]["needs"]
+    release_step = next(
+        step
+        for step in jobs["github-release"]["steps"]
+        if step.get("name") == "Upload GitHub Release assets"
+    )
+    assert (
+        release_step["with"]["prerelease"]
+        == "${{ needs.metadata.outputs.is_prerelease }}"
+    )
+
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    assert project["project"]["version"] == "0.1.0rc1"
+
+
+def test_release_metadata_requires_exact_tag_and_detects_prerelease() -> None:
+    path = ROOT / "scripts/release_metadata.py"
+    spec = importlib.util.spec_from_file_location("release_metadata", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.validate_tag("v0.1.0rc1", "0.1.0rc1") is True
+    assert module.validate_tag("v0.1.0", "0.1.0") is False
+    for invalid in ("v0.1.0-rc1", "v9.9.9", "0.1.0rc1"):
+        with pytest.raises(ValueError):
+            module.validate_tag(invalid, "0.1.0rc1")
 
 
 def test_homebrew_acceptance_requires_ephemeral_environment() -> None:

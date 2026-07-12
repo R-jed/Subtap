@@ -13,7 +13,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      is_prerelease: ${{ steps.release.outputs.is_prerelease }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: "3.12"
+      - id: release
+        name: Validate tag and package version
+        run: python scripts/release_metadata.py
+
   test:
+    needs: metadata
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -34,6 +50,7 @@ jobs:
       - run: /tmp/subtap-wheel-smoke/bin/subtap run --help | grep -- --tui
 
   build:
+    needs: metadata
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -74,7 +91,7 @@ jobs:
           subject-path: dist/
 
   github-release:
-    needs: [test, build, attest]
+    needs: [metadata, test, build, attest]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -89,9 +106,11 @@ jobs:
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2
         with:
           files: dist/*
+          prerelease: ${{ needs.metadata.outputs.is_prerelease }}
 
   publish:
-    needs: [test, build, attest]
+    if: ${{ needs.metadata.outputs.is_prerelease == 'false' }}
+    needs: [metadata, test, build, attest]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: pypi
