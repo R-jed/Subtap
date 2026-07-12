@@ -33,6 +33,42 @@ def test_status_bar_check_models_installed(tmp_path, monkeypatch):
     assert result["installed_count"] == 2
 
 
+def test_status_bar_check_models_failure(tmp_path, monkeypatch):
+    from subtap.ui.views.status_bar import StatusBar
+
+    # No config.yaml → load_config returns None → early return
+    subtap = tmp_path / ".subtap"
+    subtap.mkdir(parents=True)
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+
+    bar = StatusBar()
+    result = bar.check_models()
+    assert result["all_ready"] is False
+    assert result["installed_count"] == 0
+    assert result["total"] == 0
+
+
+def test_status_bar_check_models_registry_exception(tmp_path, monkeypatch):
+    from subtap.ui.views.status_bar import StatusBar
+
+    subtap = tmp_path / ".subtap"
+    subtap.mkdir(parents=True)
+    (subtap / "config.yaml").write_text("models:\n  asr: asr_1.7b\n")
+
+    # ModelRegistry raises → except branch
+    def boom(config):
+        raise RuntimeError("registry exploded")
+
+    monkeypatch.setattr("subtap.core.models.ModelRegistry", boom)
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+
+    bar = StatusBar()
+    result = bar.check_models()
+    assert result["all_ready"] is False
+    assert result["installed_count"] == 0
+    assert result["total"] == 0
+
+
 def test_status_bar_check_disk(tmp_path, monkeypatch):
     from subtap.ui.views.status_bar import StatusBar
 
@@ -43,8 +79,8 @@ def test_status_bar_check_disk(tmp_path, monkeypatch):
 
     bar = StatusBar()
     result = bar.check_disk()
-    assert "used_bytes" in result
-    assert "free_bytes" in result
+    assert result["used_bytes"] == 0
+    assert result["free_bytes"] > 0
 
 
 def test_status_bar_check_pending_jobs(tmp_path, monkeypatch):
