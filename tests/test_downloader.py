@@ -39,9 +39,7 @@ def test_download_cleans_up_on_sha256_mismatch(tmp_path, monkeypatch):
     # Patch ModelRegistry.get_sha256 so SHA256 verification path is triggered
     from subtap.core.models import ModelRegistry
 
-    monkeypatch.setattr(
-        ModelRegistry, "get_sha256", lambda self, mn, fn: "fake_sha256"
-    )
+    monkeypatch.setattr(ModelRegistry, "get_sha256", lambda self, mn, fn: "fake_sha256")
     with pytest.raises(RuntimeError, match="SHA256"):
         downloader.download("asr_0.6b", source="hf")
     model_dir = tmp_path / "models" / "asr_0.6b"

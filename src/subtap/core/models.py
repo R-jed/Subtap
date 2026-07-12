@@ -113,9 +113,7 @@ class ModelRegistry:
         self.root = _get_model_root(config)
         self._manifest = self._load_manifest_if_available(config)
 
-    def _load_manifest_if_available(
-        self, config: SubtapConfig
-    ) -> ModelManifest | None:
+    def _load_manifest_if_available(self, config: SubtapConfig) -> ModelManifest | None:
         """Try loading manifest; return None on any failure."""
         try:
             path = get_manifest_path(config)
@@ -269,9 +267,7 @@ class ModelDownloader:
                 last_error: Exception | None = None
                 for attempt in range(1, max_retries + 1):
                     try:
-                        self._download_file_with_resume(
-                            url, dest, progress=progress
-                        )
+                        self._download_file_with_resume(url, dest, progress=progress)
                     except Exception as exc:
                         last_error = exc
                         logger.warning(
@@ -286,9 +282,7 @@ class ModelDownloader:
                     if expected_sha256 is not None:
                         if self._verify_sha256(dest, expected_sha256):
                             break
-                        last_error = RuntimeError(
-                            f"SHA256 校验失败: {filename}"
-                        )
+                        last_error = RuntimeError(f"SHA256 校验失败: {filename}")
                         logger.warning(
                             "SHA256 校验失败 %s 第 %d/%d 次",
                             filename,
@@ -300,18 +294,14 @@ class ModelDownloader:
                     break  # no SHA256 in manifest, trust the download
                 else:
                     # all retries exhausted
-                    raise last_error or RuntimeError(
-                        f"下载失败: {filename}"
-                    )
+                    raise last_error or RuntimeError(f"下载失败: {filename}")
         except Exception:
             if model_dir.exists():
                 shutil.rmtree(model_dir)
             raise
         return model_dir
 
-    def _download_file_with_resume(
-        self, url: str, dest: Path, progress=None
-    ) -> None:
+    def _download_file_with_resume(self, url: str, dest: Path, progress=None) -> None:
         """Download a single file with HTTP Range resume support.
 
         If dest already exists and is non-empty, sends a Range header to

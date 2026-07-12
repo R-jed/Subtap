@@ -6,7 +6,6 @@ from pathlib import Path
 
 from subtap.core.migration import MigrationPlan, Move, execute_migration, plan_migration
 
-
 # ---------------------------------------------------------------------------
 # plan_migration
 # ---------------------------------------------------------------------------
@@ -60,7 +59,15 @@ def test_plan_migration_creates_missing_dirs(tmp_path: Path) -> None:
 
     plan = plan_migration(subtap)
 
-    expected = {"models", "glossaries", "glossaries/imported", "manuscripts", "jobs", "cache/downloads", "logs"}
+    expected = {
+        "models",
+        "glossaries",
+        "glossaries/imported",
+        "manuscripts",
+        "jobs",
+        "cache/downloads",
+        "logs",
+    }
     assert set(plan.creates) == expected
 
 

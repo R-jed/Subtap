@@ -104,7 +104,11 @@ def plan_migration(subtap_root: Path) -> MigrationPlan:
     for old_rel, (new_rel, reason) in _MIGRATION_MAP.items():
         src = subtap_root / old_rel
         if src.exists() and new_rel not in claimed_dsts:
-            plan.moves.append(Move(src=subtap_root / old_rel, dst=subtap_root / new_rel, reason=reason))
+            plan.moves.append(
+                Move(
+                    src=subtap_root / old_rel, dst=subtap_root / new_rel, reason=reason
+                )
+            )
             claimed_dsts.add(new_rel)
 
     # --- creates ---
