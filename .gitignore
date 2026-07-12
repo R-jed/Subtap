@@ -53,9 +53,12 @@ venv/
 *.tmp
 *.bak
 graphify-out/
-docs/
 output_test/
 test-workspace/
+work_test_*/
+
+# 测试产物
+.coverage
 
 # 设计文档（本地笔记）
 TUI设计.md
@@ -68,5 +71,6 @@ Formula/
 # AI 工具本地配置
 .agents/
 .codex/
+.superpowers/
 macos/
 lazygit/
