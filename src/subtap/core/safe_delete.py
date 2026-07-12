@@ -7,6 +7,16 @@ for the ~/.subtap directory structure.
 from pathlib import Path
 
 
+_EXPECTED_DIRS = [
+    "models",
+    "glossaries",
+    "manuscripts",
+    "jobs",
+    "cache/downloads",
+    "logs",
+]
+
+
 class SafeDeleteError(Exception):
     """Raised when a delete operation fails safety validation."""
 

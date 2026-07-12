@@ -7,6 +7,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import typer
@@ -272,6 +273,54 @@ def doctor(
         if not json_output:
             typer.echo(f"  ✗ {config_path} 不存在")
         all_ok = False
+
+    # ── 目录结构完整性 ────────────────────────────────────
+    from subtap.core.safe_delete import _EXPECTED_DIRS
+
+    dir_results: list[dict[str, Any]] = []
+    for rel in _EXPECTED_DIRS:
+        full = subtap_dir / rel
+        exists = full.exists()
+        dir_results.append({"name": rel, "exists": exists})
+    report["directories"] = dir_results
+
+    if not json_output:
+        typer.echo("\n▸ 目录结构完整性")
+        for d in dir_results:
+            icon = (
+                typer.style("✓", fg=typer.colors.GREEN)
+                if d["exists"]
+                else typer.style("✗", fg=typer.colors.RED)
+            )
+            typer.echo(f"  {icon} {d['name']}")
+
+    # ── 清单版本 ─────────────────────────────────────────
+    from subtap.core.manifest import get_manifest_path, load_manifest
+
+    manifest_info: dict[str, Any] = {"exists": False}
+    try:
+        # Resolve manifest path using a minimal config stub
+        _config_stub = SimpleNamespace(models=SimpleNamespace(root=str(subtap_dir / "models")))
+        manifest_path = get_manifest_path(_config_stub)
+        if manifest_path.exists():
+            mm = load_manifest(manifest_path)
+            manifest_info = {
+                "exists": True,
+                "version": mm.version,
+                "model_count": len(mm.models),
+                "path": str(manifest_path),
+            }
+    except Exception as e:
+        manifest_info["error"] = str(e)
+    report["manifest"] = manifest_info
+
+    if not json_output:
+        typer.echo("\n▸ 清单版本")
+        if manifest_info.get("exists"):
+            typer.echo(f"  ✓ 版本: {manifest_info['version']}，模型数: {manifest_info['model_count']}")
+        else:
+            err = manifest_info.get("error", "文件不存在")
+            typer.echo(f"  ⚠ 清单不可用: {err}")
 
     # ── 模型状态 ───────────────────────────────────────────
     if not json_output:
