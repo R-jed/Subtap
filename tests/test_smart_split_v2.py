@@ -71,6 +71,16 @@ def test_export_never_merges_across_sentence_segments():
     ]
 
 
+def test_export_never_merges_sentence_end_within_one_segment():
+    from subtap.core.export import SRTExporter
+
+    segment = _aligned(0, "这是比较长的第一句话。短句。", 0.0)
+
+    content = SRTExporter(max_chars=25, min_chars=10).render([segment])
+
+    assert _srt_text_lines(content) == ["这是比较长的第一句话", "短句"]
+
+
 @pytest.mark.parametrize(
     ("text", "expected"),
     [

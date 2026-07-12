@@ -123,6 +123,8 @@ class WorkspaceConfig(BaseModel):
 class OutputConfig(BaseModel):
     """Output system configuration."""
 
+    model_config = ConfigDict(validate_assignment=True)
+
     generate_metrics: bool = True
     timestamp: bool = True
     subtitle_punctuation: bool = Field(
@@ -151,6 +153,7 @@ class OutputConfig(BaseModel):
         if self.min_chars > self.max_chars:
             raise ValueError("min_chars 不能大于 max_chars")
         return self
+
     subtitle_formats: set[str] = Field(
         default={"srt"},
         description="输出字幕格式（srt/vtt/json/tsv）",
@@ -167,6 +170,21 @@ class OutputConfig(BaseModel):
         default="follow_script",
         description="文稿匹配模式：follow_script | correct_only",
     )
+
+
+def with_output_character_limits(
+    output: object, *, max_chars: int | None, min_chars: int | None
+) -> OutputConfig:
+    values = {
+        name: getattr(output, name)
+        for name in OutputConfig.model_fields
+        if hasattr(output, name)
+    }
+    if max_chars is not None:
+        values["max_chars"] = max_chars
+    if min_chars is not None:
+        values["min_chars"] = min_chars
+    return OutputConfig.model_validate(values)
 
 
 class MetricsConfig(BaseModel):

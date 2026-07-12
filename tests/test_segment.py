@@ -311,6 +311,15 @@ class TestSplitByLength:
         result = _split_by_length(text, max_chars=20)
         assert "".join(result) == text
 
+    def test_semantic_split_does_not_cut_latin_word(self):
+        text = "就是 High Light Diffusion Filter 啊就是把你的高光柔化的这么一个滤镜"
+
+        result = _split_sentences(text, max_chars=25, min_chars=10)
+
+        assert "".join(result) == text
+        assert all(not part.endswith("F") for part in result)
+        assert all(not part.startswith("ilter") for part in result)
+
 
 class TestMergeShortSentences:
     """Test _merge_short_sentences."""
