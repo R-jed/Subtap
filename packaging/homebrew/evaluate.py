@@ -41,8 +41,8 @@ def select(results: list[dict]) -> str | None:
             prio = len(_PRIORITY)  # unknown carriers sort last
         return (r.get("installed_bytes", 0), prio)
 
-    qualified.sort(key=_sort_key)
-    return qualified[0]["carrier"]
+    ranked = sorted(qualified, key=_sort_key)
+    return ranked[0]["carrier"]
 
 
 # ---------------------------------------------------------------------------
