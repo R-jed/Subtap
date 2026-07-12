@@ -24,11 +24,17 @@ def test_rejects_carrier_that_fails_a_mandatory_gate():
 
 
 def test_prefers_no_python_knowledge_before_smaller_size():
-    assert select([result("formula", hidden=False, size=10), result("cask", size=100)]) == "cask"
+    assert (
+        select([result("formula", hidden=False, size=10), result("cask", size=100)])
+        == "cask"
+    )
 
 
 def test_prefers_rollback_before_smaller_size():
-    assert select([result("formula", rollback=False, size=10), result("cask", size=100)]) == "cask"
+    assert (
+        select([result("formula", rollback=False, size=10), result("cask", size=100)])
+        == "cask"
+    )
 
 
 def test_returns_no_selection_when_all_carriers_fail():
@@ -49,6 +55,7 @@ def test_select_does_not_mutate_input_list():
 # ---------------------------------------------------------------------------
 # CLI integration tests
 # ---------------------------------------------------------------------------
+
 
 def _write_result(tmp_path: Path, name: str, **overrides) -> Path:
     """Write a carrier result JSON file and return its path."""

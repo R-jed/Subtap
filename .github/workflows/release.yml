@@ -6,7 +6,7 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test:
@@ -39,15 +39,37 @@ jobs:
         run: pip install build
       - name: Build package
         run: python -m build
+      - name: Generate SHA256SUMS
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS
       - name: Upload artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: dist
           path: dist/
 
+  attest:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+        with:
+          name: dist
+          path: dist/
+      - name: Generate build provenance attestation
+        uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2  # v2.2.3
+        with:
+          subject-path: dist/
+
   github-release:
     needs: [test, build]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
@@ -82,14 +104,17 @@ jobs:
         with:
           repository: R-jed/homebrew-tap
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-      - name: Update formula version
+      - name: Update formula version and SHA256
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
-          # 自动更新 formula 中的版本号和 sha256
-          # 需要先获取 PyPI 包的 sha256
           SHA256=$(curl -sL "https://pypi.org/pypi/subtap/${VERSION}/json" | python3 -c "import sys,json; d=json.load(sys.stdin); print([f['digests']['sha256'] for f in d['urls'] if f['packagetype']=='sdist'][0])")
           sed -i "s|url \".*\"|url \"https://files.pythonhosted.org/packages/source/s/subtap/subtap-${VERSION}.tar.gz\"|" Formula/subtap.rb
           sed -i "s|sha256 \".*\"|sha256 \"${SHA256}\"|" Formula/subtap.rb
+      - name: Validate formula (audit + install + test)
+        run: |
+          brew audit --strict R-jed/tap/subtap
+          brew install R-jed/tap/subtap
+          brew test R-jed/tap/subtap
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
