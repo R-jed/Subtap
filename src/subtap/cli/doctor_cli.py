@@ -12,37 +12,68 @@ from typing import Any
 import typer
 
 
-def _doctor_workspace(work_dir: Path = Path("./work")) -> None:
-    """检查工作区状态：Git、环境卫生、模型、Pipeline 状态."""
+def _collect_workspace_status(work_dir: Path = Path("./work")) -> dict[str, Any]:
+    """Collect workspace status as structured data (pure function, no side effects)."""
+    from subtap.engine.git_guard import GitGuard
+    from subtap.engine.cleanroom import Cleanroom
+
+    git_guard = GitGuard(work_dir)
+    git_status = git_guard.get_git_status()
+
+    cleanroom = Cleanroom(work_dir)
+    cr_result = cleanroom.check_workspace()
+    model_status = cleanroom.check_model_status()
+
+    pipeline_files = {
+        name: (work_dir / name).exists()
+        for name in (
+            "chunks/chunks.jsonl",
+            "asr/asr.jsonl",
+            "cleaned.jsonl",
+            "sentences.jsonl",
+            "aligned.jsonl",
+        )
+    }
+
+    return {
+        "git": {
+            "is_repo": git_guard.is_git_repo(),
+            "branch": git_status["branch"],
+            "commit_hash": git_status["commit_hash"],
+            "dirty": git_status["is_dirty"],
+            "changed_files": git_status["changed_files"],
+        },
+        "cleanroom": cr_result,
+        "models": model_status["models"],
+        "pipeline_files": pipeline_files,
+    }
+
+
+def _render_workspace_status(status: dict[str, Any]) -> None:
+    """Render workspace status as human-readable text."""
     typer.echo("═══ 工作区状态检查 ═══\n")
 
     # 1. Git 状态
-    from subtap.engine.git_guard import GitGuard
-
-    git_guard = GitGuard(work_dir)
-    if git_guard.is_git_repo():
-        git_status = git_guard.get_git_status()
+    git = status["git"]
+    if git["is_repo"]:
         typer.echo("▸ Git 状态")
-        typer.echo(f"  分支: {git_status['branch']}")
-        typer.echo(f"  提交: {git_status['commit_hash']}")
+        typer.echo(f"  分支: {git['branch']}")
+        typer.echo(f"  提交: {git['commit_hash']}")
         dirty_icon = (
             typer.style("✗ 脏", fg=typer.colors.RED)
-            if git_status["is_dirty"]
+            if git["dirty"]
             else typer.style("✓ 干净", fg=typer.colors.GREEN)
         )
         typer.echo(f"  状态: {dirty_icon}")
-        if git_status["changed_files"]:
-            for f in git_status["changed_files"][:5]:
+        if git["changed_files"]:
+            for f in git["changed_files"][:5]:
                 typer.echo(f"    - {f}")
     else:
         typer.echo("▸ Git 状态")
         typer.echo(typer.style("  ⚠ 非 Git 仓库", fg=typer.colors.YELLOW))
 
     # 2. 工作环境卫生
-    from subtap.engine.cleanroom import Cleanroom
-
-    cleanroom = Cleanroom(work_dir)
-    cr_result = cleanroom.check_workspace()
+    cr_result = status["cleanroom"]
     typer.echo("\n▸ 工作环境卫生")
     clean_icon = (
         typer.style("✓ 干净", fg=typer.colors.GREEN)
@@ -55,9 +86,8 @@ def _doctor_workspace(work_dir: Path = Path("./work")) -> None:
             typer.echo(f"    - {issue}")
 
     # 3. 模型状态
-    model_status = cleanroom.check_model_status()
     typer.echo("\n▸ 模型状态")
-    for m in model_status["models"]:
+    for m in status["models"]:
         icon = (
             typer.style("✓", fg=typer.colors.GREEN)
             if m["installed"]
@@ -65,22 +95,22 @@ def _doctor_workspace(work_dir: Path = Path("./work")) -> None:
         )
         typer.echo(f"  {icon} {m['name']}")
 
-    # 4. Pipeline 状态（检查中间文件）
+    # 4. Pipeline 状态
+    labels = {
+        "chunks/chunks.jsonl": "切段结果",
+        "asr/asr.jsonl": "ASR 结果",
+        "cleaned.jsonl": "清洗结果",
+        "sentences.jsonl": "断句结果",
+        "aligned.jsonl": "对齐结果",
+    }
     typer.echo("\n▸ Pipeline 中间文件")
-    for name, label in [
-        ("chunks/chunks.jsonl", "切段结果"),
-        ("asr/asr.jsonl", "ASR 结果"),
-        ("cleaned.jsonl", "清洗结果"),
-        ("sentences.jsonl", "断句结果"),
-        ("aligned.jsonl", "对齐结果"),
-    ]:
-        p = work_dir / name
+    for name, exists in status["pipeline_files"].items():
         icon = (
             typer.style("✓", fg=typer.colors.GREEN)
-            if p.exists()
+            if exists
             else typer.style("○", fg=typer.colors.WHITE)
         )
-        typer.echo(f"  {icon} {label}")
+        typer.echo(f"  {icon} {labels[name]}")
 
     typer.echo("\n═══ 检查完成 ═══")
 
@@ -92,8 +122,11 @@ def doctor(
 ) -> None:
     """检查系统依赖和运行环境"""
     # ── Workspace mode ──────────────────────────────────────
-    if workspace:
-        _doctor_workspace()
+    workspace_status = _collect_workspace_status() if workspace else None
+
+    # Standalone workspace without --release and --json: text output and return
+    if workspace and not release and not json_output:
+        _render_workspace_status(workspace_status)
         return
 
     checks: list[tuple[str, str, bool, str]] = []
@@ -194,6 +227,8 @@ def doctor(
         "config": {},
         "models": [],
     }
+    if workspace_status is not None:
+        report["workspace_status"] = workspace_status
     for _name, label, ok, detail in checks:
         report["checks"].append(
             {"name": _name, "label": label, "ok": ok, "detail": detail}
