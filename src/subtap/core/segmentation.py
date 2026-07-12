@@ -15,12 +15,8 @@ import re
 
 from subtap.schemas.models import RawCleanSegment, SentenceSegment
 
-# Max chars per sentence before forced split
-_MAX_CHARS = 45
-
-# Min chars for a sentence to be considered valid
-# 低于此值的句子会被合并到相邻句子，减少字幕碎片
-_MIN_CHARS = 15
+_DEFAULT_MAX_CHARS = 25
+_DEFAULT_MIN_CHARS = 10
 
 # Sentence-ending punctuation
 _SENT_END_RE = re.compile(r"[。！？.!?]+")
@@ -29,7 +25,12 @@ _SENT_END_RE = re.compile(r"[。！？.!?]+")
 _COMMA_RE = re.compile(r"[，、,;；]+")
 
 
-def _split_sentences(text: str, language: str = "zh") -> list[str]:
+def _split_sentences(
+    text: str,
+    language: str = "zh",
+    max_chars: int = _DEFAULT_MAX_CHARS,
+    min_chars: int = _DEFAULT_MIN_CHARS,
+) -> list[str]:
     """Split text into sentences using tiered strategy.
 
     Args:
@@ -45,10 +46,12 @@ def _split_sentences(text: str, language: str = "zh") -> list[str]:
     if language in ("en",):
         return _split_sentences_en(text)
 
-    return _split_sentences_zh(text)
+    return _split_sentences_zh(text, max_chars=max_chars, min_chars=min_chars)
 
 
-def _split_sentences_zh(text: str) -> list[str]:
+def _split_sentences_zh(
+    text: str, *, max_chars: int, min_chars: int
+) -> list[str]:
     """Chinese sentence segmentation with stable-ts style strategy."""
 
     # Tier 1: Split at sentence-ending punctuation
@@ -60,21 +63,21 @@ def _split_sentences_zh(text: str) -> list[str]:
         seg = seg.strip()
         if not seg:
             continue
-        if len(seg) > _MAX_CHARS:
-            expanded.extend(_split_at_comma(seg))
+        if len(seg) > max_chars:
+            expanded.extend(_split_at_comma(seg, max_chars))
         else:
             expanded.append(seg)
 
     # Tier 3: Force split any remaining long segments by max_chars
     result: list[str] = []
     for seg in expanded:
-        if len(seg) > _MAX_CHARS:
-            result.extend(_split_by_length(seg, _MAX_CHARS))
+        if len(seg) > max_chars:
+            result.extend(_split_by_length(seg, max_chars))
         else:
             result.append(seg)
 
     # Merge very short sentences
-    result = _merge_short_sentences(result, _MIN_CHARS)
+    result = _merge_short_sentences(result, min_chars)
 
     return result if result else [""]
 
@@ -114,12 +117,12 @@ def _split_at_pattern(text: str, pattern: re.Pattern) -> list[str]:
     return segments
 
 
-def _split_at_comma(text: str) -> list[str]:
+def _split_at_comma(text: str, max_chars: int = _DEFAULT_MAX_CHARS) -> list[str]:
     """Split long text at comma/pause punctuation.
 
-    Tries to split at natural pause points while keeping segments ≤ _MAX_CHARS.
+    Tries to split at natural pause points while keeping segments within max_chars.
     """
-    if len(text) <= _MAX_CHARS:
+    if len(text) <= max_chars:
         return [text]
 
     segments: list[str] = []
@@ -132,7 +135,7 @@ def _split_at_comma(text: str) -> list[str]:
         if not part:
             continue
 
-        if current and len(current) + len(part) + 1 > _MAX_CHARS:
+        if current and len(current) + len(part) + 1 > max_chars:
             segments.append(current.strip())
             current = part
         else:
@@ -144,8 +147,8 @@ def _split_at_comma(text: str) -> list[str]:
     # If any segment is still too long, force split by max_chars
     result: list[str] = []
     for seg in segments:
-        if len(seg) > _MAX_CHARS:
-            result.extend(_split_by_length(seg, _MAX_CHARS))
+        if len(seg) > max_chars:
+            result.extend(_split_by_length(seg, max_chars))
         else:
             result.append(seg)
 
@@ -256,6 +259,9 @@ def segment_clean_segments(
     chunk_start: float = 0.0,
     chunk_end: float = 1.0,
     language: str = "zh",
+    *,
+    max_chars: int = _DEFAULT_MAX_CHARS,
+    min_chars: int = _DEFAULT_MIN_CHARS,
 ) -> list[SentenceSegment]:
     """Split RawCleanSegments into SentenceSegments.
 
@@ -276,7 +282,12 @@ def segment_clean_segments(
     sid = 0
 
     for i, seg in enumerate(segments):
-        parts = _split_sentences(seg.cleaned_text, language=language)
+        parts = _split_sentences(
+            seg.cleaned_text,
+            language=language,
+            max_chars=max_chars,
+            min_chars=min_chars,
+        )
         seg_start = chunk_start + i * seg_duration
         seg_end = seg_start + seg_duration
 

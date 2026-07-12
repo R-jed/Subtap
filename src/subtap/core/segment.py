@@ -85,7 +85,12 @@ def run_segment(
                 raise ValueError(f"Chunk {chunk_id} not found in chunks.jsonl")
             c_start, c_end = chunk_boundaries[chunk_id]
             chunk_sentences = segment_clean_segments(
-                chunk_segs, c_start, c_end, language=language
+                chunk_segs,
+                c_start,
+                c_end,
+                language=language,
+                max_chars=workspace.config.output.max_chars,
+                min_chars=workspace.config.output.min_chars,
             )
             all_sentences.extend(chunk_sentences)
 
@@ -98,7 +103,12 @@ def run_segment(
     else:
         # Use provided boundaries (for backward compatibility)
         sentences = segment_clean_segments(
-            segments, chunk_start, chunk_end, language=language
+            segments,
+            chunk_start,
+            chunk_end,
+            language=language,
+            max_chars=workspace.config.output.max_chars,
+            min_chars=workspace.config.output.min_chars,
         )
         write_sentences(sentences, workspace.sentences_jsonl)
         return {"sentence_count": len(sentences)}
