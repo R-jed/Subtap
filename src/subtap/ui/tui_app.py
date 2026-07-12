@@ -225,11 +225,17 @@ class TuiApp:
             if key in ("CHAR:N", "CHAR:n", Key.ESCAPE):
                 break
 
-        # Step 6: Download (placeholder)
+        # Step 6: Download
         _clear()
         _line(1, f"{t.CYAN}[6/7] 下载模型{t.NC}")
         if confirmed:
-            _line(3, "下载将在此开始...")
+            try:
+                from subtap.core.models import ModelDownloader
+                downloader = ModelDownloader(self.config._config)
+                downloader.download(model_name)
+                _line(3, f"{t.GREEN}✓ 模型下载完成{t.NC}")
+            except Exception as e:
+                _line(3, f"{t.RED}下载失败：{e}{t.NC}")
         else:
             _line(3, f"{t.YELLOW}已跳过下载{t.NC}")
             _line(4, f"{t.GRAY}可稍后在「模型管理」中下载{t.NC}")
@@ -598,7 +604,21 @@ class TuiApp:
                 menu.move_down()
                 menu.render_incremental(old_cursor)
             elif key == "CHAR:A" or key == "CHAR:a":
-                self._show_placeholder("添加文稿功能开发中...")
+                t = self.theme
+                sys.stderr.write("\033[2J\033[H")
+                sys.stderr.write(f"{t.CYAN}添加文稿{t.NC}\n\n")
+                sys.stderr.write("文稿文件路径（直接回车取消）：")
+                path_str = input().strip()
+                if path_str:
+                    doc_path = Path(path_str).expanduser()
+                    if doc_path.exists():
+                        index.add(doc_path.stem, str(doc_path))
+                        manuscripts = index.list_all()
+                        items = page.build_items(manuscripts)
+                        menu = Menu(title="文稿库", items=items, footer="↑↓ 导航  A 添加  D 删除  Esc 返回", theme=self.theme)
+                        sys.stderr.write(f"\n{t.GREEN}✓ 已添加 '{doc_path.name}'{t.NC}\n")
+                    else:
+                        sys.stderr.write(f"\n{t.RED}文件不存在：{path_str}{t.NC}\n")
                 menu.render_full()
             elif key == "CHAR:D" or key == "CHAR:d":
                 if manuscripts and menu.cursor < len(manuscripts):
@@ -706,10 +726,16 @@ class TuiApp:
             elif key == Key.ENTER:
                 selected = actions[menu.cursor]
                 if selected == "打开字幕":
-                    self._show_placeholder("打开字幕功能开发中...")
+                    try:
+                        subprocess.run(["open", output_path], check=True)
+                    except subprocess.CalledProcessError as e:
+                        sys.stderr.write(f"{t.RED}打开失败：{e}{t.NC}\n")
                     menu.render_full()
                 elif selected == "打开输出目录":
-                    self._show_placeholder("打开目录功能开发中...")
+                    try:
+                        subprocess.run(["open", str(Path(output_path).parent)], check=True)
+                    except subprocess.CalledProcessError as e:
+                        sys.stderr.write(f"{t.RED}打开失败：{e}{t.NC}\n")
                     menu.render_full()
                 elif selected == "返回":
                     self._pop_state()
@@ -995,10 +1021,25 @@ class TuiApp:
                 if selected_action == "返回":
                     return "back"
                 elif selected_action == "安装":
-                    self._show_placeholder("安装功能开发中...")
+                    try:
+                        from subtap.core.models import ModelDownloader
+                        downloader = ModelDownloader(self.config._config)
+                        downloader.download(model_status.name)
+                        sys.stderr.write(f"\n{t.GREEN}✓ {model_status.name} 安装完成{t.NC}\n")
+                    except Exception as e:
+                        sys.stderr.write(f"\n{t.RED}安装失败：{e}{t.NC}\n")
                     return "back"
                 elif selected_action == "删除":
-                    self._show_placeholder("删除功能开发中...")
+                    sys.stderr.write(f"\n{t.YELLOW}确认删除 {model_status.name}？(Y/N){t.NC} ")
+                    confirm = input().strip().upper()
+                    if confirm == "Y":
+                        try:
+                            from subtap.core.models import ModelRemover
+                            remover = ModelRemover(self.config._config)
+                            remover.remove(model_status.name)
+                            sys.stderr.write(f"\n{t.GREEN}✓ {model_status.name} 已删除{t.NC}\n")
+                        except Exception as e:
+                            sys.stderr.write(f"\n{t.RED}删除失败：{e}{t.NC}\n")
                     return "back"
                 elif selected_action == "查看详情":
                     info: dict[str, object] = MODEL_REGISTRY.get(model_status.name, {})  # type: ignore[assignment]
