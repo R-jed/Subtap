@@ -41,16 +41,15 @@ def test_output_config_rejects_min_chars_above_max_chars():
         OutputConfig(max_chars=10, min_chars=11)
 
 
-def test_output_config_validates_assignment_and_atomic_limit_updates():
+def test_output_config_updates_character_limits_atomically():
     output = OutputConfig(max_chars=25, min_chars=20)
 
     updated = with_output_character_limits(output, max_chars=15, min_chars=10)
 
     assert (updated.max_chars, updated.min_chars) == (15, 10)
     with pytest.raises(ValidationError, match="min_chars 不能大于 max_chars"):
-        updated.min_chars = 20
-    with pytest.raises(ValidationError, match="min_chars 不能大于 max_chars"):
         with_output_character_limits(output, max_chars=10, min_chars=11)
+    assert (output.max_chars, output.min_chars) == (25, 20)
 
 
 def test_config_load_round_trip():
