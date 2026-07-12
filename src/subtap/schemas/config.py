@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class VADConfig(BaseModel):
@@ -145,6 +145,12 @@ class OutputConfig(BaseModel):
         ge=4,
         le=30,
     )
+
+    @model_validator(mode="after")
+    def validate_character_limits(self):
+        if self.min_chars > self.max_chars:
+            raise ValueError("min_chars 不能大于 max_chars")
+        return self
     subtitle_formats: set[str] = Field(
         default={"srt"},
         description="输出字幕格式（srt/vtt/json/tsv）",
