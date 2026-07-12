@@ -123,8 +123,6 @@ class WorkspaceConfig(BaseModel):
 class OutputConfig(BaseModel):
     """Output system configuration."""
 
-    model_config = ConfigDict(validate_assignment=True)
-
     generate_metrics: bool = True
     timestamp: bool = True
     subtitle_punctuation: bool = Field(

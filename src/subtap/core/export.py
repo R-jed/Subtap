@@ -978,7 +978,11 @@ def _post_process_fragments(
     for i, sub in enumerate(merged_subs):
         txt = sub["text"].strip()
         visible = strip_punct(txt).replace(" ", "")
-        if visible in _TRAILING_WORDS and i + 1 < len(merged_subs):
+        if (
+            visible in _TRAILING_WORDS
+            and (not txt or txt[-1] not in _SENT_END)
+            and i + 1 < len(merged_subs)
+        ):
             nxt = merged_subs[i + 1]
             nxt_visible = strip_punct(nxt["text"]).replace(" ", "")
             if len(visible) + len(nxt_visible) <= max_chars:

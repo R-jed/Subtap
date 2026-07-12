@@ -6,6 +6,7 @@ from pathlib import Path
 
 from subtap.core.segment import run_segment
 from subtap.core.segmentation import (
+    _split_at_comma,
     _split_sentences,
     _split_by_length,
     _merge_short_sentences,
@@ -43,6 +44,14 @@ def test_split_empty_text():
     """Empty text returns single empty sentence."""
     result = _split_sentences("")
     assert result == [""]
+
+
+def test_split_at_comma_preserves_original_pause_punctuation():
+    text = "甲乙丙丁戊己，庚辛壬癸、ABCDEFGHIJ,klmnop;QRSTUV；尾声"
+
+    result = _split_at_comma(text, max_chars=10)
+
+    assert "".join(result) == text
 
 
 # ── Time allocation tests ──

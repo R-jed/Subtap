@@ -131,21 +131,24 @@ def _split_at_comma(text: str, max_chars: int = _DEFAULT_MAX_CHARS) -> list[str]
     segments: list[str] = []
     current = ""
 
-    # Split at each comma, accumulate until max_chars
-    parts = _COMMA_RE.split(text)
-    for i, part in enumerate(parts):
-        part = part.strip()
-        if not part:
-            continue
+    # Keep each original delimiter attached to the preceding text.
+    parts: list[str] = []
+    last_end = 0
+    for match in _COMMA_RE.finditer(text):
+        parts.append(text[last_end : match.end()])
+        last_end = match.end()
+    if last_end < len(text):
+        parts.append(text[last_end:])
 
-        if current and len(current) + len(part) + 1 > max_chars:
-            segments.append(current.strip())
+    for part in parts:
+        if current and len(current) + len(part) > max_chars:
+            segments.append(current)
             current = part
         else:
-            current = current + "，" + part if current else part
+            current += part
 
-    if current.strip():
-        segments.append(current.strip())
+    if current:
+        segments.append(current)
 
     # If any segment is still too long, force split by max_chars
     result: list[str] = []

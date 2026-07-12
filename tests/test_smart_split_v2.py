@@ -81,6 +81,19 @@ def test_export_never_merges_sentence_end_within_one_segment():
     assert _srt_text_lines(content) == ["这是比较长的第一句话", "短句"]
 
 
+def test_trailing_word_merge_never_crosses_sentence_end():
+    from subtap.core.export import _post_process_fragments
+
+    lines = [
+        {"text": "但。", "start_sec": 0.0, "end_sec": 0.4},
+        {"text": "这是下一句。", "start_sec": 0.4, "end_sec": 1.4},
+    ]
+
+    result = _post_process_fragments(lines, max_chars=25, min_chars=10)
+
+    assert [line["text"] for line in result] == ["但。", "这是下一句。"]
+
+
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
