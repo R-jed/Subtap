@@ -77,6 +77,10 @@ class TuiApp:
             return self._view_manuscripts_page()
         elif self._state == "recent_tasks":
             return self._view_recent_tasks()
+        elif self._state == "models_page":
+            return self._view_settings_models()
+        elif self._state == "completion":
+            return self._view_completion()
         return "quit"
 
     def _push_state(self, state: str) -> None:
@@ -620,6 +624,71 @@ class TuiApp:
                     ]
                     self._show_detail(detail)
                     menu.render_full()
+
+    def _view_completion(self) -> str:
+        from .views.completion import CompletionPage
+
+        t = self.theme
+        page = CompletionPage()
+
+        # Read completion data from ui_state
+        ui = self.config.get("ui_state", {})
+        output_path = ui.get("last_output_path", "未知")
+        duration_sec = ui.get("last_duration_sec", 0)
+
+        info_items = [
+            f"✓ 字幕已生成",
+            f"  耗时：{page.format_duration(duration_sec)}",
+            f"  输出：{output_path}",
+        ]
+        actions = page.get_actions()
+
+        # Render info lines statically, then show action menu
+        sys.stderr.write("\033[H\033[J")
+        sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}转录完成{t.NC}\r\n\r\n")
+        for line in info_items:
+            sys.stderr.write(f"\033[2K{line}\r\n")
+        sys.stderr.flush()
+
+        menu = Menu(
+            title="",
+            items=actions,
+            footer="↑↓ 导航  Enter 确认  Esc 返回",
+            theme=self.theme,
+        )
+        menu.render_full()
+
+        while True:
+            old_cursor = menu.cursor
+            key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
+            if key is None:
+                continue
+            if key == Key.QUIT:
+                return "quit"
+            elif key == Key.ESCAPE:
+                self._pop_state()
+                return "continue"
+            elif key == Key.UP:
+                menu.move_up()
+                menu.render_incremental(old_cursor)
+            elif key == Key.DOWN:
+                menu.move_down()
+                menu.render_incremental(old_cursor)
+            elif key == Key.ENTER:
+                selected = actions[menu.cursor]
+                if selected == "打开字幕":
+                    self._show_placeholder("打开字幕功能开发中...")
+                    menu.render_full()
+                elif selected == "打开输出目录":
+                    self._show_placeholder("打开目录功能开发中...")
+                    menu.render_full()
+                elif selected == "返回":
+                    self._pop_state()
+                    return "continue"
+                else:
+                    # 重新生成 / 处理另一个文件 → 回到主界面
+                    self._pop_state()
+                    return "continue"
 
     def _view_settings_format(self) -> str:
         t = self.theme
