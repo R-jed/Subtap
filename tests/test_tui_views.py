@@ -102,3 +102,38 @@ def test_status_bar_render_returns_lines():
     lines = bar.render()
     assert len(lines) == 3
     assert all(isinstance(line, str) for line in lines)
+
+
+def test_home_view_builds_menu_items():
+    from subtap.ui.views.home import HomeView
+
+    view = HomeView()
+    items = view.build_menu_items()
+    assert len(items) >= 6
+    assert any("新建字幕" in item for item in items)
+    assert any("最近任务" in item for item in items)
+    assert any("模型管理" in item for item in items)
+    assert any("热词库" in item for item in items)
+    assert any("文稿库" in item for item in items)
+    assert any("设置" in item for item in items)
+
+
+def test_home_view_detects_first_run(tmp_path, monkeypatch):
+    from subtap.ui.views.home import HomeView
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    view = HomeView()
+    assert view.is_first_run() is True
+
+
+def test_home_view_not_first_run(tmp_path, monkeypatch):
+    from subtap.ui.views.home import HomeView
+    from subtap.core.state_store import StateStore
+
+    subtap = tmp_path / ".subtap"
+    subtap.mkdir()
+    StateStore(subtap / "state.json").load()  # creates file
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+
+    view = HomeView()
+    assert view.is_first_run() is False
