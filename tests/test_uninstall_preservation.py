@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -20,11 +21,13 @@ def test_user_data_not_in_subtap_package():
     assert ".subtap" not in str(pkg_path)
 
 
-def test_models_dir_not_in_package():
-    """模型目录不在 wheel 包内。"""
-    from pathlib import Path
-    import tarfile
-
+@pytest.mark.parametrize(
+    "pattern",
+    ["/models/", "state.json", "/glossaries/"],
+    ids=["models_dir", "state_json", "glossaries"],
+)
+def test_user_data_not_in_sdist(pattern):
+    """用户数据文件不在 sdist 包内。"""
     sdists = sorted(Path("dist").glob("subtap-*.tar.gz"))
     if not sdists:
         pytest.skip("sdist not built")
@@ -32,37 +35,7 @@ def test_models_dir_not_in_package():
     with tarfile.open(sdists[-1]) as tf:
         names = tf.getnames()
 
-    assert not any("/models/" in name for name in names)
-
-
-def test_state_json_not_in_package():
-    """state.json 不在 wheel 包内。"""
-    from pathlib import Path
-    import tarfile
-
-    sdists = sorted(Path("dist").glob("subtap-*.tar.gz"))
-    if not sdists:
-        pytest.skip("sdist not built")
-
-    with tarfile.open(sdists[-1]) as tf:
-        names = tf.getnames()
-
-    assert not any("state.json" in name for name in names)
-
-
-def test_glossaries_not_in_package():
-    """热词库不在 wheel 包内。"""
-    from pathlib import Path
-    import tarfile
-
-    sdists = sorted(Path("dist").glob("subtap-*.tar.gz"))
-    if not sdists:
-        pytest.skip("sdist not built")
-
-    with tarfile.open(sdists[-1]) as tf:
-        names = tf.getnames()
-
-    assert not any("/glossaries/" in name for name in names)
+    assert not any(pattern in name for name in names)
 
 
 def test_safe_delete_refuses_user_home():

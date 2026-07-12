@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
-
 import pytest
 
 
@@ -43,8 +41,8 @@ def test_state_json_preserved_after_upgrade(tmp_path):
     assert state2.recent_tasks[0]["task_id"] == "task-001"
 
 
-def test_model_directory_not_deleted_on_upgrade(tmp_path):
-    """升级不删除模型目录。"""
+def test_model_directory_structure_is_valid(tmp_path):
+    """模型目录结构完整性验证。"""
     model_dir = tmp_path / ".subtap" / "models" / "asr_1.7b"
     model_dir.mkdir(parents=True)
     (model_dir / "config.json").write_text('{"version": 1}')
