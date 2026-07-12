@@ -12,8 +12,19 @@ class JobStore:
     def __init__(self, jobs_root: Path) -> None:
         self._root = jobs_root
 
+    def _validate_task_id(self, task_id: str) -> None:
+        """验证 task_id 不含路径穿越字符。"""
+        if not task_id:
+            raise ValueError(f"invalid task_id: {task_id!r}")
+        if "/" in task_id or "\\" in task_id or ".." in task_id:
+            raise ValueError(f"invalid task_id: {task_id!r}")
+        resolved = (self._root / task_id).resolve()
+        if not str(resolved).startswith(str(self._root.resolve())):
+            raise ValueError(f"invalid task_id: {task_id!r}")
+
     def create(self, task_id: str) -> Path:
         """创建任务目录，返回目录路径。"""
+        self._validate_task_id(task_id)
         job_dir = self._root / task_id
         job_dir.mkdir(parents=True, exist_ok=True)
         return job_dir
@@ -30,6 +41,7 @@ class JobStore:
 
     def get_size(self, task_id: str) -> int:
         """计算任务目录内所有文件的总字节数。"""
+        self._validate_task_id(task_id)
         job_dir = self._root / task_id
         if not job_dir.exists():
             return 0
@@ -37,6 +49,7 @@ class JobStore:
 
     def remove(self, task_id: str) -> bool:
         """删除任务目录，返回是否成功。"""
+        self._validate_task_id(task_id)
         job_dir = self._root / task_id
         if not job_dir.exists():
             return False

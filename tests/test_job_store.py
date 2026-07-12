@@ -46,3 +46,47 @@ def test_job_store_remove_nonexistent(tmp_path):
     store = JobStore(tmp_path / "jobs")
     result = store.remove("no-such-task")
     assert result is False
+
+
+def test_create_rejects_path_traversal(tmp_path):
+    """task_id 包含 .. 时应拒绝。"""
+    import pytest
+
+    store = JobStore(tmp_path / "jobs")
+    store._root.mkdir(parents=True, exist_ok=True)
+
+    with pytest.raises(ValueError, match="invalid task_id"):
+        store.create("../../../etc/passwd")
+
+
+def test_create_rejects_absolute_path(tmp_path):
+    """task_id 为绝对路径时应拒绝。"""
+    import pytest
+
+    store = JobStore(tmp_path / "jobs")
+    store._root.mkdir(parents=True, exist_ok=True)
+
+    with pytest.raises(ValueError, match="invalid task_id"):
+        store.create("/etc/passwd")
+
+
+def test_create_rejects_empty_id(tmp_path):
+    """空 task_id 应拒绝。"""
+    import pytest
+
+    store = JobStore(tmp_path / "jobs")
+    store._root.mkdir(parents=True, exist_ok=True)
+
+    with pytest.raises(ValueError, match="invalid task_id"):
+        store.create("")
+
+
+def test_remove_rejects_path_traversal(tmp_path):
+    """remove 对路径穿越也应拒绝。"""
+    import pytest
+
+    store = JobStore(tmp_path / "jobs")
+    store._root.mkdir(parents=True, exist_ok=True)
+
+    with pytest.raises(ValueError, match="invalid task_id"):
+        store.remove("../../../etc")
