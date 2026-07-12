@@ -158,6 +158,7 @@ def test_downloader_download_calls_urlopen(tmp_path: Path, monkeypatch):
         return mock_response
 
     monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
+    monkeypatch.setattr("subtap.core.models.ModelRegistry.get_sha256", lambda *args: None)
     result = downloader.download("asr_0.6b")
     assert result.name == "asr_0.6b"
     assert call_count == 5  # config.json + model.safetensors + tokenizer files
@@ -320,6 +321,7 @@ def test_cli_models_install_shows_path(tmp_path: Path, monkeypatch):
         return mock_response
 
     monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
+    monkeypatch.setattr("subtap.core.models.ModelRegistry.get_sha256", lambda *args: None)
     runner = CliRunner()
     result = runner.invoke(app, ["models", "install", "asr_0.6b"])
     assert result.exit_code == 0
