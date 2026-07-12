@@ -23,8 +23,8 @@ class WizardView:
             "step": 0,
             "file_path": None,
             "quality": None,  # "fast" or "quality"
-            "glossary_name": None,
-            "manuscript_name": None,
+            "glossary_path": None,
+            "manuscript_path": None,
             "output_dir": None,
             "subtitle_lang": "zh",
             "subtitle_format": "srt",
@@ -39,13 +39,13 @@ class WizardView:
     def select_quality(self, quality: str) -> None:
         self._state["quality"] = quality
 
-    def select_glossary(self, name: str | None) -> None:
-        self._state["glossary_name"] = name
+    def select_glossary(self, path: Path | None) -> None:
+        self._state["glossary_path"] = path
 
-    def select_manuscript(self, name: str | None) -> None:
-        self._state["manuscript_name"] = name
+    def select_manuscript(self, path: Path | None) -> None:
+        self._state["manuscript_path"] = path
 
-    def select_output_dir(self, path: Path) -> None:
+    def select_output_dir(self, path: Path | None) -> None:
         self._state["output_dir"] = path
 
     def next_step(self) -> int:
@@ -63,25 +63,25 @@ class WizardView:
         )
 
     @staticmethod
-    def list_glossaries() -> list[str]:
-        """Return available glossary names from ~/.subtap/glossary."""
+    def list_glossaries() -> list[Path]:
+        """Return available glossary file paths from ~/.subtap/glossary."""
         glossary_dir = Path.home() / ".subtap" / "glossary"
         if not glossary_dir.is_dir():
             return []
         return sorted(
-            f.stem
+            f
             for f in glossary_dir.iterdir()
             if f.is_file() and f.suffix in (".txt", ".yaml", ".yml", ".json")
         )
 
     @staticmethod
-    def list_manuscripts() -> list[str]:
-        """Return available manuscript names from ~/.subtap/manuscripts."""
+    def list_manuscripts() -> list[Path]:
+        """Return available manuscript file paths from ~/.subtap/manuscripts."""
         ms_dir = Path.home() / ".subtap" / "manuscripts"
         if not ms_dir.is_dir():
             return []
         return sorted(
-            f.stem
+            f
             for f in ms_dir.iterdir()
             if f.is_file() and f.suffix in (".txt", ".md", ".docx")
         )
@@ -97,24 +97,14 @@ class WizardView:
         lang = self._state["subtitle_lang"]
         if lang:
             cmd.extend(["--subtitle-language", lang])
-        # glossary -> resolve to YAML path under ~/.subtap/glossary/
-        glossary_name = self._state["glossary_name"]
-        if glossary_name:
-            glossary_dir = Path.home() / ".subtap" / "glossary"
-            for suffix in (".yaml", ".yml", ".json", ".txt"):
-                candidate = glossary_dir / f"{glossary_name}{suffix}"
-                if candidate.is_file():
-                    cmd.extend(["--glossary", str(candidate)])
-                    break
-        # manuscript -> --script
-        manuscript_name = self._state["manuscript_name"]
-        if manuscript_name:
-            ms_dir = Path.home() / ".subtap" / "manuscripts"
-            for suffix in (".txt", ".md", ".docx"):
-                candidate = ms_dir / f"{manuscript_name}{suffix}"
-                if candidate.is_file():
-                    cmd.extend(["--script", str(candidate)])
-                    break
+        # glossary -> stored full path
+        glossary_path = self._state["glossary_path"]
+        if glossary_path:
+            cmd.extend(["--glossary", str(glossary_path)])
+        # manuscript -> stored full path
+        manuscript_path = self._state["manuscript_path"]
+        if manuscript_path:
+            cmd.extend(["--script", str(manuscript_path)])
         # output directory
         output_dir = self._state["output_dir"]
         if output_dir:
@@ -128,9 +118,9 @@ class WizardView:
         display_name = Path(fp).name if fp else "未选择"
         items = [f"文件：{display_name}"]
         items.append(f"质量：{'快速' if s['quality'] == 'fast' else '高质量'}")
-        if s["glossary_name"]:
-            items.append(f"热词表：{s['glossary_name']}")
-        if s["manuscript_name"]:
-            items.append(f"参考文稿：{s['manuscript_name']}")
+        if s["glossary_path"]:
+            items.append(f"热词表：{s['glossary_path'].name}")
+        if s["manuscript_path"]:
+            items.append(f"参考文稿：{s['manuscript_path'].name}")
         items.append(f"输出：{s['output_dir'] or '默认目录'}")
         return items
