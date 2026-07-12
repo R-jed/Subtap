@@ -2941,7 +2941,7 @@ wheels = [
 
 [[package]]
 name = "subtap"
-version = "0.1.0"
+version = "0.1.0rc1"
 source = { editable = "." }
 dependencies = [
     { name = "audioop-lts", marker = "python_full_version >= '3.13'" },
