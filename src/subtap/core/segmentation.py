@@ -50,7 +50,10 @@ def _split_sentences(
 
 
 def _split_sentences_zh(
-    text: str, *, max_chars: int, min_chars: int
+    text: str,
+    *,
+    max_chars: int = _DEFAULT_MAX_CHARS,
+    min_chars: int = _DEFAULT_MIN_CHARS,
 ) -> list[str]:
     """Chinese sentence segmentation with stable-ts style strategy."""
 
