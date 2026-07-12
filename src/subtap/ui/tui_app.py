@@ -487,8 +487,9 @@ class TuiApp:
 
     def _view_glossary_page(self) -> str:
         from .views.glossary_page import GlossaryPage
-        from subtap.glossary.hotword import load_glossary
+        from subtap.glossary.hotword import load_glossary, save_glossary
 
+        t = self.theme
         page = GlossaryPage()
         glossary_path = Path.home() / ".subtap" / "glossary" / "hotwords_zh.txt"
         glossary = load_glossary(glossary_path, "zh")
@@ -519,14 +520,49 @@ class TuiApp:
                 menu.move_down()
                 menu.render_incremental(old_cursor)
             elif key == "CHAR:A" or key == "CHAR:a":
-                self._show_placeholder("添加功能开发中...")
+                sys.stderr.write("\033[2J\033[H")
+                sys.stderr.write(f"{t.CYAN}添加热词{t.NC}\n\n")
+                sys.stderr.write("热词名称（直接回车取消）：")
+                word = input().strip()
+                if word:
+                    sys.stderr.write("别名（逗号分隔，直接回车跳过）：")
+                    aliases_raw = input().strip()
+                    aliases = [a.strip() for a in aliases_raw.split(",") if a.strip()]
+                    existing = {hw.word for hw in glossary.hotwords}
+                    if word in existing:
+                        sys.stderr.write(f"\n{t.YELLOW}热词 '{word}' 已存在{t.NC}\n")
+                    else:
+                        from subtap.glossary.hotword import Hotword
+                        glossary.add(Hotword(word=word, aliases=aliases))
+                        save_glossary(glossary, glossary_path)
+                        items = page.build_glossary_items(glossary.hotwords)
+                        menu = Menu(title="热词库", items=items, footer="↑↓ 导航  A 添加  D 删除  E 编辑  Esc 返回", theme=self.theme)
+                        sys.stderr.write(f"\n{t.GREEN}✓ 已添加 '{word}'{t.NC}\n")
                 menu.render_full()
             elif key == "CHAR:D" or key == "CHAR:d":
-                self._show_placeholder("删除功能开发中...")
-                menu.render_full()
+                if glossary.hotwords and menu.cursor < len(glossary.hotwords):
+                    hw = glossary.hotwords[menu.cursor]
+                    sys.stderr.write(f"\n{t.YELLOW}确认删除 '{hw.word}'？(Y/N){t.NC} ")
+                    confirm = input().strip().upper()
+                    if confirm == "Y":
+                        glossary.remove(hw.word)
+                        save_glossary(glossary, glossary_path)
+                        items = page.build_glossary_items(glossary.hotwords)
+                        menu = Menu(title="热词库", items=items, footer="↑↓ 导航  A 添加  D 删除  E 编辑  Esc 返回", theme=self.theme)
+                    menu.render_full()
             elif key == "CHAR:E" or key == "CHAR:e":
-                self._show_placeholder("编辑功能开发中...")
-                menu.render_full()
+                if glossary.hotwords and menu.cursor < len(glossary.hotwords):
+                    hw = glossary.hotwords[menu.cursor]
+                    sys.stderr.write(f"\n{t.CYAN}编辑 '{hw.word}'{t.NC}\n")
+                    sys.stderr.write(f"当前别名：{', '.join(hw.aliases)}\n")
+                    sys.stderr.write("新别名（逗号分隔，直接回车保留）：")
+                    aliases_raw = input().strip()
+                    if aliases_raw:
+                        hw.aliases = [a.strip() for a in aliases_raw.split(",") if a.strip()]
+                        save_glossary(glossary, glossary_path)
+                        items = page.build_glossary_items(glossary.hotwords)
+                        menu = Menu(title="热词库", items=items, footer="↑↓ 导航  A 添加  D 删除  E 编辑  Esc 返回", theme=self.theme)
+                    menu.render_full()
 
     def _view_manuscripts_page(self) -> str:
         from .views.manuscripts_page import ManuscriptsPage
