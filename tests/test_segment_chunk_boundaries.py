@@ -60,3 +60,46 @@ def test_run_segment_reads_chunk_boundaries(test_config: SubtapConfig, tmp_path:
 
     print(f"✓ Sentences time range: {first_start:.3f} - {last_end:.3f}")
     print(f"✓ Sentence count: {len(sentences)}")
+
+
+def test_run_segment_uses_output_character_limits(
+    test_config: SubtapConfig, tmp_path: Path, monkeypatch
+):
+    """Segment and export must share the user's character limits."""
+    test_config.output.max_chars = 18
+    test_config.output.min_chars = 6
+    ws = Workspace(test_config, base_dir=tmp_path / "work")
+    ws.ensure_dirs()
+    ws.chunks_jsonl.write_text(
+        Chunk(chunk_id=0, start_sec=0.0, end_sec=1.0, path="chunk.wav").model_dump_json()
+        + "\n",
+        encoding="utf-8",
+    )
+    ws.cleaned_jsonl.write_text(
+        RawCleanSegment(
+            segment_id=0,
+            original_text="原文",
+            cleaned_text="清洗后的文本。",
+        ).model_dump_json()
+        + "\n",
+        encoding="utf-8",
+    )
+    captured = {}
+
+    def fake_segment(
+        segments,
+        chunk_start,
+        chunk_end,
+        language="zh",
+        *,
+        max_chars,
+        min_chars,
+    ):
+        captured.update(max_chars=max_chars, min_chars=min_chars)
+        return []
+
+    monkeypatch.setattr("subtap.core.segment.segment_clean_segments", fake_segment)
+
+    run_segment(ws)
+
+    assert captured == {"max_chars": 18, "min_chars": 6}
