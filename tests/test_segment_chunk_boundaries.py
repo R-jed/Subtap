@@ -72,7 +72,9 @@ def test_run_segment_uses_output_character_limits(
     ws = Workspace(test_config, base_dir=tmp_path / "work")
     ws.ensure_dirs()
     ws.chunks_jsonl.write_text(
-        Chunk(chunk_id=0, start_sec=0.0, end_sec=1.0, path="chunk.wav").model_dump_json()
+        Chunk(
+            chunk_id=0, start_sec=0.0, end_sec=1.0, path="chunk.wav"
+        ).model_dump_json()
         + "\n",
         encoding="utf-8",
     )

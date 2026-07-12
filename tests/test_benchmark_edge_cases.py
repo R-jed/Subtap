@@ -2,7 +2,6 @@ from pathlib import Path
 
 from benchmarks.implementations.baseline import BaselineSegmentation
 
-
 EDGE_CASES_DIR = Path(__file__).parent.parent / "benchmarks" / "data" / "edge_cases"
 
 

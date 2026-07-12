@@ -16,6 +16,8 @@ from subtap.schemas.models import SentenceSegment, AlignedSegment
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL_ROOT = Path.home() / ".subtap" / "models"
+
+
 def _visible_len(text: str) -> int:
     """Count characters represented by forced-alignment words."""
     return sum(ch.isalnum() for ch in text)
@@ -164,7 +166,11 @@ class MLXQwenAligner:
                         ):
                             word_len = _visible_len(chunk_words[word_idx]["word"])
                             # Check if adding this word would exceed target
-                            if not is_last and matched + word_len > target and matched > 0:
+                            if (
+                                not is_last
+                                and matched + word_len > target
+                                and matched > 0
+                            ):
                                 break
                             matched += word_len
                             word_idx += 1

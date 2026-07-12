@@ -13,7 +13,9 @@ def test_segmentation_benchmark_interface():
             return "mock"
 
         def segment(self, text: str) -> SegmentationResult:
-            return SegmentationResult(sentences=[s for s in text.split("。") if s], metadata={})
+            return SegmentationResult(
+                sentences=[s for s in text.split("。") if s], metadata={}
+            )
 
     impl = MockBenchmark()
     assert impl.name() == "mock"

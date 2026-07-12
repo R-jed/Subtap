@@ -5,6 +5,7 @@ from benchmarks.implementations.funasr_punct import FunASRPunctuation
 def _funasr_available():
     try:
         import funasr
+
         return True
     except ImportError:
         return False
@@ -20,10 +21,7 @@ def test_funasr_requires_model():
     assert impl.requires_model() is True
 
 
-@pytest.mark.skipif(
-    not _funasr_available(),
-    reason="funasr not installed"
-)
+@pytest.mark.skipif(not _funasr_available(), reason="funasr not installed")
 def test_funasr_segment():
     impl = FunASRPunctuation()
     text = "GR系列的核心卖点就是轻便整机带电池只有262g"
