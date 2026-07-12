@@ -71,6 +71,8 @@ class TuiApp:
             return self._view_first_run()
         elif self._state == "wizard":
             return self._view_wizard()
+        elif self._state == "glossary_page":
+            return self._view_glossary_page()
         return "quit"
 
     def _push_state(self, state: str) -> None:
@@ -474,6 +476,50 @@ class TuiApp:
             elif key in (Key.DOWN,) and items:
                 menu.move_down()
                 menu.render_incremental(old_cursor)
+
+    def _view_glossary_page(self) -> str:
+        from .views.glossary_page import GlossaryPage
+        from subtap.glossary.hotword import load_glossary
+
+        t = self.theme
+        page = GlossaryPage()
+        glossary_path = Path.home() / ".subtap" / "glossary" / "hotwords_zh.txt"
+        glossary = load_glossary(glossary_path, "zh")
+        items = page.build_glossary_items(glossary.hotwords)
+
+        menu = Menu(
+            title="热词库",
+            items=items,
+            footer="↑↓ 导航  A 添加  D 删除  E 编辑  Esc 返回",
+            theme=self.theme,
+        )
+        menu.render_full()
+
+        while True:
+            old_cursor = menu.cursor
+            key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
+            if key is None:
+                continue
+            if key == Key.ESCAPE:
+                self._pop_state()
+                return "continue"
+            elif key == Key.QUIT:
+                return "quit"
+            elif key == Key.UP:
+                menu.move_up()
+                menu.render_incremental(old_cursor)
+            elif key == Key.DOWN:
+                menu.move_down()
+                menu.render_incremental(old_cursor)
+            elif key == "CHAR:A" or key == "CHAR:a":
+                self._show_placeholder("添加功能开发中...")
+                menu.render_full()
+            elif key == "CHAR:D" or key == "CHAR:d":
+                self._show_placeholder("删除功能开发中...")
+                menu.render_full()
+            elif key == "CHAR:E" or key == "CHAR:e":
+                self._show_placeholder("编辑功能开发中...")
+                menu.render_full()
 
     def _view_settings_format(self) -> str:
         t = self.theme
