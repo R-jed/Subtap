@@ -16,6 +16,7 @@ from .spinner import Spinner
 from .config_manager import ConfigManager
 from .file_picker import FilePicker, AUDIO_VIDEO_EXTENSIONS
 from .views.new_task import NewTaskView
+from .views.wizard import WizardView
 from .history import HistoryScanner
 
 KEY_READ_TIMEOUT = 0.05
@@ -68,6 +69,8 @@ class TuiApp:
             return self._view_batch()
         elif self._state == "first_run":
             return self._view_first_run()
+        elif self._state == "wizard":
+            return self._view_wizard()
         return "quit"
 
     def _push_state(self, state: str) -> None:
@@ -675,6 +678,369 @@ class TuiApp:
         while True:
             key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
             if key in (Key.ESCAPE,):
+                self._pop_state()
+                return "continue"
+            elif key == Key.QUIT:
+                return "quit"
+
+    def _view_wizard(self) -> str:
+        t = self.theme
+        wiz = WizardView()
+
+        while True:
+            step = wiz.get_state()["step"]
+
+            if step == 0:
+                # Step 0: File selection (drag-and-drop input)
+                result = self._wizard_step_file(wiz)
+            elif step == 1:
+                # Step 1: Quality selection (fast/quality menu)
+                result = self._wizard_step_quality(wiz)
+            elif step == 2:
+                # Step 2: Optional glossary selection
+                result = self._wizard_step_glossary(wiz)
+            elif step == 3:
+                # Step 3: Optional manuscript selection
+                result = self._wizard_step_manuscript(wiz)
+            elif step == 4:
+                # Step 4: Output directory selection
+                result = self._wizard_step_output(wiz)
+            elif step == 5:
+                # Step 5: Confirmation
+                result = self._wizard_step_confirm(wiz)
+            else:
+                self._pop_state()
+                return "continue"
+
+            if result == "back":
+                if step == 0:
+                    self._pop_state()
+                    return "continue"
+                wiz.prev_step()
+            elif result == "next":
+                wiz.next_step()
+            elif result == "quit":
+                return "quit"
+            elif result == "cancel":
+                self._pop_state()
+                return "continue"
+            elif result == "run":
+                return self._execute_wizard_run(wiz)
+
+    def _wizard_step_file(self, wiz: WizardView) -> str:
+        t = self.theme
+        sys.stderr.write("\033[H\033[J")
+        sys.stderr.write(f"\033[2K{t.CYAN}[1/6] {WizardView.STEPS[0]}{t.NC}\r\n\r\n")
+        sys.stderr.write(f"\033[2K  拖入音频或视频文件到此处，按 Enter 确认\r\n\r\n")
+        sys.stderr.write(
+            f"\033[2K{t.GRAY}支持格式：mp3, wav, m4a, mp4, mkv, avi...{t.NC}\r\n\r\n"
+        )
+        sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回主菜单  Q 退出{t.NC}\r\n")
+        sys.stderr.flush()
+
+        raw_buf = b""
+        while True:
+            byte = self.reader._read_byte(timeout=0.1)
+            if byte is None:
+                continue
+            if byte in (b"\r", b"\n"):
+                if raw_buf:
+                    try:
+                        path_str = raw_buf.decode("utf-8")
+                    except UnicodeDecodeError:
+                        path_str = raw_buf.decode("utf-8", errors="replace")
+                    clean_path = path_str.strip().strip("'\"")
+                    file_path = Path(clean_path).expanduser()
+                    if not file_path.is_file():
+                        sys.stderr.write(
+                            f"\033[8;1H\033[2K{t.RED}文件不存在：{clean_path}{t.NC}\r\n"
+                        )
+                        sys.stderr.flush()
+                        raw_buf = b""
+                    elif file_path.suffix.lower() not in AUDIO_VIDEO_EXTENSIONS:
+                        sys.stderr.write(
+                            f"\033[8;1H\033[2K{t.RED}不支持的格式：{file_path.suffix}{t.NC}\r\n"
+                        )
+                        sys.stderr.flush()
+                        raw_buf = b""
+                    else:
+                        wiz.select_file(file_path)
+                        return "next"
+            elif byte == b"\x1b":
+                return "cancel"
+            elif byte == b"\x03":
+                return "quit"
+            elif byte in (b"\x7f", b"\x08"):
+                if raw_buf:
+                    raw_buf = raw_buf[:-1]
+                    while raw_buf and (raw_buf[-1] & 0xC0) == 0x80:
+                        raw_buf = raw_buf[:-1]
+                    self._update_path_display(raw_buf)
+            elif byte == b"\x15":
+                raw_buf = b""
+                self._update_path_display(raw_buf)
+            else:
+                raw_buf += byte
+                self._update_path_display(raw_buf)
+
+    def _wizard_step_quality(self, wiz: WizardView) -> str:
+        t = self.theme
+        items = ["快速模式    速度快，精度一般", "高质量模式  速度慢，精度高"]
+        menu = Menu(
+            title=f"[2/6] {WizardView.STEPS[1]}",
+            items=items,
+            footer="↑↓ 导航  Enter 确认  Esc 返回上一步",
+            theme=self.theme,
+        )
+        menu.render_full()
+
+        while True:
+            old_cursor = menu.cursor
+            key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
+            if key is None:
+                continue
+            if key == Key.QUIT:
+                return "quit"
+            elif key == Key.ESCAPE:
+                return "back"
+            elif key == Key.UP:
+                menu.move_up()
+                menu.render_incremental(old_cursor)
+            elif key == Key.DOWN:
+                menu.move_down()
+                menu.render_incremental(old_cursor)
+            elif key == Key.ENTER:
+                wiz.select_quality("fast" if menu.cursor == 0 else "quality")
+                return "next"
+
+    def _wizard_step_glossary(self, wiz: WizardView) -> str:
+        t = self.theme
+        # Scan available glossaries
+        glossary_dir = Path.home() / ".subtap" / "glossary"
+        glossaries = []
+        if glossary_dir.is_dir():
+            for f in sorted(glossary_dir.iterdir()):
+                if f.is_file() and f.suffix in (".txt", ".yaml", ".yml", ".json"):
+                    glossaries.append(f.stem)
+
+        items = ["跳过（不使用热词表）"] + [f"  {g}" for g in glossaries]
+        menu = Menu(
+            title=f"[3/6] {WizardView.STEPS[2]}",
+            items=items,
+            footer="↑↓ 导航  Enter 确认  Esc 返回上一步",
+            theme=self.theme,
+        )
+        menu.render_full()
+
+        while True:
+            old_cursor = menu.cursor
+            key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
+            if key is None:
+                continue
+            if key == Key.QUIT:
+                return "quit"
+            elif key == Key.ESCAPE:
+                return "back"
+            elif key == Key.UP:
+                menu.move_up()
+                menu.render_incremental(old_cursor)
+            elif key == Key.DOWN:
+                menu.move_down()
+                menu.render_incremental(old_cursor)
+            elif key == Key.ENTER:
+                if menu.cursor == 0:
+                    wiz.select_glossary(None)
+                else:
+                    wiz.select_glossary(glossaries[menu.cursor - 1])
+                return "next"
+
+    def _wizard_step_manuscript(self, wiz: WizardView) -> str:
+        t = self.theme
+        # Scan available manuscripts
+        ms_dir = Path.home() / ".subtap" / "manuscripts"
+        manuscripts = []
+        if ms_dir.is_dir():
+            for f in sorted(ms_dir.iterdir()):
+                if f.is_file() and f.suffix in (".txt", ".md", ".docx"):
+                    manuscripts.append(f.stem)
+
+        items = ["跳过（不使用参考文稿）"] + [f"  {m}" for m in manuscripts]
+        menu = Menu(
+            title=f"[4/6] {WizardView.STEPS[3]}",
+            items=items,
+            footer="↑↓ 导航  Enter 确认  Esc 返回上一步",
+            theme=self.theme,
+        )
+        menu.render_full()
+
+        while True:
+            old_cursor = menu.cursor
+            key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
+            if key is None:
+                continue
+            if key == Key.QUIT:
+                return "quit"
+            elif key == Key.ESCAPE:
+                return "back"
+            elif key == Key.UP:
+                menu.move_up()
+                menu.render_incremental(old_cursor)
+            elif key == Key.DOWN:
+                menu.move_down()
+                menu.render_incremental(old_cursor)
+            elif key == Key.ENTER:
+                if menu.cursor == 0:
+                    wiz.select_manuscript(None)
+                else:
+                    wiz.select_manuscript(manuscripts[menu.cursor - 1])
+                return "next"
+
+    def _wizard_step_output(self, wiz: WizardView) -> str:
+        t = self.theme
+        sys.stderr.write("\033[H\033[J")
+        sys.stderr.write(f"\033[2K{t.CYAN}[5/6] {WizardView.STEPS[4]}{t.NC}\r\n\r\n")
+        sys.stderr.write(
+            f"\033[2K  输入输出目录路径，或按 Enter 使用默认目录\r\n\r\n"
+        )
+        sys.stderr.write(
+            f"\033[2K{t.GRAY}默认：与源文件相同目录{t.NC}\r\n\r\n"
+        )
+        sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回上一步  Q 退出{t.NC}\r\n")
+        sys.stderr.flush()
+
+        raw_buf = b""
+        while True:
+            byte = self.reader._read_byte(timeout=0.1)
+            if byte is None:
+                continue
+            if byte in (b"\r", b"\n"):
+                if raw_buf:
+                    try:
+                        path_str = raw_buf.decode("utf-8")
+                    except UnicodeDecodeError:
+                        path_str = raw_buf.decode("utf-8", errors="replace")
+                    clean_path = path_str.strip().strip("'\"")
+                    out_dir = Path(clean_path).expanduser()
+                    if not out_dir.is_dir():
+                        sys.stderr.write(
+                            f"\033[8;1H\033[2K{t.RED}目录不存在：{clean_path}{t.NC}\r\n"
+                        )
+                        sys.stderr.flush()
+                        raw_buf = b""
+                    else:
+                        wiz.select_output_dir(out_dir)
+                        return "next"
+                else:
+                    # Empty input = default directory
+                    wiz.select_output_dir(None)
+                    return "next"
+            elif byte == b"\x1b":
+                return "back"
+            elif byte == b"\x03":
+                return "quit"
+            elif byte in (b"\x7f", b"\x08"):
+                if raw_buf:
+                    raw_buf = raw_buf[:-1]
+                    while raw_buf and (raw_buf[-1] & 0xC0) == 0x80:
+                        raw_buf = raw_buf[:-1]
+                    self._update_path_display(raw_buf)
+            elif byte == b"\x15":
+                raw_buf = b""
+                self._update_path_display(raw_buf)
+            else:
+                raw_buf += byte
+                self._update_path_display(raw_buf)
+
+    def _wizard_step_confirm(self, wiz: WizardView) -> str:
+        t = self.theme
+        items = wiz.get_confirm_items()
+        menu = Menu(
+            title=f"[6/6] {WizardView.STEPS[5]}",
+            items=items,
+            footer="Enter 开始转录  Esc 返回上一步",
+            theme=self.theme,
+        )
+        menu.render_full()
+
+        while True:
+            key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
+            if key is None:
+                continue
+            if key == Key.QUIT:
+                return "quit"
+            elif key == Key.ESCAPE:
+                return "back"
+            elif key == Key.ENTER:
+                return "run"
+
+    def _execute_wizard_run(self, wiz: WizardView) -> str:
+        t = self.theme
+        cmd = wiz.build_run_command()
+        if not cmd:
+            self._pop_state()
+            return "continue"
+
+        import tempfile
+        _tmp_dir = Path(tempfile.mkdtemp(prefix="subtap_tui_"))
+        log_path = _tmp_dir / "run.log.jsonl"
+
+        state = wiz.get_state()
+        file_name = Path(state["file_path"]).name if state["file_path"] else "未知"
+
+        sys.stderr.write("\033[H\033[J")
+        sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}正在转录{t.NC}\r\n\r\n")
+        sys.stderr.write(f"\033[2K{t.GRAY}文件：{file_name}{t.NC}\r\n\r\n")
+        sys.stderr.flush()
+
+        for _ in range(10):
+            sys.stderr.write("\r\n")
+        sys.stderr.flush()
+
+        returncode = -1
+        stderr_text = ""
+        try:
+            run_env = _run_env()
+            run_env["SUBTAP_EVENT_LOG"] = str(log_path)
+            returncode, stderr_text, user_quit = self._run_subprocess_with_progress(
+                cmd, run_env, log_path
+            )
+            if user_quit:
+                return "quit"
+        except OSError as e:
+            sys.stderr.write("\033[H\033[J")
+            sys.stderr.write(f"\033[2K{t.RED}✗ 转录程序启动失败：{e}{t.NC}\r\n")
+            sys.stderr.write(f"\033[2K\r\n{t.GRAY}Esc 返回{t.NC}\r\n")
+            sys.stderr.flush()
+            while True:
+                key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
+                if key in (Key.ESCAPE, Key.ENTER):
+                    self._pop_state()
+                    return "continue"
+                elif key == Key.QUIT:
+                    return "quit"
+        finally:
+            shutil.rmtree(_tmp_dir, ignore_errors=True)
+
+        if returncode != 0:
+            err = stderr_text.strip()
+            if err:
+                lines = err.splitlines()
+                key_line = lines[-1] if lines else err[:200]
+                sys.stderr.write(f"\033[2K{t.RED}{key_line}{t.NC}\r\n")
+                if "No module named" in err:
+                    module = err.split("'")[1] if "'" in err else ""
+                    if module:
+                        sys.stderr.write(
+                            f"\033[2K{t.YELLOW}pip install {module}{t.NC}\r\n"
+                        )
+            sys.stderr.flush()
+
+        sys.stderr.write(f"\033[2K\r\n{t.GRAY}Esc 返回  Q 退出{t.NC}\r\n")
+        sys.stderr.flush()
+
+        while True:
+            key = self.reader.read_key(timeout=KEY_READ_TIMEOUT)
+            if key in (Key.ESCAPE, Key.ENTER):
                 self._pop_state()
                 return "continue"
             elif key == Key.QUIT:
