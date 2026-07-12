@@ -141,6 +141,7 @@ def test_home_view_not_first_run(tmp_path, monkeypatch):
 
 # --- FirstRunView tests ---
 
+
 def test_first_run_view_checks_device():
     from subtap.ui.views.first_run import FirstRunView
 
@@ -198,6 +199,7 @@ def test_first_run_view_mark_complete(tmp_path, monkeypatch):
 
 
 # --- WizardView tests ---
+
 
 def test_wizard_view_initializes_with_defaults():
     from subtap.ui.views.wizard import WizardView
@@ -414,10 +416,30 @@ def test_models_page_builds_items():
     from subtap.ui.views.models_page import ModelsPage
 
     page = ModelsPage()
-    items = page.build_model_items([
-        type("S", (), {"name": "asr_1.7b", "installed": True, "path": "/m", "missing_files": []})(),
-        type("S", (), {"name": "aligner", "installed": False, "path": "/m", "missing_files": ["config.json"]})(),
-    ])
+    items = page.build_model_items(
+        [
+            type(
+                "S",
+                (),
+                {
+                    "name": "asr_1.7b",
+                    "installed": True,
+                    "path": "/m",
+                    "missing_files": [],
+                },
+            )(),
+            type(
+                "S",
+                (),
+                {
+                    "name": "aligner",
+                    "installed": False,
+                    "path": "/m",
+                    "missing_files": ["config.json"],
+                },
+            )(),
+        ]
+    )
     assert len(items) == 2
     assert "✓" in items[0]
     assert "✗" in items[1]
@@ -448,10 +470,12 @@ def test_glossary_page_builds_items():
     from subtap.ui.views.glossary_page import GlossaryPage
 
     page = GlossaryPage()
-    items = page.build_glossary_items([
-        type("H", (), {"word": "理光", "aliases": ["李光", "理广"]})(),
-        type("H", (), {"word": "VITURE", "aliases": ["维图尔"]})(),
-    ])
+    items = page.build_glossary_items(
+        [
+            type("H", (), {"word": "理光", "aliases": ["李光", "理广"]})(),
+            type("H", (), {"word": "VITURE", "aliases": ["维图尔"]})(),
+        ]
+    )
     assert len(items) == 2
     assert "理光" in items[0]
 
@@ -483,10 +507,22 @@ def test_manuscripts_page_builds_items():
     from subtap.ui.views.manuscripts_page import ManuscriptsPage
 
     page = ManuscriptsPage()
-    items = page.build_items([
-        {"name": "讲稿.docx", "path": "/test/讲稿.docx", "exists": True, "recent_use_time": None},
-        {"name": "旧稿.txt", "path": "/test/旧稿.txt", "exists": False, "recent_use_time": None},
-    ])
+    items = page.build_items(
+        [
+            {
+                "name": "讲稿.docx",
+                "path": "/test/讲稿.docx",
+                "exists": True,
+                "recent_use_time": None,
+            },
+            {
+                "name": "旧稿.txt",
+                "path": "/test/旧稿.txt",
+                "exists": False,
+                "recent_use_time": None,
+            },
+        ]
+    )
     assert len(items) == 2
     assert "✓" in items[0]
     assert "✗" in items[1]
@@ -518,9 +554,16 @@ def test_recent_tasks_page_builds_items():
     from subtap.ui.views.recent_tasks import RecentTasksPage
 
     page = RecentTasksPage()
-    items = page.build_items([
-        {"task_id": "task-001", "input_name": "视频.srt", "output_path": "/out/final.srt", "time": "2026-07-12T10:00:00"},
-    ])
+    items = page.build_items(
+        [
+            {
+                "task_id": "task-001",
+                "input_name": "视频.srt",
+                "output_path": "/out/final.srt",
+                "time": "2026-07-12T10:00:00",
+            },
+        ]
+    )
     assert len(items) == 1
     assert "task-001" in items[0] or "视频" in items[0]
 

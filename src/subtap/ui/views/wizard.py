@@ -58,8 +58,7 @@ class WizardView:
 
     def is_complete(self) -> bool:
         return (
-            self._state["file_path"] is not None
-            and self._state["quality"] is not None
+            self._state["file_path"] is not None and self._state["quality"] is not None
         )
 
     @staticmethod

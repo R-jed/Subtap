@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from unittest import mock
 
-from packaging.homebrew.evaluate import main, select
+from homebrew_packaging.homebrew.evaluate import main, select
 
 
 def result(name, *, cold=True, hidden=True, rollback=True, audit=True, size=100):
