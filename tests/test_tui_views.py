@@ -439,3 +439,38 @@ def test_models_page_action_delete():
     actions = page.get_actions(installed=True)
     assert "删除" in actions
     assert "安装" not in actions
+
+
+# --- GlossaryPage tests ---
+
+
+def test_glossary_page_builds_items():
+    from subtap.ui.views.glossary_page import GlossaryPage
+
+    page = GlossaryPage()
+    items = page.build_glossary_items([
+        type("H", (), {"word": "理光", "aliases": ["李光", "理广"]})(),
+        type("H", (), {"word": "VITURE", "aliases": ["维图尔"]})(),
+    ])
+    assert len(items) == 2
+    assert "理光" in items[0]
+
+
+def test_glossary_page_empty():
+    from subtap.ui.views.glossary_page import GlossaryPage
+
+    page = GlossaryPage()
+    items = page.build_glossary_items([])
+    assert len(items) == 1
+    assert "暂无" in items[0]
+
+
+def test_glossary_page_get_actions():
+    from subtap.ui.views.glossary_page import GlossaryPage
+
+    page = GlossaryPage()
+    actions = page.get_actions()
+    assert "添加 (A)" in actions
+    assert "删除 (D)" in actions
+    assert "编辑 (E)" in actions
+    assert "返回 (Esc)" in actions
