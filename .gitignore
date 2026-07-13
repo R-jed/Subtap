@@ -80,5 +80,6 @@ docs/
 
 # 外部参考源码（clone）
 
-# Benchmark 产物
-benchmarks/results/
+# Benchmark（本地开发）
+benchmarks/
+tests/test_benchmark_*.py
