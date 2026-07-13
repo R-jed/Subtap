@@ -2,12 +2,13 @@
 
 ## 状态
 
-- **方案状态：** Proposed，仅用于公开第三方 Tap 实验。
+- **方案状态：** Rejected。许可证硬门禁未通过，禁止实现和发布。
 - **已知证据：** `v0.1.0rc2` 的 GitHub prerelease、SHA256、构建来源证明和 arm64 wheel smoke 已通过。
 - **已淘汰路线：** 标准 Python Formula。`brew update-python-resources` 因 `mlx` 没有源码包而失败。
+- **终止证据：** 锁定 SciPy 1.18.0 arm64 wheel 捆绑 LGPL-2.1-or-later 与 GPL-3.0-or-later WITH GCC-exception-3.1 组件；项目没有书面法律审批及精确 Corresponding Source/构建材料。详见 `docs/research/2026-07-13-wheelhouse-license-review.md`。
 - **载体接受条件：** 许可证审查和连续 RC A/B 的 attestation、严格审计、冷安装、升级、回滚、资料保留全部通过后，才能把分发载体 ADR 改为 Accepted。正式 tag、正式 Release、Tap 默认分支和 README 属于后续正式发布门禁。
 
-Homebrew 官方要求 binary-only 软件进入 Cask；该要求针对 homebrew/core。本方案只验证第三方 `R-jed/homebrew-tap` 是否能以 Formula 安全维护，不声称可进入 homebrew/core，也不把 `brew audit` 通过解释为 Homebrew 官方认可。
+Homebrew 官方要求 binary-only 软件进入 Cask；该要求针对 homebrew/core。本方案原计划只验证第三方 `R-jed/homebrew-tap` 是否能以 Formula 安全维护。许可证硬门禁已在实现前触发，因此下文保留为可追溯的被拒设计，不得据此继续生成 wheelhouse。
 
 ## 用户契约
 
