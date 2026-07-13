@@ -33,6 +33,8 @@ Error: mlx exists on PyPI but lacks a suitable source distribution
 
 因此尚无候选通过全部门禁，也不能发布 `brew install` 命令。此前基于 fixture 结构将 Formula 标记为通过属于无效证据，相关 Cask、launcher 和占位 Formula 已删除。Cask 若继续捆绑相同 SciPy wheel，也不能消除许可证义务。
 
+后续评估的“Homebrew 提供 NumPy/SciPy”候选也在许可证门禁停止：锁定的 SentencePiece 0.2.1 CPython 3.13 arm64 wheel 没有 wheel 内许可证或 PyPI provenance。虽然上游 `v0.2.1` tag 有 GitHub 验证签名，但当前没有证据把该精确二进制 wheel 绑定到对应 source commit。项目不能自写映射冒充上游构建证据；完整记录见 `docs/research/2026-07-13-wheelhouse-license-review.md`。
+
 ## 决策
 
 载体选择保持 **Proposed**。标准 Formula 和锁定 wheelhouse Formula 均已淘汰。下一候选必须避免由 Subtap 分发该 SciPy wheel，或先取得书面法律批准并满足相应分发义务；不得通过改用 Cask、CDN 或静默忽略依赖绕过门禁。
