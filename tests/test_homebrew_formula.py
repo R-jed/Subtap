@@ -18,7 +18,7 @@ RENDERER = ROOT / "scripts/render_homebrew_formula.py"
 SAMPLE_MANIFEST = {
     "target": {"python": "3.13", "platform": "macosx_14_0_arm64"},
     "subtap_version": "0.1.0",
-    "wheelhouse_sha256": "ddd444",
+    "wheelhouse_sha256": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
     "external_packages": [
         {"name": "numpy", "requirement": ">=1.26.4", "formula": "numpy"},
         {"name": "scipy", "requirement": ">=1.10.0", "formula": "scipy"},
@@ -27,35 +27,35 @@ SAMPLE_MANIFEST = {
         {
             "name": "subtap",
             "version": "0.1.0",
-            "sha256": "aaa111",
+            "sha256": "111111111111111111111111111111111111111111111111111111111111111a",
             "license": "MIT",
             "filename": "subtap-0.1.0-py3-none-any.whl",
             "size": 1000,
             "tags": ["py3-none-any"],
             "url": "project:.",
-            "source_sha256": "aaa111",
+            "source_sha256": "111111111111111111111111111111111111111111111111111111111111111a",
         },
         {
             "name": "click",
             "version": "8.1.7",
-            "sha256": "bbb222",
+            "sha256": "222222222222222222222222222222222222222222222222222222222222222b",
             "license": "BSD-3-Clause",
             "filename": "click-8.1.7-py3-none-any.whl",
             "size": 2000,
             "tags": ["py3-none-any"],
             "url": "https://files.pythonhosted.org/click-8.1.7-py3-none-any.whl",
-            "source_sha256": "bbb222",
+            "source_sha256": "222222222222222222222222222222222222222222222222222222222222222b",
         },
         {
             "name": "sentencepiece",
             "version": "0.2.2",
-            "sha256": "ccc333",
+            "sha256": "333333333333333333333333333333333333333333333333333333333333333c",
             "license": "Apache-2.0",
             "filename": "sentencepiece-0.2.2-cp313-cp313-macosx_11_0_arm64.whl",
             "size": 3000,
             "tags": ["cp313-cp313-macosx_11_0_arm64"],
             "url": "https://example.com/sentencepiece-0.2.2-cp313-cp313-macosx_11_0_arm64.whl",
-            "source_sha256": "ccc333",
+            "source_sha256": "333333333333333333333333333333333333333333333333333333333333333c",
         },
     ],
 }
@@ -64,7 +64,9 @@ SAMPLE_WHEELHOUSE_URL = (
     "https://github.com/example/subtap/releases/download/v0.1.0/"
     "subtap-0.1.0-py313-macos-arm64-wheelhouse.tar.gz"
 )
-SAMPLE_WHEELHOUSE_SHA256 = "ddd444"
+SAMPLE_WHEELHOUSE_SHA256 = (
+    "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
+)
 
 
 @pytest.fixture()
@@ -424,3 +426,40 @@ class TestRendererValidation:
             wheelhouse_sha256=SAMPLE_WHEELHOUSE_SHA256,
         )
         assert "class Subtap < Formula" in result
+
+    def test_rejects_missing_subtap_version(
+        self, tmp_path: Path, template_copy: Path
+    ) -> None:
+        """Render fails fast when manifest lacks subtap_version."""
+        manifest_no_version: dict[str, object] = {
+            "packages": [],
+        }
+        path = tmp_path / "manifest.json"
+        path.write_text(json.dumps(manifest_no_version, indent=2), encoding="utf-8")
+        mod = _import_renderer()
+        with pytest.raises(ValueError, match="subtap_version"):
+            mod.render(
+                manifest_path=path,
+                template_path=template_copy,
+                wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
+                wheelhouse_sha256=SAMPLE_WHEELHOUSE_SHA256,
+            )
+
+    def test_rejects_empty_subtap_version(
+        self, tmp_path: Path, template_copy: Path
+    ) -> None:
+        """Render fails fast when manifest has empty subtap_version."""
+        manifest_empty_version = {
+            "subtap_version": "",
+            "packages": [],
+        }
+        path = tmp_path / "manifest.json"
+        path.write_text(json.dumps(manifest_empty_version, indent=2), encoding="utf-8")
+        mod = _import_renderer()
+        with pytest.raises(ValueError, match="subtap_version"):
+            mod.render(
+                manifest_path=path,
+                template_path=template_copy,
+                wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
+                wheelhouse_sha256=SAMPLE_WHEELHOUSE_SHA256,
+            )

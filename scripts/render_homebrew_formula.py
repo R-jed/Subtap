@@ -50,7 +50,10 @@ def render(
         raise ValueError("wheelhouse_sha256 must not be empty")
 
     manifest = _read_json(manifest_path)
-    version = str(manifest.get("subtap_version", ""))
+    version = manifest.get("subtap_version")
+    if not version:
+        raise ValueError("manifest is missing required field 'subtap_version'")
+    version = str(version)
 
     # Cross-validate SHA256 against manifest when available
     manifest_sha256 = manifest.get("wheelhouse_sha256")

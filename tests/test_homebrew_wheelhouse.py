@@ -9,6 +9,7 @@ import importlib.util
 import json
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 from zipfile import ZipFile
@@ -39,6 +40,7 @@ def make_wheel(
     license_expression: str | None = "MIT",
     legacy_license: str | None = None,
     declared_license_files: tuple[str, ...] = (),
+    license_classifiers: tuple[str, ...] = (),
     license_files: dict[str, str] | None = None,
     extra: dict[str, bytes] | None = None,
 ) -> Path:
@@ -53,6 +55,8 @@ def make_wheel(
         metadata["License"] = legacy_license
     for filename in declared_license_files:
         metadata["License-File"] = filename
+    for classifier in license_classifiers:
+        metadata["Classifier"] = classifier
     with ZipFile(path, "w") as archive:
         archive.writestr(f"{name}-{version}.dist-info/METADATA", metadata.as_bytes())
         for filename, content in (license_files or {}).items():
@@ -706,6 +710,203 @@ def test_old_sentencepiece_is_not_approved_by_repository_policy() -> None:
     assert OLD_SENTENCEPIECE_SHA256 not in policy["wheel_approvals"]
 
 
+def _wheelhouse_fixture(tmp_path: Path) -> tuple[Path, Path, str, dict[str, Path]]:
+    demo = make_wheel(tmp_path, "demo", "1.2.3")
+    project = make_wheel(tmp_path, "subtap", "0.1.0rc2")
+    lock = tmp_path / "uv.lock"
+    lock.write_text(
+        "version = 1\n"
+        "revision = 3\n"
+        'requires-python = ">=3.10"\n\n'
+        "[[package]]\n"
+        'name = "demo"\n'
+        'version = "1.2.3"\n'
+        'source = { registry = "https://pypi.org/simple" }\n'
+        "wheels = [\n"
+        f'  {{ url = "https://example.test/{demo.name}", '
+        f'hash = "sha256:{hashlib.sha256(demo.read_bytes()).hexdigest()}", '
+        f"size = {demo.stat().st_size} }},\n"
+        "]\n",
+        encoding="utf-8",
+    )
+    export_text = (
+        "demo==1.2.3 \\\n"
+        f"  --hash=sha256:{hashlib.sha256(demo.read_bytes()).hexdigest()}\n"
+    )
+    return lock, project, export_text, {f"https://example.test/{demo.name}": demo}
+
+
+def test_build_wheelhouse_writes_offline_outputs(tmp_path: Path) -> None:
+    lock, project, export_text, downloads = _wheelhouse_fixture(tmp_path)
+    output = tmp_path / "output"
+    module = load_module()
+
+    archive = module.build_wheelhouse(
+        output,
+        lock_path=lock,
+        policy={"allowed_licenses": ["MIT"], "wheel_approvals": {}},
+        export_text=export_text,
+        download=lambda url, target: shutil.copyfile(downloads[url], target),
+        build_project=lambda directory: shutil.copyfile(
+            project, directory / project.name
+        ),
+    )
+
+    manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
+    assert {item["name"] for item in manifest["packages"]} == {"demo", "subtap"}
+    assert manifest["external_packages"] == [
+        {"name": "numpy", "requirement": ">=1.26.4", "formula": "numpy"},
+        {"name": "scipy", "requirement": ">=1.10.0", "formula": "scipy"},
+    ]
+    # Verify wheelhouse_sha256 is embedded for cross-validation by the renderer.
+    sha256_hex = manifest["wheelhouse_sha256"]
+    assert len(sha256_hex) == 64
+    assert sha256_hex == hashlib.sha256(archive.read_bytes()).hexdigest()
+    requirements = (output / "requirements.txt").read_text(encoding="utf-8")
+    assert "demo==1.2.3 --hash=sha256:" in requirements
+    assert "subtap==0.1.0rc2 --hash=sha256:" in requirements
+    assert "numpy" not in requirements and "scipy" not in requirements
+    assert "http" not in requirements
+    assert archive.name == "subtap-0.1.0rc2-py313-macos-arm64-wheelhouse.tar.gz"
+
+
+def test_build_wheelhouse_rejects_unknown_sdist(tmp_path: Path) -> None:
+    lock = tmp_path / "uv.lock"
+    lock.write_text(
+        'version = 1\nrevision = 3\nrequires-python = ">=3.10"\n\n'
+        '[[package]]\nname = "source-only"\nversion = "1.0"\n'
+        'source = { registry = "https://pypi.org/simple" }\n'
+        'sdist = { url = "https://example.test/source-only.tar.gz", '
+        'hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000" }\n',
+        encoding="utf-8",
+    )
+    module = load_module()
+
+    with pytest.raises(
+        module.WheelhouseError, match="source distribution is forbidden"
+    ):
+        module.build_wheelhouse(
+            tmp_path / "output",
+            lock_path=lock,
+            policy={"allowed_licenses": ["MIT"], "wheel_approvals": {}},
+            export_text="source-only==1.0\n",
+            download=lambda url, target: None,
+            build_project=lambda directory: None,
+        )
+
+
+def test_build_wheelhouse_rejects_unlocked_jieba_sdist(tmp_path: Path) -> None:
+    lock = tmp_path / "uv.lock"
+    lock.write_text(
+        'version = 1\nrevision = 3\nrequires-python = ">=3.10"\n\n'
+        '[[package]]\nname = "jieba"\nversion = "0.42.1"\n'
+        'source = { registry = "https://pypi.org/simple" }\n'
+        'sdist = { url = "https://example.test/jieba-0.42.1.tar.gz", '
+        'hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000" }\n',
+        encoding="utf-8",
+    )
+    module = load_module()
+
+    with pytest.raises(module.WheelhouseError, match="jieba sdist SHA256 mismatch"):
+        module.build_wheelhouse(
+            tmp_path / "output",
+            lock_path=lock,
+            policy={"allowed_licenses": ["MIT"], "wheel_approvals": {}},
+            export_text="jieba==0.42.1\n",
+            download=lambda url, target: None,
+            build_project=lambda directory: None,
+        )
+
+
+def test_build_wheelhouse_enforces_size_limit(tmp_path: Path) -> None:
+    lock, project, export_text, downloads = _wheelhouse_fixture(tmp_path)
+    module = load_module()
+
+    with pytest.raises(module.WheelhouseError, match="300 bytes"):
+        module.build_wheelhouse(
+            tmp_path / "output",
+            lock_path=lock,
+            policy={"allowed_licenses": ["MIT"], "wheel_approvals": {}},
+            export_text=export_text,
+            download=lambda url, target: shutil.copyfile(downloads[url], target),
+            build_project=lambda directory: shutil.copyfile(
+                project, directory / project.name
+            ),
+            max_bytes=300,
+        )
+
+
+def test_build_wheelhouse_archive_is_deterministic(tmp_path: Path) -> None:
+    lock, project, export_text, downloads = _wheelhouse_fixture(tmp_path)
+    module = load_module()
+
+    archives = []
+    for name in ("one", "two"):
+        archives.append(
+            module.build_wheelhouse(
+                tmp_path / name,
+                lock_path=lock,
+                policy={"allowed_licenses": ["MIT"], "wheel_approvals": {}},
+                export_text=export_text,
+                download=lambda url, target: shutil.copyfile(downloads[url], target),
+                build_project=lambda directory: shutil.copyfile(
+                    project, directory / project.name
+                ),
+            )
+        )
+
+    assert (
+        hashlib.sha256(archives[0].read_bytes()).digest()
+        == hashlib.sha256(archives[1].read_bytes()).digest()
+    )
+
+
+def test_build_wheelhouse_copies_wheel_license_bytes(tmp_path: Path) -> None:
+    demo = make_wheel(
+        tmp_path,
+        "demo",
+        "1.2.3",
+        declared_license_files=("LICENSE",),
+        license_files={"demo-1.2.3.dist-info/licenses/LICENSE": "exact license\n"},
+    )
+    project = make_wheel(tmp_path, "subtap", "0.1.0rc2")
+    digest = hashlib.sha256(demo.read_bytes()).hexdigest()
+    lock = tmp_path / "uv.lock"
+    lock.write_text(
+        'version = 1\nrevision = 3\nrequires-python = ">=3.10"\n\n'
+        '[[package]]\nname = "demo"\nversion = "1.2.3"\n'
+        'source = { registry = "https://pypi.org/simple" }\n'
+        f'wheels = [{{ url = "https://example.test/{demo.name}", '
+        f'hash = "sha256:{digest}" }}]\n',
+        encoding="utf-8",
+    )
+    output = tmp_path / "output"
+    module = load_module()
+
+    module.build_wheelhouse(
+        output,
+        lock_path=lock,
+        policy={"allowed_licenses": ["MIT"], "wheel_approvals": {}},
+        export_text=f"demo==1.2.3 --hash=sha256:{digest}\n",
+        download=lambda url, target: shutil.copyfile(demo, target),
+        build_project=lambda directory: shutil.copyfile(
+            project, directory / project.name
+        ),
+    )
+
+    copied = output / "THIRD_PARTY_LICENSES/demo/LICENSE"
+    assert copied.read_bytes() == b"exact license\n"
+    licenses = json.loads((output / "licenses.json").read_text(encoding="utf-8"))
+    assert licenses == [
+        {
+            "component": "demo",
+            "path": "THIRD_PARTY_LICENSES/demo/LICENSE",
+            "sha256": hashlib.sha256(b"exact license\n").hexdigest(),
+            "source_member": "demo-1.2.3.dist-info/licenses/LICENSE",
+        }
+    ]
+
+
 def test_sentencepiece_policy_pins_verified_release_inputs() -> None:
     policy = json.loads(
         (ROOT / "packaging/homebrew/license-policy.json").read_text(encoding="utf-8")
@@ -797,6 +998,27 @@ def test_rejects_lgpl_in_license_or_notice_files(tmp_path: Path, filename: str) 
         module.inspect_wheel(wheel, approved_policy(wheel))
 
 
+def test_allows_psf_license_that_mentions_gpl_compatibility(tmp_path: Path) -> None:
+    wheel = make_wheel(
+        tmp_path,
+        license_expression="PSF-2.0",
+        license_files={
+            "example-1.0.dist-info/licenses/LICENSE": (
+                "PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2\n"
+                "This license remains compatible with the GNU General Public License.\n"
+            )
+        },
+    )
+    module = load_module()
+
+    record = module.inspect_wheel(
+        wheel,
+        {"allowed_licenses": ["PSF-2.0"], "wheel_approvals": {}},
+    )
+
+    assert record.license == "PSF-2.0"
+
+
 def test_scans_every_dist_info_license_filename(tmp_path: Path) -> None:
     filename = "example-1.0.dist-info/licenses/COPYRIGHT.txt"
     wheel = make_wheel(
@@ -837,3 +1059,43 @@ def test_accepts_allowlisted_license_without_hash_override(tmp_path: Path) -> No
     assert record.name == "example"
     assert record.version == "1.0"
     assert record.license == "MIT"
+
+
+def test_accepts_standard_mit_license_classifier(tmp_path: Path) -> None:
+    wheel = make_wheel(
+        tmp_path,
+        license_expression=None,
+        license_classifiers=("License :: OSI Approved :: MIT License",),
+    )
+    module = load_module()
+
+    record = module.inspect_wheel(
+        wheel,
+        {"allowed_licenses": ["MIT"], "wheel_approvals": {}},
+    )
+
+    assert record.license == "MIT"
+
+
+def test_normalizes_legacy_apache_license_name(tmp_path: Path) -> None:
+    wheel = make_wheel(
+        tmp_path,
+        license_expression=None,
+        legacy_license="Apache 2.0",
+    )
+    module = load_module()
+
+    record = module.inspect_wheel(
+        wheel,
+        {"allowed_licenses": ["Apache-2.0"], "wheel_approvals": {}},
+    )
+
+    assert record.license == "Apache-2.0"
+
+
+def test_repository_policy_allows_permissive_mit_zero() -> None:
+    policy = json.loads(
+        (ROOT / "packaging/homebrew/license-policy.json").read_text(encoding="utf-8")
+    )
+
+    assert "MIT-0" in policy["allowed_licenses"]
