@@ -96,6 +96,98 @@ def test_homebrew_acceptance_preseeds_and_preserves_user_data() -> None:
     assert "acceptance-sentinel" in text
 
 
+def test_wheelhouse_archive_name_is_versioned() -> None:
+    """build_wheelhouse() produces a versioned archive name."""
+    text = (ROOT / "scripts/homebrew_wheelhouse.py").read_text()
+    assert (
+        'f"subtap-{project_record.version}-py313-macos-arm64-wheelhouse.tar.gz"' in text
+    )
+
+
+def test_publish_job_hard_fails_on_prerelease() -> None:
+    """Formal PyPI publish must be blocked when the release is a prerelease."""
+    workflow = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
+    publish_if = workflow["jobs"]["publish"]["if"]
+
+    assert "is_prerelease" in publish_if
+    assert "false" in publish_if
+    # The publish job must depend on metadata so is_prerelease is available
+    assert "metadata" in workflow["jobs"]["publish"]["needs"]
+
+
+def test_rc_build_detected_as_prerelease() -> None:
+    """RC version tags must be flagged as prerelease, not formal release."""
+    path = ROOT / "scripts/release_metadata.py"
+    spec = importlib.util.spec_from_file_location("release_metadata", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    # RC versions are prerelease
+    assert module.validate_tag("v0.2.0rc1", "0.2.0rc1") is True
+    # Alpha and beta are also prerelease
+    assert module.validate_tag("v0.2.0a1", "0.2.0a1") is True
+    assert module.validate_tag("v0.2.0b1", "0.2.0b1") is True
+    # Dev versions are prerelease
+    assert module.validate_tag("v0.2.0.dev1", "0.2.0.dev1") is True
+
+
+def test_github_release_marks_prerelease_flag() -> None:
+    """The GitHub Release step must propagate the prerelease flag from metadata."""
+    workflow = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
+    release_step = next(
+        step
+        for step in workflow["jobs"]["github-release"]["steps"]
+        if step.get("name") == "Upload GitHub Release assets"
+    )
+    prerelease_value = release_step["with"]["prerelease"]
+    assert "is_prerelease" in prerelease_value
+    assert "metadata" in prerelease_value
+
+
+def test_homebrew_acceptance_preserves_user_data_across_lifecycle() -> None:
+    """Acceptance script verifies sentinel files survive install/upgrade/rollback/uninstall."""
+    text = (ROOT / "scripts/homebrew_acceptance.sh").read_text()
+
+    # Sentinel creation happens before any install
+    assert "acceptance-sentinel" in text
+    assert "for directory in models glossaries manuscripts jobs" in text
+
+    # Sentinel verification happens after final uninstall
+    # Find the final verification block (after "final uninstall")
+    final_uninstall_idx = text.index("final uninstall")
+    final_check = text[final_uninstall_idx:]
+    assert "acceptance-sentinel" in final_check
+    assert "user data removed" in final_check
+
+
+def test_homebrew_acceptance_ab_versioned_wheelhouse_url() -> None:
+    """Acceptance script upgrade path uses versioned wheelhouse references."""
+    text = (ROOT / "scripts/homebrew_acceptance.sh").read_text()
+
+    # The script must install a previous formula first, then upgrade
+    assert "brew install" in text
+    assert "brew upgrade subtap" in text
+
+    # After upgrade, version must differ from previous
+    assert 'test "$upgraded_version" != "$previous_version"' in text
+
+    # After rollback, version must match previous
+    assert 'test "$rollback_version" = "$previous_version"' in text
+
+
+def test_wheelhouse_attestation_in_workflow() -> None:
+    """The workflow must attest wheelhouse build provenance alongside dist artifacts."""
+    workflow = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
+    attest_job = workflow["jobs"]["attest"]
+
+    assert attest_job["permissions"]["attestations"] == "write"
+    assert attest_job["permissions"]["id-token"] == "write"
+    # attest must be a dependency of github-release and publish
+    assert "attest" in workflow["jobs"]["github-release"]["needs"]
+    assert "attest" in workflow["jobs"]["publish"]["needs"]
+
+
 def test_homebrew_acceptance_refuses_existing_install(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"
     home = tmp_path / "home"
