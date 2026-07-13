@@ -3,13 +3,25 @@
 
 from __future__ import annotations
 
+import argparse
+import base64
 from email import message_from_bytes
 import hashlib
+import json
 from pathlib import Path
-from typing import NamedTuple
+import subprocess
+import tempfile
+from typing import Any, NamedTuple
 from zipfile import BadZipFile, ZipFile
 
-FORBIDDEN_MEMBERS = ("libgfortran", "libgcc", "libquadmath", "openblas")
+FORBIDDEN_MEMBERS = (
+    "libgfortran",
+    "libgcc",
+    "libquadmath",
+    "openblas",
+    "tcmalloc",
+    "libatomic",
+)
 FORBIDDEN_LICENSE_MARKERS = (
     "GNU AFFERO GENERAL PUBLIC LICENSE",
     "GNU GENERAL PUBLIC LICENSE",
@@ -19,6 +31,14 @@ FORBIDDEN_LICENSE_MARKERS = (
     "LGPL-",
 )
 LICENSE_FILE_MARKERS = ("license", "copying", "notice")
+REQUIRED_SENTENCEPIECE_NOTICES = {
+    "SentencePiece",
+    "Abseil",
+    "protobuf-lite",
+    "darts-clone",
+    "esaxx",
+    "pybind11",
+}
 
 
 class WheelhouseError(ValueError):
@@ -124,3 +144,248 @@ def inspect_wheel(path: Path, policy: dict[str, object]) -> WheelRecord:
         license=license_id,
         filename=path.name,
     )
+
+
+def _matching_slsa_statement(
+    bundle_path: Path, filename: str, wheel_sha256: str
+) -> dict[str, Any]:
+    for line in bundle_path.read_text(encoding="utf-8").splitlines():
+        try:
+            bundle = json.loads(line)
+            envelope = bundle["dsseEnvelope"]
+            statement = json.loads(base64.b64decode(envelope["payload"], validate=True))
+            subjects = statement["subject"]
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise WheelhouseError("invalid SLSA bundle") from exc
+        matches = [
+            subject
+            for subject in subjects
+            if Path(str(subject.get("name", ""))).name == filename
+        ]
+        if matches:
+            if len(matches) != 1:
+                raise WheelhouseError("SLSA bundle has duplicate wheel subjects")
+            if matches[0].get("digest", {}).get("sha256") != wheel_sha256:
+                raise WheelhouseError("SLSA subject SHA256 mismatch")
+            return statement
+    raise WheelhouseError("SLSA bundle is missing the wheel subject")
+
+
+def _verify_notices(notices_dir: Path, release: dict[str, object]) -> None:
+    notices = release.get("notices")
+    if not isinstance(notices, list) or not all(
+        isinstance(notice, dict) for notice in notices
+    ):
+        raise WheelhouseError("notices must be an array of objects")
+    components = {notice.get("component") for notice in notices}
+    missing = REQUIRED_SENTENCEPIECE_NOTICES - components
+    if missing:
+        raise WheelhouseError(f"missing notice policy entries: {sorted(missing)}")
+    for notice in notices:
+        filename = notice.get("filename")
+        if not isinstance(filename, str):
+            raise WheelhouseError("notice filename must be a string")
+        path = notices_dir / filename
+        if not path.is_file():
+            raise WheelhouseError(f"missing notice: {filename}")
+        actual_sha = sha256_file(path)
+        if actual_sha != notice.get("sha256"):
+            raise WheelhouseError(f"notice SHA256 mismatch: {filename}")
+
+
+def _run_slsa_verifier(
+    verifier_path: Path,
+    wheel_path: Path,
+    bundle_path: Path,
+    release: dict[str, object],
+) -> None:
+    verifier = release.get("slsa_verifier")
+    if not isinstance(verifier, dict):
+        raise WheelhouseError("slsa_verifier must be an object")
+    if not verifier_path.is_file():
+        raise WheelhouseError(f"missing slsa-verifier: {verifier_path}")
+    actual_sha = sha256_file(verifier_path)
+    if actual_sha != verifier.get("sha256"):
+        raise WheelhouseError("slsa-verifier SHA256 mismatch")
+    command = [
+        str(verifier_path),
+        "verify-artifact",
+        "--provenance-path",
+        str(bundle_path),
+        "--source-uri",
+        str(release.get("source_repository")),
+        "--source-tag",
+        str(release.get("source_tag")),
+        str(wheel_path),
+    ]
+    try:
+        subprocess.run(command, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "unknown verifier error").strip()
+        raise WheelhouseError(f"slsa-verifier failed: {detail}") from exc
+
+
+def scan_native_members(
+    wheel_path: Path, release: dict[str, object], otool_path: Path
+) -> None:
+    """Require an exact native member and Mach-O dependency set."""
+
+    expected_members = release.get("native_members")
+    allowed_dependencies = release.get("allowed_native_dependencies")
+    if not isinstance(expected_members, list) or not all(
+        isinstance(name, str) for name in expected_members
+    ):
+        raise WheelhouseError("native_members must be an array of strings")
+    if not isinstance(allowed_dependencies, list) or not all(
+        isinstance(name, str) for name in allowed_dependencies
+    ):
+        raise WheelhouseError("allowed_native_dependencies must be an array of strings")
+    with ZipFile(wheel_path) as archive:
+        native_members = sorted(
+            name
+            for name in archive.namelist()
+            if Path(name).suffix.lower() in {".so", ".dylib", ".a"}
+        )
+        if native_members != sorted(expected_members):
+            raise WheelhouseError(
+                f"native members mismatch: expected {expected_members}, got {native_members}"
+            )
+        with tempfile.TemporaryDirectory() as directory:
+            for member in native_members:
+                if not member.endswith((".so", ".dylib")):
+                    continue
+                extracted = Path(directory) / Path(member).name
+                extracted.write_bytes(archive.read(member))
+                try:
+                    result = subprocess.run(
+                        [str(otool_path), "-L", str(extracted)],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
+                except subprocess.CalledProcessError as exc:
+                    detail = (exc.stderr or exc.stdout or "unknown otool error").strip()
+                    raise WheelhouseError(f"otool failed: {detail}") from exc
+                dependencies = sorted(
+                    line.strip().split(maxsplit=1)[0]
+                    for line in result.stdout.splitlines()[1:]
+                    if line.strip()
+                )
+                forbidden = next(
+                    (
+                        dependency
+                        for dependency in dependencies
+                        if any(
+                            marker in dependency.lower() for marker in FORBIDDEN_MEMBERS
+                        )
+                    ),
+                    None,
+                )
+                if forbidden:
+                    raise WheelhouseError(f"forbidden native dependency: {forbidden}")
+                if dependencies != sorted(allowed_dependencies):
+                    raise WheelhouseError(
+                        "native dependencies mismatch: "
+                        f"expected {allowed_dependencies}, got {dependencies}"
+                    )
+
+
+def verify_sentencepiece_release(
+    wheel_path: Path,
+    bundle_path: Path,
+    notices_dir: Path,
+    verifier_path: Path,
+    release_metadata: dict[str, object],
+    policy: dict[str, object],
+    *,
+    formal_release: bool = False,
+    otool_path: Path = Path("/usr/bin/otool"),
+) -> WheelRecord:
+    """Verify the exact upstream SentencePiece release inputs."""
+
+    release = policy.get("sentencepiece_release")
+    if not isinstance(release, dict):
+        raise WheelhouseError("sentencepiece_release must be an object")
+    if release_metadata.get("tag_name") != release.get("source_tag"):
+        raise WheelhouseError("GitHub release tag mismatch")
+    draft = release_metadata.get("draft")
+    prerelease = release_metadata.get("prerelease")
+    if not isinstance(draft, bool) or not isinstance(prerelease, bool):
+        raise WheelhouseError("GitHub release metadata is incomplete")
+    if formal_release and (draft or prerelease):
+        raise WheelhouseError("formal release is not published")
+    if wheel_path.name != release.get("filename"):
+        raise WheelhouseError(f"wheel filename mismatch: {wheel_path.name}")
+    expected_sha = release.get("sha256")
+    actual_sha = sha256_file(wheel_path)
+    if actual_sha != expected_sha:
+        raise WheelhouseError(
+            f"wheel SHA256 mismatch: expected {expected_sha}, got {actual_sha}"
+        )
+    expected_bundle_sha = release.get("slsa_bundle_sha256")
+    actual_bundle_sha = sha256_file(bundle_path)
+    if actual_bundle_sha != expected_bundle_sha:
+        raise WheelhouseError(
+            "SLSA bundle SHA256 mismatch: "
+            f"expected {expected_bundle_sha}, got {actual_bundle_sha}"
+        )
+    statement = _matching_slsa_statement(
+        bundle_path, wheel_path.name, str(expected_sha)
+    )
+    try:
+        config_source = statement["predicate"]["invocation"]["configSource"]
+    except (KeyError, TypeError) as exc:
+        raise WheelhouseError("SLSA bundle is missing configSource") from exc
+    repository = release.get("source_repository")
+    tag = release.get("source_tag")
+    expected_uri = f"git+https://{repository}@refs/tags/{tag}"
+    if config_source.get("uri") != expected_uri:
+        raise WheelhouseError("SLSA source tag mismatch")
+    if config_source.get("digest", {}).get("sha1") != release.get("source_commit"):
+        raise WheelhouseError("SLSA source commit mismatch")
+    if config_source.get("entryPoint") != release.get("source_workflow"):
+        raise WheelhouseError("SLSA source workflow mismatch")
+    _verify_notices(notices_dir, release)
+    _run_slsa_verifier(verifier_path, wheel_path, bundle_path, release)
+    scan_native_members(wheel_path, release, otool_path)
+    return inspect_wheel(wheel_path, policy)
+
+
+def _json_object(path: Path) -> dict[str, object]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise WheelhouseError(f"expected JSON object: {path}")
+    return value
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    verify_parser = subparsers.add_parser("verify-sentencepiece")
+    verify_parser.add_argument("--wheel", type=Path, required=True)
+    verify_parser.add_argument("--bundle", type=Path, required=True)
+    verify_parser.add_argument("--notices", type=Path, required=True)
+    verify_parser.add_argument("--verifier", type=Path, required=True)
+    verify_parser.add_argument("--release-metadata", type=Path, required=True)
+    verify_parser.add_argument("--policy", type=Path, required=True)
+    verify_parser.add_argument("--otool", type=Path, default=Path("/usr/bin/otool"))
+    verify_parser.add_argument("--formal-release", action="store_true")
+    args = parser.parse_args()
+
+    if args.command == "verify-sentencepiece":
+        record = verify_sentencepiece_release(
+            args.wheel,
+            args.bundle,
+            args.notices,
+            args.verifier,
+            _json_object(args.release_metadata),
+            _json_object(args.policy),
+            formal_release=args.formal_release,
+            otool_path=args.otool,
+        )
+        print(json.dumps(record._asdict(), sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
