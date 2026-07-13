@@ -311,7 +311,7 @@ class TestRendererValidation:
 
     def test_rejects_missing_manifest(self, template_copy: Path) -> None:
         mod = _import_renderer()
-        with pytest.raises((FileNotFoundError, SystemExit)):
+        with pytest.raises(ValueError, match="cannot read"):
             mod.render(
                 manifest_path=Path("/nonexistent/manifest.json"),
                 template_path=template_copy,
@@ -321,7 +321,7 @@ class TestRendererValidation:
 
     def test_rejects_missing_template(self, manifest_path: Path) -> None:
         mod = _import_renderer()
-        with pytest.raises((FileNotFoundError, SystemExit)):
+        with pytest.raises(ValueError, match="cannot read"):
             mod.render(
                 manifest_path=manifest_path,
                 template_path=Path("/nonexistent/subtap.rb.in"),
@@ -359,7 +359,7 @@ class TestRendererValidation:
         bad = tmp_path / "manifest.json"
         bad.write_text("not json", encoding="utf-8")
         mod = _import_renderer()
-        with pytest.raises(SystemExit):
+        with pytest.raises(ValueError, match="invalid JSON"):
             mod.render(
                 manifest_path=bad,
                 template_path=template_copy,

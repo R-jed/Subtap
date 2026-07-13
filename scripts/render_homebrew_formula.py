@@ -16,19 +16,15 @@ def _read_json(path: Path) -> dict[str, object]:
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
-        print(f"ERROR: cannot read {path}: {exc}", file=sys.stderr)
-        raise SystemExit(1) from exc
+        raise ValueError(f"cannot read {path}: {exc}") from exc
     try:
         value = json.loads(text)
     except json.JSONDecodeError as exc:
-        print(
-            f"ERROR: invalid JSON {path}: {exc.msg} at line {exc.lineno}",
-            file=sys.stderr,
-        )
-        raise SystemExit(1) from exc
+        raise ValueError(
+            f"invalid JSON {path}: {exc.msg} at line {exc.lineno}"
+        ) from exc
     if not isinstance(value, dict):
-        print(f"ERROR: expected JSON object in {path}", file=sys.stderr)
-        raise SystemExit(1)
+        raise ValueError(f"expected JSON object in {path}")
     return value
 
 
@@ -41,8 +37,7 @@ def render(
 ) -> str:
     """Render the Formula template with values from the manifest.
 
-    Raises ``ValueError`` on contract violations (empty URL/SHA256).
-    Raises ``SystemExit`` on file I/O or JSON errors.
+    Raises ``ValueError`` on contract violations, file I/O, or JSON errors.
     """
     if not wheelhouse_url:
         raise ValueError("wheelhouse_url must not be empty")
@@ -68,7 +63,10 @@ def render(
             f"but got {wheelhouse_sha256!r}"
         )
 
-    template = template_path.read_text(encoding="utf-8")
+    try:
+        template = template_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(f"cannot read {template_path}: {exc}") from exc
 
     rendered = (
         template.replace(PLACEHOLDER_VERSION, version)
