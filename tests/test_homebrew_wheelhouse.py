@@ -8,6 +8,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 from zipfile import ZipFile
@@ -134,6 +135,21 @@ def make_bundle(
     path = tmp_path / "multiple.intoto.jsonl"
     path.write_text(json.dumps(bundle) + "\n", encoding="utf-8")
     return path
+
+
+def rewrite_bundle(bundle_path: Path, field: str, value: object) -> None:
+    bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+    statement = json.loads(base64.b64decode(bundle["dsseEnvelope"]["payload"]))
+    if field == "subject":
+        statement["subject"] = value
+    elif field == "configSource":
+        statement["predicate"]["invocation"]["configSource"] = value
+    else:
+        raise AssertionError(field)
+    bundle["dsseEnvelope"]["payload"] = base64.b64encode(
+        json.dumps(statement).encode()
+    ).decode()
+    bundle_path.write_text(json.dumps(bundle) + "\n", encoding="utf-8")
 
 
 def make_notices(tmp_path: Path) -> tuple[Path, list[dict[str, str]]]:
@@ -524,6 +540,122 @@ def test_rc_mode_allows_draft_but_runs_remaining_gates(tmp_path: Path) -> None:
             policy,
             otool_path=otool,
         )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "error_path"),
+    [
+        ("subject", [1], "statement.subject\\[0\\]"),
+        (
+            "configSource",
+            "invalid",
+            "statement.predicate.invocation.configSource",
+        ),
+    ],
+)
+def test_sentencepiece_release_rejects_malformed_slsa_objects(
+    tmp_path: Path, field: str, value: object, error_path: str
+) -> None:
+    wheel, bundle, notices_dir, verifier, otool, policy = make_release_inputs(tmp_path)
+    rewrite_bundle(bundle, field, value)
+    policy["sentencepiece_release"]["slsa_bundle_sha256"] = hashlib.sha256(
+        bundle.read_bytes()
+    ).hexdigest()
+    module = load_module()
+
+    with pytest.raises(module.WheelhouseError, match=error_path):
+        module.verify_sentencepiece_release(
+            wheel,
+            bundle,
+            notices_dir,
+            verifier,
+            {"tag_name": "v0.2.2", "draft": False, "prerelease": False},
+            policy,
+            otool_path=otool,
+        )
+
+
+def test_sentencepiece_release_rejects_non_string_notice_component(
+    tmp_path: Path,
+) -> None:
+    wheel, bundle, notices_dir, verifier, otool, policy = make_release_inputs(tmp_path)
+    policy["sentencepiece_release"]["notices"][0]["component"] = []
+    module = load_module()
+
+    with pytest.raises(
+        module.WheelhouseError,
+        match=r"sentencepiece_release.notices\[0\].component",
+    ):
+        module.verify_sentencepiece_release(
+            wheel,
+            bundle,
+            notices_dir,
+            verifier,
+            {"tag_name": "v0.2.2", "draft": False, "prerelease": False},
+            policy,
+            otool_path=otool,
+        )
+
+
+def test_slsa_verifier_timeout_is_bounded(tmp_path: Path, monkeypatch) -> None:
+    wheel, bundle, notices_dir, verifier, otool, policy = make_release_inputs(tmp_path)
+    module = load_module()
+
+    def timeout(command, **kwargs):
+        assert kwargs["timeout"] == module.SLSA_VERIFIER_TIMEOUT_SECONDS
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    monkeypatch.setattr(module.subprocess, "run", timeout)
+    with pytest.raises(module.WheelhouseError, match=r"slsa-verifier .* timed out"):
+        module.verify_sentencepiece_release(
+            wheel,
+            bundle,
+            notices_dir,
+            verifier,
+            {"tag_name": "v0.2.2", "draft": False, "prerelease": False},
+            policy,
+            otool_path=otool,
+        )
+
+
+def test_otool_oserror_is_bounded_and_reported(tmp_path: Path, monkeypatch) -> None:
+    wheel, _, _, _, otool, policy = make_release_inputs(tmp_path)
+    module = load_module()
+
+    def unavailable(command, **kwargs):
+        assert kwargs["timeout"] == module.OTOOL_TIMEOUT_SECONDS
+        raise OSError("not executable")
+
+    monkeypatch.setattr(module.subprocess, "run", unavailable)
+    release = policy["sentencepiece_release"]
+    with pytest.raises(
+        module.WheelhouseError,
+        match=rf"otool {otool} failed: not executable",
+    ):
+        module.scan_native_members(wheel, release, otool)
+
+
+def test_json_object_reports_path_and_parse_position(tmp_path: Path) -> None:
+    path = tmp_path / "invalid.json"
+    path.write_text("{", encoding="utf-8")
+    module = load_module()
+
+    with pytest.raises(
+        module.WheelhouseError,
+        match=rf"{re.escape(str(path))}.*line 1 column 2",
+    ):
+        module._json_object(path)
+
+
+def test_json_object_reports_missing_file_path(tmp_path: Path) -> None:
+    path = tmp_path / "missing.json"
+    module = load_module()
+
+    with pytest.raises(
+        module.WheelhouseError,
+        match=rf"{re.escape(str(path))}.*No such file",
+    ):
+        module._json_object(path)
 
 
 def test_verify_sentencepiece_cli_accepts_verified_release(tmp_path: Path) -> None:

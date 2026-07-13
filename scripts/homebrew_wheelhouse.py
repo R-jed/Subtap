@@ -42,6 +42,8 @@ MACHO_MAGICS = {
     b"\xbf\xba\xfe\xca",
 }
 AR_MAGIC = b"!<arch>\n"
+SLSA_VERIFIER_TIMEOUT_SECONDS = 60
+OTOOL_TIMEOUT_SECONDS = 30
 
 
 class WheelhouseError(ValueError):
@@ -54,6 +56,12 @@ class WheelRecord(NamedTuple):
     sha256: str
     license: str
     filename: str
+
+
+def _require_object(value: object, path: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise WheelhouseError(f"{path} must be an object")
+    return value
 
 
 def sha256_file(path: Path) -> str:
@@ -154,12 +162,20 @@ def _matching_slsa_statement(
 ) -> dict[str, Any]:
     for line in bundle_path.read_text(encoding="utf-8").splitlines():
         try:
-            bundle = json.loads(line)
-            envelope = bundle["dsseEnvelope"]
-            statement = json.loads(base64.b64decode(envelope["payload"], validate=True))
-            subjects = statement["subject"]
+            bundle = _require_object(json.loads(line), "bundle")
+            envelope = _require_object(bundle["dsseEnvelope"], "bundle.dsseEnvelope")
+            statement = _require_object(
+                json.loads(base64.b64decode(envelope["payload"], validate=True)),
+                "statement",
+            )
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise WheelhouseError("invalid SLSA bundle") from exc
+        subjects = statement.get("subject")
+        if not isinstance(subjects, list):
+            raise WheelhouseError("statement.subject must be an array")
+        for index, subject in enumerate(subjects):
+            subject = _require_object(subject, f"statement.subject[{index}]")
+            _require_object(subject.get("digest"), f"statement.subject[{index}].digest")
         matches = [
             subject for subject in subjects if subject.get("name") == expected_subject
         ]
@@ -183,7 +199,13 @@ def _verify_notices(notices_dir: Path, release: dict[str, object]) -> None:
         isinstance(notice, dict) for notice in notices
     ):
         raise WheelhouseError("notices must be an array of objects")
-    components = [notice.get("component") for notice in notices]
+    for index, notice in enumerate(notices):
+        for field in ("component", "filename", "sha256"):
+            if not isinstance(notice.get(field), str):
+                raise WheelhouseError(
+                    f"sentencepiece_release.notices[{index}].{field} must be a string"
+                )
+    components = [notice["component"] for notice in notices]
     if (
         len(required) != len(set(required))
         or len(components) != len(required)
@@ -191,15 +213,29 @@ def _verify_notices(notices_dir: Path, release: dict[str, object]) -> None:
     ):
         raise WheelhouseError("notice components do not match policy requirements")
     for notice in notices:
-        filename = notice.get("filename")
-        if not isinstance(filename, str):
-            raise WheelhouseError("notice filename must be a string")
+        filename = notice["filename"]
         path = notices_dir / filename
         if not path.is_file():
             raise WheelhouseError(f"missing notice: {filename}")
         actual_sha = sha256_file(path)
         if actual_sha != notice.get("sha256"):
             raise WheelhouseError(f"notice SHA256 mismatch: {filename}")
+
+
+def _config_source(statement: dict[str, Any]) -> dict[str, Any]:
+    predicate = _require_object(statement.get("predicate"), "statement.predicate")
+    invocation = _require_object(
+        predicate.get("invocation"), "statement.predicate.invocation"
+    )
+    config_source = _require_object(
+        invocation.get("configSource"),
+        "statement.predicate.invocation.configSource",
+    )
+    _require_object(
+        config_source.get("digest"),
+        "statement.predicate.invocation.configSource.digest",
+    )
+    return config_source
 
 
 def _run_slsa_verifier(
@@ -228,7 +264,20 @@ def _run_slsa_verifier(
         str(wheel_path),
     ]
     try:
-        subprocess.run(command, check=True, capture_output=True, text=True)
+        subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=SLSA_VERIFIER_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise WheelhouseError(
+            f"slsa-verifier {verifier_path} timed out after "
+            f"{SLSA_VERIFIER_TIMEOUT_SECONDS}s"
+        ) from exc
+    except OSError as exc:
+        raise WheelhouseError(f"slsa-verifier {verifier_path} failed: {exc}") from exc
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or exc.stdout or "unknown verifier error").strip()
         raise WheelhouseError(f"slsa-verifier failed: {detail}") from exc
@@ -278,7 +327,14 @@ def scan_native_members(
                         check=True,
                         capture_output=True,
                         text=True,
+                        timeout=OTOOL_TIMEOUT_SECONDS,
                     )
+                except subprocess.TimeoutExpired as exc:
+                    raise WheelhouseError(
+                        f"otool {otool_path} timed out after {OTOOL_TIMEOUT_SECONDS}s"
+                    ) from exc
+                except OSError as exc:
+                    raise WheelhouseError(f"otool {otool_path} failed: {exc}") from exc
                 except subprocess.CalledProcessError as exc:
                     detail = (exc.stderr or exc.stdout or "unknown otool error").strip()
                     raise WheelhouseError(f"otool failed: {detail}") from exc
@@ -351,10 +407,7 @@ def verify_sentencepiece_release(
     statement = _matching_slsa_statement(
         bundle_path, expected_subject, str(expected_sha)
     )
-    try:
-        config_source = statement["predicate"]["invocation"]["configSource"]
-    except (KeyError, TypeError) as exc:
-        raise WheelhouseError("SLSA bundle is missing configSource") from exc
+    config_source = _config_source(statement)
     repository = release.get("source_repository")
     tag = release.get("source_tag")
     expected_uri = f"git+https://{repository}@refs/tags/{tag}"
@@ -371,7 +424,16 @@ def verify_sentencepiece_release(
 
 
 def _json_object(path: Path) -> dict[str, object]:
-    value = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise WheelhouseError(f"cannot read JSON {path}: {exc}") from exc
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise WheelhouseError(
+            f"invalid JSON {path}: {exc.msg} at line {exc.lineno} column {exc.colno}"
+        ) from exc
     if not isinstance(value, dict):
         raise WheelhouseError(f"expected JSON object: {path}")
     return value
