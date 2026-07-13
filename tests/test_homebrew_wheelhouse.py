@@ -1093,6 +1093,49 @@ def test_normalizes_legacy_apache_license_name(tmp_path: Path) -> None:
     assert record.license == "Apache-2.0"
 
 
+def test_build_cli_accepts_policy_and_lock_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    policy = {"allowed_licenses": ["MIT"], "wheel_approvals": {}}
+    policy_path = tmp_path / "policy.json"
+    policy_path.write_text(json.dumps(policy), encoding="utf-8")
+    lock = tmp_path / "uv.lock"
+    lock.write_text(
+        'version = 1\nrevision = 3\nrequires-python = ">=3.10"\n\n',
+        encoding="utf-8",
+    )
+    output = tmp_path / "output"
+    module = load_module()
+
+    captured_kwargs: dict[str, object] = {}
+
+    def fake_build(output_dir: Path, **kwargs: object) -> Path:
+        captured_kwargs.update(kwargs)
+        output_dir.mkdir(parents=True)
+        archive = output_dir / "fake.tar.gz"
+        archive.write_bytes(b"fake")
+        return archive
+
+    monkeypatch.setattr(module, "build_wheelhouse", fake_build)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            str(SCRIPT),
+            "build",
+            "--output",
+            str(output),
+            "--policy",
+            str(policy_path),
+            "--lock-path",
+            str(lock),
+        ],
+    )
+
+    assert module.main() == 0
+    assert captured_kwargs["policy"] == policy
+    assert captured_kwargs["lock_path"] == lock
+
+
 def test_repository_policy_allows_permissive_mit_zero() -> None:
     policy = json.loads(
         (ROOT / "packaging/homebrew/license-policy.json").read_text(encoding="utf-8")

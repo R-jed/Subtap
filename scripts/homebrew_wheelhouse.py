@@ -1094,6 +1094,8 @@ def main() -> int:
     build_parser.add_argument("--python-version", default="3.13")
     build_parser.add_argument("--platform", default="macosx_14_0_arm64")
     build_parser.add_argument("--output", type=Path, required=True)
+    build_parser.add_argument("--policy", type=Path, default=None)
+    build_parser.add_argument("--lock-path", type=Path, default=None)
     args = parser.parse_args()
 
     if args.command == "verify-sentencepiece":
@@ -1109,10 +1111,13 @@ def main() -> int:
         )
         print(json.dumps(record._asdict(), sort_keys=True))
     elif args.command == "build":
+        policy = _json_object(args.policy) if args.policy else None
         archive = build_wheelhouse(
             args.output,
             python_version=args.python_version,
             platform=args.platform,
+            lock_path=args.lock_path,
+            policy=policy,
         )
         print(archive)
     return 0

@@ -16,10 +16,6 @@ class Subtap < Formula
   depends_on "python@3.13"
   depends_on "scipy"
 
-  bottle do
-    sha256 arm64_sonoma: "WHEELHOUSE_SHA256_PLACEHOLDER"
-  end
-
   def install
     venv = virtualenv_create(libexec, "python3.13")
     venv.pip_install [

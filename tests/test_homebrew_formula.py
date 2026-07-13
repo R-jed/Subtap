@@ -94,13 +94,10 @@ class TestTemplateStructure:
     def test_template_exists(self) -> None:
         assert TEMPLATE.is_file(), f"Template missing: {TEMPLATE}"
 
-    def test_arm64_sonoma_bottle(self) -> None:
-        """Formula must only target Apple Silicon macOS."""
+    def test_template_has_no_bottle_block(self) -> None:
+        """Formula must not contain a bottle block — Homebrew CI generates it."""
         text = TEMPLATE.read_text(encoding="utf-8")
-        assert 'sha256 arm64_sonoma: "' in text
-        # Must NOT have x86_64 or generic macOS bottle
-        assert "x86_64_linux" not in text
-        assert ":x86_64" not in text
+        assert "bottle do" not in text
 
     def test_python313_dependency(self) -> None:
         text = TEMPLATE.read_text(encoding="utf-8")
@@ -307,18 +304,6 @@ class TestRenderer:
             wheelhouse_sha256=SAMPLE_WHEELHOUSE_SHA256,
         )
         assert "test do" in result
-
-    def test_render_preserves_arm64_bottle(
-        self, manifest_path: Path, template_copy: Path
-    ) -> None:
-        mod = _import_renderer()
-        result = mod.render(
-            manifest_path=manifest_path,
-            template_path=template_copy,
-            wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
-            wheelhouse_sha256=SAMPLE_WHEELHOUSE_SHA256,
-        )
-        assert "arm64_sonoma" in result
 
 
 class TestRendererValidation:
