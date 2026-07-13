@@ -1,0 +1,38 @@
+# typed: false
+# frozen_string_literal: true
+
+class Subtap < Formula
+  include Language::Python::Virtualenv
+
+  desc "Offline subtitle transcription toolkit"
+  homepage "https://github.com/anthropics/subtap"
+  version "VERSION_PLACEHOLDER"
+  url "WHEELHOUSE_URL_PLACEHOLDER"
+  sha256 "WHEELHOUSE_SHA256_PLACEHOLDER"
+  license "MIT"
+
+  depends_on "ffmpeg"
+  depends_on "numpy"
+  depends_on "python@3.13"
+  depends_on "scipy"
+
+  bottle do
+    sha256 arm64_sonoma: "WHEELHOUSE_SHA256_PLACEHOLDER"
+  end
+
+  def install
+    venv = virtualenv_create(libexec, "python3.13")
+    venv.pip_install [
+      "--no-index",
+      "--no-deps",
+      "--require-hashes",
+      "--only-binary=:all:",
+      buildpath/"wheels",
+    ]
+    bin.install_symlink Dir[libexec/"bin/subtap"]
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/subtap --version")
+  end
+end
