@@ -19,6 +19,7 @@ SCRIPT = ROOT / "scripts/homebrew_wheelhouse.py"
 OLD_SENTENCEPIECE_SHA256 = (
     "097f3394e99456e9e4efba1737c3749d7e23563dd1588ce71a3d007f25475fff"
 )
+MACHO_FIXTURE = b"\xcf\xfa\xed\xfe" + b"\0" * 28
 
 
 def load_module():
@@ -80,7 +81,16 @@ def sentencepiece_policy(wheel: Path, **overrides: object) -> dict[str, object]:
     release: dict[str, object] = {
         "filename": wheel.name,
         "sha256": hashlib.sha256(wheel.read_bytes()).hexdigest(),
+        "slsa_subject": f"python/wheelhouse/{wheel.name}",
         "source_tag": "v0.2.2",
+        "required_notice_components": [
+            "SentencePiece",
+            "Abseil",
+            "protobuf-lite",
+            "darts-clone",
+            "esaxx",
+            "pybind11",
+        ],
     }
     release.update(overrides)
     return {
@@ -96,11 +106,13 @@ def make_bundle(
     *,
     tag: str = "v0.2.2",
     commit: str = "e0cce7d37b065b5140349dbe12c6bcf6192fdd78",
+    workflow: str = ".github/workflows/wheel.yml",
+    subject_name: str | None = None,
 ) -> Path:
     statement = {
         "subject": [
             {
-                "name": f"python/wheelhouse/{wheel.name}",
+                "name": subject_name or f"python/wheelhouse/{wheel.name}",
                 "digest": {"sha256": hashlib.sha256(wheel.read_bytes()).hexdigest()},
             }
         ],
@@ -109,7 +121,7 @@ def make_bundle(
                 "configSource": {
                     "uri": f"git+https://github.com/google/sentencepiece@refs/tags/{tag}",
                     "digest": {"sha1": commit},
-                    "entryPoint": ".github/workflows/wheel.yml",
+                    "entryPoint": workflow,
                 }
             }
         },
@@ -151,14 +163,17 @@ def make_notices(tmp_path: Path) -> tuple[Path, list[dict[str, str]]]:
 
 def make_release_inputs(
     tmp_path: Path,
+    additional_files: dict[str, bytes] | None = None,
 ) -> tuple[Path, Path, Path, Path, Path, dict[str, object]]:
     native_member = "sentencepiece/_sentencepiece.cpython-313-darwin.so"
+    wheel_files = {native_member: MACHO_FIXTURE}
+    wheel_files.update(additional_files or {})
     wheel = make_wheel(
         tmp_path,
         "sentencepiece",
         "0.2.2",
         license_expression="Apache-2.0",
-        extra={native_member: b"Mach-O fixture"},
+        extra=wheel_files,
     )
     bundle = make_bundle(tmp_path, wheel)
     notices_dir, notices = make_notices(tmp_path)
@@ -182,7 +197,6 @@ def make_release_inputs(
         source_workflow=".github/workflows/wheel.yml",
         notices=notices,
         slsa_verifier={
-            "version": "v2.7.1",
             "sha256": hashlib.sha256(verifier.read_bytes()).hexdigest(),
         },
         native_members=[native_member],
@@ -237,6 +251,7 @@ def test_sentencepiece_release_rejects_bundle_hash_drift(tmp_path: Path) -> None
     [
         ({"tag": "v9.9.9"}, "source tag mismatch"),
         ({"commit": "f" * 40}, "source commit mismatch"),
+        ({"workflow": ".github/workflows/other.yml"}, "source workflow mismatch"),
     ],
 )
 def test_sentencepiece_release_rejects_wrong_bundle_source(
@@ -255,6 +270,33 @@ def test_sentencepiece_release_rejects_wrong_bundle_source(
     module = load_module()
 
     with pytest.raises(module.WheelhouseError, match=message):
+        module.verify_sentencepiece_release(
+            wheel,
+            bundle,
+            tmp_path / "third-party",
+            tmp_path / "slsa-verifier",
+            {"tag_name": "v0.2.2", "draft": False, "prerelease": False},
+            policy,
+        )
+
+
+def test_sentencepiece_release_rejects_subject_with_same_basename(
+    tmp_path: Path,
+) -> None:
+    wheel = make_wheel(tmp_path, "sentencepiece", "0.2.2")
+    bundle = make_bundle(tmp_path, wheel, subject_name=f"attacker/path/{wheel.name}")
+    policy = sentencepiece_policy(
+        wheel,
+        slsa_bundle_sha256=hashlib.sha256(bundle.read_bytes()).hexdigest(),
+        slsa_subject=f"python/wheelhouse/{wheel.name}",
+        source_repository="github.com/google/sentencepiece",
+        source_tag="v0.2.2",
+        source_commit="e0cce7d37b065b5140349dbe12c6bcf6192fdd78",
+        source_workflow=".github/workflows/wheel.yml",
+    )
+    module = load_module()
+
+    with pytest.raises(module.WheelhouseError, match="missing the exact wheel subject"):
         module.verify_sentencepiece_release(
             wheel,
             bundle,
@@ -320,7 +362,6 @@ def test_sentencepiece_release_rejects_failed_slsa_verifier(tmp_path: Path) -> N
         source_workflow=".github/workflows/wheel.yml",
         notices=notices,
         slsa_verifier={
-            "version": "v2.7.1",
             "sha256": hashlib.sha256(verifier.read_bytes()).hexdigest(),
         },
     )
@@ -337,7 +378,16 @@ def test_sentencepiece_release_rejects_failed_slsa_verifier(tmp_path: Path) -> N
         )
 
 
-def test_formal_sentencepiece_release_rejects_prerelease(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "release_metadata",
+    [
+        {"tag_name": "v0.2.2", "draft": False, "prerelease": True},
+        {"tag_name": "v0.2.2", "draft": True, "prerelease": False},
+    ],
+)
+def test_formal_sentencepiece_release_rejects_unpublished_status(
+    tmp_path: Path, release_metadata: dict[str, object]
+) -> None:
     wheel, bundle, notices_dir, verifier, _, policy = make_release_inputs(tmp_path)
     module = load_module()
 
@@ -347,7 +397,7 @@ def test_formal_sentencepiece_release_rejects_prerelease(tmp_path: Path) -> None
             bundle,
             notices_dir,
             verifier,
-            {"tag_name": "v0.2.2", "draft": False, "prerelease": True},
+            release_metadata,
             policy,
             formal_release=True,
         )
@@ -388,6 +438,89 @@ def test_sentencepiece_release_rejects_unexpected_native_member(
             notices_dir,
             verifier,
             {"tag_name": "v0.2.2", "draft": False, "prerelease": False},
+            policy,
+            otool_path=otool,
+        )
+
+
+def test_sentencepiece_release_detects_macho_with_bundle_suffix(
+    tmp_path: Path,
+) -> None:
+    wheel, bundle, notices_dir, verifier, otool, policy = make_release_inputs(
+        tmp_path, {"sentencepiece/plugin.bundle": MACHO_FIXTURE}
+    )
+    module = load_module()
+
+    with pytest.raises(module.WheelhouseError, match="native members mismatch"):
+        module.verify_sentencepiece_release(
+            wheel,
+            bundle,
+            notices_dir,
+            verifier,
+            {"tag_name": "v0.2.2", "draft": False, "prerelease": False},
+            policy,
+            otool_path=otool,
+        )
+
+
+def test_sentencepiece_notice_requirements_come_from_policy(tmp_path: Path) -> None:
+    wheel, bundle, notices_dir, verifier, otool, policy = make_release_inputs(tmp_path)
+    custom_notice = notices_dir / "custom-LICENSE"
+    custom_notice.write_text("custom license", encoding="utf-8")
+    release = policy["sentencepiece_release"]
+    release["required_notice_components"] = ["custom"]
+    release["notices"] = [
+        {
+            "component": "custom",
+            "filename": custom_notice.name,
+            "sha256": hashlib.sha256(custom_notice.read_bytes()).hexdigest(),
+        }
+    ]
+    module = load_module()
+
+    record = module.verify_sentencepiece_release(
+        wheel,
+        bundle,
+        notices_dir,
+        verifier,
+        {"tag_name": "v0.2.2", "draft": False, "prerelease": False},
+        policy,
+        otool_path=otool,
+    )
+
+    assert record.version == "0.2.2"
+
+
+def test_sentencepiece_release_rejects_notice_hash_drift(tmp_path: Path) -> None:
+    wheel, bundle, notices_dir, verifier, otool, policy = make_release_inputs(tmp_path)
+    notice = notices_dir / "sentencepiece-LICENSE"
+    notice.write_text("changed", encoding="utf-8")
+    module = load_module()
+
+    with pytest.raises(module.WheelhouseError, match="notice SHA256 mismatch"):
+        module.verify_sentencepiece_release(
+            wheel,
+            bundle,
+            notices_dir,
+            verifier,
+            {"tag_name": "v0.2.2", "draft": False, "prerelease": False},
+            policy,
+            otool_path=otool,
+        )
+
+
+def test_rc_mode_allows_draft_but_runs_remaining_gates(tmp_path: Path) -> None:
+    wheel, bundle, notices_dir, verifier, otool, policy = make_release_inputs(tmp_path)
+    (notices_dir / "sentencepiece-LICENSE").unlink()
+    module = load_module()
+
+    with pytest.raises(module.WheelhouseError, match="missing notice"):
+        module.verify_sentencepiece_release(
+            wheel,
+            bundle,
+            notices_dir,
+            verifier,
+            {"tag_name": "v0.2.2", "draft": True, "prerelease": False},
             policy,
             otool_path=otool,
         )
@@ -456,8 +589,7 @@ def test_sentencepiece_policy_pins_verified_release_inputs() -> None:
         "cc6f6011e50a3ed6099e0cdfe59ae517c16d2b40c74de76eebaa8e8426f0486b"
     )
     assert policy["source_commit"] == ("e0cce7d37b065b5140349dbe12c6bcf6192fdd78")
-    assert policy["github_release"]["prerelease"] is False
-    assert {notice["component"] for notice in policy["notices"]} == {
+    expected_components = {
         "SentencePiece",
         "Abseil",
         "protobuf-lite",
@@ -465,6 +597,8 @@ def test_sentencepiece_policy_pins_verified_release_inputs() -> None:
         "esaxx",
         "pybind11",
     }
+    assert set(policy["required_notice_components"]) == expected_components
+    assert {notice["component"] for notice in policy["notices"]} == expected_components
     for notice in policy["notices"]:
         path = ROOT / "packaging/homebrew/third-party" / notice["filename"]
         assert hashlib.sha256(path.read_bytes()).hexdigest() == notice["sha256"]

@@ -12,19 +12,13 @@
   "sentencepiece_release": {
     "filename": "sentencepiece-0.2.2-cp313-cp313-macosx_11_0_arm64.whl",
     "sha256": "201a8e0f55501a76e08dbf2c54bc45f4642b379271e89c667d517bfbc2191f2a",
-    "slsa_bundle_filename": "multiple.intoto.jsonl",
+    "slsa_subject": "python/wheelhouse/sentencepiece-0.2.2-cp313-cp313-macosx_11_0_arm64.whl",
     "slsa_bundle_sha256": "cc6f6011e50a3ed6099e0cdfe59ae517c16d2b40c74de76eebaa8e8426f0486b",
     "source_repository": "github.com/google/sentencepiece",
     "source_tag": "v0.2.2",
     "source_commit": "e0cce7d37b065b5140349dbe12c6bcf6192fdd78",
     "source_workflow": ".github/workflows/wheel.yml",
-    "github_release": {
-      "draft": false,
-      "prerelease": false,
-      "published_at": "2026-07-12T07:12:52Z"
-    },
     "slsa_verifier": {
-      "version": "v2.7.1",
       "sha256": "39abfcf5f1d690c3e889ce3d2d6a8b87711424d83368511868d414e8f8bcb05c"
     },
     "native_members": [
@@ -34,47 +28,43 @@
       "/usr/lib/libSystem.B.dylib",
       "/usr/lib/libc++.1.dylib"
     ],
+    "required_notice_components": [
+      "SentencePiece",
+      "Abseil",
+      "protobuf-lite",
+      "darts-clone",
+      "esaxx",
+      "pybind11"
+    ],
     "notices": [
       {
         "component": "SentencePiece",
-        "license": "Apache-2.0",
         "filename": "sentencepiece-LICENSE",
-        "source": "https://raw.githubusercontent.com/google/sentencepiece/v0.2.2/LICENSE",
         "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
       },
       {
         "component": "Abseil",
-        "license": "Apache-2.0",
         "filename": "abseil-LICENSE",
-        "source": "https://raw.githubusercontent.com/abseil/abseil-cpp/5650e9cf76d3be4318d5fa3af38ee483ddfd5e4a/LICENSE",
         "sha256": "c79a7fea0e3cac04cd43f20e7b648e5a0ff8fa5344e644b0ee09ca1162b62747"
       },
       {
         "component": "protobuf-lite",
-        "license": "BSD-3-Clause",
         "filename": "protobuf-lite-LICENSE",
-        "source": "https://raw.githubusercontent.com/google/sentencepiece/v0.2.2/third_party/protobuf-lite/LICENSE",
         "sha256": "6e5e117324afd944dcf67f36cf329843bc1a92229a8cd9bb573d7a83130fea7d"
       },
       {
         "component": "darts-clone",
-        "license": "BSD-3-Clause",
         "filename": "darts-clone-LICENSE",
-        "source": "https://raw.githubusercontent.com/google/sentencepiece/v0.2.2/third_party/darts_clone/LICENSE",
         "sha256": "155f59997298ee336602c49f9c1110f268ac394ca2197eb02647a3555935ad52"
       },
       {
         "component": "esaxx",
-        "license": "MIT",
         "filename": "esaxx-LICENSE",
-        "source": "https://raw.githubusercontent.com/google/sentencepiece/v0.2.2/third_party/esaxx/LICENSE",
         "sha256": "7c28553d1d3312d65fe309f76a22ebaf33a3d76c8c1e3b98a88ee4654ecb53db"
       },
       {
         "component": "pybind11",
-        "license": "BSD-3-Clause",
         "filename": "pybind11-LICENSE",
-        "source": "https://raw.githubusercontent.com/pybind/pybind11/d03662f0984f652b60e7ddce53d3868002275197/LICENSE",
         "sha256": "83965b843b98f670d3a85bd041ed4b372c8ec50d7b4a5995a83ac697ba675dcb"
       }
     ]
