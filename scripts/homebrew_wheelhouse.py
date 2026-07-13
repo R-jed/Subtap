@@ -604,12 +604,34 @@ def _run_offline_build(
     sandbox = Path("/usr/bin/sandbox-exec")
     if not sandbox.is_file():
         raise WheelhouseError("sandbox-exec is required for the offline jieba build")
+    temp_root = Path(tempfile.gettempdir()).resolve()
+    profile = (
+        "(version 1)"
+        "(deny default)"
+        "(allow file-read*"
+        f'  (subpath "/usr")'
+        f'  (subpath "/Library")'
+        f'  (subpath "/System")'
+        f'  (subpath "/bin")'
+        f'  (subpath "/sbin")'
+        f'  (subpath "/dev")'
+        f'  (subpath "/private/tmp")'
+        f'  (subpath "{temp_root}"))'
+        "(allow file-write*"
+        f'  (subpath "{temp_root}"))'
+        "(allow process-exec"
+        f'  (subpath "/usr")'
+        f'  (subpath "/bin")'
+        f'  (subpath "/sbin")'
+        f'  (subpath "{temp_root}"))'
+        "(allow signal)"
+    )
     try:
         subprocess.run(
             [
                 str(sandbox),
                 "-p",
-                "(version 1)(allow default)(deny network*)",
+                profile,
                 *command,
             ],
             cwd=cwd,
@@ -732,13 +754,19 @@ def _build_jieba(
 
 
 def _download(url: str, target: Path) -> None:
+    temp = target.with_suffix(target.suffix + ".tmp")
     try:
+        if temp.exists():
+            temp.unlink()
         with httpx.stream("GET", url, follow_redirects=True, timeout=120) as response:
             response.raise_for_status()
-            with target.open("wb") as output:
+            with temp.open("wb") as output:
                 for chunk in response.iter_bytes():
                     output.write(chunk)
+        temp.rename(target)
     except (OSError, httpx.HTTPError) as exc:
+        if temp.exists():
+            temp.unlink()
         raise WheelhouseError(f"download failed: {url}: {exc}") from exc
 
 

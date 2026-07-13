@@ -55,9 +55,14 @@ def render(
         raise ValueError("manifest is missing required field 'subtap_version'")
     version = str(version)
 
-    # Cross-validate SHA256 against manifest when available
+    # Cross-validate SHA256 against manifest (mandatory — tamper detection)
     manifest_sha256 = manifest.get("wheelhouse_sha256")
-    if manifest_sha256 and str(manifest_sha256) != wheelhouse_sha256:
+    if not manifest_sha256:
+        raise ValueError(
+            "manifest is missing required field 'wheelhouse_sha256' — "
+            "possible tampering or stale manifest"
+        )
+    if str(manifest_sha256) != wheelhouse_sha256:
         raise ValueError(
             f"wheelhouse_sha256 mismatch: manifest has {manifest_sha256!r}, "
             f"but got {wheelhouse_sha256!r}"

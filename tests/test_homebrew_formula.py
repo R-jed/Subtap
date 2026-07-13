@@ -393,10 +393,10 @@ class TestRendererValidation:
                 wheelhouse_sha256="TAMPERED_HASH",
             )
 
-    def test_skips_sha256_validation_when_manifest_has_no_field(
+    def test_rejects_missing_wheelhouse_sha256_in_manifest(
         self, tmp_path: Path, template_copy: Path
     ) -> None:
-        """Render succeeds when manifest lacks wheelhouse_sha256 (no cross-check)."""
+        """Render rejects manifest lacking wheelhouse_sha256 (tamper detection)."""
         manifest_no_sha = {
             "subtap_version": "0.1.0",
             "packages": [],
@@ -404,13 +404,15 @@ class TestRendererValidation:
         path = tmp_path / "manifest.json"
         path.write_text(json.dumps(manifest_no_sha, indent=2), encoding="utf-8")
         mod = _import_renderer()
-        result = mod.render(
-            manifest_path=path,
-            template_path=template_copy,
-            wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
-            wheelhouse_sha256=SAMPLE_WHEELHOUSE_SHA256,
-        )
-        assert "class Subtap < Formula" in result
+        with pytest.raises(
+            ValueError, match="missing required field 'wheelhouse_sha256'"
+        ):
+            mod.render(
+                manifest_path=path,
+                template_path=template_copy,
+                wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
+                wheelhouse_sha256=SAMPLE_WHEELHOUSE_SHA256,
+            )
 
     def test_rejects_missing_subtap_version(
         self, tmp_path: Path, template_copy: Path

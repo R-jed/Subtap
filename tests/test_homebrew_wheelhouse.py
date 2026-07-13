@@ -1142,3 +1142,139 @@ def test_repository_policy_allows_permissive_mit_zero() -> None:
     )
 
     assert "MIT-0" in policy["allowed_licenses"]
+
+
+def test_download_cleans_up_temp_on_failure(tmp_path: Path) -> None:
+    """Partial download leaves no corrupt file behind; retry is not blocked."""
+    import httpx
+
+    module = load_module()
+    target = tmp_path / "artifact.whl"
+    tmp_file = target.with_suffix(target.suffix + ".tmp")
+
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self) -> None:
+            pass
+
+        def iter_bytes(self):
+            yield b"partial"
+            raise OSError("connection reset")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    def fake_stream(method, url, **kwargs):
+        return FakeResponse()
+
+    import unittest.mock
+
+    with unittest.mock.patch.object(httpx, "stream", fake_stream):
+        with pytest.raises(module.WheelhouseError, match="download failed"):
+            module._download("https://example.test/artifact.whl", target)
+
+    assert not target.exists(), "corrupt target should not exist after failure"
+    assert not tmp_file.exists(), "stale .tmp file should not exist after failure"
+
+    # Second attempt succeeds — retry is not blocked by leftover files.
+    good_content = b"complete wheel content"
+
+    class GoodResponse:
+        status_code = 200
+
+        def raise_for_status(self) -> None:
+            pass
+
+        def iter_bytes(self):
+            yield good_content
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    with unittest.mock.patch.object(httpx, "stream", lambda *a, **kw: GoodResponse()):
+        module._download("https://example.test/artifact.whl", target)
+
+    assert target.exists()
+    assert target.read_bytes() == good_content
+
+
+def test_download_atomic_rename_no_corrupt_intermediate(tmp_path: Path) -> None:
+    """Target file only appears after download completes successfully."""
+    import httpx
+
+    module = load_module()
+    target = tmp_path / "wheel.whl"
+    content = b"full download"
+    tmp_file = target.with_suffix(target.suffix + ".tmp")
+
+    observed_target_states: list[bool] = []
+
+    class TrackingResponse:
+        status_code = 200
+
+        def raise_for_status(self) -> None:
+            pass
+
+        def iter_bytes(self):
+            # Before yielding: target should not exist yet.
+            observed_target_states.append(target.exists())
+            yield content
+            # After writing to temp: target still should not exist.
+            observed_target_states.append(target.exists())
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    import unittest.mock
+
+    with unittest.mock.patch.object(
+        httpx, "stream", lambda *a, **kw: TrackingResponse()
+    ):
+        module._download("https://example.test/wheel.whl", target)
+
+    # Target did not exist before or during download — only after rename.
+    assert observed_target_states == [False, False]
+    assert target.exists()
+    assert not tmp_file.exists()
+    assert target.read_bytes() == content
+
+
+def test_sandbox_profile_blocks_full_disk_access() -> None:
+    """Sandbox must use (deny default), not (allow default)."""
+    module = load_module()
+
+    captured_args: list[str] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> None:
+        captured_args.extend(command)
+
+    import unittest.mock
+
+    with unittest.mock.patch("subprocess.run", fake_run):
+        try:
+            module._run_offline_build(["echo", "ok"], Path("/tmp/test"), {})
+        except module.WheelhouseError:
+            pass  # sandbox-exec may not exist; we only need the profile string
+
+    # Find the sandbox profile argument.
+    profile_index = captured_args.index("-p") + 1
+    profile = captured_args[profile_index]
+
+    assert "(deny default)" in profile, "sandbox must start with deny-default"
+    assert (
+        "(allow default)" not in profile
+    ), "sandbox must not use permissive allow-default"
+    assert (
+        "(deny network*)" in profile
+        or "network" not in profile.split("(deny default)")[0]
+    ), "network access must be blocked by deny-default"
