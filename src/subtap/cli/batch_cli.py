@@ -11,7 +11,7 @@ from pathlib import Path
 import typer
 
 
-from subtap.cli._utils import _handle_error
+from subtap.cli._utils import _handle_error, auto_json
 
 
 def batch_transcribe(
@@ -83,6 +83,8 @@ def batch_transcribe(
       subtap batch-transcribe --retry-failed output/manifest.json
       subtap batch-transcribe --files a.mp4,b.mp4 --json
     """
+    json_output = auto_json(json_output)
+
     from subtap.batch import (
         PIPELINE_STAGES,
         build_manifest,
@@ -485,6 +487,8 @@ def batch_compose_subtitle(
     json_output: bool = typer.Option(False, "--json", help="输出机器可读 JSON"),
 ) -> None:
     """批量把字幕烧录进视频。"""
+    json_output = auto_json(json_output)
+
     from subtap.compose import compose_batch
 
     if not items.exists():
