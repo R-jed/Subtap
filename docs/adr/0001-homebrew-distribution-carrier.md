@@ -33,7 +33,11 @@ Error: mlx exists on PyPI but lacks a suitable source distribution
 
 因此尚无候选通过全部门禁，也不能发布 `brew install` 命令。此前基于 fixture 结构将 Formula 标记为通过属于无效证据，相关 Cask、launcher 和占位 Formula 已删除。Cask 若继续捆绑相同 SciPy wheel，也不能消除许可证义务。
 
-后续评估的“Homebrew 提供 NumPy/SciPy”候选也在许可证门禁停止：锁定的 SentencePiece 0.2.1 CPython 3.13 arm64 wheel 没有 wheel 内许可证或 PyPI provenance。虽然上游 `v0.2.1` tag 有 GitHub 验证签名，但当前没有证据把该精确二进制 wheel 绑定到对应 source commit。项目不能自写映射冒充上游构建证据；完整记录见 `docs/research/2026-07-13-wheelhouse-license-review.md`。
+后续评估的“Homebrew 提供 NumPy/SciPy”候选也在许可证门禁停止：锁定的 SentencePiece 0.2.1 CPython 3.13 arm64 wheel 没有 wheel 内许可证或 PyPI provenance。虽然上游 `v0.2.1` tag 指向 GitHub verified commit，但当前没有证据把该精确二进制 wheel 绑定到对应 source commit。项目不能自写映射冒充上游构建证据；完整记录见 `docs/research/2026-07-13-wheelhouse-license-review.md`。
+
+维护者随后批准“从官方 source 构建”方向，但补充调查改变了前提：官方 `v0.2.2` 已提供 SLSA provenance，且 CPython 3.13 arm64 subject SHA 与 GitHub/PyPI wheel 完全一致。按成熟方案优先原则，候选改为直接复用该精确 upstream wheel，不再自建 SentencePiece。`v0.2.1` provenance 与当前 wheel hash 不一致，继续拒绝。
+
+该方向当前仍是 Proposed。0.2.2 wheel 内没有许可证文件，必须在同一 wheelhouse 补齐 SentencePiece、Abseil、protobuf-lite、darts-clone、esaxx 与 pybind11 notices，并把这些材料持久安装到 Homebrew Cellar；还需通过 SLSA 签名、native 扫描和完整 Homebrew A/B 验收。GitHub Release 当前仍标记为 prerelease，正式发布前必须转为 stable，普通发布授权不能绕过。Homebrew runtime + wrapper 路线因 upstream 构建接口与 Abseil headers 不兼容、runtime 无法版本锁定而淘汰；完整 static source build 因重复 upstream 已证明来源的产物并扩大工具链风险而淘汰。
 
 ## 决策
 

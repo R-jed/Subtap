@@ -8,7 +8,7 @@
 
 **技术栈：** Python 3.13 标准库、uv、pip、Homebrew Formula、Ruby、Bash、pytest、GitHub Actions、GitHub artifact attestations。
 
-**状态：** Blocked。PyPI 对目标 SentencePiece wheel 的 Integrity API 返回 404，当前没有可核验的 wheel→source provenance；按已批准设计，任务 1 必须终止，任务 2-7 不得开始。恢复执行需要先修改设计边界并重新批准。
+**状态：** Superseded，禁止继续执行。更新后的候选改为复用带官方 SLSA provenance 的 `sentencepiece==0.2.2` CPython 3.13 arm64 wheel，并随附完整第三方许可证通知；本计划将在书面规格获批后重写，现有任务 2-7 仍不得开始。
 
 ---
 
@@ -107,7 +107,7 @@ def inspect_wheel(path: Path, policy: dict[str, object]) -> WheelRecord:
     return WheelRecord.from_metadata(path, digest, metadata, license_id)
 ```
 
-构建器先为 SentencePiece arm64 CPython 3.13 wheel SHA `097f3394e99456e9e4efba1737c3749d7e23563dd1588ce71a3d007f25475fff` 生成证据请求，至少包含 PyPI 文件 URL、PyPI Integrity API 结果、官方 signed `v0.2.1` tag/commit、Apache-2.0 LICENSE URL、审批人和审批日期。当前 PyPI Integrity API 返回 404，不能证明该 wheel 与 signed source tag 的对应关系，因此不得由代理创建批准项或继续任务 2。只有 wheel→source provenance 可以本地确定性验证后，才能另行设计并评审批准通道；当前实现不读取 `wheel_approvals` 来放行未知许可证，任何未知许可证一律失败。
+构建器先为 SentencePiece arm64 CPython 3.13 wheel SHA `097f3394e99456e9e4efba1737c3749d7e23563dd1588ce71a3d007f25475fff` 生成证据请求，至少包含 PyPI 文件 URL、PyPI Integrity API 结果、官方 `v0.2.1` tag/GitHub verified commit、Apache-2.0 LICENSE URL、审批人和审批日期。当前 PyPI Integrity API 返回 404，不能证明该 wheel 与 verified source commit 的对应关系，因此不得由代理创建批准项或继续任务 2。只有 wheel→source provenance 可以本地确定性验证后，才能另行设计并评审批准通道；当前实现不读取 `wheel_approvals` 来放行未知许可证，任何未知许可证一律失败。
 
 任务 1 的交付物只是“默认拒绝”的门禁实现和 Blocked 证据。步骤 4 测试 PASS 只证明未知/未获批 wheel 会被拒绝，不代表 SentencePiece 已通过许可证门禁；提交任务 1 后必须停止，任务 2-7 不执行。
 
