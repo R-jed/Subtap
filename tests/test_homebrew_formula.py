@@ -18,6 +18,7 @@ RENDERER = ROOT / "scripts/render_homebrew_formula.py"
 SAMPLE_MANIFEST = {
     "target": {"python": "3.13", "platform": "macosx_14_0_arm64"},
     "subtap_version": "0.1.0",
+    "wheelhouse_sha256": "ddd444",
     "external_packages": [
         {"name": "numpy", "requirement": ">=1.26.4", "formula": "numpy"},
         {"name": "scipy", "requirement": ">=1.10.0", "formula": "scipy"},
@@ -140,6 +141,45 @@ class TestTemplateStructure:
         text = TEMPLATE.read_text(encoding="utf-8")
         # Should invoke the CLI in the test block
         assert "subtap" in text.split("test do")[1]
+
+    def test_test_block_verifies_doctor(self) -> None:
+        """test do must verify `subtap doctor` works."""
+        text = TEMPLATE.read_text(encoding="utf-8")
+        test_section = text.split("test do")[1]
+        assert "doctor" in test_section
+
+    def test_test_block_imports_subtap_module(self) -> None:
+        """test do must verify key module imports."""
+        text = TEMPLATE.read_text(encoding="utf-8")
+        test_section = text.split("test do")[1]
+        assert "import subtap" in test_section
+
+    def test_test_block_checks_numpy_source(self) -> None:
+        """test do must verify numpy comes from Homebrew, not bundled."""
+        text = TEMPLATE.read_text(encoding="utf-8")
+        test_section = text.split("test do")[1]
+        assert "numpy" in test_section
+        assert "Formula" in test_section
+
+    def test_test_block_checks_scipy_source(self) -> None:
+        """test do must verify scipy comes from Homebrew, not bundled."""
+        text = TEMPLATE.read_text(encoding="utf-8")
+        test_section = text.split("test do")[1]
+        assert "scipy" in test_section
+
+    def test_test_block_refutes_numpy_in_venv(self) -> None:
+        """test do must ensure no duplicate numpy inside venv."""
+        text = TEMPLATE.read_text(encoding="utf-8")
+        test_section = text.split("test do")[1]
+        assert "refute_predicate" in test_section
+        assert "numpy" in test_section
+
+    def test_test_block_refutes_scipy_in_venv(self) -> None:
+        """test do must ensure no duplicate scipy inside venv."""
+        text = TEMPLATE.read_text(encoding="utf-8")
+        test_section = text.split("test do")[1]
+        assert "refute_predicate" in test_section
+        assert "scipy" in test_section
 
     def test_version_placeholder(self) -> None:
         text = TEMPLATE.read_text(encoding="utf-8")
@@ -339,3 +379,48 @@ class TestRendererValidation:
                 wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
                 wheelhouse_sha256=SAMPLE_WHEELHOUSE_SHA256,
             )
+
+    def test_accepts_matching_sha256(
+        self, manifest_path: Path, template_copy: Path
+    ) -> None:
+        """Render succeeds when provided SHA256 matches manifest."""
+        mod = _import_renderer()
+        result = mod.render(
+            manifest_path=manifest_path,
+            template_path=template_copy,
+            wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
+            wheelhouse_sha256=SAMPLE_WHEELHOUSE_SHA256,
+        )
+        assert "class Subtap < Formula" in result
+
+    def test_rejects_sha256_mismatch(
+        self, manifest_path: Path, template_copy: Path
+    ) -> None:
+        """Render fails when provided SHA256 doesn't match manifest."""
+        mod = _import_renderer()
+        with pytest.raises(ValueError, match="mismatch"):
+            mod.render(
+                manifest_path=manifest_path,
+                template_path=template_copy,
+                wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
+                wheelhouse_sha256="TAMPERED_HASH",
+            )
+
+    def test_skips_sha256_validation_when_manifest_has_no_field(
+        self, tmp_path: Path, template_copy: Path
+    ) -> None:
+        """Render succeeds when manifest lacks wheelhouse_sha256 (no cross-check)."""
+        manifest_no_sha = {
+            "subtap_version": "0.1.0",
+            "packages": [],
+        }
+        path = tmp_path / "manifest.json"
+        path.write_text(json.dumps(manifest_no_sha, indent=2), encoding="utf-8")
+        mod = _import_renderer()
+        result = mod.render(
+            manifest_path=path,
+            template_path=template_copy,
+            wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
+            wheelhouse_sha256=SAMPLE_WHEELHOUSE_SHA256,
+        )
+        assert "class Subtap < Formula" in result

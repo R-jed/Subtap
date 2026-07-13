@@ -52,6 +52,14 @@ def render(
     manifest = _read_json(manifest_path)
     version = str(manifest.get("subtap_version", ""))
 
+    # Cross-validate SHA256 against manifest when available
+    manifest_sha256 = manifest.get("wheelhouse_sha256")
+    if manifest_sha256 and str(manifest_sha256) != wheelhouse_sha256:
+        raise ValueError(
+            f"wheelhouse_sha256 mismatch: manifest has {manifest_sha256!r}, "
+            f"but got {wheelhouse_sha256!r}"
+        )
+
     template = template_path.read_text(encoding="utf-8")
 
     rendered = (
