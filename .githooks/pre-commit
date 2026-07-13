@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+cd "$REPO_ROOT"
+
+# ── staged files (added / copied / modified) ──────────────────────
+staged_py=$(git diff --cached --name-only --diff-filter=ACM -- '*.py' || true)
+staged_sh=$(git diff --cached --name-only --diff-filter=ACM -- '*.sh' || true)
+
+# nothing relevant staged → exit early
+if [[ -z "$staged_py" && -z "$staged_sh" ]]; then
+  exit 0
+fi
+
+fail=0
+
+# ── 1. shell syntax check (zero dependency) ───────────────────────
+if [[ -n "$staged_sh" ]]; then
+  for f in $staged_sh; do
+    if ! bash -n "$f" 2>/dev/null; then
+      printf '\033[31m✖ bash syntax error:\033[0m %s\n' "$f"
+      fail=1
+    fi
+  done
+fi
+
+# ── 2. shfmt (optional) ───────────────────────────────────────────
+if [[ -n "$staged_sh" ]] && command -v shfmt &>/dev/null; then
+  if ! shfmt -d -i 4 -ci -bn $staged_sh; then
+    printf '\033[33m⚠ shfmt: format issues found\033[0m\n'
+    printf '  Fix with: shfmt -w -i 4 -ci -bn <file>\n'
+    fail=1
+  fi
+fi
+
+# ── 3. shellcheck (optional) ──────────────────────────────────────
+if [[ -n "$staged_sh" ]] && command -v shellcheck &>/dev/null; then
+  if ! shellcheck $staged_sh; then
+    printf '\033[33m⚠ shellcheck: issues found\033[0m\n'
+    fail=1
+  fi
+fi
+
+# ── 4. black format check (Python) ────────────────────────────────
+if [[ -n "$staged_py" ]]; then
+  if command -v uv &>/dev/null; then
+    if ! uv run black --check --quiet $staged_py 2>/dev/null; then
+      printf '\033[31m✖ black: format issues found\033[0m\n'
+      printf '  Fix with: uv run black %s\n' "$staged_py"
+      fail=1
+    fi
+  else
+    printf '\033[33m⚠ uv not found, skipping black check\033[0m\n'
+  fi
+fi
+
+# ── 5. mypy type check (Python, full project context) ─────────────
+if [[ -n "$staged_py" ]]; then
+  if command -v uv &>/dev/null; then
+    if ! uv run mypy src/subtap 2>/dev/null; then
+      printf '\033[31m✖ mypy: type errors found\033[0m\n'
+      fail=1
+    fi
+  else
+    printf '\033[33m⚠ uv not found, skipping mypy check\033[0m\n'
+  fi
+fi
+
+# ── result ─────────────────────────────────────────────────────────
+if [[ $fail -ne 0 ]]; then
+  printf '\n\033[31mPre-commit checks failed. Fix issues or use --no-verify to skip.\033[0m\n'
+  exit 1
+fi
+
+printf '\033[32m✔ pre-commit passed\033[0m\n'

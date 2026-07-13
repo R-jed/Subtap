@@ -33,6 +33,15 @@ uv run subtap doctor
 uv run subtap run input.mp3 --mode quality --enhance local --local-only
 ```
 
+## 开发指南
+
+```bash
+# 启用 pre-commit hook（black + mypy + shellcheck）
+git config core.hooksPath .githooks
+```
+
+启用后，每次 `git commit` 会自动检查暂存文件的格式和类型。工具未安装时自动跳过，CI 是最终兜底。
+
 ## 常用命令
 
 - `subtap run`：运行完整字幕流程
