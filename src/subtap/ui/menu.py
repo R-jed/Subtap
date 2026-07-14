@@ -8,7 +8,7 @@
 
 import os
 import sys
-from .theme import Theme, ICON_ARROW, get_display_width
+from .theme import Theme, ICON_ARROW
 
 
 class Menu:

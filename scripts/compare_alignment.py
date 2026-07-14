@@ -14,7 +14,6 @@ Requires:
 from __future__ import annotations
 
 import argparse
-import json
 import statistics
 import sys
 import time
@@ -42,15 +41,19 @@ def run_baseline(model, audio_path: str, text: str) -> list[dict]:
     segments = []
     if hasattr(result, "segments") and result.segments:
         for seg in result.segments:
-            segments.append({
-                "start": seg.get("start", 0.0),
-                "end": seg.get("end", 0.0),
-                "text": seg.get("text", ""),
-            })
+            segments.append(
+                {
+                    "start": seg.get("start", 0.0),
+                    "end": seg.get("end", 0.0),
+                    "text": seg.get("text", ""),
+                }
+            )
     return segments
 
 
-def run_optimized(model, audio_path: str, sentences: list[str], language: str) -> list[dict]:
+def run_optimized(
+    model, audio_path: str, sentences: list[str], language: str
+) -> list[dict]:
     """New approach: model.generate() (word-level), one sentence at a time."""
     all_results = []
     for sent in sentences:
@@ -62,34 +65,42 @@ def run_optimized(model, audio_path: str, sentences: list[str], language: str) -
             )
             words = []
             for item in align_result:
-                words.append({
-                    "word": item.text,
-                    "start_sec": round(item.start_time, 3),
-                    "end_sec": round(item.end_time, 3),
-                })
+                words.append(
+                    {
+                        "word": item.text,
+                        "start_sec": round(item.start_time, 3),
+                        "end_sec": round(item.end_time, 3),
+                    }
+                )
 
             if words:
-                all_results.append({
-                    "start": words[0]["start_sec"],
-                    "end": words[-1]["end_sec"],
-                    "text": sent.strip(),
-                    "words": words,
-                })
+                all_results.append(
+                    {
+                        "start": words[0]["start_sec"],
+                        "end": words[-1]["end_sec"],
+                        "text": sent.strip(),
+                        "words": words,
+                    }
+                )
             else:
-                all_results.append({
+                all_results.append(
+                    {
+                        "start": 0.0,
+                        "end": 0.0,
+                        "text": sent.strip(),
+                        "words": [],
+                    }
+                )
+        except Exception as e:
+            all_results.append(
+                {
                     "start": 0.0,
                     "end": 0.0,
                     "text": sent.strip(),
                     "words": [],
-                })
-        except Exception as e:
-            all_results.append({
-                "start": 0.0,
-                "end": 0.0,
-                "text": sent.strip(),
-                "words": [],
-                "error": str(e),
-            })
+                    "error": str(e),
+                }
+            )
     return all_results
 
 
@@ -100,7 +111,11 @@ def compare(
     """Compare baseline and optimized alignment results."""
     n = min(len(baseline), len(optimized))
     if n == 0:
-        return {"error": "No comparable segments", "baseline_count": len(baseline), "optimized_count": len(optimized)}
+        return {
+            "error": "No comparable segments",
+            "baseline_count": len(baseline),
+            "optimized_count": len(optimized),
+        }
 
     start_diffs = []
     end_diffs = []
@@ -205,7 +220,9 @@ def generate_report(
         words = o.get("words", [])
         lines.append(f"**Segment {i+1}**: \"{o['text']}\"")
         for j, w in enumerate(words[:8]):
-            lines.append(f"  - Word {j+1}: \"{w['word']}\" [{w['start_sec']:.3f}s - {w['end_sec']:.3f}s]")
+            lines.append(
+                f"  - Word {j+1}: \"{w['word']}\" [{w['start_sec']:.3f}s - {w['end_sec']:.3f}s]"
+            )
         if len(words) > 8:
             lines.append(f"  - ... ({len(words) - 8} more words)")
         lines.append("")
@@ -216,8 +233,16 @@ def generate_report(
 def main():
     parser = argparse.ArgumentParser(description="A/B alignment comparison")
     parser.add_argument("--audio", required=True, help="Audio file path")
-    parser.add_argument("--text", default=None, help="Text file path (one sentence per line). If omitted, uses a built-in sample.")
-    parser.add_argument("--language", default="Chinese", help="Language (Chinese/English/Japanese/Korean)")
+    parser.add_argument(
+        "--text",
+        default=None,
+        help="Text file path (one sentence per line). If omitted, uses a built-in sample.",
+    )
+    parser.add_argument(
+        "--language",
+        default="Chinese",
+        help="Language (Chinese/English/Japanese/Korean)",
+    )
     parser.add_argument("--output", default=None, help="Output directory for report")
     args = parser.parse_args()
 
@@ -232,7 +257,7 @@ def main():
         # Use a simple sample for quick test
         sentences = ["你好世界，这是一个测试。"]
         full_text = sentences[0]
-        print(f"[INFO] No --text provided, using sample: \"{full_text}\"")
+        print(f'[INFO] No --text provided, using sample: "{full_text}"')
 
     # Load model
     model_path = str(Path(__file__).resolve().parents[1] / "models" / "aligner")
@@ -263,8 +288,13 @@ def main():
 
     # Generate report
     report = generate_report(
-        audio_path, args.language, baseline, optimized, stats,
-        elapsed_baseline, elapsed_optimized,
+        audio_path,
+        args.language,
+        baseline,
+        optimized,
+        stats,
+        elapsed_baseline,
+        elapsed_optimized,
     )
 
     if args.output:

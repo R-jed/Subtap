@@ -83,7 +83,7 @@ def test_ensure_directory_structure_creates_all_dirs(tmp_path):
     from subtap.core.safe_delete import ensure_directory_structure
 
     subtap_root = tmp_path / ".subtap"
-    dirs = ensure_directory_structure(subtap_root)
+    ensure_directory_structure(subtap_root)
 
     assert (subtap_root / "models").is_dir()
     assert (subtap_root / "glossaries").is_dir()

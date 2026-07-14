@@ -1,5 +1,4 @@
 # tests/test_theme.py
-import os
 from subtap.ui.theme import Theme, get_display_width, truncate_by_width
 
 

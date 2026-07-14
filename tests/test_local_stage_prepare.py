@@ -1,7 +1,6 @@
 """纯本地 prepare 阶段测试"""
 
 import pytest
-from pathlib import Path
 
 
 class TestLocalPrepare:
@@ -22,7 +21,6 @@ class TestLocalPrepare:
 
     def test_prepare_converts_to_wav(self, tmp_path, workspace, local_config):
         """测试非 WAV 格式转换"""
-        from pydub import AudioSegment
         from pydub.generators import Sine
         from subtap.core.media import prepare_media
 

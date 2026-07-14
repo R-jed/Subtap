@@ -41,7 +41,7 @@ def test_run_segment_reads_chunk_boundaries(test_config: SubtapConfig, tmp_path:
             f.write(seg.model_dump_json() + "\n")
 
     # Run segment without providing chunk_start/chunk_end
-    result = run_segment(ws)
+    run_segment(ws)
 
     # Verify sentences have correct time range (not 0-1)
     with open(ws.sentences_jsonl) as f:

@@ -110,16 +110,14 @@ def split_chunks(workspace: Workspace, config: SubtapConfig) -> list[Chunk]:
         VADError: If audio loading or VAD processing fails.
     """
     vad_cfg = config.audio.vad
+    min_silence_ms = _SENSITIVITY_MAP[vad_cfg.sensitivity]
 
     try:
         audio = AudioSegment.from_file(workspace.source_audio)
     except Exception as e:
-        raise VADError(
-            f"音频文件加载失败: {workspace.source_audio}\n" f"错误: {e}"
-        ) from e
+        raise VADError(f"音频文件加载失败: {workspace.source_audio}\n错误: {e}") from e
 
     if vad_cfg.use_silero_vad:
-        min_silence_ms = _SENSITIVITY_MAP.get(vad_cfg.sensitivity, 150)
         logger.info(
             "Using Silero VAD (sensitivity=%s, min_silence=%dms, threshold=%.2f)",
             vad_cfg.sensitivity,
@@ -145,12 +143,15 @@ def split_chunks(workspace: Workspace, config: SubtapConfig) -> list[Chunk]:
         )
 
     if not nonsilent:
-        # Whole file is speech (or whole file is silence)
-        nonsilent = [[0, len(audio)]]
+        raise VADError("未检测到语音，请确认音频包含可识别人声或调整 VAD 灵敏度")
 
     # Merge nearby segments (gap < min_silence_sec)
     merged: list[list[float]] = []
     for start_ms, end_ms in nonsilent:
+        if start_ms < 0 or end_ms <= start_ms or end_ms > len(audio):
+            raise VADError(
+                f"VAD 返回无效语音区间: {start_ms / 1000:.3f}s → {end_ms / 1000:.3f}s"
+            )
         start_sec = start_ms / 1000.0
         end_sec = end_ms / 1000.0
         if merged and (start_sec - merged[-1][1]) < vad_cfg.min_silence_sec:
@@ -158,29 +159,33 @@ def split_chunks(workspace: Workspace, config: SubtapConfig) -> list[Chunk]:
         else:
             merged.append([start_sec, end_sec])
 
-    # Split oversized chunks and drop undersized ones
-    # When Silero VAD is active, segments already respect natural pauses,
-    # so skip mechanical max_chunk_sec splitting to preserve sentence integrity.
+    # Preserve every detected utterance. The forced aligner accepts up to
+    # 180 seconds; reuse mlx-audio's low-energy splitter only above that limit.
     final_segments: list[list[float]] = []
     for start, end in merged:
-        dur = end - start
-        if dur < vad_cfg.min_chunk_sec:
-            continue
-        if vad_cfg.use_silero_vad:
-            # Silero VAD already split at natural pauses — keep as-is
+        if end - start <= vad_cfg.max_chunk_sec:
             final_segments.append([start, end])
-        else:
-            # pydub fallback: mechanical split at max_chunk_sec
-            while dur > vad_cfg.max_chunk_sec:
-                final_segments.append([start, start + vad_cfg.max_chunk_sec])
-                start += vad_cfg.max_chunk_sec
-                dur = end - start
-            if dur >= vad_cfg.min_chunk_sec:
-                final_segments.append([start, end])
+            continue
 
-    if not final_segments:
-        # Fallback: treat whole file as one chunk
-        final_segments = [[0.0, len(audio) / 1000.0]]
+        from mlx_audio.stt.models.qwen3_asr.qwen3_asr import (
+            split_audio_into_chunks,
+        )
+
+        region = audio[int(start * 1000) : int(end * 1000)]
+        region = region.set_frame_rate(16000).set_channels(1)
+        samples = np.array(region.get_array_of_samples(), dtype=np.float32) / 32768.0
+        for chunk_samples, offset_sec in split_audio_into_chunks(
+            samples,
+            sr=16000,
+            chunk_duration=vad_cfg.max_chunk_sec,
+            min_chunk_duration=0.0,
+        ):
+            chunk_start = start + offset_sec
+            chunk_end = min(
+                end,
+                chunk_start + len(chunk_samples) / 16000.0,
+            )
+            final_segments.append([chunk_start, chunk_end])
 
     # Export individual chunk WAVs and build Chunk list
     chunks: list[Chunk] = []

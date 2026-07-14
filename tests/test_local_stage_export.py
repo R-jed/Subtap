@@ -1,6 +1,5 @@
 """纯本地 export 阶段测试"""
 
-import pytest
 import json
 from pathlib import Path
 

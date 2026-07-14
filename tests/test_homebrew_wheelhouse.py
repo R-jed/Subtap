@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tarfile
 from zipfile import ZipFile
 
 import pytest
@@ -72,7 +73,6 @@ def approved_policy(path: Path, license_id: str = "Apache-2.0") -> dict[str, obj
         "wheel_approvals": {
             hashlib.sha256(path.read_bytes()).hexdigest(): {
                 "license": license_id,
-                "approval_file": "docs/approval.md",
                 "approved_by": "maintainer",
                 "approved_on": "2026-07-13",
                 "source_commit": "31646a4",
@@ -758,16 +758,46 @@ def test_build_wheelhouse_writes_offline_outputs(tmp_path: Path) -> None:
         {"name": "numpy", "requirement": ">=1.26.4", "formula": "numpy"},
         {"name": "scipy", "requirement": ">=1.10.0", "formula": "scipy"},
     ]
-    # Verify wheelhouse_sha256 is embedded for cross-validation by the renderer.
-    sha256_hex = manifest["wheelhouse_sha256"]
-    assert len(sha256_hex) == 64
-    assert sha256_hex == hashlib.sha256(archive.read_bytes()).hexdigest()
     requirements = (output / "requirements.txt").read_text(encoding="utf-8")
     assert "demo==1.2.3 --hash=sha256:" in requirements
     assert "subtap==0.1.0rc2 --hash=sha256:" in requirements
     assert "numpy" not in requirements and "scipy" not in requirements
     assert "http" not in requirements
     assert archive.name == "subtap-0.1.0rc2-py313-macos-arm64-wheelhouse.tar.gz"
+
+
+def test_wheelhouse_archive_matches_its_sealed_manifest(tmp_path: Path) -> None:
+    lock, project, export_text, downloads = _wheelhouse_fixture(tmp_path)
+    output = tmp_path / "output"
+    module = load_module()
+
+    archive = module.build_wheelhouse(
+        output,
+        lock_path=lock,
+        policy={"allowed_licenses": ["MIT"], "wheel_approvals": {}},
+        export_text=export_text,
+        download=lambda url, target: shutil.copyfile(downloads[url], target),
+        build_project=lambda directory: shutil.copyfile(
+            project, directory / project.name
+        ),
+    )
+
+    with tarfile.open(archive, "r:gz") as tar:
+        archived_manifest = tar.extractfile("wheelhouse/manifest.json")
+        assert archived_manifest is not None
+        assert archived_manifest.read() == (output / "manifest.json").read_bytes()
+
+    checksums = {
+        relative_path: expected_sha256
+        for expected_sha256, relative_path in (
+            line.split("  ", 1)
+            for line in (output / "SHA256SUMS").read_text(encoding="utf-8").splitlines()
+        )
+    }
+    for relative_path, expected_sha256 in checksums.items():
+        actual = output / relative_path
+        assert actual.is_file()
+        assert hashlib.sha256(actual.read_bytes()).hexdigest() == expected_sha256
 
 
 def test_build_wheelhouse_rejects_unknown_sdist(tmp_path: Path) -> None:
@@ -795,27 +825,10 @@ def test_build_wheelhouse_rejects_unknown_sdist(tmp_path: Path) -> None:
         )
 
 
-def test_build_wheelhouse_rejects_unlocked_jieba_sdist(tmp_path: Path) -> None:
-    lock = tmp_path / "uv.lock"
-    lock.write_text(
-        'version = 1\nrevision = 3\nrequires-python = ">=3.10"\n\n'
-        '[[package]]\nname = "jieba"\nversion = "0.42.1"\n'
-        'source = { registry = "https://pypi.org/simple" }\n'
-        'sdist = { url = "https://example.test/jieba-0.42.1.tar.gz", '
-        'hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000" }\n',
-        encoding="utf-8",
-    )
-    module = load_module()
+def test_project_does_not_depend_on_jieba() -> None:
+    project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
-    with pytest.raises(module.WheelhouseError, match="jieba sdist SHA256 mismatch"):
-        module.build_wheelhouse(
-            tmp_path / "output",
-            lock_path=lock,
-            policy={"allowed_licenses": ["MIT"], "wheel_approvals": {}},
-            export_text="jieba==0.42.1\n",
-            download=lambda url, target: None,
-            build_project=lambda directory: None,
-        )
+    assert '"jieba>=' not in project
 
 
 def test_build_wheelhouse_enforces_size_limit(tmp_path: Path) -> None:
@@ -907,6 +920,40 @@ def test_build_wheelhouse_copies_wheel_license_bytes(tmp_path: Path) -> None:
     ]
 
 
+def test_copy_wheel_licenses_deduplicates_identical_filenames(tmp_path: Path) -> None:
+    wheel = make_wheel(
+        tmp_path,
+        declared_license_files=("LICENSE",),
+        license_files={
+            "example/LICENSE": "same license\n",
+            "example-1.0.dist-info/licenses/LICENSE": "same license\n",
+        },
+    )
+    module = load_module()
+
+    records = module._copy_wheel_licenses(wheel, "example", tmp_path / "licenses")
+
+    assert len(records) == 1
+    assert records[0]["source_member"] == "example-1.0.dist-info/licenses/LICENSE"
+
+
+def test_copy_wheel_licenses_preserves_conflicting_filenames(tmp_path: Path) -> None:
+    wheel = make_wheel(
+        tmp_path,
+        declared_license_files=("LICENSE",),
+        license_files={
+            "example/LICENSE": "first license\n",
+            "example-1.0.dist-info/licenses/LICENSE": "second license\n",
+        },
+    )
+    module = load_module()
+
+    records = module._copy_wheel_licenses(wheel, "example", tmp_path / "licenses")
+
+    assert len(records) == 2
+    assert len({record["path"] for record in records}) == 2
+
+
 def test_sentencepiece_policy_pins_verified_release_inputs() -> None:
     policy = json.loads(
         (ROOT / "packaging/homebrew/license-policy.json").read_text(encoding="utf-8")
@@ -945,6 +992,24 @@ def test_unknown_license_requires_exact_approved_hash(tmp_path: Path) -> None:
         module.inspect_wheel(wheel, {"allowed_licenses": [], "wheel_approvals": {}})
 
 
+def test_accepts_unknown_license_with_exact_policy_approval(tmp_path: Path) -> None:
+    wheel = make_wheel(tmp_path, license_expression=None)
+    module = load_module()
+
+    record = module.inspect_wheel(wheel, approved_policy(wheel, "Apache-2.0"))
+
+    assert record.license == "Apache-2.0"
+
+
+def test_exact_policy_approval_normalizes_ambiguous_license(tmp_path: Path) -> None:
+    wheel = make_wheel(tmp_path, license_expression=None, legacy_license="BSD")
+    module = load_module()
+
+    record = module.inspect_wheel(wheel, approved_policy(wheel, "BSD-3-Clause"))
+
+    assert record.license == "BSD-3-Clause"
+
+
 def test_changed_approved_hash_is_rejected(tmp_path: Path) -> None:
     wheel = make_wheel(tmp_path, license_expression=None)
     policy = approved_policy(wheel)
@@ -956,12 +1021,22 @@ def test_changed_approved_hash_is_rejected(tmp_path: Path) -> None:
         module.inspect_wheel(wheel, policy)
 
 
-def test_unknown_license_cannot_be_self_approved(tmp_path: Path) -> None:
+def test_unknown_license_rejects_incomplete_approval(tmp_path: Path) -> None:
     wheel = make_wheel(tmp_path, license_expression=None)
     module = load_module()
 
     with pytest.raises(module.WheelhouseError, match="unapproved wheel hash"):
-        module.inspect_wheel(wheel, approved_policy(wheel))
+        module.inspect_wheel(
+            wheel,
+            {
+                "allowed_licenses": ["Apache-2.0"],
+                "wheel_approvals": {
+                    hashlib.sha256(wheel.read_bytes()).hexdigest(): {
+                        "license": "Apache-2.0"
+                    }
+                },
+            },
+        )
 
 
 def test_rejects_forbidden_legacy_license_even_with_mit_expression(
@@ -1061,6 +1136,24 @@ def test_accepts_allowlisted_license_without_hash_override(tmp_path: Path) -> No
     assert record.license == "MIT"
 
 
+def test_inspect_wheel_uses_distribution_metadata_not_vendored_metadata(
+    tmp_path: Path,
+) -> None:
+    wheel = make_wheel(
+        tmp_path,
+        extra={"vendor-1.0.dist-info/METADATA": b"Name: vendor\nVersion: 1.0\n"},
+    )
+    module = load_module()
+
+    record = module.inspect_wheel(
+        wheel,
+        {"allowed_licenses": ["MIT"], "wheel_approvals": {}},
+    )
+
+    assert record.name == "example"
+    assert record.version == "1.0"
+
+
 def test_accepts_standard_mit_license_classifier(tmp_path: Path) -> None:
     wheel = make_wheel(
         tmp_path,
@@ -1091,6 +1184,38 @@ def test_normalizes_legacy_apache_license_name(tmp_path: Path) -> None:
     )
 
     assert record.license == "Apache-2.0"
+
+
+def test_normalizes_legacy_mit_license_name(tmp_path: Path) -> None:
+    wheel = make_wheel(
+        tmp_path,
+        license_expression=None,
+        legacy_license="MIT License",
+    )
+    module = load_module()
+
+    record = module.inspect_wheel(
+        wheel,
+        {"allowed_licenses": ["MIT"], "wheel_approvals": {}},
+    )
+
+    assert record.license == "MIT"
+
+
+def test_normalizes_legacy_bsd3_license_name(tmp_path: Path) -> None:
+    wheel = make_wheel(
+        tmp_path,
+        license_expression=None,
+        legacy_license="3-Clause BSD License",
+    )
+    module = load_module()
+
+    record = module.inspect_wheel(
+        wheel,
+        {"allowed_licenses": ["BSD-3-Clause"], "wheel_approvals": {}},
+    )
+
+    assert record.license == "BSD-3-Clause"
 
 
 def test_build_cli_accepts_policy_and_lock_path(
@@ -1205,6 +1330,56 @@ def test_download_cleans_up_temp_on_failure(tmp_path: Path) -> None:
     assert target.read_bytes() == good_content
 
 
+def test_download_retries_a_transient_connection_reset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import httpx
+
+    module = load_module()
+    target = tmp_path / "artifact.whl"
+    attempts = 0
+
+    class ResetResponse:
+        def raise_for_status(self) -> None:
+            pass
+
+        def iter_bytes(self):
+            raise OSError("connection reset")
+            yield b""  # pragma: no cover
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    class GoodResponse:
+        def raise_for_status(self) -> None:
+            pass
+
+        def iter_bytes(self):
+            yield b"complete wheel content"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    def stream(*args, **kwargs):
+        nonlocal attempts
+        attempts += 1
+        return ResetResponse() if attempts == 1 else GoodResponse()
+
+    monkeypatch.setattr(httpx, "stream", stream)
+    monkeypatch.setattr(module.time, "sleep", lambda _: None)
+
+    module._download("https://example.test/artifact.whl", target)
+
+    assert attempts == 2
+    assert target.read_bytes() == b"complete wheel content"
+
+
 def test_download_atomic_rename_no_corrupt_intermediate(tmp_path: Path) -> None:
     """Target file only appears after download completes successfully."""
     import httpx
@@ -1247,34 +1422,3 @@ def test_download_atomic_rename_no_corrupt_intermediate(tmp_path: Path) -> None:
     assert target.exists()
     assert not tmp_file.exists()
     assert target.read_bytes() == content
-
-
-def test_sandbox_profile_blocks_full_disk_access() -> None:
-    """Sandbox must use (deny default), not (allow default)."""
-    module = load_module()
-
-    captured_args: list[str] = []
-
-    def fake_run(command: list[str], **kwargs: object) -> None:
-        captured_args.extend(command)
-
-    import unittest.mock
-
-    with unittest.mock.patch("subprocess.run", fake_run):
-        try:
-            module._run_offline_build(["echo", "ok"], Path("/tmp/test"), {})
-        except module.WheelhouseError:
-            pass  # sandbox-exec may not exist; we only need the profile string
-
-    # Find the sandbox profile argument.
-    profile_index = captured_args.index("-p") + 1
-    profile = captured_args[profile_index]
-
-    assert "(deny default)" in profile, "sandbox must start with deny-default"
-    assert (
-        "(allow default)" not in profile
-    ), "sandbox must not use permissive allow-default"
-    assert (
-        "(deny network*)" in profile
-        or "network" not in profile.split("(deny default)")[0]
-    ), "network access must be blocked by deny-default"

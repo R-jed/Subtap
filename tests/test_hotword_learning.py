@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 
 from subtap.ai.glossary_learner import GlossaryLearner, GlossaryUpdate
 from subtap.backends.llm.openai_compat import OpenAICompatibleLLM
@@ -88,7 +87,6 @@ class TestReplaceHotwordsReturnsOps:
 
     def test_returns_text_and_ops(self):
         """replace_hotwords returns dict with text and ops keys."""
-        from subtap.backends.llm.openai_compat import OpenAICompatibleLLM
 
         # This test will fail until we change the return type
         # For now, test via FakeLLMWithOps
@@ -126,7 +124,11 @@ class TestCleanRecordsOps:
 
         ops_path = workspace.root / "llm_hotword_ops.jsonl"
         assert ops_path.exists(), "llm_hotword_ops.jsonl should be created"
-        lines = [json.loads(l) for l in ops_path.read_text().strip().splitlines() if l]
+        lines = [
+            json.loads(line)
+            for line in ops_path.read_text().strip().splitlines()
+            if line
+        ]
         assert len(lines) == 1
         assert lines[0]["from"] == "维图尔"
         assert lines[0]["to"] == "VITURE"
@@ -163,7 +165,11 @@ class TestCleanRecordsOps:
         run_clean(workspace, config, enhance_mode="api")
 
         ops_path = workspace.root / "llm_hotword_ops.jsonl"
-        lines = [json.loads(l) for l in ops_path.read_text().strip().splitlines() if l]
+        lines = [
+            json.loads(line)
+            for line in ops_path.read_text().strip().splitlines()
+            if line
+        ]
         assert len(lines) == 2
 
 

@@ -104,7 +104,7 @@ class TestCleanTempFiles:
         chunk1 = _create_file(tmp_work / "chunks" / "chunk_0001.wav")
         source = _create_file(tmp_work / "audio" / "source.wav")
 
-        result = cleanroom.clean_temp_files(exclude_chunks=True)
+        cleanroom.clean_temp_files(exclude_chunks=True)
 
         assert chunk1.exists(), "chunk WAV 应被保留"
         assert not source.exists(), "source WAV 应被删除"
@@ -168,7 +168,7 @@ class TestCleanIntermediateFiles:
         """应删除 cleaned.jsonl。"""
         cleaned = _create_file(tmp_work / "cleaned.jsonl")
 
-        result = cleanroom.clean_intermediate_files()
+        cleanroom.clean_intermediate_files()
 
         assert not cleaned.exists()
 
@@ -176,7 +176,7 @@ class TestCleanIntermediateFiles:
         """应删除 sentences.jsonl。"""
         sentences = _create_file(tmp_work / "sentences.jsonl")
 
-        result = cleanroom.clean_intermediate_files()
+        cleanroom.clean_intermediate_files()
 
         assert not sentences.exists()
 
@@ -231,7 +231,7 @@ class TestCleanIntermediateFiles:
         """应删除 asr/asr_draft.jsonl。"""
         draft = _create_file(tmp_work / "asr" / "asr_draft.jsonl")
 
-        result = cleanroom.clean_intermediate_files()
+        cleanroom.clean_intermediate_files()
 
         assert not draft.exists()
 
@@ -473,8 +473,6 @@ class TestBatchCleanup:
         }
 
         # 用于捕获 clean_intermediate_files 的调用
-        cleanup_called = []
-        original_clean = None
 
         with patch("subtap.ui.tui.RichRunner") as mock_runner_class:
             mock_runner = MagicMock()
@@ -488,7 +486,7 @@ class TestBatchCleanup:
                 mock_clean.return_value = {"cleaned_count": 3, "cleaned_files": []}
 
                 # 运行批量转录
-                result = runner.invoke(
+                runner.invoke(
                     app,
                     [
                         "batch-transcribe",
@@ -540,7 +538,7 @@ class TestBatchCleanup:
                 mock_clean.return_value = {"cleaned_count": 3, "cleaned_files": []}
 
                 # 运行批量转录
-                result = runner.invoke(
+                runner.invoke(
                     app,
                     [
                         "batch-transcribe",
@@ -602,7 +600,7 @@ class TestCLIRunCleanup:
             mock_runner_class.return_value = mock_runner
 
             # 运行 pipeline（禁用 cleanroom 预检查，避免它清理文件）
-            result = runner.invoke(
+            runner.invoke(
                 app,
                 [
                     "run",
@@ -652,7 +650,7 @@ class TestFullIntegration:
         pipeline = Pipeline(config, work_dir=tmp_path)
 
         # 运行清理
-        result = pipeline.cleanup()
+        pipeline.cleanup()
 
         # 验证 L1 临时文件已移除
         assert not (tmp_path / "chunks" / "chunk_0000.wav").exists()
@@ -686,7 +684,7 @@ class TestFullIntegration:
 
         # 运行全部清理
         cleanroom = Cleanroom(tmp_path)
-        result = cleanroom.clean_all()
+        cleanroom.clean_all()
 
         # 验证 L1 已移除
         assert not (tmp_path / "chunks" / "chunk_0000.wav").exists()
@@ -717,7 +715,7 @@ class TestCleanCommand:
         (chunks_dir / "chunk_0000.wav").write_bytes(b"fake wav")
 
         # 运行 clean 命令
-        result = runner.invoke(app, ["cleanup", str(tmp_path)])
+        runner.invoke(app, ["cleanup", str(tmp_path)])
 
         # 验证临时文件已移除
         assert not (tmp_path / "chunks" / "chunk_0000.wav").exists()
@@ -735,7 +733,7 @@ class TestCleanCommand:
         (tmp_path / "aligned.jsonl").write_text('{"text": "hello"}\n')
 
         # 运行 clean 命令（带 --all 参数）
-        result = runner.invoke(app, ["cleanup", str(tmp_path), "--all"])
+        runner.invoke(app, ["cleanup", str(tmp_path), "--all"])
 
         # 验证中间文件已移除
         assert not (tmp_path / "cleaned.jsonl").exists()
@@ -762,7 +760,7 @@ class TestCleanCommand:
         )
 
         # 运行 clean 命令（带 --all 参数）
-        result = runner.invoke(app, ["cleanup", str(tmp_path), "--all"])
+        runner.invoke(app, ["cleanup", str(tmp_path), "--all"])
 
         # 验证输出文件被保留
         assert (tmp_path / "aligned.jsonl").exists()

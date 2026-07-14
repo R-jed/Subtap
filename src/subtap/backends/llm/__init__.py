@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from subtap.schemas.config import CleanConfig, RemoteAPIConfig
 
 if TYPE_CHECKING:
-    from subtap.backends.llm.base import TextCleaner, TextTranslator
+    from subtap.backends.llm.base import TextTranslator
     from subtap.backends.llm.openai_compat import OpenAICompatibleLLM
 
 

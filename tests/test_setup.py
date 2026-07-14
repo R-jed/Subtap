@@ -129,7 +129,7 @@ def test_setup_model_selection_include_optional():
     ):
         mock_download.return_value = True
         wizard.setup_models(source="hf", include_optional=True)
-        # Should download asr_0.6b, asr_1.7b, and aligner
+        # Should download the three supported 8-bit MLX models.
         assert mock_download.call_count == 3
         calls = [call.args[1] for call in mock_download.call_args_list]
         assert "aligner" in calls

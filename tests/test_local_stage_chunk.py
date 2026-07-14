@@ -1,6 +1,5 @@
 """纯本地 chunk 阶段测试"""
 
-import pytest
 import json
 
 

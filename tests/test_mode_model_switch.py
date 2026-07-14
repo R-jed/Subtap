@@ -1,8 +1,5 @@
 """Tests for --mode quality model switching."""
 
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-
 from subtap.schemas.config import load_config
 
 
@@ -24,7 +21,6 @@ def test_fast_mode_keeps_default():
     config = load_config()
     original = config.asr.model
 
-    mode = "fast"
     # No override for fast mode
 
     assert config.asr.model == original

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -485,7 +485,7 @@ def test_run_clean_uses_llm_proofread_config(workspace):
     mock_llm = MockLLMBackend()
 
     with patch("subtap.core.clean.get_llm_backend", return_value=mock_llm):
-        result = run_clean(workspace, config)
+        run_clean(workspace, config)
 
     # 验证 LLM 校对被调用
     assert mock_llm.select_suspicious_segments_called is True
@@ -509,7 +509,7 @@ def test_run_clean_uses_llm_hotword_config(workspace):
         patch("subtap.core.clean.get_llm_backend", return_value=mock_llm),
         patch("subtap.core.clean.load_yaml_glossary", return_value=mock_glossary),
     ):
-        result = run_clean(workspace, config)
+        run_clean(workspace, config)
 
     # 验证 LLM 校对未被调用（因为 llm_proofread=False）
     assert mock_llm.select_suspicious_segments_called is False
@@ -527,7 +527,7 @@ def test_run_clean_skips_llm_when_both_disabled(workspace):
     mock_llm = MockLLMBackend()
 
     with patch("subtap.core.clean.get_llm_backend", return_value=mock_llm):
-        result = run_clean(workspace, config)
+        run_clean(workspace, config)
 
     # 验证 LLM 未被调用
     assert mock_llm.select_suspicious_segments_called is False
@@ -550,7 +550,7 @@ def test_run_clean_both_enabled(workspace):
         patch("subtap.core.clean.get_llm_backend", return_value=mock_llm),
         patch("subtap.core.clean.load_yaml_glossary", return_value=mock_glossary),
     ):
-        result = run_clean(workspace, config)
+        run_clean(workspace, config)
 
     # 验证两个功能都被调用
     assert mock_llm.select_suspicious_segments_called is True

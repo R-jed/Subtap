@@ -27,48 +27,14 @@ class ModelEntry(TypedDict):
     modelscope_repo: str
 
 
-# Model registry: name → ModelEntry
-MODEL_REGISTRY: dict[str, ModelEntry] = {
-    "asr_0.6b": {
-        "description": "Qwen3 ASR 0.6B MLX 8bit",
-        "subdir": "asr_0.6b",
-        "required_files": [
-            "config.json",
-            "model.safetensors",
-            "tokenizer_config.json",
-            "vocab.json",
-            "merges.txt",
-        ],
-        "hf_repo": "aufklarer/Qwen3-ASR-0.6B-MLX-8bit",
-        "modelscope_repo": "aufklarer/Qwen3-ASR-0.6B-MLX-8bit",
+# Backward-compatible public export, derived from the default trusted manifest.
+MODEL_REGISTRY = cast(
+    dict[str, ModelEntry],
+    {
+        name: entry.to_legacy_dict()
+        for name, entry in load_manifest(get_manifest_path(None)).models.items()
     },
-    "asr_1.7b": {
-        "description": "Qwen3 ASR 1.7B MLX 8bit",
-        "subdir": "asr_1.7b",
-        "required_files": [
-            "config.json",
-            "model.safetensors",
-            "tokenizer_config.json",
-            "vocab.json",
-            "merges.txt",
-        ],
-        "hf_repo": "aufklarer/Qwen3-ASR-1.7B-MLX-8bit",
-        "modelscope_repo": "aufklarer/Qwen3-ASR-1.7B-MLX-8bit",
-    },
-    "aligner": {
-        "description": "Qwen3 ForcedAligner 0.6B MLX 8bit",
-        "subdir": "aligner",
-        "required_files": [
-            "config.json",
-            "model.safetensors",
-            "tokenizer_config.json",
-            "vocab.json",
-            "merges.txt",
-        ],
-        "hf_repo": "mlx-community/Qwen3-ForcedAligner-0.6B-8bit",
-        "modelscope_repo": "mlx-community/Qwen3-ForcedAligner-0.6B-8bit",
-    },
-}
+)
 
 
 def _get_model_root(config: SubtapConfig) -> Path:
@@ -113,7 +79,7 @@ class ModelRegistry:
         self.root = _get_model_root(config)
         self._manifest = self._load_manifest_if_available(config)
 
-    def _load_manifest_if_available(self, config: SubtapConfig) -> ModelManifest | None:
+    def _load_manifest_if_available(self, config: SubtapConfig) -> ModelManifest:
         """Load the trusted manifest or fail before model operations continue."""
         path = get_manifest_path(config)
         if not path.exists():
@@ -121,36 +87,43 @@ class ModelRegistry:
         return load_manifest(path)
 
     def _registry(self) -> dict[str, dict[str, Any]]:
-        """Return model registry: manifest-backed or legacy hardcoded."""
-        if self._manifest is not None:
-            return {
-                name: entry.to_legacy_dict()
-                for name, entry in self._manifest.models.items()
-            }
-        return MODEL_REGISTRY  # type: ignore[return-value]
+        """Return the validated manifest-backed model registry."""
+        return {
+            name: entry.to_legacy_dict()
+            for name, entry in self._manifest.models.items()
+        }
 
     def list_available(self) -> list[str]:
         """List all available model names."""
         return list(self._registry().keys())
 
     def status(self) -> list[ModelStatus]:
-        """Check status of all registered models."""
+        """Check required files and their declared sizes."""
         results: list[ModelStatus] = []
-        for name, info in self._registry().items():
-            model_dir = self.root / info["subdir"]
-            missing = []
-            for f in info["required_files"]:
-                if not (model_dir / f).exists():
-                    missing.append(f)
+        for name, entry in self._manifest.models.items():
+            model_dir = self.root / entry.subdir
+            issues = self._file_issues(name)
             results.append(
                 ModelStatus(
                     name=name,
-                    installed=len(missing) == 0,
+                    installed=not issues,
                     path=model_dir,
-                    missing_files=missing,
+                    missing_files=issues,
                 )
             )
         return results
+
+    def _file_issues(self, model_name: str) -> list[str]:
+        entry = self._manifest.models[model_name]
+        model_dir = self.root / entry.subdir
+        issues: list[str] = []
+        for file in entry.required_files:
+            path = model_dir / file.name
+            if not path.exists():
+                issues.append(file.name)
+            elif file.size_bytes > 0 and path.stat().st_size != file.size_bytes:
+                issues.append(f"{file.name}（大小不匹配）")
+        return issues
 
     def get_path(self, model_name: str) -> Path:
         """Get the directory path for a specific model."""
@@ -161,19 +134,15 @@ class ModelRegistry:
 
     def is_available(self, model_name: str) -> bool:
         """Check if a model is installed and complete."""
-        info = self._registry().get(model_name)
-        if info is None:
+        if model_name not in self._manifest.models:
             return False
-        model_dir = self.root / info["subdir"]
-        return all((model_dir / f).exists() for f in info["required_files"])
+        return not self._file_issues(model_name)
 
     def get_sha256(self, model_name: str, filename: str) -> str | None:
         """Get SHA256 hash for a model file from the manifest.
 
-        Returns None when no manifest is loaded or the file has no hash.
+        Returns None when the model or file has no hash.
         """
-        if self._manifest is None:
-            return None
         entry = self._manifest.models.get(model_name)
         if entry is None:
             return None
@@ -242,18 +211,10 @@ class ModelDownloader:
         Raises:
             RuntimeError: If SHA256 verification fails after all retries
         """
-        if model_name not in MODEL_REGISTRY:
-            raise ValueError(f"未知模型：{model_name}")
-
-        info = MODEL_REGISTRY[model_name]
-        repo_key = "modelscope_repo" if source == "modelscope" else "hf_repo"
-        repo = cast(str, info.get(repo_key) or "")
-        if not repo:
-            raise ValueError(
-                f"{model_name} 未配置 {source} / ModelScope 下载仓库，请手动放入 models/"
-            )
-
         registry = ModelRegistry(self.config)
+        info = registry._registry().get(model_name)
+        if info is None:
+            raise ValueError(f"未知模型：{model_name}")
         expected_hashes: dict[str, str] = {}
         for filename in info["required_files"]:
             expected_sha256 = registry.get_sha256(model_name, filename)
@@ -265,6 +226,12 @@ class ModelDownloader:
         model_dir.mkdir(parents=True, exist_ok=True)
         try:
             for filename in info["required_files"]:
+                repo_key = "modelscope_repo" if source == "modelscope" else "hf_repo"
+                repo = cast(str, info.get(repo_key) or "")
+                if not repo:
+                    raise ValueError(
+                        f"{model_name} 未配置 {source} / ModelScope 下载仓库，请手动放入 models/"
+                    )
                 url = self.build_file_url(source, repo, filename)
                 dest = model_dir / filename
                 expected_sha256 = expected_hashes[filename]
@@ -454,7 +421,8 @@ class ModelRemover:
         Returns:
             True if removal succeeded.
         """
-        info = MODEL_REGISTRY.get(model_name)
+        registry = ModelRegistry(self.config)
+        info = registry._registry().get(model_name)
         if info is None:
             raise ValueError(f"Unknown model: {model_name}")
 

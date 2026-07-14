@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import platform
 import shutil
 import subprocess
 import sys
@@ -16,9 +15,9 @@ from typing import TYPE_CHECKING
 import typer
 
 from subtap.cli._utils import _handle_error
+from subtap.metrics.profiler import PipelineProfiler
 
 REMOTE_ASR_BACKENDS = {"http-asr"}
-from subtap.metrics.profiler import PipelineProfiler
 
 if TYPE_CHECKING:
     from subtap.core.pipeline import Pipeline

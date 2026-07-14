@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
-
-import pytest
 
 
 def test_cold_install_script_exists():

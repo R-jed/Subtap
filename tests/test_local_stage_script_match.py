@@ -1,9 +1,5 @@
 """纯本地文稿匹配测试"""
 
-import pytest
-import json
-from pathlib import Path
-
 
 class TestLocalScriptMatch:
     """纯本地文稿匹配测试"""

@@ -13,7 +13,7 @@ class ModelsPage:
             icon = "✓" if s.installed else "✗"
             detail = ""
             if not s.installed and s.missing_files:
-                detail = f"（缺 {len(s.missing_files)} 个文件）"
+                detail = f"（{len(s.missing_files)} 项异常）"
             items.append(f"{icon} {s.name}{detail}")
         return items
 

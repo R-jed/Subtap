@@ -8,7 +8,6 @@ import base64
 from email import message_from_bytes
 import gzip
 import hashlib
-import io
 import json
 import os
 from pathlib import Path
@@ -18,6 +17,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import tomllib
 from typing import Any, Callable, NamedTuple
 from urllib.parse import urlparse
@@ -49,7 +49,18 @@ LICENSE_FILE_MARKERS = ("license", "copying", "notice")
 LICENSE_CLASSIFIERS = {
     "License :: OSI Approved :: MIT License": "MIT",
 }
-LICENSE_ALIASES = {"Apache 2.0": "Apache-2.0"}
+LICENSE_ALIASES = {
+    "Apache 2.0": "Apache-2.0",
+    "MIT License": "MIT",
+    "3-Clause BSD License": "BSD-3-Clause",
+}
+APPROVAL_FIELDS = (
+    "license",
+    "approved_by",
+    "approved_on",
+    "source_commit",
+    "provenance_url",
+)
 MACHO_MAGICS = {
     b"\xfe\xed\xfa\xce",
     b"\xce\xfa\xed\xfe",
@@ -65,11 +76,14 @@ SLSA_VERIFIER_TIMEOUT_SECONDS = 60
 OTOOL_TIMEOUT_SECONDS = 30
 MAX_WHEELHOUSE_BYTES = 300 * 1024 * 1024
 SOURCE_DATE_EPOCH = 315532800
-JIEBA_SDIST_SHA256 = "055ca12f62674fafed09427f176506079bc135638a14e23e25be909131928db2"
 EXTERNAL_PACKAGES = [
     {"name": "numpy", "requirement": ">=1.26.4", "formula": "numpy"},
     {"name": "scipy", "requirement": ">=1.10.0", "formula": "scipy"},
 ]
+PYTHON_VERSION = "3.13"
+PYTHON_VERSION_TUPLE = (3, 13)
+PYTHON_TAG = "cp313"
+DOWNLOAD_ATTEMPTS = 3
 
 
 class WheelhouseError(ValueError):
@@ -98,10 +112,30 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _require_metadata(names: list[str]) -> str:
+def _require_metadata(
+    archive: ZipFile,
+    names: list[str],
+    source: str,
+    expected_name: str | None = None,
+    expected_version: str | None = None,
+) -> str:
     matches = [name for name in names if name.endswith(".dist-info/METADATA")]
+    if expected_name is not None:
+        matches = [
+            name
+            for name in matches
+            if canonicalize_name(str(message_from_bytes(archive.read(name))["Name"]))
+            == canonicalize_name(expected_name)
+            and (
+                expected_version is None
+                or str(message_from_bytes(archive.read(name))["Version"])
+                == expected_version
+            )
+        ]
     if len(matches) != 1:
-        raise WheelhouseError(f"expected one METADATA file, found {len(matches)}")
+        raise WheelhouseError(
+            f"expected one METADATA file in {source}, found {len(matches)}"
+        )
     return matches[0]
 
 
@@ -137,6 +171,7 @@ def inspect_wheel(path: Path, policy: dict[str, object]) -> WheelRecord:
     try:
         with ZipFile(path) as archive:
             names = archive.namelist()
+            expected_name, expected_version, _, _ = parse_wheel_filename(path.name)
             forbidden = next(
                 (
                     name
@@ -148,7 +183,17 @@ def inspect_wheel(path: Path, policy: dict[str, object]) -> WheelRecord:
             if forbidden:
                 raise WheelhouseError(f"forbidden bundled component: {forbidden}")
 
-            metadata = message_from_bytes(archive.read(_require_metadata(names)))
+            metadata = message_from_bytes(
+                archive.read(
+                    _require_metadata(
+                        archive,
+                        names,
+                        path.name,
+                        str(expected_name),
+                        str(expected_version),
+                    )
+                )
+            )
             declared_licenses = []
             for field in ("License-Expression", "License"):
                 for value in metadata.get_all(field, []):
@@ -197,12 +242,27 @@ def inspect_wheel(path: Path, policy: dict[str, object]) -> WheelRecord:
     approvals = policy.get("wheel_approvals", {})
     if not isinstance(approvals, dict):
         raise WheelhouseError("wheel_approvals must be an object")
-    if license_id == "UNKNOWN":
-        raise WheelhouseError(f"unapproved wheel hash: {digest}")
-
     allowed = policy.get("allowed_licenses", [])
-    if not isinstance(allowed, list) or license_id not in allowed:
-        raise WheelhouseError(f"license is not allowlisted: {license_id}")
+    if not isinstance(allowed, list):
+        raise WheelhouseError("allowed_licenses must be a list")
+    if license_id not in allowed:
+        approval = approvals.get(digest)
+        if not isinstance(approval, dict) or any(
+            not isinstance(approval.get(field), str) or not approval[field]
+            for field in APPROVAL_FIELDS
+        ):
+            if license_id == "UNKNOWN":
+                raise WheelhouseError(
+                    f"unapproved wheel hash for {path.name}: {digest}"
+                )
+            raise WheelhouseError(
+                f"license is not allowlisted for {path.name}: {license_id}"
+            )
+        license_id = str(approval["license"])
+    if license_id not in allowed:
+        raise WheelhouseError(
+            f"license is not allowlisted for {path.name}: {license_id}"
+        )
 
     return WheelRecord(
         name=str(metadata["Name"]),
@@ -486,8 +546,8 @@ def _exported_requirements(text: str) -> list[Requirement]:
             "implementation_name": "cpython",
             "platform_machine": "arm64",
             "platform_system": "Darwin",
-            "python_full_version": "3.13.0",
-            "python_version": "3.13",
+            "python_full_version": f"{PYTHON_VERSION}.0",
+            "python_version": PYTHON_VERSION,
             "sys_platform": "darwin",
         }
     )
@@ -515,8 +575,8 @@ def _supported_tags() -> tuple[Tag, ...]:
     return tuple(
         dict.fromkeys(
             [
-                *cpython_tags((3, 13), platforms=platforms),
-                *compatible_tags((3, 13), "cp313", platforms=platforms),
+                *cpython_tags(PYTHON_VERSION_TUPLE, platforms=platforms),
+                *compatible_tags(PYTHON_VERSION_TUPLE, PYTHON_TAG, platforms=platforms),
             ]
         )
     )
@@ -555,10 +615,6 @@ def _select_locked_wheel(
     if not candidates:
         name = canonicalize_name(package["name"])
         if "sdist" in package:
-            if name == "jieba" and str(package["version"]) == "0.42.1":
-                digest = str(package["sdist"].get("hash", "")).removeprefix("sha256:")
-                if digest != JIEBA_SDIST_SHA256:
-                    raise WheelhouseError("jieba sdist SHA256 mismatch")
             raise WheelhouseError(
                 f"source distribution is forbidden: {name}=={package['version']}"
             )
@@ -585,189 +641,31 @@ def _download_checked(
     return actual_sha
 
 
-def _safe_extract_sdist(sdist: Path, directory: Path) -> Path:
-    directory.mkdir()
-    try:
-        with tarfile.open(sdist, "r:gz") as archive:
-            archive.extractall(directory, filter="data")
-    except (OSError, tarfile.TarError) as exc:
-        raise WheelhouseError(f"invalid jieba sdist: {exc}") from exc
-    roots = [path for path in directory.iterdir() if path.is_dir()]
-    if len(roots) != 1:
-        raise WheelhouseError(f"expected one jieba source root, found {len(roots)}")
-    return roots[0]
-
-
-def _run_offline_build(
-    command: list[str], cwd: Path, environment: dict[str, str]
-) -> None:
-    sandbox = Path("/usr/bin/sandbox-exec")
-    if not sandbox.is_file():
-        raise WheelhouseError("sandbox-exec is required for the offline jieba build")
-    temp_root = Path(tempfile.gettempdir()).resolve()
-    profile = (
-        "(version 1)"
-        "(deny default)"
-        "(allow file-read*"
-        f'  (subpath "/usr")'
-        f'  (subpath "/Library")'
-        f'  (subpath "/System")'
-        f'  (subpath "/bin")'
-        f'  (subpath "/sbin")'
-        f'  (subpath "/dev")'
-        f'  (subpath "/private/tmp")'
-        f'  (subpath "{temp_root}"))'
-        "(allow file-write*"
-        f'  (subpath "{temp_root}"))'
-        "(allow process-exec"
-        f'  (subpath "/usr")'
-        f'  (subpath "/bin")'
-        f'  (subpath "/sbin")'
-        f'  (subpath "{temp_root}"))'
-        "(allow signal)"
-    )
-    try:
-        subprocess.run(
-            [
-                str(sandbox),
-                "-p",
-                profile,
-                *command,
-            ],
-            cwd=cwd,
-            env=environment,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except (OSError, subprocess.CalledProcessError) as exc:
-        detail = getattr(exc, "stderr", "") or getattr(exc, "stdout", "") or str(exc)
-        raise WheelhouseError(f"offline jieba build failed: {detail.strip()}") from exc
-
-
-def _build_jieba(
-    package: dict[str, Any],
-    locked: dict[tuple[str, str], dict[str, Any]],
-    supported: tuple[Tag, ...],
-    wheels_dir: Path,
-    download: Callable[[str, Path], object],
-) -> tuple[Path, dict[str, object], bytes]:
-    sdist = package.get("sdist")
-    if not isinstance(sdist, dict):
-        raise WheelhouseError("jieba 0.42.1 must use its locked sdist")
-    if str(sdist.get("hash", "")).removeprefix("sha256:") != JIEBA_SDIST_SHA256:
-        raise WheelhouseError("jieba sdist SHA256 mismatch")
-    setuptools = next(
-        (candidate for (name, _), candidate in locked.items() if name == "setuptools"),
-        None,
-    )
-    if setuptools is None:
-        raise WheelhouseError("setuptools build dependency is missing from uv.lock")
-    setuptools_wheel = _select_locked_wheel(setuptools, supported)
-    with tempfile.TemporaryDirectory() as temporary:
-        temp = Path(temporary)
-        sdist_path = temp / Path(urlparse(sdist["url"]).path).name
-        sdist_sha = _download_checked(sdist, sdist_path, download)
-        build_wheel_path = temp / Path(urlparse(setuptools_wheel["url"]).path).name
-        build_wheel_sha = _download_checked(
-            setuptools_wheel, build_wheel_path, download
-        )
-        source = _safe_extract_sdist(sdist_path, temp / "source")
-        license_path = source / "LICENSE"
-        if not license_path.is_file():
-            raise WheelhouseError("jieba sdist is missing LICENSE")
-        license_content = license_path.read_bytes()
-        environment = os.environ.copy()
-        environment.update(
-            {
-                "HOME": str(temp / "home"),
-                "PIP_NO_INDEX": "1",
-                "SOURCE_DATE_EPOCH": str(SOURCE_DATE_EPOCH),
-            }
-        )
-        virtualenv = temp / "venv"
-        _run_offline_build(
-            [sys.executable, "-m", "venv", "--without-pip", str(virtualenv)],
-            temp,
-            environment,
-        )
-        site_packages = virtualenv / "lib/python3.13/site-packages"
-        site_packages.mkdir(parents=True, exist_ok=True)
-        with ZipFile(build_wheel_path) as archive:
-            archive.extractall(site_packages)
-        python = virtualenv / "bin/python"
-        requirements_path = temp / "build-requirements.json"
-        requirements_script = (
-            "import json,pathlib,setuptools.build_meta as backend;"
-            "pathlib.Path(__import__('sys').argv[1]).write_text("
-            "json.dumps(backend.get_requires_for_build_wheel({})))"
-        )
-        _run_offline_build(
-            [str(python), "-c", requirements_script, str(requirements_path)],
-            source,
-            environment,
-        )
-        try:
-            dynamic_requirements = json.loads(
-                requirements_path.read_text(encoding="utf-8")
-            )
-        except (OSError, json.JSONDecodeError) as exc:
-            raise WheelhouseError("cannot read jieba build requirements") from exc
-        if dynamic_requirements:
-            raise WheelhouseError(
-                f"unexpected jieba build requirements: {dynamic_requirements}"
-            )
-        result_path = temp / "built-wheel.txt"
-        build_script = (
-            "import pathlib,setuptools.build_meta as backend,sys;"
-            "pathlib.Path(sys.argv[2]).write_text(backend.build_wheel(sys.argv[1], {}))"
-        )
-        built_dir = temp / "built"
-        built_dir.mkdir()
-        _run_offline_build(
-            [str(python), "-c", build_script, str(built_dir), str(result_path)],
-            source,
-            environment,
-        )
-        built_name = result_path.read_text(encoding="utf-8").strip()
-        built = built_dir / built_name
-        if not built.is_file():
-            raise WheelhouseError("jieba build produced no wheel")
-        destination = wheels_dir / built.name
-        shutil.copyfile(built, destination)
-
-    provenance = {
-        "source": {"url": sdist["url"], "sha256": sdist_sha},
-        "build_system": [
-            {
-                "name": "setuptools",
-                "version": str(setuptools["version"]),
-                "url": setuptools_wheel["url"],
-                "sha256": build_wheel_sha,
-            }
-        ],
-        "dynamic_requirements": dynamic_requirements,
-        "source_date_epoch": SOURCE_DATE_EPOCH,
-        "network": "sandbox-exec deny network*",
-    }
-    return destination, provenance, license_content
-
-
 def _download(url: str, target: Path) -> None:
     temp = target.with_suffix(target.suffix + ".tmp")
-    try:
+    for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
         if temp.exists():
             temp.unlink()
-        with httpx.stream("GET", url, follow_redirects=True, timeout=120) as response:
-            response.raise_for_status()
-            with temp.open("wb") as output:
-                for chunk in response.iter_bytes():
-                    output.write(chunk)
-        temp.rename(target)
-    except (OSError, httpx.HTTPError) as exc:
-        if temp.exists():
-            temp.unlink()
-        raise WheelhouseError(f"download failed: {url}: {exc}") from exc
+        try:
+            with httpx.stream(
+                "GET", url, follow_redirects=True, timeout=120
+            ) as response:
+                response.raise_for_status()
+                with temp.open("wb") as output:
+                    for chunk in response.iter_bytes():
+                        output.write(chunk)
+            temp.rename(target)
+            return
+        except (OSError, httpx.HTTPError) as exc:
+            if temp.exists():
+                temp.unlink()
+            if attempt == DOWNLOAD_ATTEMPTS:
+                raise WheelhouseError(f"download failed: {url}: {exc}") from exc
+            print(
+                f"download attempt {attempt}/{DOWNLOAD_ATTEMPTS} failed for {url}: {exc}; retrying",
+                file=sys.stderr,
+            )
+            time.sleep(attempt)
 
 
 def _build_subtap(project_root: Path, directory: Path) -> Path:
@@ -819,7 +717,9 @@ def _copy_wheel_licenses(
     records = []
     with ZipFile(wheel) as archive:
         names = archive.namelist()
-        metadata = message_from_bytes(archive.read(_require_metadata(names)))
+        metadata = message_from_bytes(
+            archive.read(_require_metadata(archive, names, wheel.name, component))
+        )
         members = {
             name
             for name in names
@@ -835,10 +735,15 @@ def _copy_wheel_licenses(
         component_dir = licenses_dir / canonicalize_name(component)
         for member in sorted(members):
             destination = component_dir / Path(member).name
-            if destination.exists():
-                raise WheelhouseError(f"duplicate license filename: {destination.name}")
-            destination.parent.mkdir(parents=True, exist_ok=True)
             content = archive.read(member)
+            if destination.exists():
+                if destination.read_bytes() == content:
+                    continue
+                destination = destination.with_name(
+                    f"{destination.stem}-{hashlib.sha256(content).hexdigest()}"
+                    f"{destination.suffix}"
+                )
+            destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(content)
             records.append(
                 {
@@ -880,7 +785,7 @@ def _copy_sentencepiece_notices(
 def build_wheelhouse(
     output_dir: Path,
     *,
-    python_version: str = "3.13",
+    python_version: str = PYTHON_VERSION,
     platform: str = "macosx_14_0_arm64",
     project_root: Path = Path(__file__).parents[1],
     lock_path: Path | None = None,
@@ -892,9 +797,11 @@ def build_wheelhouse(
 ) -> Path:
     """Build the locked offline Homebrew wheelhouse for one supported target."""
 
-    if python_version != "3.13" or platform != "macosx_14_0_arm64":
+    if python_version != PYTHON_VERSION or platform != "macosx_14_0_arm64":
         raise WheelhouseError("only CPython 3.13 / macOS 14 / arm64 is supported")
-    if output_dir.exists():
+    try:
+        output_dir.mkdir(parents=True)
+    except FileExistsError:
         raise WheelhouseError(f"output already exists: {output_dir}")
     lock_path = lock_path or project_root / "uv.lock"
     policy = policy or _json_object(
@@ -934,7 +841,6 @@ def build_wheelhouse(
     if {"numpy", "scipy"} & set(names):
         raise WheelhouseError("NumPy/SciPy must be supplied by Homebrew")
 
-    output_dir.mkdir(parents=True)
     wheels_dir = output_dir / "wheels"
     licenses_dir = output_dir / "THIRD_PARTY_LICENSES"
     wheels_dir.mkdir()
@@ -950,46 +856,6 @@ def build_wheelhouse(
         package = locked.get(key)
         if package is None:
             raise WheelhouseError(f"package missing from lock: {key[0]}=={version}")
-        if key == ("jieba", "0.42.1"):
-            destination, provenance, sdist_license = _build_jieba(
-                package,
-                locked,
-                supported,
-                wheels_dir,
-                download,
-            )
-            record = inspect_wheel(destination, policy)
-            wheel_licenses = _copy_wheel_licenses(
-                destination, record.name, licenses_dir
-            )
-            license_records.extend(wheel_licenses)
-            if not wheel_licenses:
-                copied_license = licenses_dir / "jieba/LICENSE"
-                copied_license.parent.mkdir(parents=True, exist_ok=True)
-                copied_license.write_bytes(sdist_license)
-                license_records.append(
-                    {
-                        "component": "jieba",
-                        "path": copied_license.relative_to(
-                            licenses_dir.parent
-                        ).as_posix(),
-                        "sha256": hashlib.sha256(sdist_license).hexdigest(),
-                        "source_member": "jieba-0.42.1/LICENSE",
-                    }
-                )
-            records.append(
-                {
-                    **record._asdict(),
-                    "size": destination.stat().st_size,
-                    "tags": sorted(
-                        str(tag) for tag in parse_wheel_filename(destination.name)[3]
-                    ),
-                    "url": package["sdist"]["url"],
-                    "source_sha256": JIEBA_SDIST_SHA256,
-                    "build_provenance": provenance,
-                }
-            )
-            continue
         artifact = _select_locked_wheel(package, supported)
         filename = Path(urlparse(artifact["url"]).path).name
         destination = wheels_dir / filename
@@ -1075,18 +941,13 @@ def build_wheelhouse(
     if size > max_bytes:
         raise WheelhouseError(f"wheelhouse exceeds {max_bytes} bytes: {size} bytes")
     archive = output_dir.parent / (
-        f"subtap-{project_record.version}-py313-macos-arm64-wheelhouse.tar.gz"
+        f"subtap-{project_record.version}-py{PYTHON_VERSION.replace('.', '')}-macos-arm64-wheelhouse.tar.gz"
     )
     _write_deterministic_tar(output_dir, archive)
     if archive.stat().st_size > max_bytes:
         raise WheelhouseError(
             f"wheelhouse archive exceeds {max_bytes} bytes: {archive.stat().st_size} bytes"
         )
-    # Embed archive SHA256 in manifest for cross-validation by the Formula renderer.
-    manifest["wheelhouse_sha256"] = sha256_file(archive)
-    (output_dir / "manifest.json").write_text(
-        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
     return archive
 
 
@@ -1119,7 +980,7 @@ def main() -> int:
     verify_parser.add_argument("--otool", type=Path, default=Path("/usr/bin/otool"))
     verify_parser.add_argument("--formal-release", action="store_true")
     build_parser = subparsers.add_parser("build")
-    build_parser.add_argument("--python-version", default="3.13")
+    build_parser.add_argument("--python-version", default=PYTHON_VERSION)
     build_parser.add_argument("--platform", default="macosx_14_0_arm64")
     build_parser.add_argument("--output", type=Path, required=True)
     build_parser.add_argument("--policy", type=Path, default=None)

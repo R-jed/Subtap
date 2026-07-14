@@ -257,7 +257,7 @@ def test_srt_render_filters_empty_segments():
         AlignedSegment(sentence_id=2, start_sec=2.5, end_sec=3.0, text="更多内容"),
     ]
     srt = SRTExporter(punctuation=False).render(segs)
-    time_lines = [l for l in srt.split("\n") if "-->" in l]
+    time_lines = [line for line in srt.split("\n") if "-->" in line]
     assert len(time_lines) == 2
 
 
@@ -347,7 +347,7 @@ def test_smart_split_number_protection():
         {"word": "九", "start_sec": 2.1, "end_sec": 2.2},
     ]
     result = _smart_split(words, "价格是一万两千九百九十九", max_chars=8)
-    num_line = [l for l in result if "万" in l["text"]]
+    num_line = [line for line in result if "万" in line["text"]]
     assert len(num_line) == 1
     assert "一万两千九百九十九" in num_line[0]["text"]
 
@@ -584,6 +584,24 @@ def test_inject_punct_no_warning_when_complete(caplog):
     assert "完整性校验失败" not in caplog.text
 
 
+def test_inject_punct_ignores_display_spaces_in_completeness_check(caplog):
+    """Spaces added around Latin words are presentation, not lost content."""
+    import logging
+
+    from subtap.core.export import _inject_punct
+
+    words = [
+        {"word": "它", "start_sec": 0.0, "end_sec": 0.2},
+        {"word": "叫", "start_sec": 0.2, "end_sec": 0.4},
+        {"word": "GR4", "start_sec": 0.4, "end_sec": 0.8},
+    ]
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="subtap.core.export"):
+        _inject_punct(words, "它叫 GR4。")
+
+    assert "完整性校验失败" not in caplog.text
+
+
 # ── _process_segment / _post_process_fragments tests ──
 
 
@@ -690,7 +708,6 @@ def test_post_process_fragments_no_merge_long_lines():
 
 def test_srt_uses_process_segment_and_post_process():
     """SRTExporter.render() produces same output as manual pipeline."""
-    from subtap.core.export import _process_segment, _post_process_fragments
 
     segs = [
         AlignedSegment(
@@ -720,6 +737,29 @@ def test_srt_uses_process_segment_and_post_process():
     # Verify both segments appear
     assert "这是一段比较长的话" in srt
     assert "第二段话" in srt
+
+
+def test_srt_post_processes_across_aligned_segments():
+    """Cross-segment word fragments must be repaired as one subtitle stream."""
+    segs = [
+        AlignedSegment(
+            sentence_id=0,
+            start_sec=0.0,
+            end_sec=2.0,
+            text="但是我觉得你能够看出核心的点是这个虚",
+        ),
+        AlignedSegment(
+            sentence_id=1,
+            start_sec=2.0,
+            end_sec=4.0,
+            text="化，因为传感器更大，",
+        ),
+    ]
+
+    srt = SRTExporter(punctuation=True, max_chars=25, min_chars=10).render(segs)
+
+    assert "这个虚\n" not in srt
+    assert "虚化，因为传感器更大，" in srt
 
 
 # ── aligned_jsonl 存在性检查 ──

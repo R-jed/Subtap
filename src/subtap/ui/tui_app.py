@@ -12,9 +12,8 @@ from pathlib import Path
 from .keyboard import Key, KeyReader
 from .theme import Theme
 from .menu import Menu
-from .spinner import Spinner
 from .config_manager import ConfigManager
-from .file_picker import FilePicker, AUDIO_VIDEO_EXTENSIONS
+from .file_picker import AUDIO_VIDEO_EXTENSIONS
 from .views.new_task import NewTaskView
 from .views.wizard import WizardView
 from .history import HistoryScanner
@@ -339,7 +338,6 @@ class TuiApp:
                     return self._view_models_page()
 
     def _view_settings_asr(self) -> str:
-        t = self.theme
         model = self.config.get("asr.model", "asr_0.6b")
         lang = self.config.get("output.subtitle_language", "zh")
         mode = self.config.get("mode", "offline")
@@ -404,7 +402,6 @@ class TuiApp:
                 menu.render_full()
 
     def _view_settings_enhance(self) -> str:
-        t = self.theme
         proofread = self.config.get("llm_proofread", False)
         hotword = self.config.get("llm_hotword", False)
         translate = self.config.get("translate_to", "")
@@ -497,7 +494,6 @@ class TuiApp:
 
     def _view_hotword_list(self, hotwords: list[str]) -> None:
         """热词列表查看（只读）。"""
-        t = self.theme
         if not hotwords:
             items = ["暂无热词，使用过程中会自动学习"]
         else:
@@ -809,7 +805,6 @@ class TuiApp:
                     return "continue"
 
     def _view_settings_format(self) -> str:
-        t = self.theme
         fmts = self.config.get("output.subtitle_formats", ["srt"])
         max_chars = self.config.get("output.max_chars", 25)
         min_chars = self.config.get("output.min_chars", 10)
@@ -986,7 +981,7 @@ class TuiApp:
                             self.config.save()
                 except Exception as e:
                     # questionary 操作被取消或出错，显示简短提示
-                    sys.stderr.write(f"\033[H\033[J")
+                    sys.stderr.write("\033[H\033[J")
                     sys.stderr.write(f"\033[2K{t.RED}操作取消：{e}{t.NC}\r\n")
                     sys.stderr.flush()
                 finally:
@@ -1003,7 +998,7 @@ class TuiApp:
 
     def _view_models_page(self) -> str:
         from .views.models_page import ModelsPage
-        from subtap.core.models import ModelRegistry, MODEL_REGISTRY
+        from subtap.core.models import ModelRegistry
 
         page = ModelsPage()
         registry = ModelRegistry(self.config._config)
@@ -1146,7 +1141,6 @@ class TuiApp:
         self.reader.read_key(timeout=60)
 
     def _view_wizard(self) -> str:
-        t = self.theme
         wiz = WizardView()
 
         while True:
@@ -1193,7 +1187,7 @@ class TuiApp:
         t = self.theme
         sys.stderr.write("\033[H\033[J")
         sys.stderr.write(f"\033[2K{t.CYAN}[1/6] {WizardView.STEPS[0]}{t.NC}\r\n\r\n")
-        sys.stderr.write(f"\033[2K  拖入音频或视频文件到此处，按 Enter 确认\r\n\r\n")
+        sys.stderr.write("\033[2K  拖入音频或视频文件到此处，按 Enter 确认\r\n\r\n")
         sys.stderr.write(
             f"\033[2K{t.GRAY}支持格式：mp3, wav, m4a, mp4, mkv, avi...{t.NC}\r\n\r\n"
         )
@@ -1246,7 +1240,6 @@ class TuiApp:
                 self._update_path_display(raw_buf)
 
     def _wizard_step_quality(self, wiz: WizardView) -> str:
-        t = self.theme
         items = ["快速模式    速度快，精度一般", "高质量模式  速度慢，精度高"]
         menu = Menu(
             title=f"[2/6] {WizardView.STEPS[1]}",
@@ -1276,7 +1269,6 @@ class TuiApp:
                 return "next"
 
     def _wizard_step_glossary(self, wiz: WizardView) -> str:
-        t = self.theme
         glossaries = wiz.list_glossaries()
 
         items = ["跳过（不使用热词表）"] + [f"  {g.stem}" for g in glossaries]
@@ -1311,7 +1303,6 @@ class TuiApp:
                 return "next"
 
     def _wizard_step_manuscript(self, wiz: WizardView) -> str:
-        t = self.theme
         manuscripts = wiz.list_manuscripts()
 
         items = ["跳过（不使用参考文稿）"] + [f"  {m.stem}" for m in manuscripts]
@@ -1349,7 +1340,7 @@ class TuiApp:
         t = self.theme
         sys.stderr.write("\033[H\033[J")
         sys.stderr.write(f"\033[2K{t.CYAN}[5/6] {WizardView.STEPS[4]}{t.NC}\r\n\r\n")
-        sys.stderr.write(f"\033[2K  输入输出目录路径，或按 Enter 使用默认目录\r\n\r\n")
+        sys.stderr.write("\033[2K  输入输出目录路径，或按 Enter 使用默认目录\r\n\r\n")
         sys.stderr.write(f"\033[2K{t.GRAY}默认：与源文件相同目录{t.NC}\r\n\r\n")
         sys.stderr.write(f"\033[2K{t.GRAY}Esc 返回上一步  Q 退出{t.NC}\r\n")
         sys.stderr.flush()
@@ -1441,7 +1432,7 @@ class TuiApp:
         # 显示拖入提示
         sys.stderr.write("\033[H\033[J")
         sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}新建转录{t.NC}\r\n\r\n")
-        sys.stderr.write(f"\033[2K  拖入音频或视频文件到此处，按 Enter 确认\r\n\r\n")
+        sys.stderr.write("\033[2K  拖入音频或视频文件到此处，按 Enter 确认\r\n\r\n")
         sys.stderr.write(
             f"\033[2K{t.GRAY}支持格式：mp3, wav, m4a, mp4, mkv, avi...{t.NC}\r\n\r\n"
         )
@@ -1514,7 +1505,6 @@ class TuiApp:
         sys.stderr.flush()
 
     def _view_confirm_run(self, view: NewTaskView) -> str:
-        t = self.theme
         settings = view.get_confirm_settings()
         file_name = view.selected_file.name if view.selected_file else "未知"
 
@@ -1784,7 +1774,7 @@ class TuiApp:
         # 显示拖入提示
         sys.stderr.write("\033[H\033[J")
         sys.stderr.write(f"\033[2K{t.PURPLE_BOLD}批量转录{t.NC}\r\n\r\n")
-        sys.stderr.write(f"\033[2K  拖入文件夹到此处，按 Enter 确认\r\n\r\n")
+        sys.stderr.write("\033[2K  拖入文件夹到此处，按 Enter 确认\r\n\r\n")
         sys.stderr.write(
             f"\033[2K{t.GRAY}将处理文件夹中所有音频/视频文件{t.NC}\r\n\r\n"
         )

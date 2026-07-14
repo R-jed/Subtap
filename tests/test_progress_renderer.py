@@ -5,7 +5,6 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
 
 from subtap.ui.progress_renderer import PipelineProgressRenderer, _model_display_name
 

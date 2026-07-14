@@ -98,12 +98,18 @@ def test_vad_config_custom_min_speech():
     assert config.silero_min_speech_duration_ms == 400
 
 
+def test_vad_config_rejects_unknown_sensitivity():
+    """Unknown sensitivity names must fail instead of silently using normal."""
+    with pytest.raises(ValueError):
+        VADConfig(sensitivity="typo")
+
+
 # ---------------------------------------------------------------------------
 # Silero VAD integration tests
 # ---------------------------------------------------------------------------
 
 
-def test_no_sentence_truncation(speech_with_pauses: Path):
+def test_no_sentence_truncation(monkeypatch, speech_with_pauses: Path):
     """Chunks should not truncate sentences at boundaries.
 
     Verifies that Silero VAD produces chunks with no undersized segments
@@ -119,6 +125,10 @@ def test_no_sentence_truncation(speech_with_pauses: Path):
     import shutil
 
     shutil.copy2(speech_with_pauses, workspace.source_audio)
+    monkeypatch.setattr(
+        "subtap.core.vad._get_speech_segments_silero",
+        lambda *args, **kwargs: [[0.0, 1.5], [2.5, 4.0]],
+    )
 
     chunks = split_chunks(workspace, config)
 
@@ -134,7 +144,7 @@ def test_no_sentence_truncation(speech_with_pauses: Path):
         ), f"Chunk {chunk.chunk_id} 太短 ({duration:.2f}s)，可能截断了句子"
 
 
-def test_silero_vad_finds_natural_pauses(speech_with_pauses: Path):
+def test_silero_vad_finds_natural_pauses(monkeypatch, speech_with_pauses: Path):
     """Silero VAD should find natural pause points, not mechanical splits."""
     config = SubtapConfig()
     config.audio.vad.use_silero_vad = True
@@ -147,6 +157,10 @@ def test_silero_vad_finds_natural_pauses(speech_with_pauses: Path):
     import shutil
 
     shutil.copy2(speech_with_pauses, workspace.source_audio)
+    monkeypatch.setattr(
+        "subtap.core.vad._get_speech_segments_silero",
+        lambda *args, **kwargs: [[0.0, 1.5], [2.5, 4.0]],
+    )
 
     chunks = split_chunks(workspace, config)
 
@@ -158,7 +172,7 @@ def test_silero_vad_finds_natural_pauses(speech_with_pauses: Path):
         assert duration <= config.audio.vad.max_chunk_sec + 1.0
 
 
-def test_silero_vad_single_burst(single_burst: Path):
+def test_silero_vad_single_burst(monkeypatch, single_burst: Path):
     """Silero VAD should handle a single short speech segment."""
     config = SubtapConfig()
     config.audio.vad.use_silero_vad = True
@@ -170,6 +184,10 @@ def test_silero_vad_single_burst(single_burst: Path):
     import shutil
 
     shutil.copy2(single_burst, workspace.source_audio)
+    monkeypatch.setattr(
+        "subtap.core.vad._get_speech_segments_silero",
+        lambda *args, **kwargs: [[0.0, 0.8]],
+    )
 
     chunks = split_chunks(workspace, config)
 
@@ -250,3 +268,158 @@ def test_pydub_fallback_single_burst(single_burst: Path):
     chunks = split_chunks(workspace, config)
 
     assert len(chunks) >= 1, "pydub fallback 短音频也应至少产生一个 chunk"
+
+
+def test_silero_vad_enforces_max_chunk_duration(monkeypatch, tmp_path: Path):
+    """A long Silero speech region must still respect the shared chunk limit."""
+    source = tmp_path / "long_speech.wav"
+    _write_wav(source, _make_speech_samples(5000))
+
+    config = SubtapConfig()
+    config.audio.vad.use_silero_vad = True
+    config.audio.vad.max_chunk_sec = 1.5
+
+    workspace = Workspace(config, base_dir=tmp_path / "workspace")
+    workspace.ensure_dirs()
+    import shutil
+
+    shutil.copy2(source, workspace.source_audio)
+    monkeypatch.setattr(
+        "subtap.core.vad._get_speech_segments_silero",
+        lambda *args, **kwargs: [[0.0, 4.8]],
+    )
+
+    chunks = split_chunks(workspace, config)
+
+    assert len(chunks) > 1
+    assert all(
+        chunk.end_sec - chunk.start_sec <= config.audio.vad.max_chunk_sec
+        for chunk in chunks
+    )
+    assert chunks[0].start_sec == 0.0
+    assert chunks[-1].end_sec == 4.8
+    assert all(
+        current.end_sec == following.start_sec
+        for current, following in zip(chunks, chunks[1:])
+    )
+
+
+def test_silero_vad_preserves_short_detected_speech(monkeypatch, tmp_path: Path):
+    """A valid short utterance must not disappear beside longer speech."""
+    source = tmp_path / "short_and_long.wav"
+    _write_wav(source, _make_speech_samples(4000))
+
+    config = SubtapConfig()
+    workspace = Workspace(config, base_dir=tmp_path / "workspace")
+    workspace.ensure_dirs()
+    import shutil
+
+    shutil.copy2(source, workspace.source_audio)
+    monkeypatch.setattr(
+        "subtap.core.vad._get_speech_segments_silero",
+        lambda *args, **kwargs: [[0.0, 0.8], [2.0, 3.5]],
+    )
+
+    chunks = split_chunks(workspace, config)
+
+    assert [(chunk.start_sec, chunk.end_sec) for chunk in chunks] == [
+        (0.0, 0.8),
+        (2.0, 3.5),
+    ]
+
+
+def test_silero_vad_rejects_audio_without_speech(monkeypatch, tmp_path: Path):
+    """No detected speech must fail instead of transcribing the whole file."""
+    source = tmp_path / "silence.wav"
+    _write_wav(source, np.zeros(32000, dtype=np.int16))
+
+    config = SubtapConfig()
+    workspace = Workspace(config, base_dir=tmp_path / "workspace")
+    workspace.ensure_dirs()
+    import shutil
+
+    shutil.copy2(source, workspace.source_audio)
+    monkeypatch.setattr(
+        "subtap.core.vad._get_speech_segments_silero",
+        lambda *args, **kwargs: [],
+    )
+
+    with pytest.raises(VADError, match="未检测到语音"):
+        split_chunks(workspace, config)
+
+
+def test_silero_vad_rejects_invalid_speech_interval(monkeypatch, tmp_path: Path):
+    """Invalid detector timestamps must fail before empty chunks are exported."""
+    source = tmp_path / "speech.wav"
+    _write_wav(source, _make_speech_samples(2000))
+
+    config = SubtapConfig()
+    workspace = Workspace(config, base_dir=tmp_path / "workspace")
+    workspace.ensure_dirs()
+    import shutil
+
+    shutil.copy2(source, workspace.source_audio)
+    monkeypatch.setattr(
+        "subtap.core.vad._get_speech_segments_silero",
+        lambda *args, **kwargs: [[1.5, 1.0]],
+    )
+
+    with pytest.raises(VADError, match="无效语音区间"):
+        split_chunks(workspace, config)
+
+
+def test_silero_vad_prefers_a_pause_before_hard_limit(monkeypatch, tmp_path: Path):
+    """An oversized speech region should split at nearby silence, not speech."""
+    source = tmp_path / "speech_with_short_pause.wav"
+    samples = np.concatenate(
+        [
+            _make_speech_samples(2000),
+            np.zeros(300 * 16, dtype=np.int16),
+            _make_speech_samples(2700),
+        ]
+    )
+    _write_wav(source, samples)
+
+    config = SubtapConfig()
+    config.audio.vad.max_chunk_sec = 3.0
+    workspace = Workspace(config, base_dir=tmp_path / "workspace")
+    workspace.ensure_dirs()
+    import shutil
+
+    shutil.copy2(source, workspace.source_audio)
+    monkeypatch.setattr(
+        "subtap.core.vad._get_speech_segments_silero",
+        lambda *args, **kwargs: [[0.0, 5.0]],
+    )
+
+    chunks = split_chunks(workspace, config)
+
+    assert 2.0 <= chunks[0].end_sec <= 2.3
+    assert chunks[-1].end_sec == 5.0
+    assert all(
+        chunk.end_sec - chunk.start_sec <= config.audio.vad.max_chunk_sec
+        for chunk in chunks
+    )
+
+
+def test_silero_vad_keeps_continuous_speech_below_aligner_limit(
+    monkeypatch, tmp_path: Path
+):
+    """VAD must not impose 30-second cuts below the aligner's real limit."""
+    source = tmp_path / "continuous_speech.wav"
+    _write_wav(source, _make_speech_samples(31000))
+
+    config = SubtapConfig()
+    workspace = Workspace(config, base_dir=tmp_path / "workspace")
+    workspace.ensure_dirs()
+    import shutil
+
+    shutil.copy2(source, workspace.source_audio)
+    monkeypatch.setattr(
+        "subtap.core.vad._get_speech_segments_silero",
+        lambda *args, **kwargs: [[0.0, 31.0]],
+    )
+
+    chunks = split_chunks(workspace, config)
+
+    assert [(chunk.start_sec, chunk.end_sec) for chunk in chunks] == [(0.0, 31.0)]

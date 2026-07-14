@@ -12,6 +12,7 @@ Algorithm reference: https://github.com/jianfch/stable-ts
 from __future__ import annotations
 
 import re
+import unicodedata
 
 from subtap.schemas.models import RawCleanSegment, SentenceSegment
 
@@ -182,26 +183,34 @@ def _split_by_length(text: str, max_chars: int) -> list[str]:
 
 
 def _split_at_word_boundary(text: str, max_chars: int) -> list[str]:
-    """Split long text without cutting words when a boundary is available."""
-    import jieba
-
+    """Force-split text while preserving a Latin word when possible."""
     result: list[str] = []
-    current = ""
-    for word in jieba.cut(text):
-        if len(word) > max_chars:
-            if current:
-                result.append(current)
-                current = ""
-            result.extend(_split_by_length(word, max_chars))
-            continue
-        if current and len(current) + len(word) > max_chars:
-            result.append(current)
-            current = word
-        else:
-            current += word
-
-    if current:
-        result.append(current)
+    start = 0
+    while len(text) - start > max_chars:
+        end = start + max_chars
+        while (
+            end > start
+            and text[end - 1].isascii()
+            and text[end - 1].isalnum()
+            and text[end].isascii()
+            and text[end].isalnum()
+        ):
+            end -= 1
+        if end == start:
+            end = start + max_chars
+            while (
+                end < len(text)
+                and text[end - 1].isascii()
+                and text[end - 1].isalnum()
+                and text[end].isascii()
+                and text[end].isalnum()
+            ):
+                end += 1
+        while end < len(text) and unicodedata.category(text[end]).startswith("P"):
+            end += 1
+        result.append(text[start:end])
+        start = end
+    result.append(text[start:])
     return result
 
 

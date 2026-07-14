@@ -8,7 +8,9 @@ from types import SimpleNamespace
 from typer.testing import CliRunner
 
 from subtap.cli import app
+from subtap.core.manifest import get_manifest_path, load_manifest
 from subtap.core.models import MODEL_REGISTRY
+from subtap.schemas.config import SubtapConfig
 
 runner = CliRunner()
 
@@ -45,8 +47,10 @@ def install_model(tmp_path, model_name: str) -> None:
     info = MODEL_REGISTRY[model_name]
     model_dir = tmp_path / ".subtap" / "models" / info["subdir"]
     model_dir.mkdir(parents=True, exist_ok=True)
-    for fname in info["required_files"]:
-        (model_dir / fname).write_text("stub", encoding="utf-8")
+    entry = load_manifest(get_manifest_path(SubtapConfig())).models[model_name]
+    for file in entry.required_files:
+        with (model_dir / file.name).open("wb") as handle:
+            handle.truncate(file.size_bytes)
 
 
 def configure_complete_release_environment(monkeypatch, tmp_path):

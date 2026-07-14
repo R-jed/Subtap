@@ -554,7 +554,6 @@ def test_no_split_word_across_lines():
     ]
     result = _smart_split(words, "核心的点是这个虚化的照片", max_chars=8)
     # "虚化" 不应被拆分到两行
-    all_text = "".join(line["text"] for line in result)
     # 检查没有单独的"虚"在行尾或单独的"化"在行首
     for i, line in enumerate(result):
         txt = line["text"]

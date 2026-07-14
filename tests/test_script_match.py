@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from subtap.script.match import match_from_file, match_script_lines, MatchReport
+from subtap.script.match import match_from_file, match_script_lines
 
 FIXTURES = Path(__file__).parent / "fixtures"
 ASR_FILE = FIXTURES / "script_test_asr_sentences.jsonl"

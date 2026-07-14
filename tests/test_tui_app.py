@@ -1,5 +1,4 @@
 # tests/test_tui_app.py
-from unittest.mock import MagicMock
 from subtap.ui.tui_app import TuiApp
 
 

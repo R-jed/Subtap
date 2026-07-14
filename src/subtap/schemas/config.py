@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -13,7 +13,7 @@ class VADConfig(BaseModel):
     """VAD / silence splitting parameters."""
 
     # 用户配置：灵敏度（唯一用户可调参数）
-    sensitivity: str = "normal"  # low/normal/high
+    sensitivity: Literal["low", "normal", "high"] = "normal"
 
     # VAD 引擎选择
     use_silero_vad: bool = True  # True=Silero VAD, False=pydub detect_nonsilent
@@ -33,8 +33,7 @@ class VADConfig(BaseModel):
 
     # 内部参数（用户无需关心）
     min_silence_sec: float = 0.4
-    min_chunk_sec: float = 1.0
-    max_chunk_sec: float = 30.0
+    max_chunk_sec: float = Field(default=180.0, gt=0)
 
 
 class AudioConfig(BaseModel):
@@ -50,7 +49,7 @@ class ASRConfig(BaseModel):
 
     backend: str = "mlx-qwen-asr"
     model: str = "asr_0.6b"
-    quantization: str = "q8"
+    quantization: Literal["q8"] = "q8"
     keep_model_alive: bool = False
     hotwords: list[str] = Field(default_factory=list)
 
@@ -70,7 +69,7 @@ class AlignConfig(BaseModel):
 
     backend: str = "mlx-qwen-aligner"
     model: str = "aligner"
-    quantization: str = "q8"
+    quantization: Literal["q8"] = "q8"
     keep_model_alive: bool = False
     language: str = Field(
         default="Chinese",

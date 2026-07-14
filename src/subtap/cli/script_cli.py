@@ -7,9 +7,9 @@ from pathlib import Path
 
 import typer
 
-script_app = typer.Typer(help="文稿匹配")
-
 from subtap.cli._utils import _handle_error
+
+script_app = typer.Typer(help="文稿匹配")
 
 
 @script_app.command("match")

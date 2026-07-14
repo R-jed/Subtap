@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from subtap.ai.asr_postprocess import CleanEngine
+from subtap.core.asr import _merge_single_letters
 from subtap.schemas.models import ASRSegment
 
 
@@ -210,11 +211,6 @@ class TestFullPipeline:
     ):
         result = processor.process(sample_segments)
         assert all(isinstance(s, ASRSegment) for s in result)
-
-
-# ── Single Letter Merge ──────────────────────────────────────
-
-from subtap.core.asr import _merge_single_letters
 
 
 def test_merge_single_letters():

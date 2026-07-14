@@ -11,10 +11,9 @@ audio:
   sample_rate: 16000        # 采样率（Hz）
   channels: 1               # 声道数（1=单声道）
   vad:
-    sensitivity: normal     # VAD 灵敏度：low(0.3) / normal(0.5) / high(0.7)
+    sensitivity: normal     # VAD 灵敏度：low(少切) / normal(均衡) / high(多切)
     min_silence_sec: 0.4    # 最小静音时长（秒），低于此值不切分
-    min_chunk_sec: 1.0      # 最小音频段时长（秒），低于此值丢弃
-    max_chunk_sec: 30.0     # 最大音频段时长（秒），超过此值强制切分
+    max_chunk_sec: 180.0    # 对齐器单段上限（秒），超过时优先在低能量处切分
 
 # ──────────────────────────────────────────────
 # 语音识别（ASR）
@@ -22,7 +21,7 @@ audio:
 asr:
   backend: mlx-qwen-asr     # ASR 后端：mlx-qwen-asr / http-asr
   model: asr_0.6b           # 模型名称
-  quantization: q8          # 量化精度：q4 / q8 / f16
+  quantization: q8          # 固定使用 8-bit MLX 量化
   keep_model_alive: false   # 保持模型加载（避免重复加载开销）
   hotwords: []              # 热词列表（提升识别率）
 
@@ -40,7 +39,7 @@ align:
   enabled: true                # 是否启用强制对齐（false 则只生成 draft 粗剪字幕）
   backend: mlx-qwen-aligner   # 对齐后端：mlx-qwen-aligner / mock
   model: aligner               # 对齐模型名称
-  quantization: q8             # 量化精度：q4 / q8 / f16
+  quantization: q8             # 固定使用 8-bit MLX 量化
   keep_model_alive: false      # 保持模型加载
   language: Chinese            # 对齐语言：Chinese / English / Japanese / Korean
   time_offset_sec: -0.15       # 对齐时间偏移（秒），负值=提前，补偿模型延迟

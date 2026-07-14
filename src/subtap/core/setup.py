@@ -173,12 +173,12 @@ class SetupWizard:
         """Print instructions for manual model placement."""
         import typer
 
-        typer.echo("请手动下载模型并放入项目根目录的 models/ 目录：")
+        typer.echo("请手动下载模型并放入用户目录的 ~/.subtap/models/ 目录：")
         typer.echo("  - models/asr_0.6b/（必需）")
         typer.echo("  - models/aligner/（必需）")
         typer.echo("  - models/asr_1.7b/（可选，高质量 ASR）")
         typer.echo("")
-        typer.echo("每个模型目录需要包含：config.json 和 model.safetensors")
+        typer.echo("不同模型目录需要的文件不同，安装命令会按清单自动校验")
 
     def _download_model(self, downloader, model_name: str, source: str = "hf") -> bool:
         """Download a single model with progress bar.

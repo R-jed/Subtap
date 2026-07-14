@@ -17,14 +17,19 @@ class Subtap < Formula
   depends_on "scipy"
 
   def install
-    venv = virtualenv_create(libexec, "python3.13")
-    venv.pip_install [
-      "--no-index",
-      "--no-deps",
-      "--require-hashes",
-      "--only-binary=:all:",
-      buildpath/"wheels",
-    ]
+    odie "Subtap supports Apple Silicon macOS only" unless OS.mac? && Hardware::CPU.arm?
+
+    venv = virtualenv_create(libexec, "python3.13", system_site_packages: true)
+    wheelhouse = buildpath/"wheelhouse"
+    venv.pip_install <<~EOS
+      --no-index
+      --find-links=#{wheelhouse/"wheels"}
+      --no-deps
+      --require-hashes
+      --only-binary=:all:
+      -r
+      #{wheelhouse/"requirements.txt"}
+    EOS
     bin.install_symlink Dir[libexec/"bin/subtap"]
   end
 

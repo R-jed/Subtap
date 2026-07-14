@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -18,7 +19,6 @@ RENDERER = ROOT / "scripts/render_homebrew_formula.py"
 SAMPLE_MANIFEST = {
     "target": {"python": "3.13", "platform": "macosx_14_0_arm64"},
     "subtap_version": "0.1.0",
-    "wheelhouse_sha256": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
     "external_packages": [
         {"name": "numpy", "requirement": ">=1.26.4", "formula": "numpy"},
         {"name": "scipy", "requirement": ">=1.10.0", "formula": "scipy"},
@@ -64,9 +64,6 @@ SAMPLE_WHEELHOUSE_URL = (
     "https://github.com/example/subtap/releases/download/v0.1.0/"
     "subtap-0.1.0-py313-macos-arm64-wheelhouse.tar.gz"
 )
-SAMPLE_WHEELHOUSE_SHA256 = (
-    "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
-)
 
 
 @pytest.fixture()
@@ -81,6 +78,13 @@ def template_copy(tmp_path: Path) -> Path:
     dest = tmp_path / "subtap.rb.in"
     dest.write_text(TEMPLATE.read_text(encoding="utf-8"), encoding="utf-8")
     return dest
+
+
+@pytest.fixture()
+def wheelhouse_path(tmp_path: Path) -> Path:
+    path = tmp_path / "subtap-wheelhouse.tar.gz"
+    path.write_bytes(b"sealed wheelhouse")
+    return path
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +134,23 @@ class TestTemplateStructure:
     def test_pip_only_binary(self) -> None:
         text = TEMPLATE.read_text(encoding="utf-8")
         assert "--only-binary=:all:" in text
+
+    def test_pip_uses_locked_requirements_from_local_wheels(self) -> None:
+        text = TEMPLATE.read_text(encoding="utf-8")
+        assert "requirements.txt" in text
+        assert "--find-links" in text
+        assert ".pip_install [" not in text
+        assert 'wheelhouse = buildpath/"wheelhouse"' in text
+
+    def test_formula_explicitly_uses_homebrew_python_packages(self) -> None:
+        text = TEMPLATE.read_text(encoding="utf-8")
+        assert "system_site_packages: true" in text
+
+    def test_formula_rejects_unsupported_platform_before_install(self) -> None:
+        text = TEMPLATE.read_text(encoding="utf-8")
+        assert "OS.mac?" in text
+        assert "Hardware::CPU.arm?" in text
+        assert "odie" in text
 
     def test_test_block_exists(self) -> None:
         """Template must contain a test do block."""
@@ -212,14 +233,14 @@ class TestRenderer:
     """Test render_homebrew_formula.render()."""
 
     def test_render_produces_valid_ruby(
-        self, manifest_path: Path, template_copy: Path
+        self, manifest_path: Path, template_copy: Path, wheelhouse_path: Path
     ) -> None:
         mod = _import_renderer()
         result = mod.render(
             manifest_path=manifest_path,
             template_path=template_copy,
             wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
-            wheelhouse_sha256=SAMPLE_WHEELHOUSE_SHA256,
+            wheelhouse_path=wheelhouse_path,
         )
         assert "class Subtap < Formula" in result
         assert "VERSION_PLACEHOLDER" not in result
@@ -227,63 +248,63 @@ class TestRenderer:
         assert "WHEELHOUSE_SHA256_PLACEHOLDER" not in result
 
     def test_render_injects_version(
-        self, manifest_path: Path, template_copy: Path
+        self, manifest_path: Path, template_copy: Path, wheelhouse_path: Path
     ) -> None:
         mod = _import_renderer()
         result = mod.render(
             manifest_path=manifest_path,
             template_path=template_copy,
             wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
-            wheelhouse_sha256=SAMPLE_WHEELHOUSE_SHA256,
+            wheelhouse_path=wheelhouse_path,
         )
         assert SAMPLE_MANIFEST["subtap_version"] in result
 
     def test_render_injects_wheelhouse_url(
-        self, manifest_path: Path, template_copy: Path
+        self, manifest_path: Path, template_copy: Path, wheelhouse_path: Path
     ) -> None:
         mod = _import_renderer()
         result = mod.render(
             manifest_path=manifest_path,
             template_path=template_copy,
             wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
-            wheelhouse_sha256=SAMPLE_WHEELHOUSE_SHA256,
+            wheelhouse_path=wheelhouse_path,
         )
         assert SAMPLE_WHEELHOUSE_URL in result
 
     def test_render_injects_wheelhouse_sha256(
-        self, manifest_path: Path, template_copy: Path
+        self, manifest_path: Path, template_copy: Path, wheelhouse_path: Path
     ) -> None:
         mod = _import_renderer()
         result = mod.render(
             manifest_path=manifest_path,
             template_path=template_copy,
             wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
-            wheelhouse_sha256=SAMPLE_WHEELHOUSE_SHA256,
+            wheelhouse_path=wheelhouse_path,
         )
-        assert SAMPLE_WHEELHOUSE_SHA256 in result
+        assert hashlib.sha256(wheelhouse_path.read_bytes()).hexdigest() in result
 
     def test_render_preserves_deps(
-        self, manifest_path: Path, template_copy: Path
+        self, manifest_path: Path, template_copy: Path, wheelhouse_path: Path
     ) -> None:
         mod = _import_renderer()
         result = mod.render(
             manifest_path=manifest_path,
             template_path=template_copy,
             wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
-            wheelhouse_sha256=SAMPLE_WHEELHOUSE_SHA256,
+            wheelhouse_path=wheelhouse_path,
         )
         for dep in ("python@3.13", "numpy", "scipy", "ffmpeg"):
             assert f'depends_on "{dep}"' in result
 
     def test_render_preserves_pip_flags(
-        self, manifest_path: Path, template_copy: Path
+        self, manifest_path: Path, template_copy: Path, wheelhouse_path: Path
     ) -> None:
         mod = _import_renderer()
         result = mod.render(
             manifest_path=manifest_path,
             template_path=template_copy,
             wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
-            wheelhouse_sha256=SAMPLE_WHEELHOUSE_SHA256,
+            wheelhouse_path=wheelhouse_path,
         )
         for flag in (
             "--no-index",
@@ -294,43 +315,63 @@ class TestRenderer:
             assert flag in result
 
     def test_render_preserves_test_block(
-        self, manifest_path: Path, template_copy: Path
+        self, manifest_path: Path, template_copy: Path, wheelhouse_path: Path
     ) -> None:
         mod = _import_renderer()
         result = mod.render(
             manifest_path=manifest_path,
             template_path=template_copy,
             wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
-            wheelhouse_sha256=SAMPLE_WHEELHOUSE_SHA256,
+            wheelhouse_path=wheelhouse_path,
         )
         assert "test do" in result
+
+    def test_render_calculates_sha256_from_the_wheelhouse(
+        self,
+        manifest_path: Path,
+        template_copy: Path,
+        wheelhouse_path: Path,
+    ) -> None:
+        mod = _import_renderer()
+        result = mod.render(
+            manifest_path=manifest_path,
+            template_path=template_copy,
+            wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
+            wheelhouse_path=wheelhouse_path,
+        )
+
+        assert hashlib.sha256(wheelhouse_path.read_bytes()).hexdigest() in result
 
 
 class TestRendererValidation:
     """Renderer must fail fast on inconsistent data."""
 
-    def test_rejects_missing_manifest(self, template_copy: Path) -> None:
+    def test_rejects_missing_manifest(
+        self, template_copy: Path, wheelhouse_path: Path
+    ) -> None:
         mod = _import_renderer()
         with pytest.raises(ValueError, match="cannot read"):
             mod.render(
                 manifest_path=Path("/nonexistent/manifest.json"),
                 template_path=template_copy,
                 wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
-                wheelhouse_sha256=SAMPLE_WHEELHOUSE_SHA256,
+                wheelhouse_path=wheelhouse_path,
             )
 
-    def test_rejects_missing_template(self, manifest_path: Path) -> None:
+    def test_rejects_missing_template(
+        self, manifest_path: Path, wheelhouse_path: Path
+    ) -> None:
         mod = _import_renderer()
         with pytest.raises(ValueError, match="cannot read"):
             mod.render(
                 manifest_path=manifest_path,
                 template_path=Path("/nonexistent/subtap.rb.in"),
                 wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
-                wheelhouse_sha256=SAMPLE_WHEELHOUSE_SHA256,
+                wheelhouse_path=wheelhouse_path,
             )
 
     def test_rejects_empty_wheelhouse_url(
-        self, manifest_path: Path, template_copy: Path
+        self, manifest_path: Path, template_copy: Path, wheelhouse_path: Path
     ) -> None:
         mod = _import_renderer()
         with pytest.raises(ValueError):
@@ -338,23 +379,23 @@ class TestRendererValidation:
                 manifest_path=manifest_path,
                 template_path=template_copy,
                 wheelhouse_url="",
-                wheelhouse_sha256=SAMPLE_WHEELHOUSE_SHA256,
+                wheelhouse_path=wheelhouse_path,
             )
 
-    def test_rejects_empty_wheelhouse_sha256(
+    def test_rejects_missing_wheelhouse(
         self, manifest_path: Path, template_copy: Path
     ) -> None:
         mod = _import_renderer()
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="cannot read wheelhouse"):
             mod.render(
                 manifest_path=manifest_path,
                 template_path=template_copy,
                 wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
-                wheelhouse_sha256="",
+                wheelhouse_path=Path("/nonexistent/wheelhouse.tar.gz"),
             )
 
     def test_rejects_malformed_manifest(
-        self, tmp_path: Path, template_copy: Path
+        self, tmp_path: Path, template_copy: Path, wheelhouse_path: Path
     ) -> None:
         bad = tmp_path / "manifest.json"
         bad.write_text("not json", encoding="utf-8")
@@ -364,58 +405,24 @@ class TestRendererValidation:
                 manifest_path=bad,
                 template_path=template_copy,
                 wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
-                wheelhouse_sha256=SAMPLE_WHEELHOUSE_SHA256,
+                wheelhouse_path=wheelhouse_path,
             )
 
-    def test_accepts_matching_sha256(
-        self, manifest_path: Path, template_copy: Path
+    def test_accepts_wheelhouse_without_manifest_sha256(
+        self, manifest_path: Path, template_copy: Path, wheelhouse_path: Path
     ) -> None:
-        """Render succeeds when provided SHA256 matches manifest."""
+        """The Formula SHA comes from the immutable archive, not its contents."""
         mod = _import_renderer()
         result = mod.render(
             manifest_path=manifest_path,
             template_path=template_copy,
             wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
-            wheelhouse_sha256=SAMPLE_WHEELHOUSE_SHA256,
+            wheelhouse_path=wheelhouse_path,
         )
         assert "class Subtap < Formula" in result
 
-    def test_rejects_sha256_mismatch(
-        self, manifest_path: Path, template_copy: Path
-    ) -> None:
-        """Render fails when provided SHA256 doesn't match manifest."""
-        mod = _import_renderer()
-        with pytest.raises(ValueError, match="mismatch"):
-            mod.render(
-                manifest_path=manifest_path,
-                template_path=template_copy,
-                wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
-                wheelhouse_sha256="TAMPERED_HASH",
-            )
-
-    def test_rejects_missing_wheelhouse_sha256_in_manifest(
-        self, tmp_path: Path, template_copy: Path
-    ) -> None:
-        """Render rejects manifest lacking wheelhouse_sha256 (tamper detection)."""
-        manifest_no_sha = {
-            "subtap_version": "0.1.0",
-            "packages": [],
-        }
-        path = tmp_path / "manifest.json"
-        path.write_text(json.dumps(manifest_no_sha, indent=2), encoding="utf-8")
-        mod = _import_renderer()
-        with pytest.raises(
-            ValueError, match="missing required field 'wheelhouse_sha256'"
-        ):
-            mod.render(
-                manifest_path=path,
-                template_path=template_copy,
-                wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
-                wheelhouse_sha256=SAMPLE_WHEELHOUSE_SHA256,
-            )
-
     def test_rejects_missing_subtap_version(
-        self, tmp_path: Path, template_copy: Path
+        self, tmp_path: Path, template_copy: Path, wheelhouse_path: Path
     ) -> None:
         """Render fails fast when manifest lacks subtap_version."""
         manifest_no_version: dict[str, object] = {
@@ -429,11 +436,11 @@ class TestRendererValidation:
                 manifest_path=path,
                 template_path=template_copy,
                 wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
-                wheelhouse_sha256=SAMPLE_WHEELHOUSE_SHA256,
+                wheelhouse_path=wheelhouse_path,
             )
 
     def test_rejects_empty_subtap_version(
-        self, tmp_path: Path, template_copy: Path
+        self, tmp_path: Path, template_copy: Path, wheelhouse_path: Path
     ) -> None:
         """Render fails fast when manifest has empty subtap_version."""
         manifest_empty_version = {
@@ -448,5 +455,5 @@ class TestRendererValidation:
                 manifest_path=path,
                 template_path=template_copy,
                 wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
-                wheelhouse_sha256=SAMPLE_WHEELHOUSE_SHA256,
+                wheelhouse_path=wheelhouse_path,
             )

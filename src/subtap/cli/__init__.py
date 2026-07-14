@@ -2,19 +2,39 @@
 
 from __future__ import annotations
 
-import json
-import os
 import platform
 import shutil
-import subprocess
 import sys
 from pathlib import Path
-from typing import Any
 
 import typer
 
 from subtap import __version__
 from subtap.cli._utils import _handle_error
+from subtap.cli.batch_cli import (
+    batch_compose_subtitle,
+    batch_transcribe,
+    compose_subtitle,
+)
+from subtap.cli.doctor_cli import doctor
+from subtap.cli.hotword_cli import hotword_app
+from subtap.cli.models_cli import models_app
+from subtap.cli.pipeline_cli import (
+    _align as align_cmd,
+    _clean as clean_cmd,
+    _clean_workspace as clean_workspace_cmd,
+    _demo as demo_cmd,
+    _export as export_cmd,
+    _prepare as prepare_cmd,
+    _resume as resume_cmd,
+    _retry as retry_cmd,
+    _run as run_cmd,
+    _segment as segment_cmd,
+    _transcribe as transcribe_cmd,
+    check_first_run_wizard as check_first_run_wizard,
+)
+from subtap.cli.script_cli import script_app
+from subtap.cli.setup_cli import setup
 from subtap.glossary.cli import app as glossary_app
 
 app = typer.Typer(
@@ -77,10 +97,6 @@ def main(ctx: typer.Context) -> None:
                 pass
         typer.echo(_build_root_command_deck())
 
-
-# ── 子命令组 ──────────────────────────────────────────────────
-from subtap.cli.hotword_cli import hotword_app
-from subtap.cli.script_cli import script_app
 
 learn_app = typer.Typer(help="学习人工修正")
 profile_app = typer.Typer(help="本地学习档案")
@@ -190,14 +206,8 @@ def profile_export(
     typer.echo(f"✓ 已导出：{path}")
 
 
-# ── Doctor 命令 ────────────────────────────────────────────
-from subtap.cli.doctor_cli import doctor
-
 app.command("doctor")(doctor)
 
-
-# ── Setup 命令 ─────────────────────────────────────────────
-from subtap.cli.setup_cli import setup
 
 app.command("setup")(setup)
 
@@ -225,35 +235,10 @@ def tui() -> None:
     app.run()
 
 
-# ── Batch 批量处理命令 ──────────────────────────────────────
-# 函数实现位于 subtap.cli.batch_cli，此处注册到主 app
-from subtap.cli.batch_cli import (
-    batch_transcribe,
-    compose_subtitle,
-    batch_compose_subtitle,
-)
-
 app.command("batch-transcribe")(batch_transcribe)
 app.command("compose")(compose_subtitle)
 app.command("batch-compose")(batch_compose_subtitle)
 
-
-# ── Pipeline 核心命令 ──────────────────────────────────────
-# 函数实现位于 subtap.cli.pipeline_cli，此处注册到主 app
-from subtap.cli.pipeline_cli import (
-    check_first_run_wizard,
-    _run as run_cmd,
-    _prepare as prepare_cmd,
-    _transcribe as transcribe_cmd,
-    _clean as clean_cmd,
-    _segment as segment_cmd,
-    _align as align_cmd,
-    _export as export_cmd,
-    _resume as resume_cmd,
-    _retry as retry_cmd,
-    _demo as demo_cmd,
-    _clean_workspace as clean_workspace_cmd,
-)
 
 app.command("run")(run_cmd)
 app.command("prepare")(prepare_cmd)
@@ -267,9 +252,6 @@ app.command("retry")(retry_cmd)
 app.command("demo", help="运行演示：默认本地不联网，输出 demo final.srt")(demo_cmd)
 app.command("cleanup")(clean_workspace_cmd)
 
-
-# ── Models 子命令组 ────────────────────────────────────────
-from subtap.cli.models_cli import models_app
 
 app.add_typer(models_app, name="models")
 

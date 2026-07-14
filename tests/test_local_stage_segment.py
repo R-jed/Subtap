@@ -1,6 +1,5 @@
 """纯本地 segment 阶段测试"""
 
-import pytest
 import json
 
 

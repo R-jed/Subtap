@@ -9,7 +9,7 @@ class CompletionPage:
     def build_items(self, output_path: str, duration_sec: float) -> list[str]:
         """Build menu items for completion page."""
         return [
-            f"✓ 字幕已生成",
+            "✓ 字幕已生成",
             f"  耗时：{self.format_duration(duration_sec)}",
             f"  输出：{output_path}",
             "",

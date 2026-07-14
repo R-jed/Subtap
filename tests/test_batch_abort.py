@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import signal
 import os
-from pathlib import Path
 
-import pytest
 
 from subtap.batch_abort import AbortController
 

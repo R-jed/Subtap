@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-import pytest
-
 
 def test_config_survives_upgrade(tmp_path):
     """升级后 config.yaml 内容保留。"""
@@ -31,7 +28,7 @@ def test_state_json_preserved_after_upgrade(tmp_path):
     state_path.parent.mkdir(parents=True)
 
     store = StateStore(state_path)
-    state = store.load()
+    store.load()
     store.add_recent_task("task-001", "test.mp3", "/output/final.srt")
 
     # 模拟升级：重新加载

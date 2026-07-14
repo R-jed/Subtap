@@ -7,11 +7,8 @@ Bug 3: source_text granularity mismatch in script matching (P2)
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 
 class TestFormatParameterPassing:

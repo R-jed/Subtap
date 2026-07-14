@@ -44,7 +44,7 @@ def test_run_asr_writes_asr_draft_contract(monkeypatch, tmp_path):
     """run_asr should write ASRDraft reference-timing artifact."""
     config = SubtapConfig()
     config.asr.model = "asr_0.6b"
-    config.asr.quantization = "q4"
+    config.asr.quantization = "q8"
     workspace = Workspace(config, base_dir=tmp_path / "work")
     workspace.ensure_dirs()
 
@@ -64,6 +64,6 @@ def test_run_asr_writes_asr_draft_contract(monkeypatch, tmp_path):
         workspace.asr_draft_jsonl.read_text(encoding="utf-8").strip()
     )
     assert draft.provider == "qwen3_mlx"
-    assert draft.model == "asr_0.6b-q4"
+    assert draft.model == "asr_0.6b-q8"
     assert draft.is_reference_only() is True
     assert backend._model is None

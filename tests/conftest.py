@@ -41,9 +41,9 @@ def test_config(tmp_path: Path) -> SubtapConfig:
             channels=1,
             format="wav",
             vad=VADConfig(
+                use_silero_vad=False,
                 min_silence_sec=0.4,
-                min_chunk_sec=0.1,  # low threshold for short test audio
-                max_chunk_sec=30.0,
+                max_chunk_sec=180.0,
             ),
         ),
         workspace=WorkspaceConfig(

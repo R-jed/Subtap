@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import sys
 import platform
-import time
 import traceback
 from dataclasses import dataclass, field
 from datetime import datetime

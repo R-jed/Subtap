@@ -376,7 +376,7 @@ class TestRealMaterialIntegration:
         )
 
         with open(chinese_aligned) as f:
-            segments = [json.loads(l) for l in f if l.strip()]
+            segments = [json.loads(line) for line in f if line.strip()]
 
         for seg in segments:
             words = seg.get("words", [])
@@ -411,7 +411,7 @@ class TestRealMaterialIntegration:
         )
 
         with open(english_aligned) as f:
-            segments = [json.loads(l) for l in f if l.strip()]
+            segments = [json.loads(line) for line in f if line.strip()]
 
         for seg in segments:
             words = seg.get("words", [])

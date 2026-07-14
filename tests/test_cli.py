@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import re
-from concurrent.futures import Future
 from types import SimpleNamespace
 
 from typer.testing import CliRunner
@@ -179,7 +178,38 @@ def test_doctor_json_outputs_machine_readable_status(tmp_path, monkeypatch):
     assert payload["ok"] is True
     assert payload["config"]["valid"] is True
     assert payload["checks"][0]["name"] == "ffmpeg"
-    assert payload["models"][0]["name"] == "asr_0.6b"
+    assert payload["models"][0] == {
+        "name": "asr_0.6b",
+        "required": True,
+        "installed": True,
+        "path": str(tmp_path / "models" / "asr"),
+        "missing_files": [],
+    }
+
+
+def test_doctor_json_rejects_invalid_model_status_types(tmp_path, monkeypatch):
+    """doctor 不应把错误的模型状态类型悄悄转换成可用数据。"""
+    fake_home = tmp_path / "fakehome"
+    config_dir = fake_home / ".subtap"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.yaml").write_text("audio:\n  sample_rate: 16000\n")
+    monkeypatch.setattr("pathlib.Path.home", lambda: fake_home)
+    monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/tool")
+    monkeypatch.setattr(
+        "subtap.core.models.ModelRegistry.status",
+        lambda _self: [
+            SimpleNamespace(
+                name=object(),
+                installed=True,
+                path=tmp_path / "models" / "asr",
+                missing_files=[],
+            )
+        ],
+    )
+
+    result = runner.invoke(app, ["doctor", "--json"])
+
+    assert result.exit_code != 0
 
 
 def test_run_has_no_git_check_flag():
@@ -781,7 +811,7 @@ def test_setup_skip_models():
 
 def test_doctor_enhanced_checks(monkeypatch, tmp_path):
     """Test enhanced doctor checks."""
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import patch
     from pathlib import Path
 
     # 隔离 Path.home()
@@ -794,10 +824,18 @@ def test_doctor_enhanced_checks(monkeypatch, tmp_path):
 
     with patch("subtap.core.models.ModelRegistry.status") as mock_status:
         mock_status.return_value = [
-            MagicMock(
-                name="aligner", installed=True, path=tmp_path / "models" / "aligner"
+            SimpleNamespace(
+                name="aligner",
+                installed=True,
+                path=tmp_path / "models" / "aligner",
+                missing_files=[],
             ),
-            MagicMock(name="asr", installed=True, path=tmp_path / "models" / "asr"),
+            SimpleNamespace(
+                name="asr",
+                installed=True,
+                path=tmp_path / "models" / "asr",
+                missing_files=[],
+            ),
         ]
         result = runner.invoke(app, ["doctor"])
         assert "配置状态" in _strip_ansi(result.output)
@@ -919,7 +957,7 @@ def test_align_stage_copies_external_input_and_output(tmp_path, monkeypatch):
 
 def test_doctor_release_fails_when_models_missing(tmp_path, monkeypatch):
     """doctor --release 应在模型未安装时返回 exit_code=1."""
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import patch
     from pathlib import Path
 
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
@@ -930,14 +968,18 @@ def test_doctor_release_fails_when_models_missing(tmp_path, monkeypatch):
     )
 
     # 模拟 registry.status() 返回缺失模型
-    mock_asr = MagicMock(installed=False)
-    mock_asr.name = "asr_0.6b"
-    mock_asr.path = tmp_path / "models" / "asr_0.6b"
-    mock_asr.missing_files = ["config.json", "model.safetensors"]
-    mock_aligner = MagicMock(installed=True)
-    mock_aligner.name = "aligner"
-    mock_aligner.path = tmp_path / "models" / "aligner"
-    mock_aligner.missing_files = []
+    mock_asr = SimpleNamespace(
+        name="asr_0.6b",
+        installed=False,
+        path=tmp_path / "models" / "asr_0.6b",
+        missing_files=["config.json", "model.safetensors"],
+    )
+    mock_aligner = SimpleNamespace(
+        name="aligner",
+        installed=True,
+        path=tmp_path / "models" / "aligner",
+        missing_files=[],
+    )
     missing_status = [mock_asr, mock_aligner]
 
     with patch("subtap.core.models.ModelRegistry") as MockRegistry:
@@ -951,7 +993,7 @@ def test_doctor_release_fails_when_models_missing(tmp_path, monkeypatch):
 
 def test_doctor_default_reports_missing_models_without_failing(tmp_path, monkeypatch):
     """doctor 默认用于安装后诊断，缺模型时应提示但不阻断。"""
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import patch
     from pathlib import Path
 
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
@@ -961,10 +1003,12 @@ def test_doctor_default_reports_missing_models_without_failing(tmp_path, monkeyp
         "models:\n  root: models\n", encoding="utf-8"
     )
 
-    mock_asr = MagicMock(installed=False)
-    mock_asr.name = "asr_0.6b"
-    mock_asr.path = tmp_path / "models" / "asr_0.6b"
-    mock_asr.missing_files = ["config.json"]
+    mock_asr = SimpleNamespace(
+        name="asr_0.6b",
+        installed=False,
+        path=tmp_path / "models" / "asr_0.6b",
+        missing_files=["config.json"],
+    )
     missing_status = [mock_asr]
 
     with patch("subtap.core.models.ModelRegistry") as MockRegistry:
@@ -1336,9 +1380,9 @@ def test_open_file_cross_platform_macos(monkeypatch):
     from unittest.mock import patch
     from pathlib import Path
 
-    monkeypatch.setattr("subtap.cli.platform.system", lambda: "Darwin")
+    monkeypatch.setattr("subtap.cli.hotword_cli.platform.system", lambda: "Darwin")
 
-    with patch("subtap.cli.subprocess.run") as mock_run:
+    with patch("subtap.cli.hotword_cli.subprocess.run") as mock_run:
         from subtap.cli.hotword_cli import _open_file_cross_platform
 
         _open_file_cross_platform(Path("/tmp/test.txt"))
@@ -1351,9 +1395,9 @@ def test_open_file_cross_platform_linux(monkeypatch):
     from unittest.mock import patch
     from pathlib import Path
 
-    monkeypatch.setattr("subtap.cli.platform.system", lambda: "Linux")
+    monkeypatch.setattr("subtap.cli.hotword_cli.platform.system", lambda: "Linux")
 
-    with patch("subtap.cli.subprocess.run") as mock_run:
+    with patch("subtap.cli.hotword_cli.subprocess.run") as mock_run:
         from subtap.cli.hotword_cli import _open_file_cross_platform
 
         _open_file_cross_platform(Path("/tmp/test.txt"))
@@ -1366,9 +1410,9 @@ def test_open_file_cross_platform_windows(monkeypatch):
     from unittest.mock import patch
     from pathlib import Path
 
-    monkeypatch.setattr("subtap.cli.platform.system", lambda: "Windows")
+    monkeypatch.setattr("subtap.cli.hotword_cli.platform.system", lambda: "Windows")
 
-    with patch("subtap.cli.subprocess.run") as mock_run:
+    with patch("subtap.cli.hotword_cli.subprocess.run") as mock_run:
         from subtap.cli.hotword_cli import _open_file_cross_platform
 
         _open_file_cross_platform(Path("C:\\test.txt"))
@@ -1382,7 +1426,7 @@ def test_open_file_cross_platform_unsupported_os(monkeypatch):
     """不支持的操作系统应抛出 RuntimeError"""
     from pathlib import Path
 
-    monkeypatch.setattr("subtap.cli.platform.system", lambda: "FreeBSD")
+    monkeypatch.setattr("subtap.cli.hotword_cli.platform.system", lambda: "FreeBSD")
 
     from subtap.cli.hotword_cli import _open_file_cross_platform
 
@@ -1419,7 +1463,6 @@ def test_handle_error_custom_exit_code():
 
 def test_handle_error_message_format():
     """_handle_error 输出的消息应包含 ✗ 前缀"""
-    import typer
     from unittest.mock import patch
     from subtap.cli import _handle_error
 

@@ -41,7 +41,7 @@ def test_release_candidate_cannot_publish_stable_channels() -> None:
         jobs["publish"]["if"]
         == "${{ needs.metadata.outputs.is_prerelease == 'false' }}"
     )
-    assert "homebrew" not in jobs
+    assert "homebrew" in jobs
     assert "metadata" in jobs["publish"]["needs"]
     assert "metadata" in jobs["github-release"]["needs"]
     release_step = next(
@@ -99,9 +99,8 @@ def test_homebrew_acceptance_preseeds_and_preserves_user_data() -> None:
 def test_wheelhouse_archive_name_is_versioned() -> None:
     """build_wheelhouse() produces a versioned archive name."""
     text = (ROOT / "scripts/homebrew_wheelhouse.py").read_text()
-    assert (
-        'f"subtap-{project_record.version}-py313-macos-arm64-wheelhouse.tar.gz"' in text
-    )
+    assert "PYTHON_VERSION.replace('.', '')" in text
+    assert "macos-arm64-wheelhouse.tar.gz" in text
 
 
 def test_publish_job_hard_fails_on_prerelease() -> None:
@@ -186,6 +185,44 @@ def test_wheelhouse_attestation_in_workflow() -> None:
     # attest must be a dependency of github-release and publish
     assert "attest" in workflow["jobs"]["github-release"]["needs"]
     assert "attest" in workflow["jobs"]["publish"]["needs"]
+
+
+def test_release_builds_and_publishes_homebrew_assets() -> None:
+    workflow = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
+    homebrew = workflow["jobs"]["homebrew"]
+    steps = "\n".join(str(step) for step in homebrew["steps"])
+
+    assert homebrew["runs-on"] == "macos-14"
+    assert "homebrew_wheelhouse.py build" in steps
+    assert "render_homebrew_formula.py" in steps
+    assert "brew install ffmpeg numpy scipy" in steps
+    assert any(
+        step.get("with", {}).get("name") == "homebrew" for step in homebrew["steps"]
+    )
+    assert "homebrew" in workflow["jobs"]["attest"]["needs"]
+    assert "homebrew" in workflow["jobs"]["github-release"]["needs"]
+
+
+def test_release_attests_and_uploads_all_release_assets() -> None:
+    workflow = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
+    attest_steps = workflow["jobs"]["attest"]["steps"]
+    release_steps = workflow["jobs"]["github-release"]["steps"]
+
+    assert workflow["jobs"]["attest"]["needs"] == ["build", "homebrew"]
+    assert any(step.get("with", {}).get("name") == "homebrew" for step in attest_steps)
+    assert any(step.get("with", {}).get("name") == "homebrew" for step in release_steps)
+    attestation = next(
+        step
+        for step in attest_steps
+        if step.get("name") == "Generate build provenance attestation"
+    )
+    assert attestation["with"]["subject-path"] == "release-assets/"
+    release = next(
+        step
+        for step in release_steps
+        if step.get("name") == "Upload GitHub Release assets"
+    )
+    assert release["with"]["files"] == "release-assets/**/*"
 
 
 def test_homebrew_acceptance_refuses_existing_install(tmp_path: Path) -> None:

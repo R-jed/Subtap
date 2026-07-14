@@ -4,9 +4,9 @@ import logging
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
-
 from subtap.schemas.config import SubtapConfig
+
+logger = logging.getLogger(__name__)
 
 
 class ConfigManager:

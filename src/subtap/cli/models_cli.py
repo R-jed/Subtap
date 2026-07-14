@@ -24,8 +24,8 @@ def models_status() -> None:
         if ms.installed:
             status = typer.style("✓ 已安装", fg=typer.colors.GREEN)
         else:
-            missing = ", ".join(ms.missing_files)
-            status = typer.style(f"✗ 缺失（{missing}）", fg=typer.colors.RED)
+            issues = ", ".join(ms.missing_files)
+            status = typer.style(f"✗ 异常（{issues}）", fg=typer.colors.RED)
         typer.echo(f"  {ms.name:12s} {status}  {ms.path}")
 
 
@@ -158,6 +158,3 @@ def models_remove(
         _handle_error(f"错误：{e}")
     except OSError as e:
         _handle_error(f"删除失败：{e}")
-
-
-from subtap.cli._utils import _handle_error

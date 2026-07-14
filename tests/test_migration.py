@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from subtap.core.migration import MigrationPlan, Move, execute_migration, plan_migration
+from subtap.core.migration import execute_migration, plan_migration
 
 # ---------------------------------------------------------------------------
 # plan_migration

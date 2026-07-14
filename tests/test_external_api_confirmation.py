@@ -57,24 +57,3 @@ def test_enhance_local_no_warning(tmp_path, monkeypatch):
     )
     output = _strip_ansi(result.output)
     assert "外部" not in output
-
-
-def test_enhance_local_no_warning(tmp_path, monkeypatch):
-    """--enhance local 不应显示外部 API 警告。"""
-    from types import SimpleNamespace
-
-    input_file = tmp_path / "test.mp3"
-    input_file.write_bytes(b"fake audio")
-
-    monkeypatch.setattr(
-        "subtap.schemas.config.load_config",
-        lambda p: SimpleNamespace(output=SimpleNamespace(timestamp=True)),
-    )
-    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "fakehome")
-
-    result = runner.invoke(
-        app,
-        ["run", str(input_file), "--enhance", "local"],
-    )
-    output = _strip_ansi(result.output)
-    assert "外部" not in output

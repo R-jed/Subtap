@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
 
 from subtap.batch_config import (
     BatchConfig,
     load_batch_config,
     save_batch_config,
-    DEFAULT_CONFIG,
 )
 
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from subtap.core.clean import run_clean
 from subtap.core.translate import run_translate

@@ -49,6 +49,27 @@ def test_split_max_chars():
         assert len(line["text"]) <= 23  # max_chars + number protection buffer
 
 
+def test_split_max_chars_keeps_aligner_word_boundaries():
+    """强制换行时，使用对齐结果提供的词边界。"""
+    words = [
+        {"word": "一直是", "start_sec": 0.0, "end_sec": 0.3},
+        {"word": "一机难求", "start_sec": 0.3, "end_sec": 0.6},
+        {"word": "的状态", "start_sec": 0.6, "end_sec": 0.9},
+        {"word": "它叫做", "start_sec": 0.9, "end_sec": 1.2},
+        {"word": "理光GR4", "start_sec": 1.2, "end_sec": 1.5},
+    ]
+    text = "".join(word["word"] for word in words)
+
+    lines = _smart_split(words, text, max_chars=7)
+
+    assert "".join(line["text"] for line in lines) == text
+    word_ends = {3, 7, 10, 13, len(text)}
+    position = 0
+    for line in lines:
+        position += len(line["text"])
+        assert position in word_ends
+
+
 def test_no_words_proportional():
     """无 words 时使用传入的 start_sec/end_sec。"""
     text = "一二三四五六七八九十"

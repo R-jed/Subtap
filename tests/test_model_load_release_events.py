@@ -141,7 +141,7 @@ def test_asr_model_events_carry_correct_payload(monkeypatch, tmp_path):
     workspace = _setup_asr_workspace(tmp_path)
     config = SubtapConfig()
     config.asr.model = "asr_1.7b"
-    config.asr.quantization = "q4"
+    config.asr.quantization = "q8"
 
     bus = _CollectingBus()
     backend = _MockASR()
@@ -164,7 +164,7 @@ def test_asr_model_events_carry_correct_payload(monkeypatch, tmp_path):
     for event in model_events:
         assert event.data["task_id"] == "payload-test"
         assert event.data["stage"] == "asr"
-        assert event.data["model"] == "asr_1.7b-q4"
+        assert event.data["model"] == "asr_1.7b-q8"
 
 
 def test_asr_no_release_events_when_keep_model_alive(monkeypatch, tmp_path):
@@ -236,7 +236,7 @@ def test_align_model_events_carry_correct_payload(monkeypatch, tmp_path):
     workspace = _setup_align_workspace(tmp_path)
     config = SubtapConfig()
     config.align.model = "aligner"
-    config.align.quantization = "q4"
+    config.align.quantization = "q8"
 
     bus = _CollectingBus()
     backend = _MockAligner()
@@ -261,7 +261,7 @@ def test_align_model_events_carry_correct_payload(monkeypatch, tmp_path):
     for event in model_events:
         assert event.data["task_id"] == "align-payload"
         assert event.data["stage"] == "align"
-        assert event.data["model"] == "aligner-q4"
+        assert event.data["model"] == "aligner-q8"
 
 
 def test_align_no_release_events_when_keep_model_alive(monkeypatch, tmp_path):

@@ -1,14 +1,45 @@
 {
   "allowed_licenses": [
     "Apache-2.0",
+    "Apache-2.0 AND CNRI-Python",
     "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",
     "MIT",
+    "MIT-0",
     "MPL-2.0",
     "PSF-2.0"
   ],
-  "wheel_approvals": {},
+  "wheel_approvals": {
+    "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67": {
+      "license": "BSD-3-Clause",
+      "approved_by": "Jinja2 upstream license",
+      "approved_on": "2026-07-14",
+      "source_commit": "3.1.6",
+      "provenance_url": "https://github.com/pallets/jinja/blob/3.1.6/LICENSE.txt"
+    },
+    "a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c": {
+      "license": "BSD-3-Clause",
+      "approved_by": "mpmath upstream license",
+      "approved_on": "2026-07-14",
+      "source_commit": "1.3.0",
+      "provenance_url": "https://github.com/mpmath/mpmath/blob/1.3.0/LICENSE"
+    },
+    "5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e": {
+      "license": "Apache-2.0",
+      "approved_by": "packaging upstream dual-license notice",
+      "approved_on": "2026-07-14",
+      "source_commit": "26.2",
+      "provenance_url": "https://github.com/pypa/packaging/tree/26.2"
+    },
+    "c80201d22cbf405b80647a60ada77bba06c8fba2da2743ba1e89cdcc39a81f25": {
+      "license": "Apache-2.0",
+      "approved_by": "safetensors upstream license",
+      "approved_on": "2026-07-14",
+      "source_commit": "v0.8.0",
+      "provenance_url": "https://github.com/huggingface/safetensors/blob/v0.8.0/LICENSE"
+    }
+  },
   "sentencepiece_release": {
     "filename": "sentencepiece-0.2.2-cp313-cp313-macosx_11_0_arm64.whl",
     "sha256": "201a8e0f55501a76e08dbf2c54bc45f4642b379271e89c667d517bfbc2191f2a",

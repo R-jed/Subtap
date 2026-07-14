@@ -2,7 +2,6 @@
 
 import pytest
 from subtap.script.aligner import (
-    AlignOp,
     align_sequences,
     compute_alignment_quality,
     AlignmentQualityError,

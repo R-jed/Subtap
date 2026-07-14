@@ -126,7 +126,7 @@ def plan_migration(subtap_root: Path) -> MigrationPlan:
             if name in {d.split("/")[0] for d in _REQUIRED_DIRS}:
                 continue
             # Part of a move
-            rel = entry.relative_to(subtap_root)
+            entry.relative_to(subtap_root)
             if any(m.src == entry for m in plan.moves):
                 continue
             # Parent of a move source (e.g. glossary/ contains files being moved)

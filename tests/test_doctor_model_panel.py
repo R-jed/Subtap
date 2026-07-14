@@ -15,7 +15,7 @@ def test_doctor_json_reports_models_quantization_and_residency(monkeypatch, tmp_
     config = SimpleNamespace(
         asr=SimpleNamespace(
             model="asr_0.6b",
-            quantization="q4",
+            quantization="q8",
             keep_model_alive=False,
             warmup=False,
         ),
@@ -39,7 +39,7 @@ def test_doctor_json_reports_models_quantization_and_residency(monkeypatch, tmp_
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["runtime"]["asr_model"] == "asr_0.6b"
-    assert payload["runtime"]["asr_quantization"] == "q4"
+    assert payload["runtime"]["asr_quantization"] == "q8"
     assert payload["runtime"]["aligner_model"] == "aligner"
     assert payload["runtime"]["aligner_quantization"] == "q8"
     assert payload["runtime"]["keep_model_alive"] is False

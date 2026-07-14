@@ -46,6 +46,16 @@ def test_split_empty_text():
     assert result == [""]
 
 
+def test_force_split_keeps_trailing_punctuation_with_spoken_text():
+    """A max-length boundary must not create a punctuation-only sentence."""
+    text = "那你的确可以拍摄出这种很多人喜欢的CCD直闪的画面。"
+
+    result = _split_sentences(text, language="zh", max_chars=25, min_chars=10)
+
+    assert result == [text]
+    assert all(any(char.isalnum() for char in part) for part in result)
+
+
 def test_split_at_comma_preserves_original_pause_punctuation():
     text = "甲乙丙丁戊己，庚辛壬癸、ABCDEFGHIJ,klmnop;QRSTUV；尾声"
 
@@ -248,7 +258,7 @@ class TestSplitSentencesZh:
             assert len(sent) <= 60
 
     def test_no_punctuation_long_text(self):
-        """无标点长文本：使用 jieba 词边界断句。"""
+        """无标点长文本：强制断句时不丢字。"""
         text = (
             "理光GR4是一款非常不错的相机它的画质非常好而且体积小巧方便携带适合旅行使用"
         )
@@ -328,6 +338,15 @@ class TestSplitByLength:
         assert "".join(result) == text
         assert all(not part.endswith("F") for part in result)
         assert all(not part.startswith("ilter") for part in result)
+
+    def test_semantic_split_keeps_an_overlong_latin_word_intact(self):
+        latin_word = "SupercalifragilisticexpialidociousFilter"
+        text = f"这是一个{latin_word}测试"
+
+        result = _split_sentences(text, max_chars=25, min_chars=10)
+
+        assert "".join(result) == text
+        assert any(latin_word in part for part in result)
 
 
 class TestMergeShortSentences:

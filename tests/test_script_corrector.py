@@ -1,7 +1,6 @@
 """Tests for script corrector."""
 
 from subtap.script.corrector import (
-    CorrectionResult,
     correct_text,
     correct_segments,
     CORRECTION_THRESHOLD,

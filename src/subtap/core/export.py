@@ -9,8 +9,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
-logger = logging.getLogger(__name__)
-
 from subtap.core.clauses import identify_clause_boundaries, _CONJ_PAIRS
 from subtap.core.itn import chinese_to_num
 from subtap.core.phrases import mark_phrase_boundaries
@@ -20,6 +18,8 @@ from subtap.core.text_utils import (
     strip_punct,
 )
 from subtap.schemas.models import AlignedSegment, ASRSegment
+
+logger = logging.getLogger(__name__)
 
 # Sentence-ending punctuation (shared across split functions)
 _SENT_END = frozenset("。！？.!?")
@@ -131,7 +131,7 @@ def load_asr_draft(asr_jsonl: Path) -> list[ASRSegment]:
     return segments
 
 
-_PUNCT_CHARS = set("，。？！、；：" "''（）《》,.?!;:\"'()[]{}\\-—…·")
+_PUNCT_CHARS = set("，。？！、；：''（）《》,.?!;:\"'()[]{}\\-—…·")
 
 # 常见的跨行断词模式（单字+单字/多字组成词）
 _SPLIT_WORD_PATTERNS = {
@@ -311,7 +311,9 @@ def _inject_punct(words: list[dict], text: str) -> list[dict]:
 
     # Completeness check: warn if text characters were lost.
     reconstructed = "".join(w["word"] for w in result)
-    if reconstructed != text:
+    comparable_text = "".join(text.split())
+    comparable_reconstructed = "".join(reconstructed.split())
+    if comparable_reconstructed != comparable_text:
         logger.warning(
             "_inject_punct: 完整性校验失败，原始 %d 字符 vs 重建 %d 字符。"
             "原始='%s' 重建='%s'",
@@ -615,28 +617,16 @@ def _smart_split_v2(
         display_char_map.append((ch, wi, is_latin))
         prev_was_latin = is_latin
 
-    display_text = "".join(display_chars)
     n = len(display_chars)
 
     if n == 0:
         return [{"text": text, "start_sec": start_sec, "end_sec": end_sec}]
 
     # --- Step 2: Enumerate legal split points ---
-    # Use jieba to identify CJK word boundaries
-    try:
-        import jieba
-
-        jieba_words = list(jieba.cut(display_text))
-    except Exception:
-        jieba_words = [display_text]
-
-    # Build a set of display_char positions that are word boundaries
-    cjk_word_boundaries: set[int] = set()
-    pos = 0
-    for w in jieba_words:
-        pos += len(w)
-        if pos < n:
-            cjk_word_boundaries.add(pos - 1)  # split_after index
+    # Alignment already supplies word boundaries; use those instead of re-tokenizing.
+    cjk_word_boundaries = {
+        i for i in range(n - 1) if display_char_map[i][1] != display_char_map[i + 1][1]
+    }
 
     # Build pause boundary set: positions where time gap >= pause_threshold
     pause_boundaries: set[int] = set()
@@ -675,7 +665,7 @@ def _smart_split_v2(
             split_after[i] = True
             continue
 
-        # CJK character boundary: only split at jieba word boundaries
+        # CJK character boundary: only split at aligned word boundaries
         if (
             not _has_latin(ch)
             and ch not in _PUNCT_CHARS
@@ -1047,17 +1037,18 @@ class SRTExporter(BaseExporter):
 
     def render(self, segments: list[AlignedSegment]) -> str:
         sorted_segs = sorted(segments, key=lambda s: s.start_sec)
-        all_subs: list[dict] = []
+        raw_subs: list[dict] = []
         for seg in sorted_segs:
-            sub_lines = _process_segment(
-                seg, max_chars=self.max_chars, min_chars=self.min_chars
+            raw_subs.extend(
+                _process_segment(
+                    seg, max_chars=self.max_chars, min_chars=self.min_chars
+                )
             )
-            processed_lines = _post_process_fragments(
-                sub_lines, self.max_chars, self.min_chars
-            )
-            for sub in processed_lines:
-                if sub["text"].strip():
-                    all_subs.append(sub)
+        all_subs = [
+            sub
+            for sub in _post_process_fragments(raw_subs, self.max_chars, self.min_chars)
+            if sub["text"].strip()
+        ]
 
         # Text processing + render SRT
         lines: list[str] = []

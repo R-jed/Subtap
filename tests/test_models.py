@@ -13,6 +13,7 @@ from subtap.core.models import (
     ModelRemover,
     MODEL_REGISTRY,
 )
+from subtap.core.manifest import get_manifest_path, load_manifest
 from subtap.schemas.config import SubtapConfig
 
 
@@ -53,22 +54,47 @@ def _config_with_model_root(tmp_path: Path) -> SubtapConfig:
 def _create_model_files(model_dir: Path) -> None:
     """Create all required model files for testing."""
     model_dir.mkdir(parents=True, exist_ok=True)
-    (model_dir / "config.json").write_text("{}")
-    (model_dir / "model.safetensors").write_bytes(b"\x00" * 100)
-    (model_dir / "tokenizer_config.json").write_text("{}")
-    (model_dir / "vocab.json").write_text("{}")
-    (model_dir / "merges.txt").write_text("a b")
+    manifest = load_manifest(get_manifest_path(SubtapConfig()))
+    for file in manifest.models["asr_0.6b"].required_files:
+        with (model_dir / file.name).open("wb") as handle:
+            handle.truncate(file.size_bytes)
 
 
 # ── Registry tests ──
 
 
 def test_model_registry_has_expected_models():
-    """MODEL_REGISTRY contains asr_0.6b, asr_1.7b and aligner."""
-    assert "asr_0.6b" in MODEL_REGISTRY
-    assert "asr_1.7b" in MODEL_REGISTRY
-    assert "aligner" in MODEL_REGISTRY
+    """Only the three supported 8-bit MLX models require downloads."""
+    assert set(MODEL_REGISTRY) == {"asr_0.6b", "asr_1.7b", "aligner"}
     assert "required_files" in MODEL_REGISTRY["asr_0.6b"]
+
+
+def test_default_qwen_models_are_complete_8bit_mlx_entries():
+    """The shipped Qwen model catalog contains only the supported 8-bit MLX models."""
+    config = SubtapConfig()
+    manifest = load_manifest(get_manifest_path(config))
+    qwen_models = {
+        name: entry
+        for name, entry in manifest.models.items()
+        if "Qwen3" in entry.description
+    }
+
+    assert set(qwen_models) == {"asr_0.6b", "asr_1.7b", "aligner"}
+    assert all("8bit" in entry.hf_repo.lower() for entry in qwen_models.values())
+    assert all(
+        file.sha256 and file.size_bytes > 0
+        for entry in qwen_models.values()
+        for file in entry.required_files
+    )
+
+
+def test_legacy_model_registry_is_derived_from_default_manifest():
+    """The compatibility export must exactly match the default manifest."""
+    manifest = load_manifest(get_manifest_path(SubtapConfig()))
+
+    assert MODEL_REGISTRY == {
+        name: entry.to_legacy_dict() for name, entry in manifest.models.items()
+    }
 
 
 def test_registry_status_all_missing(tmp_path: Path):
@@ -90,6 +116,22 @@ def test_registry_status_asr_installed(tmp_path: Path):
     status = registry.status()
     asr_status = next(s for s in status if s.name == "asr_0.6b")
     assert asr_status.installed
+
+
+def test_registry_status_rejects_wrong_model_size(tmp_path: Path):
+    """A different or truncated quantized model must not be reported as installed."""
+    config = _config_with_model_root(tmp_path)
+    registry = ModelRegistry(config)
+    asr_dir = registry.get_path("asr_0.6b")
+    _create_model_files(asr_dir)
+    (asr_dir / "model.safetensors").write_bytes(b"wrong model")
+
+    status = registry.status()
+    asr_status = next(s for s in status if s.name == "asr_0.6b")
+
+    assert not asr_status.installed
+    assert asr_status.missing_files == ["model.safetensors（大小不匹配）"]
+    assert not registry.is_available("asr_0.6b")
 
 
 def test_registry_get_path(tmp_path: Path):
@@ -372,9 +414,7 @@ def test_model_registry_list(tmp_path: Path):
     config = _config_with_model_root(tmp_path)
     registry = ModelRegistry(config)
     models = registry.list_available()
-    assert "asr_0.6b" in models
-    assert "asr_1.7b" in models
-    assert "aligner" in models
+    assert set(models) == {"asr_0.6b", "asr_1.7b", "aligner"}
 
 
 def test_model_remover_removes(tmp_path: Path):

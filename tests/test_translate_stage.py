@@ -301,7 +301,7 @@ def test_write_aligned_atomic_writes_correct_content(tmp_path):
 
 def test_write_aligned_atomic_uses_rename(tmp_path):
     """原子写入应该通过临时文件 + rename 实现。"""
-    from unittest.mock import patch, call
+    from unittest.mock import patch
 
     from subtap.core.translate import _write_aligned
 

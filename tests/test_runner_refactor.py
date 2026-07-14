@@ -13,7 +13,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from subtap.ui.tui import BaseRunner, RichRunner, TUIRunner, PlainRunner
 
@@ -240,11 +239,6 @@ class TestPlainRunnerStepNumbering:
         runner = PlainRunner()
         echo_calls = []
 
-        original_echo = None
-        import typer
-
-        original_echo = typer.echo
-
         def capture_echo(msg):
             echo_calls.append(str(msg))
 
@@ -293,8 +287,6 @@ class TestPlainRunnerStepNumbering:
         runner = PlainRunner()
         echo_calls = []
 
-        import typer
-
         try:
             with patch("typer.echo", lambda msg: echo_calls.append(str(msg))):
                 runner.run_pipeline(
@@ -322,7 +314,7 @@ class TestPlainRunnerStepNumbering:
 
         # With translate, should have more steps than without
         config_no_translate = _make_config()
-        stages_no_translate = BaseRunner._build_stages(config_no_translate, None)
+        BaseRunner._build_stages(config_no_translate, None)
         stages_with_translate = BaseRunner._build_stages(config, "en")
         assert total == len(stages_with_translate)
 
@@ -335,8 +327,6 @@ class TestPlainRunnerStepNumbering:
 
         runner = PlainRunner()
         echo_calls = []
-
-        import typer
 
         try:
             with patch("typer.echo", lambda msg: echo_calls.append(str(msg))):

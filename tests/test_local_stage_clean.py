@@ -1,6 +1,5 @@
 """纯本地 clean 阶段测试（本地规则，无 LLM）"""
 
-import pytest
 import json
 
 
@@ -38,7 +37,6 @@ class TestLocalClean:
 
     def test_run_clean_no_llm(self, workspace, local_config):
         """测试完整 clean 流程（无 LLM）"""
-        from subtap.schemas.models import ASRSegment
         from subtap.core.clean import run_clean
 
         # 写入测试 ASR 数据

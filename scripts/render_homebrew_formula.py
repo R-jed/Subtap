@@ -3,13 +3,22 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
-import sys
 from pathlib import Path
 
 PLACEHOLDER_VERSION = "VERSION_PLACEHOLDER"
 PLACEHOLDER_URL = "WHEELHOUSE_URL_PLACEHOLDER"
 PLACEHOLDER_SHA256 = "WHEELHOUSE_SHA256_PLACEHOLDER"
+
+
+def _sha256_file(path: Path) -> str:
+    try:
+        with path.open("rb") as file:
+            digest = hashlib.file_digest(file, "sha256")
+    except OSError as exc:
+        raise ValueError(f"cannot read wheelhouse {path}: {exc}") from exc
+    return digest.hexdigest()
 
 
 def _read_json(path: Path) -> dict[str, object]:
@@ -33,7 +42,7 @@ def render(
     manifest_path: Path,
     template_path: Path,
     wheelhouse_url: str,
-    wheelhouse_sha256: str,
+    wheelhouse_path: Path,
 ) -> str:
     """Render the Formula template with values from the manifest.
 
@@ -41,27 +50,13 @@ def render(
     """
     if not wheelhouse_url:
         raise ValueError("wheelhouse_url must not be empty")
-    if not wheelhouse_sha256:
-        raise ValueError("wheelhouse_sha256 must not be empty")
+    wheelhouse_sha256 = _sha256_file(wheelhouse_path)
 
     manifest = _read_json(manifest_path)
     version = manifest.get("subtap_version")
     if not version:
         raise ValueError("manifest is missing required field 'subtap_version'")
     version = str(version)
-
-    # Cross-validate SHA256 against manifest (mandatory — tamper detection)
-    manifest_sha256 = manifest.get("wheelhouse_sha256")
-    if not manifest_sha256:
-        raise ValueError(
-            "manifest is missing required field 'wheelhouse_sha256' — "
-            "possible tampering or stale manifest"
-        )
-    if str(manifest_sha256) != wheelhouse_sha256:
-        raise ValueError(
-            f"wheelhouse_sha256 mismatch: manifest has {manifest_sha256!r}, "
-            f"but got {wheelhouse_sha256!r}"
-        )
 
     try:
         template = template_path.read_text(encoding="utf-8")
@@ -91,9 +86,7 @@ def main() -> int:
         required=True,
         help="Download URL for the wheelhouse tarball",
     )
-    parser.add_argument(
-        "--wheelhouse-sha256", required=True, help="SHA256 of the wheelhouse tarball"
-    )
+    parser.add_argument("--wheelhouse", type=Path, required=True)
     parser.add_argument(
         "--output", type=Path, required=True, help="Output path for subtap.rb"
     )
@@ -103,7 +96,7 @@ def main() -> int:
         manifest_path=args.manifest,
         template_path=args.template,
         wheelhouse_url=args.wheelhouse_url,
-        wheelhouse_sha256=args.wheelhouse_sha256,
+        wheelhouse_path=args.wheelhouse,
     )
     args.output.write_text(result, encoding="utf-8")
     return 0
