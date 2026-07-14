@@ -66,6 +66,7 @@ exclude = [
 testpaths = ["tests"]
 pythonpath = ["src", "tests"]
 asyncio_mode = "auto"
+addopts = ["--ignore-glob=tests/test_benchmark_*.py"]
 
 [[tool.mypy.overrides]]
 module = ["mlx_audio.*", "pydub", "pydub.*", "yaml", "openpyxl.*", "docx.*", "torch", "torch.*", "torchaudio", "torchaudio.*", "silero_vad", "silero_vad.*", "textual", "textual.*", "questionary"]
