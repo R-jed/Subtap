@@ -12,6 +12,14 @@ import pytest
 ROOT = Path(__file__).parents[1]
 
 
+def test_cli_version_matches_distribution_version() -> None:
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    namespace: dict[str, str] = {}
+    exec((ROOT / "src/subtap/__init__.py").read_text(), namespace)
+
+    assert namespace["__version__"] == project["project"]["version"]
+
+
 def test_attestation_blocks_publication() -> None:
     workflow = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
     jobs = workflow["jobs"]
@@ -31,6 +39,17 @@ def test_release_jobs_are_bounded_and_build_uses_uv() -> None:
     assert "grep -- --tui" not in text
     assert workflow["concurrency"]["cancel-in-progress"] is False
     assert all("timeout-minutes" in job for job in workflow["jobs"].values())
+
+
+def test_homebrew_release_executes_supply_chain_and_formula_gates() -> None:
+    text = (ROOT / ".github/workflows/release.yml").read_text()
+
+    assert "verify-sentencepiece" in text
+    assert "--formal-release" in text
+    assert "multiple.intoto.jsonl" in text
+    assert "slsa-verifier-darwin-arm64" in text
+    assert "brew install --formula" in text
+    assert "brew test subtap" in text
 
 
 def test_release_candidate_cannot_publish_stable_channels() -> None:

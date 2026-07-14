@@ -166,7 +166,13 @@ class TestTemplateStructure:
         """test do must verify `subtap doctor` works."""
         text = TEMPLATE.read_text(encoding="utf-8")
         test_section = text.split("test do")[1]
-        assert "doctor" in test_section
+        assert "assert_match '\"checks\"'" in test_section
+        assert 'assert_match "OK"' not in test_section
+
+    def test_formula_installs_third_party_notices(self) -> None:
+        text = TEMPLATE.read_text(encoding="utf-8")
+        assert 'pkgshare.install wheelhouse/"licenses.json"' in text
+        assert 'pkgshare.install wheelhouse/"THIRD_PARTY_LICENSES"' in text
 
     def test_test_block_imports_subtap_module(self) -> None:
         """test do must verify key module imports."""

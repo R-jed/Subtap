@@ -18,6 +18,23 @@ def _strip_ansi(text: str) -> str:
     return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 
+def test_auto_json_detects_real_pipe(monkeypatch):
+    """Machine-readable output activates for an OS pipe, not test capture."""
+    import os
+    import sys
+
+    from subtap.cli._utils import auto_json
+
+    read_fd, write_fd = os.pipe()
+    stream = os.fdopen(write_fd, "w")
+    try:
+        monkeypatch.setattr(sys, "stdout", stream)
+        assert auto_json(False) is True
+    finally:
+        stream.close()
+        os.close(read_fd)
+
+
 def _patch_stage_pipeline(monkeypatch, stage_name: str):
     """Patch Pipeline so CLI stage tests only cover CLI file routing."""
     config = SimpleNamespace(

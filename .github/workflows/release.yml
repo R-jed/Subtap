@@ -84,6 +84,8 @@ jobs:
       - name: Install Formula external dependencies
         run: brew install ffmpeg numpy scipy
       - name: Build sealed offline wheelhouse and Formula
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           uv sync --extra dev
           mkdir -p homebrew-artifacts
@@ -94,6 +96,40 @@ jobs:
           wheelhouse="$(find homebrew-artifacts -name '*-wheelhouse.tar.gz' -print -quit)"
           test -n "$wheelhouse"
           shasum -a 256 "$wheelhouse" > "$wheelhouse.sha256"
+          verification=/tmp/subtap-sentencepiece-verification
+          mkdir -p "$verification"
+          gh release download v0.2.2 \
+            --repo google/sentencepiece \
+            --pattern multiple.intoto.jsonl \
+            --dir "$verification"
+          gh api repos/google/sentencepiece/releases/tags/v0.2.2 \
+            > "$verification/release.json"
+          gh release download v2.7.1 \
+            --repo slsa-framework/slsa-verifier \
+            --pattern slsa-verifier-darwin-arm64 \
+            --dir "$verification"
+          chmod +x "$verification/slsa-verifier-darwin-arm64"
+          sentencepiece_wheel="$(find homebrew-artifacts/wheelhouse/wheels \
+            -name 'sentencepiece-0.2.2-cp313-cp313-macosx_11_0_arm64.whl' \
+            -print -quit)"
+          test -n "$sentencepiece_wheel"
+          uv run python scripts/homebrew_wheelhouse.py verify-sentencepiece \
+            --wheel "$sentencepiece_wheel" \
+            --bundle "$verification/multiple.intoto.jsonl" \
+            --notices packaging/homebrew/third-party \
+            --verifier "$verification/slsa-verifier-darwin-arm64" \
+            --release-metadata "$verification/release.json" \
+            --policy packaging/homebrew/license-policy.json \
+            --formal-release
+          uv run python scripts/render_homebrew_formula.py \
+            --manifest homebrew-artifacts/wheelhouse/manifest.json \
+            --template packaging/homebrew/subtap.rb.in \
+            --wheelhouse-url "file://$(pwd)/$wheelhouse" \
+            --wheelhouse "$wheelhouse" \
+            --output /tmp/Subtap.rb
+          brew install --formula /tmp/Subtap.rb
+          brew test subtap
+          brew uninstall subtap
           uv run python scripts/render_homebrew_formula.py \
             --manifest homebrew-artifacts/wheelhouse/manifest.json \
             --template packaging/homebrew/subtap.rb.in \

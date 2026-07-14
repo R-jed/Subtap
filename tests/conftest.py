@@ -43,7 +43,6 @@ def test_config(tmp_path: Path) -> SubtapConfig:
             vad=VADConfig(
                 use_silero_vad=False,
                 min_silence_sec=0.4,
-                max_chunk_sec=180.0,
             ),
         ),
         workspace=WorkspaceConfig(

@@ -2,15 +2,28 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Literal, Optional
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+logger = logging.getLogger(__name__)
+
 
 class VADConfig(BaseModel):
     """VAD / silence splitting parameters."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_removed_chunk_limit(cls, data):
+        if isinstance(data, dict) and "max_chunk_sec" in data:
+            raise ValueError(
+                "max_chunk_sec 已移除；Subtap 仅按语音停顿切分，"
+                "并固定遵守 ForcedAligner 180 秒上限"
+            )
+        return data
 
     # 用户配置：灵敏度（唯一用户可调参数）
     sensitivity: Literal["low", "normal", "high"] = "normal"
@@ -33,7 +46,6 @@ class VADConfig(BaseModel):
 
     # 内部参数（用户无需关心）
     min_silence_sec: float = 0.4
-    max_chunk_sec: float = Field(default=180.0, gt=0)
 
 
 class AudioConfig(BaseModel):
@@ -232,6 +244,21 @@ def load_config(config_path: Optional[Path] = None) -> SubtapConfig:
         with open(config_path) as f:
             result = yaml.safe_load(f)
             user_data = result if isinstance(result, dict) else {}
+        audio_data = user_data.get("audio")
+        if isinstance(audio_data, dict):
+            vad_data = audio_data.get("vad")
+            if isinstance(vad_data, dict) and "max_chunk_sec" in vad_data:
+                vad_data = dict(vad_data)
+                removed_value = vad_data.pop("max_chunk_sec")
+                audio_data = dict(audio_data)
+                audio_data["vad"] = vad_data
+                user_data = dict(user_data)
+                user_data["audio"] = audio_data
+                logger.warning(
+                    "配置项 audio.vad.max_chunk_sec=%r 已移除并忽略；"
+                    "现在仅在 ForcedAligner 180 秒硬上限处自动切分",
+                    removed_value,
+                )
         return SubtapConfig.model_validate(user_data)
 
     return defaults

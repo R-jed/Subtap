@@ -17,6 +17,7 @@ from subtap.core.text_utils import (
     remove_cjk_spaces,
     strip_punct,
 )
+from subtap.core.word_boundaries import word_end_indices
 from subtap.schemas.models import AlignedSegment, ASRSegment
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,26 @@ _NUM_CHARS = frozenset("零一二两三四五六七八九十百千万亿")
 
 # Comma / clause punctuation
 _COMMA_PUNCT = frozenset("，、,;")
+
+# Directional complements stay with the preceding verb in subtitle display.
+_DIRECTIONAL_COMPLEMENTS = (
+    "下来",
+    "下去",
+    "上来",
+    "上去",
+    "起来",
+    "出来",
+    "出去",
+    "进来",
+    "进去",
+    "回来",
+    "回去",
+    "过来",
+    "过去",
+)
+
+# One-character modifiers attach to the predicate that follows.
+_PREFIX_MODIFIERS = frozenset("不没很更最太真挺蛮已曾还再又才都就也能会可要该将正")
 
 # Trailing words that should not appear at line end
 _TRAILING_WORDS = {
@@ -256,6 +277,52 @@ def _filter_words_to_text(words: list[dict], text: str) -> list[dict]:
     return filtered if filtered else words
 
 
+def _normalize_display_spacing(text: str) -> str:
+    """Ignore decorative CJK spacing but preserve Latin word separators."""
+    chars: list[str] = []
+    for index, char in enumerate(text):
+        if not char.isspace():
+            chars.append(char)
+            continue
+        previous = next(
+            (
+                candidate
+                for candidate in reversed(text[:index])
+                if not candidate.isspace()
+            ),
+            "",
+        )
+        following = next(
+            (candidate for candidate in text[index + 1 :] if not candidate.isspace()),
+            "",
+        )
+        if (
+            previous.isascii()
+            and previous.isalnum()
+            and following.isascii()
+            and following.isalnum()
+            and (not chars or chars[-1] != " ")
+        ):
+            chars.append(" ")
+    return "".join(chars)
+
+
+def _reconstruct_display_text(words: list[dict], source_text: str) -> str:
+    """Rebuild text while preserving only separators present in the source."""
+    parts: list[str] = []
+    cursor = 0
+    for item in words:
+        word = item["word"]
+        position = source_text.find(word, cursor)
+        if position >= 0:
+            parts.append(
+                "".join(char for char in source_text[cursor:position] if char.isspace())
+            )
+            cursor = position + len(word)
+        parts.append(word)
+    return "".join(parts)
+
+
 def _inject_punct(words: list[dict], text: str) -> list[dict]:
     """Inject punctuation from original text into word list.
 
@@ -310,9 +377,9 @@ def _inject_punct(words: list[dict], text: str) -> list[dict]:
                 prev_end = t
 
     # Completeness check: warn if text characters were lost.
-    reconstructed = "".join(w["word"] for w in result)
-    comparable_text = "".join(text.split())
-    comparable_reconstructed = "".join(reconstructed.split())
+    reconstructed = _reconstruct_display_text(result, text)
+    comparable_text = _normalize_display_spacing(text)
+    comparable_reconstructed = _normalize_display_spacing(reconstructed)
     if comparable_reconstructed != comparable_text:
         logger.warning(
             "_inject_punct: 完整性校验失败，原始 %d 字符 vs 重建 %d 字符。"
@@ -585,37 +652,62 @@ def _smart_split_v2(
     CORE CONSTRAINT: 绝不丢字。输入的每个字都必须出现在输出中。
 
     Algorithm:
-    1. Build character-level display text (with spaces for Latin words)
-    2. Enumerate legal split points (punctuation, space, CJK boundary)
+    1. Map source display text to alignment timing without inventing spaces
+    2. Enumerate punctuation, pause, and linguistic word boundaries
     3. Dynamic programming: find optimal split minimizing cost function
     4. Post-merge: absorb short fragments into adjacent lines
     """
     if not words:
         return [{"text": text, "start_sec": start_sec, "end_sec": end_sec}]
 
-    # --- Step 1: Build display text with word-level tracking ---
-    # Each entry: (char, word_index, is_latin)
-    char_map: list[tuple[str, int, bool]] = []
-    for wi, w in enumerate(words):
-        word = w["word"]
-        is_latin = bool(word) and _has_latin(word)
-        for ch in word:
-            char_map.append((ch, wi, is_latin))
+    # --- Step 1: Preserve source display text and attach alignment timing ---
+    # Aligner tokens are not word boundaries: Chinese is often one character per
+    # token, while a Latin word can arrive as several tokens. Map source text to
+    # timing tokens without inventing spaces or split points.
+    display_chars = list(_normalize_display_spacing(text))
+    display_char_map: list[tuple[str, int, bool] | None] = [None] * len(display_chars)
+    cursor = 0
+    previous_word_index = 0
+    display_text = "".join(display_chars)
+    for word_index, item in enumerate(words):
+        word = item["word"]
+        position = display_text.find(word, cursor)
+        if position < 0:
+            raise ValueError(
+                f"字幕文本无法映射对齐词: word={word!r}, text={display_text!r}"
+            )
+        for index in range(cursor, position):
+            if not display_chars[index].isspace():
+                raise ValueError(
+                    "字幕文本与对齐词不一致: "
+                    f"未映射内容={display_text[cursor:position]!r}"
+                )
+            display_char_map[index] = (
+                display_chars[index],
+                previous_word_index,
+                False,
+            )
+        for index in range(position, position + len(word)):
+            display_char_map[index] = (
+                display_chars[index],
+                word_index,
+                _has_latin(word),
+            )
+        cursor = position + len(word)
+        previous_word_index = word_index
 
-    # Build display string: insert space between consecutive Latin words
-    display_chars: list[str] = []
-    display_char_map: list[tuple[str, int, bool]] = []
-    prev_was_latin = False
-    for ch, wi, is_latin in char_map:
-        # Insert space between Latin word boundary
-        if is_latin and prev_was_latin and display_chars and display_chars[-1] != " ":
-            # Check if this is a word boundary (different word index)
-            if display_char_map and display_char_map[-1][1] != wi:
-                display_chars.append(" ")
-                display_char_map.append((" ", wi, False))
-        display_chars.append(ch)
-        display_char_map.append((ch, wi, is_latin))
-        prev_was_latin = is_latin
+    for index in range(cursor, len(display_chars)):
+        if not display_chars[index].isspace():
+            raise ValueError(f"字幕文本存在未对齐尾部: {display_text[cursor:]!r}")
+        display_char_map[index] = (
+            display_chars[index],
+            previous_word_index,
+            False,
+        )
+
+    if any(item is None for item in display_char_map):
+        raise ValueError("字幕文本与对齐时间映射不完整")
+    mapped_chars = [item for item in display_char_map if item is not None]
 
     n = len(display_chars)
 
@@ -623,10 +715,7 @@ def _smart_split_v2(
         return [{"text": text, "start_sec": start_sec, "end_sec": end_sec}]
 
     # --- Step 2: Enumerate legal split points ---
-    # Alignment already supplies word boundaries; use those instead of re-tokenizing.
-    cjk_word_boundaries = {
-        i for i in range(n - 1) if display_char_map[i][1] != display_char_map[i + 1][1]
-    }
+    linguistic_word_ends = word_end_indices(display_text)
 
     # Build pause boundary set: positions where time gap >= pause_threshold
     pause_boundaries: set[int] = set()
@@ -635,7 +724,7 @@ def _smart_split_v2(
         if gap >= pause_threshold:
             # Find the last display_char position belonging to word wi-1
             for j in range(n - 1, -1, -1):
-                if j < len(display_char_map) and display_char_map[j][1] == wi - 1:
+                if j < len(mapped_chars) and mapped_chars[j][1] == wi - 1:
                     pause_boundaries.add(j)
                     break
 
@@ -660,12 +749,19 @@ def _smart_split_v2(
             split_after[i] = True
             continue
 
+        # Keep a complete numeral together so per-cue ITN cannot reinterpret
+        # fragments such as "两千" + "四百万" as unrelated numbers.
+        if (ch.isdigit() or ch in _NUM_CHARS) and (
+            next_ch.isdigit() or next_ch in _NUM_CHARS
+        ):
+            continue
+
         # Pause boundary: split after if time gap is large enough
         if i in pause_boundaries:
             split_after[i] = True
             continue
 
-        # CJK character boundary: only split at aligned word boundaries
+        # CJK character boundary: only split at a linguistic word boundary.
         if (
             not _has_latin(ch)
             and ch not in _PUNCT_CHARS
@@ -673,7 +769,7 @@ def _smart_split_v2(
             and next_ch not in _PUNCT_CHARS
             and next_ch != " "
         ):
-            if i in cjk_word_boundaries:
+            if i + 1 in linguistic_word_ends:
                 split_after[i] = True
 
     # --- Step 3: Dynamic programming for optimal split ---
@@ -705,7 +801,7 @@ def _smart_split_v2(
                 end,
                 n,
                 display_chars,
-                display_char_map,
+                mapped_chars,
             )
 
             if cost < dp[end]:
@@ -734,8 +830,8 @@ def _smart_split_v2(
         # Find word indices in this segment
         word_indices = set()
         for j in range(seg_start, seg_end):
-            if j < len(display_char_map):
-                word_indices.add(display_char_map[j][1])
+            if j < len(mapped_chars):
+                word_indices.add(mapped_chars[j][1])
 
         if not word_indices:
             continue
@@ -804,6 +900,19 @@ def _split_cost(
             and next_ch != " "
         ):
             cost += 20.0  # Heavy penalty for mid-word split
+
+    # Structural particles belong with the following head word.
+    if seg_text and seg_text[-1] in "的得地":
+        cost += 8.0
+    if seg_text and seg_text[-1] in _PREFIX_MODIFIERS:
+        cost += 8.0
+
+    if end < total_len:
+        following = "".join(display_chars[end : end + 2])
+        if following in _DIRECTIONAL_COMPLEMENTS:
+            cost += 8.0
+        if display_chars[end] in "的得地":
+            cost += 8.0
 
     # Penalty for splitting within the same word (CJK compound words)
     if display_char_map and end < len(display_char_map) and end > 0:
@@ -931,15 +1040,13 @@ def _post_process_fragments(
             prev_visible = strip_punct(prev["text"]).replace(" ", "")
             prev_text = prev["text"].rstrip()
             current_ends_sentence = bool(txt) and txt[-1] in _SENT_END
+            has_real_pause = (
+                sub["start_sec"] - prev["end_sec"] >= pause_threshold - 1e-6
+            )
             preserve_semantic_boundary = bool(prev_text) and (
                 prev_text[-1] in _SENT_END
-                or (
-                    prev_text[-1] in _COMMA_PUNCT
-                    and (
-                        current_ends_sentence
-                        or sub["start_sec"] - prev["end_sec"] >= pause_threshold - 1e-6
-                    )
-                )
+                or has_real_pause
+                or (prev_text[-1] in _COMMA_PUNCT and current_ends_sentence)
             )
             if (
                 not preserve_semantic_boundary
@@ -971,6 +1078,8 @@ def _post_process_fragments(
             visible in _TRAILING_WORDS
             and (not txt or txt[-1] not in _SENT_END)
             and i + 1 < len(merged_subs)
+            and merged_subs[i + 1]["start_sec"] - sub["end_sec"]
+            < pause_threshold - 1e-6
         ):
             nxt = merged_subs[i + 1]
             nxt_visible = strip_punct(nxt["text"]).replace(" ", "")

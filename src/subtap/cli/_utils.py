@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import stat
 import sys
 
 import typer
@@ -12,7 +14,13 @@ def auto_json(explicit: bool) -> bool:
 
     管道场景（如 `subtap doctor --json | jq`）不需要显式传 --json。
     """
-    return explicit or not sys.stdout.isatty()
+    if explicit:
+        return True
+    try:
+        mode = os.fstat(sys.stdout.fileno()).st_mode
+    except (AttributeError, OSError, ValueError):
+        return False
+    return stat.S_ISFIFO(mode) or stat.S_ISREG(mode)
 
 
 def _handle_error(message: str, exit_code: int = 1) -> None:

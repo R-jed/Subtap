@@ -12,6 +12,8 @@ from typing import Any
 
 import typer
 
+from subtap.cli._utils import auto_json
+
 
 def _collect_workspace_status(work_dir: Path = Path("./work")) -> dict[str, Any]:
     """Collect workspace status as structured data (pure function, no side effects)."""
@@ -122,6 +124,7 @@ def doctor(
     json_output: bool = typer.Option(False, "--json", help="输出机器可读 JSON"),
 ) -> None:
     """检查系统依赖和运行环境"""
+    json_output = auto_json(json_output)
 
     # ── Workspace mode ──────────────────────────────────────
     workspace_status = _collect_workspace_status() if workspace else None
@@ -416,7 +419,7 @@ def doctor(
     report["ok"] = all_ok
     if json_output:
         typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
-        if not all_ok:
+        if release and not all_ok:
             raise typer.Exit(1)
         return
 

@@ -258,7 +258,7 @@ class TestSplitSentencesZh:
             assert len(sent) <= 60
 
     def test_no_punctuation_long_text(self):
-        """无标点长文本：强制断句时不丢字。"""
+        """无标点长文本：延后到有逐字时间戳的导出阶段切分。"""
         text = (
             "理光GR4是一款非常不错的相机它的画质非常好而且体积小巧方便携带适合旅行使用"
         )
@@ -267,6 +267,19 @@ class TestSplitSentencesZh:
         for sent in result:
             assert len(sent) <= 60
         assert "".join(result) == text
+
+    def test_length_limit_does_not_split_chinese_words_before_alignment(self):
+        """Display-length splitting must wait until acoustic timing is available."""
+        text = (
+            "但是我觉得你能够看出它和手机区别的核心的点是这个虚化，"
+            "因为相较于手机有着更大的传感器和更好的镜组，"
+        )
+
+        result = _split_sentences(text, language="zh", max_chars=25, min_chars=10)
+
+        assert "".join(result) == text
+        assert all(not part.endswith("虚") for part in result)
+        assert all(not part.startswith("化") for part in result)
 
     def test_colloquial_filler_words(self):
         """口语填充词：'然后'、'就是'、'那个' 等不应被误断。"""

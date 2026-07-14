@@ -28,6 +28,17 @@ _SENSITIVITY_MAP = {
     "high": 80,  # more, shorter pauses detected
 }
 
+# Qwen3-ForcedAligner supports at most 180 seconds per input.
+_FORCED_ALIGNER_MAX_SEC = 180.0
+_LOW_ENERGY_SEARCH_SEC = 5.0
+
+
+def _normalize_pcm(audio: AudioSegment) -> np.ndarray:
+    """Convert signed PCM samples of any width to float32 in [-1, 1]."""
+    samples = np.array(audio.get_array_of_samples(), dtype=np.float32)
+    pcm_scale = float(1 << (8 * audio.sample_width - 1))
+    return samples / pcm_scale
+
 
 @functools.lru_cache(maxsize=1)
 def _load_silero_vad():
@@ -67,9 +78,7 @@ def _get_speech_segments_silero(
     try:
         # Silero VAD requires 16kHz mono
         audio = audio.set_frame_rate(16000).set_channels(1)
-        samples = np.array(audio.get_array_of_samples(), dtype=np.float32)
-        # Normalize to [-1, 1] range (pydub samples are int16 range)
-        samples = samples / 32768.0
+        samples = _normalize_pcm(audio)
     except Exception as e:
         raise VADError(f"音频格式转换失败（需要 16kHz 单声道）: {e}") from e
 
@@ -163,7 +172,7 @@ def split_chunks(workspace: Workspace, config: SubtapConfig) -> list[Chunk]:
     # 180 seconds; reuse mlx-audio's low-energy splitter only above that limit.
     final_segments: list[list[float]] = []
     for start, end in merged:
-        if end - start <= vad_cfg.max_chunk_sec:
+        if end - start <= _FORCED_ALIGNER_MAX_SEC:
             final_segments.append([start, end])
             continue
 
@@ -173,18 +182,24 @@ def split_chunks(workspace: Workspace, config: SubtapConfig) -> list[Chunk]:
 
         region = audio[int(start * 1000) : int(end * 1000)]
         region = region.set_frame_rate(16000).set_channels(1)
-        samples = np.array(region.get_array_of_samples(), dtype=np.float32) / 32768.0
+        samples = _normalize_pcm(region)
+        split_target_sec = _FORCED_ALIGNER_MAX_SEC - _LOW_ENERGY_SEARCH_SEC
+        if split_target_sec <= 0:
+            raise VADError("对齐器时长上限必须大于低能量边界搜索窗口")
         for chunk_samples, offset_sec in split_audio_into_chunks(
             samples,
             sr=16000,
-            chunk_duration=vad_cfg.max_chunk_sec,
+            chunk_duration=split_target_sec,
             min_chunk_duration=0.0,
+            search_expand_sec=_LOW_ENERGY_SEARCH_SEC,
         ):
             chunk_start = start + offset_sec
             chunk_end = min(
                 end,
                 chunk_start + len(chunk_samples) / 16000.0,
             )
+            if chunk_end - chunk_start > _FORCED_ALIGNER_MAX_SEC + 1 / 16000:
+                raise VADError("低能量切分结果超过 ForcedAligner 180 秒输入上限")
             final_segments.append([chunk_start, chunk_end])
 
     # Export individual chunk WAVs and build Chunk list

@@ -104,6 +104,39 @@ def test_vad_config_rejects_unknown_sensitivity():
         VADConfig(sensitivity="typo")
 
 
+def test_vad_config_rejects_legacy_chunk_limit():
+    """The removed mechanical chunk limit must fail with a clear config error."""
+    with pytest.raises(ValueError, match="max_chunk_sec.*已移除"):
+        VADConfig.model_validate({"max_chunk_sec": 30})
+
+
+def test_silero_vad_normalizes_32_bit_samples(monkeypatch):
+    """Silero must receive every PCM sample width in the [-1, 1] range."""
+    from pydub import AudioSegment
+
+    import silero_vad
+    from subtap.core.vad import _get_speech_segments_silero
+
+    captured: dict[str, float] = {}
+
+    def fake_timestamps(samples, *args, **kwargs):
+        captured["peak"] = float(samples.abs().max())
+        return []
+
+    audio = AudioSegment(
+        data=np.array([0, 2**30, -(2**30)], dtype=np.int32).tobytes(),
+        sample_width=4,
+        frame_rate=16000,
+        channels=1,
+    )
+    monkeypatch.setattr(silero_vad, "get_speech_timestamps", fake_timestamps)
+    monkeypatch.setattr("subtap.core.vad._load_silero_vad", lambda: object())
+
+    _get_speech_segments_silero(audio)
+
+    assert captured["peak"] <= 1.0
+
+
 # ---------------------------------------------------------------------------
 # Silero VAD integration tests
 # ---------------------------------------------------------------------------
@@ -148,7 +181,6 @@ def test_silero_vad_finds_natural_pauses(monkeypatch, speech_with_pauses: Path):
     """Silero VAD should find natural pause points, not mechanical splits."""
     config = SubtapConfig()
     config.audio.vad.use_silero_vad = True
-    config.audio.vad.max_chunk_sec = 3.0
 
     workspace = Workspace(
         config, base_dir=Path("tests/fixtures/workspaces/work_test_vad")
@@ -166,10 +198,10 @@ def test_silero_vad_finds_natural_pauses(monkeypatch, speech_with_pauses: Path):
 
     assert len(chunks) > 0, "应该至少有一个 chunk"
 
-    # 验证每个 chunk 不超过 max_chunk_sec + 容差
-    for chunk in chunks:
-        duration = chunk.end_sec - chunk.start_sec
-        assert duration <= config.audio.vad.max_chunk_sec + 1.0
+    assert [(chunk.start_sec, chunk.end_sec) for chunk in chunks] == [
+        (0.0, 1.5),
+        (2.5, 4.0),
+    ]
 
 
 def test_silero_vad_single_burst(monkeypatch, single_burst: Path):
@@ -277,7 +309,8 @@ def test_silero_vad_enforces_max_chunk_duration(monkeypatch, tmp_path: Path):
 
     config = SubtapConfig()
     config.audio.vad.use_silero_vad = True
-    config.audio.vad.max_chunk_sec = 1.5
+    monkeypatch.setattr("subtap.core.vad._FORCED_ALIGNER_MAX_SEC", 1.5)
+    monkeypatch.setattr("subtap.core.vad._LOW_ENERGY_SEARCH_SEC", 0.25)
 
     workspace = Workspace(config, base_dir=tmp_path / "workspace")
     workspace.ensure_dirs()
@@ -292,16 +325,43 @@ def test_silero_vad_enforces_max_chunk_duration(monkeypatch, tmp_path: Path):
     chunks = split_chunks(workspace, config)
 
     assert len(chunks) > 1
-    assert all(
-        chunk.end_sec - chunk.start_sec <= config.audio.vad.max_chunk_sec
-        for chunk in chunks
-    )
+    assert all(chunk.end_sec - chunk.start_sec <= 1.5 for chunk in chunks)
     assert chunks[0].start_sec == 0.0
     assert chunks[-1].end_sec == 4.8
     assert all(
         current.end_sec == following.start_sec
         for current, following in zip(chunks, chunks[1:])
     )
+
+
+def test_silero_vad_never_exceeds_aligner_limit(monkeypatch, tmp_path: Path):
+    """A low-energy point after the limit must not create an oversized chunk."""
+    source = tmp_path / "late_pause.wav"
+    samples = np.concatenate(
+        [
+            _make_speech_samples(3500),
+            np.zeros(300 * 16, dtype=np.int16),
+            _make_speech_samples(1200),
+        ]
+    )
+    _write_wav(source, samples)
+
+    config = SubtapConfig()
+    workspace = Workspace(config, base_dir=tmp_path / "workspace")
+    workspace.ensure_dirs()
+    import shutil
+
+    shutil.copy2(source, workspace.source_audio)
+    monkeypatch.setattr("subtap.core.vad._FORCED_ALIGNER_MAX_SEC", 3.0)
+    monkeypatch.setattr("subtap.core.vad._LOW_ENERGY_SEARCH_SEC", 0.5, raising=False)
+    monkeypatch.setattr(
+        "subtap.core.vad._get_speech_segments_silero",
+        lambda *args, **kwargs: [[0.0, 5.0]],
+    )
+
+    chunks = split_chunks(workspace, config)
+
+    assert all(chunk.end_sec - chunk.start_sec <= 3.0 for chunk in chunks)
 
 
 def test_silero_vad_preserves_short_detected_speech(monkeypatch, tmp_path: Path):
@@ -381,7 +441,8 @@ def test_silero_vad_prefers_a_pause_before_hard_limit(monkeypatch, tmp_path: Pat
     _write_wav(source, samples)
 
     config = SubtapConfig()
-    config.audio.vad.max_chunk_sec = 3.0
+    monkeypatch.setattr("subtap.core.vad._FORCED_ALIGNER_MAX_SEC", 3.0)
+    monkeypatch.setattr("subtap.core.vad._LOW_ENERGY_SEARCH_SEC", 1.0)
     workspace = Workspace(config, base_dir=tmp_path / "workspace")
     workspace.ensure_dirs()
     import shutil
@@ -396,10 +457,7 @@ def test_silero_vad_prefers_a_pause_before_hard_limit(monkeypatch, tmp_path: Pat
 
     assert 2.0 <= chunks[0].end_sec <= 2.3
     assert chunks[-1].end_sec == 5.0
-    assert all(
-        chunk.end_sec - chunk.start_sec <= config.audio.vad.max_chunk_sec
-        for chunk in chunks
-    )
+    assert all(chunk.end_sec - chunk.start_sec <= 3.0 for chunk in chunks)
 
 
 def test_silero_vad_keeps_continuous_speech_below_aligner_limit(

@@ -3,8 +3,10 @@
 Stable-ts style segmentation strategy for Chinese colloquial content:
 1. Sentence-ending punctuation (。！？.!?)
 2. Comma/pause punctuation (，、,;) for long sentences
-3. Force split by max_chars
-4. Merge short segments
+3. Merge short segments
+
+Display-length splitting is deferred until forced alignment provides acoustic
+timing, so this stage cannot cut a Chinese word at an arbitrary character.
 
 Algorithm reference: https://github.com/jianfch/stable-ts
 """
@@ -24,6 +26,7 @@ _SENT_END_RE = re.compile(r"[。！？.!?]+")
 
 # Comma/pause punctuation (secondary split points)
 _COMMA_RE = re.compile(r"[，、,;；]+")
+_CJK_RE = re.compile(r"[\u3400-\u9fff]")
 
 
 def _split_sentences(
@@ -72,16 +75,17 @@ def _split_sentences_zh(
         else:
             expanded.append(seg)
 
-    # Tier 3: Force split any remaining long segments by max_chars
-    result: list[str] = []
+    # Latin text has explicit word boundaries and is safe to length-split here.
+    # CJK display splitting waits for acoustic timing in the export stage.
+    length_safe: list[str] = []
     for seg in expanded:
-        if len(seg) > max_chars:
-            result.extend(_split_at_word_boundary(seg, max_chars))
+        if len(seg) > max_chars and not _CJK_RE.search(seg):
+            length_safe.extend(_split_at_word_boundary(seg, max_chars))
         else:
-            result.append(seg)
+            length_safe.append(seg)
 
     # Merge very short sentences
-    result = _merge_short_sentences(result, min_chars)
+    result = _merge_short_sentences(length_safe, min_chars)
 
     return result if result else [""]
 
@@ -151,15 +155,7 @@ def _split_at_comma(text: str, max_chars: int = _DEFAULT_MAX_CHARS) -> list[str]
     if current:
         segments.append(current)
 
-    # If any segment is still too long, force split by max_chars
-    result: list[str] = []
-    for seg in segments:
-        if len(seg) > max_chars:
-            result.extend(_split_at_word_boundary(seg, max_chars))
-        else:
-            result.append(seg)
-
-    return result
+    return segments
 
 
 def _split_by_length(text: str, max_chars: int) -> list[str]:

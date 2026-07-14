@@ -13,7 +13,6 @@ audio:
   vad:
     sensitivity: normal     # VAD 灵敏度：low(少切) / normal(均衡) / high(多切)
     min_silence_sec: 0.4    # 最小静音时长（秒），低于此值不切分
-    max_chunk_sec: 180.0    # 对齐器单段上限（秒），超过时优先在低能量处切分
 
 # ──────────────────────────────────────────────
 # 语音识别（ASR）

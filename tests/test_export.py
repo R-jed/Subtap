@@ -602,6 +602,22 @@ def test_inject_punct_ignores_display_spaces_in_completeness_check(caplog):
     assert "完整性校验失败" not in caplog.text
 
 
+def test_inject_punct_warns_when_latin_word_space_is_lost(caplog):
+    """A real space inside Latin text must remain observable when lost."""
+    import logging
+
+    from subtap.core.export import _inject_punct
+
+    words = [
+        {"word": "iPhonePocket", "start_sec": 0.0, "end_sec": 1.0},
+    ]
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="subtap.core.export"):
+        _inject_punct(words, "iPhone Pocket")
+
+    assert "完整性校验失败" in caplog.text
+
+
 # ── _process_segment / _post_process_fragments tests ──
 
 
@@ -706,6 +722,34 @@ def test_post_process_fragments_no_merge_long_lines():
     assert len(result) == 2
 
 
+def test_post_process_fragments_preserves_real_pause():
+    """Short text after a real pause must not be merged across silence."""
+    from subtap.core.export import _post_process_fragments
+
+    lines = [
+        {"text": "这是一句比较长的话", "start_sec": 0.0, "end_sec": 2.0},
+        {"text": "短句", "start_sec": 3.0, "end_sec": 3.5},
+    ]
+
+    result = _post_process_fragments(lines, max_chars=25, min_chars=10)
+
+    assert [line["text"] for line in result] == ["这是一句比较长的话", "短句"]
+
+
+def test_post_process_fragments_does_not_move_connector_across_pause():
+    """A connector before silence belongs to its original subtitle."""
+    from subtap.core.export import _post_process_fragments
+
+    lines = [
+        {"text": "但是", "start_sec": 0.0, "end_sec": 0.4},
+        {"text": "下一句话比较长", "start_sec": 1.0, "end_sec": 2.5},
+    ]
+
+    result = _post_process_fragments(lines, max_chars=25, min_chars=10)
+
+    assert [line["text"] for line in result] == ["但是", "下一句话比较长"]
+
+
 def test_srt_uses_process_segment_and_post_process():
     """SRTExporter.render() produces same output as manual pipeline."""
 
@@ -747,12 +791,32 @@ def test_srt_post_processes_across_aligned_segments():
             start_sec=0.0,
             end_sec=2.0,
             text="但是我觉得你能够看出核心的点是这个虚",
+            words=[
+                {
+                    "word": char,
+                    "start_sec": index
+                    * 2.0
+                    / len("但是我觉得你能够看出核心的点是这个虚"),
+                    "end_sec": (index + 1)
+                    * 2.0
+                    / len("但是我觉得你能够看出核心的点是这个虚"),
+                }
+                for index, char in enumerate("但是我觉得你能够看出核心的点是这个虚")
+            ],
         ),
         AlignedSegment(
             sentence_id=1,
             start_sec=2.0,
             end_sec=4.0,
             text="化，因为传感器更大，",
+            words=[
+                {
+                    "word": char,
+                    "start_sec": 2.0 + index * 0.1,
+                    "end_sec": 2.0 + (index + 1) * 0.1,
+                }
+                for index, char in enumerate("化因为传感器更大")
+            ],
         ),
     ]
 
@@ -760,6 +824,245 @@ def test_srt_post_processes_across_aligned_segments():
 
     assert "这个虚\n" not in srt
     assert "虚化，因为传感器更大，" in srt
+
+
+def test_srt_preserves_all_three_user_approved_chinese_boundaries():
+    """Lock the three boundaries accepted against the 1.7B review material."""
+    cases = [
+        (
+            [
+                "一",
+                "直",
+                "是",
+                "一",
+                "机",
+                "难",
+                "求",
+                "的",
+                "状",
+                "态",
+                "。",
+                "它",
+                "叫",
+                "做",
+                "理",
+                "光",
+                "GR4",
+                "。",
+            ],
+            ["一直是一机难求的状态", "它叫做理光GR4"],
+        ),
+        (
+            list("它实际市场售价都已经到万元了，很难原价买到。"),
+            ["它实际市场售价都已经到万元了", "很难原价买到"],
+        ),
+        (
+            [
+                "但",
+                "GR4",
+                "又",
+                "加",
+                "了",
+                "钱",
+                "以",
+                "后",
+                "还",
+                "是",
+                "被",
+                "抢",
+                "爆",
+                "，",
+                "真",
+                "的",
+                "有",
+                "点",
+                "看",
+                "不",
+                "懂",
+                "。",
+            ],
+            ["但GR4又加了钱以后还是被抢爆", "真的有点看不懂"],
+        ),
+    ]
+
+    for tokens, expected in cases:
+        text = "".join(tokens)
+        words = [
+            {
+                "word": token,
+                "start_sec": index * 0.1,
+                "end_sec": (index + 1) * 0.1,
+            }
+            for index, token in enumerate(tokens)
+            if token not in "。，"
+        ]
+        segment = AlignedSegment(
+            sentence_id=0,
+            start_sec=0.0,
+            end_sec=len(tokens) * 0.1,
+            text=text,
+            words=words,
+        )
+
+        srt = SRTExporter(punctuation=False, max_chars=25, min_chars=10).render(
+            [segment]
+        )
+        actual = [block.splitlines()[2] for block in srt.strip().split("\n\n")]
+
+        assert actual == expected
+
+
+def test_srt_uses_real_chinese_words_for_unpunctuated_character_alignment():
+    """Character timestamps must not become arbitrary Chinese split points."""
+    text = "一直是一机难求的状态它叫做理光GR4"
+    tokens = list(text[:-3]) + ["G", "R4"]
+    segment = AlignedSegment(
+        sentence_id=0,
+        start_sec=0.0,
+        end_sec=len(tokens) * 0.1,
+        text=text,
+        words=[
+            {
+                "word": token,
+                "start_sec": index * 0.1,
+                "end_sec": (index + 1) * 0.1,
+            }
+            for index, token in enumerate(tokens)
+        ],
+    )
+
+    srt = SRTExporter(punctuation=False, max_chars=15, min_chars=10).render([segment])
+    actual = [block.splitlines()[2] for block in srt.strip().split("\n\n")]
+
+    assert actual == ["一直是一机难求的状态", "它叫做理光GR4"]
+
+
+def test_srt_does_not_split_system_tokenized_chinese_words():
+    """Long unpunctuated text may wrap only between linguistic words."""
+    cases = [
+        (
+            "和手机区别的核心的点是这个虚化相较于手机的CMOS来说",
+            [("手", "机"), ("虚", "化"), ("相较", "于")],
+        ),
+        (
+            "那这个MonoChrome的版本的风格会更独特一点",
+            [("版", "本"), ("独", "特")],
+        ),
+    ]
+
+    for text, forbidden_splits in cases:
+        segment = AlignedSegment(
+            sentence_id=0,
+            start_sec=0.0,
+            end_sec=len(text) * 0.1,
+            text=text,
+            words=[
+                {
+                    "word": char,
+                    "start_sec": index * 0.1,
+                    "end_sec": (index + 1) * 0.1,
+                }
+                for index, char in enumerate(text)
+            ],
+        )
+
+        srt = SRTExporter(punctuation=False, max_chars=15, min_chars=8).render(
+            [segment]
+        )
+        actual = [block.splitlines()[2] for block in srt.strip().split("\n\n")]
+
+        for left, right in forbidden_splits:
+            assert all(
+                not (previous.endswith(left) and current.startswith(right))
+                for previous, current in zip(actual, actual[1:])
+            )
+
+
+def test_srt_keeps_directional_complement_with_its_verb():
+    """A directional complement should not start a cue without its verb."""
+    text = "那可能这个镜头我们目前用下来最实用的点在于它的微距功能，"
+    segment = AlignedSegment(
+        sentence_id=0,
+        start_sec=0.0,
+        end_sec=len(text) * 0.1,
+        text=text,
+        words=[
+            {
+                "word": char,
+                "start_sec": index * 0.1,
+                "end_sec": (index + 1) * 0.1,
+            }
+            for index, char in enumerate(text.rstrip("，"))
+        ],
+    )
+
+    srt = SRTExporter(punctuation=False, max_chars=25, min_chars=10).render([segment])
+    actual = [block.splitlines()[2] for block in srt.strip().split("\n\n")]
+
+    assert all(
+        not (previous.endswith("用") and current.startswith("下来"))
+        for previous, current in zip(actual, actual[1:])
+    )
+    assert all(
+        not (previous.endswith("最") and current.startswith("实用"))
+        for previous, current in zip(actual, actual[1:])
+    )
+    assert all(
+        not (previous.endswith("实用") and current.startswith("的"))
+        for previous, current in zip(actual, actual[1:])
+    )
+
+
+def test_srt_keeps_chinese_number_sequence_together_before_itn():
+    """ITN must see a complete Chinese numeral instead of per-cue fragments."""
+    text = "就是它的传感器从两千四百万升级到了两千五百七十四万像素。"
+    seg = AlignedSegment(
+        sentence_id=0,
+        start_sec=0.0,
+        end_sec=6.0,
+        text=text,
+        words=[
+            {
+                "word": char,
+                "start_sec": index * 0.1,
+                "end_sec": (index + 1) * 0.1,
+            }
+            for index, char in enumerate(text.rstrip("。"))
+        ],
+    )
+
+    srt = SRTExporter(punctuation=True, max_chars=25, min_chars=10).render([seg])
+
+    assert "2004" not in srt
+    assert "2400万" in srt
+    assert "2574万" in srt
+
+
+def test_latin_word_boundary_does_not_share_timestamps_between_cues():
+    """An inserted display space must not make adjacent cues share a word."""
+    from subtap.core.export import _process_segment
+
+    seg = AlignedSegment(
+        sentence_id=0,
+        start_sec=0.0,
+        end_sec=4.5,
+        text="High Light Diffusion Filter啊",
+        words=[
+            {"word": "High", "start_sec": 0.0, "end_sec": 1.0},
+            {"word": "Light", "start_sec": 1.0, "end_sec": 2.0},
+            {"word": "Diffusion", "start_sec": 2.0, "end_sec": 3.0},
+            {"word": "Filter", "start_sec": 3.0, "end_sec": 4.0},
+            {"word": "啊", "start_sec": 4.0, "end_sec": 4.5},
+        ],
+    )
+
+    lines = _process_segment(seg, max_chars=12, min_chars=4)
+
+    assert len(lines) >= 2
+    assert all(
+        current["start_sec"] >= previous["end_sec"]
+        for previous, current in zip(lines, lines[1:])
+    )
 
 
 # ── aligned_jsonl 存在性检查 ──

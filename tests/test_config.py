@@ -67,3 +67,14 @@ def test_config_load_round_trip():
         assert config.translate_to == "zh"
     finally:
         os.unlink(temp_path)
+
+
+def test_load_config_migrates_removed_vad_chunk_limit(tmp_path: Path, caplog):
+    """Old config remains loadable but reports that mechanical splitting is gone."""
+    path = tmp_path / "config.yaml"
+    path.write_text("audio:\n  vad:\n    max_chunk_sec: 30\n", encoding="utf-8")
+
+    config = load_config(path)
+
+    assert not hasattr(config.audio.vad, "max_chunk_sec")
+    assert "max_chunk_sec=30" in caplog.text

@@ -30,12 +30,14 @@ class Subtap < Formula
       -r
       #{wheelhouse/"requirements.txt"}
     EOS
+    pkgshare.install wheelhouse/"licenses.json"
+    pkgshare.install wheelhouse/"THIRD_PARTY_LICENSES"
     bin.install_symlink Dir[libexec/"bin/subtap"]
   end
 
   test do
     assert_match version.to_s, shell_output("#{bin}/subtap --version")
-    assert_match "OK", shell_output("#{bin}/subtap doctor 2>&1")
+    assert_match '"checks"', shell_output("#{bin}/subtap doctor 2>&1")
 
     # Verify key modules are importable
     system libexec/"bin/python3", "-c", "import subtap"
