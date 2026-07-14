@@ -74,7 +74,7 @@ class TestLoadSaveGlossary:
     """Test load and save functions."""
 
     def test_save_and_load(self, tmp_path):
-        path = tmp_path / "hotwords_zh.tsv"
+        path = tmp_path / "hotwords_zh.yaml"
         glossary = HotwordGlossary(lang="zh")
         glossary.add_alias("达芬奇", "达文西")
         glossary.add_alias("达芬奇", "大芬奇")
@@ -107,28 +107,27 @@ class TestLoadSaveGlossary:
         assert loaded.hotwords[1].aliases == ["吉亚斯", "吉奥", "吉亚"]
 
     def test_save_format(self, tmp_path):
-        """Test saving in equals format."""
-        path = tmp_path / "hotwords_zh.txt"
+        """Hotwords are saved in the canonical YAML format."""
+        path = tmp_path / "hotwords_zh.yaml"
         glossary = HotwordGlossary(lang="zh")
         glossary.add_alias("达芬奇", "达文西")
         glossary.add_alias("达芬奇", "大芬奇")
         save_glossary(glossary, path)
 
-        content = path.read_text(encoding="utf-8")
-        assert content == "达芬奇=达文西,大芬奇\n"
+        from subtap.schemas.glossary import load_glossary as load_yaml_glossary
 
-    def test_load_encoding_error_returns_empty(self, tmp_path, caplog):
-        """UnicodeDecodeError should log warning and return empty glossary."""
+        document = load_yaml_glossary(path)
+        assert [(term.canonical, term.aliases) for term in document.terms] == [
+            ("达芬奇", ["达文西", "大芬奇"])
+        ]
+
+    def test_load_encoding_error_propagates(self, tmp_path):
+        """A damaged user glossary must fail before a later command can overwrite it."""
         path = tmp_path / "bad_encoding.txt"
         path.write_bytes(b"\xff\xfe\x00\x01invalid utf-8 content")
 
-        import logging
-
-        with caplog.at_level(logging.WARNING):
-            glossary = load_glossary(path, lang="zh")
-
-        assert len(glossary.hotwords) == 0
-        assert "Failed to decode glossary" in caplog.text
+        with pytest.raises(UnicodeDecodeError):
+            load_glossary(path, lang="zh")
 
     def test_load_permission_error_propagates(self, tmp_path, monkeypatch):
         """PermissionError (non-recoverable) should propagate, not be swallowed."""

@@ -54,7 +54,56 @@ class Glossary(BaseModel):
 
     def get_replacements(self) -> list[tuple[str, str]]:
         """Return (find, replace) pairs for deterministic replacement."""
-        return [(r.find, r.replace) for r in self.replacements]
+        term_replacements = [
+            (alias, term.canonical)
+            for term in self.terms
+            for alias in term.aliases
+            if alias and alias != term.canonical
+        ]
+        return term_replacements + [(r.find, r.replace) for r in self.replacements]
+
+    def upsert_term(self, term: GlossaryTerm) -> None:
+        """Add a canonical term or merge new aliases into the existing term."""
+        existing = next(
+            (item for item in self.terms if item.canonical == term.canonical),
+            None,
+        )
+        if existing is None:
+            self.terms.append(term)
+        else:
+            existing.aliases.extend(
+                alias for alias in term.aliases if alias not in existing.aliases
+            )
+        self.model_post_init(None)
+
+    def remove_entry(self, value: str) -> bool:
+        """Remove a canonical term, alias, or direct replacement by its source."""
+        before = self.model_dump()
+        self.terms = [item for item in self.terms if item.canonical != value]
+        for term in self.terms:
+            term.aliases = [alias for alias in term.aliases if alias != value]
+        self.replacements = [item for item in self.replacements if item.find != value]
+        changed = self.model_dump() != before
+        if changed:
+            self.model_post_init(None)
+        return changed
+
+
+def _load_legacy_equals(content: str) -> Glossary:
+    """Load the former ``canonical=alias1,alias2`` hotword format."""
+    terms: list[GlossaryTerm] = []
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            raise ValueError("术语表格式无效：应为 YAML 或 术语=别名1,别名2")
+        canonical, aliases_text = [part.strip() for part in line.split("=", 1)]
+        aliases = [item.strip() for item in aliases_text.split(",") if item.strip()]
+        if not canonical or not aliases:
+            raise ValueError("术语表格式无效：术语和别名不能为空")
+        terms.append(GlossaryTerm(canonical=canonical, aliases=aliases))
+    return Glossary(terms=terms)
 
 
 def load_glossary(path: Optional[Path]) -> Glossary:
@@ -65,8 +114,24 @@ def load_glossary(path: Optional[Path]) -> Glossary:
     if path is None or not path.exists():
         return Glossary()
 
-    with open(path) as f:
-        result = yaml.safe_load(f)
-        data = result if isinstance(result, dict) else {}
+    content = path.read_text(encoding="utf-8")
 
-    return Glossary.model_validate(data)
+    if not content.strip():
+        return Glossary()
+
+    result = yaml.safe_load(content)
+    if isinstance(result, str) and "=" in content:
+        return _load_legacy_equals(content)
+    if not isinstance(result, dict):
+        raise ValueError("术语表格式无效：根节点必须是 YAML 对象")
+    return Glossary.model_validate(result)
+
+
+def save_glossary(path: Path, glossary: Glossary) -> None:
+    """Persist the canonical YAML glossary without dropping any sections."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = glossary.model_dump(mode="json")
+    path.write_text(
+        yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )

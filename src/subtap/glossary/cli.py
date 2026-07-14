@@ -5,9 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import typer
-import yaml
 
-from subtap.schemas.glossary import Glossary, GlossaryReplacement, load_glossary
+from subtap.schemas.glossary import (
+    Glossary,
+    GlossaryTerm,
+    load_glossary,
+    save_glossary,
+)
 
 app = typer.Typer(help="热词/术语管理")
 
@@ -16,25 +20,18 @@ def _default_path() -> Path:
     return Path.home() / ".subtap" / "glossaries" / "default.yaml"
 
 
-def _save_glossary(path: Path, glossary: Glossary) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    data = glossary.model_dump(mode="json")
-    path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False))
-
-
-def _parse_hotword_pairs(text: str) -> list[GlossaryReplacement]:
-    """Parse haoone-style hotword text into replacement rules."""
+def _parse_hotword_terms(text: str) -> list[GlossaryTerm]:
+    """Parse haoone-style hotword text into canonical terms."""
     lines = [line.strip() for line in text.splitlines()]
-    pairs: list[GlossaryReplacement] = []
+    terms: list[GlossaryTerm] = []
     block: list[str] = []
 
     def flush_block() -> None:
-        if len(block) < 2:
-            block.clear()
+        if not block:
             return
-        canonical = block[0]
-        for alias in block[1:]:
-            pairs.append(GlossaryReplacement(find=alias, replace=canonical))
+        if len(block) < 2:
+            raise ValueError(f"术语缺少别名：{block[0]}")
+        terms.append(GlossaryTerm(canonical=block[0], aliases=block[1:]))
         block.clear()
 
     for line in lines + [""]:
@@ -45,11 +42,12 @@ def _parse_hotword_pairs(text: str) -> list[GlossaryReplacement]:
             flush_block()
             canonical, aliases_text = [part.strip() for part in line.split("=", 1)]
             aliases = [item.strip() for item in aliases_text.split(",") if item.strip()]
-            for alias in aliases:
-                pairs.append(GlossaryReplacement(find=alias, replace=canonical))
+            if not canonical or not aliases:
+                raise ValueError("术语和别名不能为空")
+            terms.append(GlossaryTerm(canonical=canonical, aliases=aliases))
         else:
             block.append(line)
-    return pairs
+    return terms
 
 
 @app.command("list")
@@ -75,12 +73,16 @@ def add_glossary(
 ) -> None:
     """添加一条术语。"""
     if "=" not in input_text:
-        typer.echo("✗ 格式错误：请使用 错词=正确词", err=True)
+        typer.echo("✗ 格式错误：请使用 术语=别名1,别名2", err=True)
         raise typer.Exit(1)
-    find, replace = [part.strip() for part in input_text.split("=", 1)]
+    canonical, aliases_text = [part.strip() for part in input_text.split("=", 1)]
+    aliases = [item.strip() for item in aliases_text.split(",") if item.strip()]
+    if not canonical or not aliases:
+        typer.echo("✗ 格式错误：术语和别名不能为空", err=True)
+        raise typer.Exit(1)
     glossary = load_glossary(path)
-    glossary.replacements.append(GlossaryReplacement(find=find, replace=replace))
-    _save_glossary(path, glossary)
+    glossary.upsert_term(GlossaryTerm(canonical=canonical, aliases=aliases))
+    save_glossary(path, glossary)
     typer.echo(f"✓ 已添加：{input_text}")
 
 
@@ -103,15 +105,21 @@ def batch_add_glossary(
     else:
         raw_text = input_text or ""
 
-    replacements = _parse_hotword_pairs(raw_text)
-    if not replacements:
+    try:
+        terms = _parse_hotword_terms(raw_text)
+    except ValueError as exc:
+        typer.echo(f"✗ {exc}", err=True)
+        raise typer.Exit(1) from exc
+    if not terms:
         typer.echo("✗ 没有解析到有效热词", err=True)
         raise typer.Exit(1)
 
     glossary = load_glossary(path)
-    glossary.replacements.extend(replacements)
-    _save_glossary(path, glossary)
-    typer.echo(f"✓ 已添加 {len(replacements)} 条 {language} 热词")
+    for term in terms:
+        glossary.upsert_term(term)
+    save_glossary(path, glossary)
+    alias_count = sum(len(term.aliases) for term in terms)
+    typer.echo(f"✓ 已添加 {alias_count} 条 {language} 热词")
 
 
 @app.command("remove")
@@ -121,12 +129,9 @@ def remove_glossary(
 ) -> None:
     """删除一条术语。"""
     glossary = load_glossary(path)
-    before = len(glossary.replacements)
-    glossary.replacements = [
-        item for item in glossary.replacements if item.find != find
-    ]
-    _save_glossary(path, glossary)
-    if len(glossary.replacements) == before:
+    changed = glossary.remove_entry(find)
+    save_glossary(path, glossary)
+    if not changed:
         typer.echo("未找到匹配术语")
     else:
         typer.echo(f"✓ 已删除：{find}")

@@ -1,18 +1,16 @@
-"""Hotword glossary management — equals format, per-language.
-
-Format (one row per hotword):
-    热词=错词1,错词2,错词3
-    理光GR4=李光机亚四,理光GR IV,理光GRIV
-    GR=吉亚斯,吉奥,吉亚
-"""
+"""Runtime hotword glossary backed by the canonical YAML glossary."""
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+from subtap.schemas.glossary import (
+    Glossary,
+    GlossaryTerm,
+    load_glossary as load_yaml_glossary,
+    save_glossary as save_yaml_glossary,
+)
 
 
 @dataclass
@@ -26,22 +24,31 @@ class Hotword:
 class HotwordGlossary:
     """Hotword glossary for a specific language."""
 
-    def __init__(self, lang: str, hotwords: list[Hotword] | None = None):
+    def __init__(
+        self,
+        lang: str,
+        hotwords: list[Hotword] | None = None,
+        document: Glossary | None = None,
+    ):
         self.lang = lang
-        self.hotwords: list[Hotword] = hotwords or []
+        self.hotwords: list[Hotword] = []
+        self._document = document or Glossary()
+        for hotword in hotwords or []:
+            self.add(hotword)
 
     def add(self, hotword: Hotword) -> None:
-        """Add a hotword."""
+        """Add a hotword or merge aliases into its existing canonical term."""
+        for existing in self.hotwords:
+            if existing.word == hotword.word:
+                existing.aliases.extend(
+                    alias for alias in hotword.aliases if alias not in existing.aliases
+                )
+                return
         self.hotwords.append(hotword)
 
     def add_alias(self, word: str, alias: str) -> None:
         """Add an alias to existing hotword or create new one."""
-        for hw in self.hotwords:
-            if hw.word == word:
-                if alias not in hw.aliases:
-                    hw.aliases.append(alias)
-                return
-        self.hotwords.append(Hotword(word=word, aliases=[alias]))
+        self.add(Hotword(word=word, aliases=[alias]))
 
     def remove(self, word: str) -> None:
         """Remove a hotword by word."""
@@ -97,46 +104,22 @@ class HotwordGlossary:
 
 
 def load_glossary(path: Path, lang: str) -> HotwordGlossary:
-    """Load glossary from equals format file.
-
-    Format: 热词=错词1,错词2,错词3
-    """
-    glossary = HotwordGlossary(lang=lang)
+    """Load canonical YAML or the former equals-format glossary."""
     if not path.exists():
-        return glossary
-    try:
-        content = path.read_text(encoding="utf-8")
-    except UnicodeDecodeError as e:
-        logger.warning("Failed to decode glossary from %s: %s", path, e)
-        return glossary
-    for line in content.strip().split("\n"):
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" not in line:
-            continue
-        parts = line.split("=", 1)
-        if len(parts) == 2:
-            word = parts[0].strip()
-            aliases_str = parts[1].strip()
-            if word and aliases_str:
-                aliases = [a.strip() for a in aliases_str.split(",") if a.strip()]
-                for alias in aliases:
-                    glossary.add_alias(word, alias)
+        return HotwordGlossary(lang=lang)
+    document = load_yaml_glossary(path)
+    glossary = HotwordGlossary(lang=lang, document=document)
+    for term in document.terms:
+        glossary.add(Hotword(word=term.canonical, aliases=list(term.aliases)))
     return glossary
 
 
 def save_glossary(glossary: HotwordGlossary, path: Path) -> None:
-    """Save glossary to equals format file.
-
-    Format: 热词=错词1,错词2,错词3
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    lines = []
-    for hw in glossary.hotwords:
-        if hw.aliases:
-            aliases_str = ",".join(hw.aliases)
-            lines.append(f"{hw.word}={aliases_str}")
-
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    """Save hotword terms into the canonical YAML document."""
+    document = glossary._document.model_copy(deep=True)
+    document.terms = [
+        GlossaryTerm(canonical=hotword.word, aliases=hotword.aliases)
+        for hotword in glossary.hotwords
+    ]
+    save_yaml_glossary(path, document)
+    glossary._document = document
