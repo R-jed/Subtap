@@ -2,6 +2,7 @@ import pytest
 import numpy as np
 import wave
 from pathlib import Path
+from types import SimpleNamespace
 
 from subtap.schemas.config import VADConfig, SubtapConfig
 from subtap.core.workspace import Workspace
@@ -110,31 +111,73 @@ def test_vad_config_rejects_legacy_chunk_limit():
         VADConfig.model_validate({"max_chunk_sec": 30})
 
 
-def test_silero_vad_normalizes_32_bit_samples(monkeypatch):
-    """Silero must receive every PCM sample width in the [-1, 1] range."""
+def test_silero_vad_uses_bundled_sherpa_model_and_normalized_pcm(monkeypatch):
+    """The packaged Silero backend must preserve its public VAD settings."""
     from pydub import AudioSegment
 
-    import silero_vad
-    from subtap.core.vad import _get_speech_segments_silero
+    import subtap.core.vad as vad
 
-    captured: dict[str, float] = {}
+    captured = SimpleNamespace(peak=0.0, config=None, buffer_size=0.0)
 
-    def fake_timestamps(samples, *args, **kwargs):
-        captured["peak"] = float(samples.abs().max())
-        return []
+    class FakeConfig:
+        def __init__(self):
+            self.silero_vad = SimpleNamespace()
 
+    class FakeDetector:
+        def __init__(self, config, buffer_size_in_seconds):
+            captured.config = config
+            captured.buffer_size = buffer_size_in_seconds
+            self._segments = [
+                SimpleNamespace(start=512, samples=np.zeros(512, dtype=np.float32))
+            ]
+
+        def accept_waveform(self, samples):
+            captured.peak = max(captured.peak, float(np.abs(samples).max()))
+
+        def flush(self):
+            pass
+
+        def empty(self):
+            return not self._segments
+
+        @property
+        def front(self):
+            return self._segments[0]
+
+        def pop(self):
+            self._segments.pop(0)
+
+    pcm = np.zeros(1600, dtype=np.int32)
+    pcm[:3] = [0, 2**30, -(2**30)]
     audio = AudioSegment(
-        data=np.array([0, 2**30, -(2**30)], dtype=np.int32).tobytes(),
+        data=pcm.tobytes(),
         sample_width=4,
         frame_rate=16000,
         channels=1,
     )
-    monkeypatch.setattr(silero_vad, "get_speech_timestamps", fake_timestamps)
-    monkeypatch.setattr("subtap.core.vad._load_silero_vad", lambda: object())
+    monkeypatch.setattr(
+        vad,
+        "sherpa_onnx",
+        SimpleNamespace(
+            VadModelConfig=FakeConfig,
+            VoiceActivityDetector=FakeDetector,
+        ),
+    )
 
-    _get_speech_segments_silero(audio)
+    segments = vad._get_speech_segments_silero(
+        audio,
+        threshold=0.7,
+        min_silence_ms=300,
+        min_speech_duration_ms=400,
+    )
 
-    assert captured["peak"] <= 1.0
+    assert captured.peak <= 1.0
+    assert captured.config.silero_vad.threshold == 0.7
+    assert captured.config.silero_vad.min_silence_duration == 0.3
+    assert captured.config.silero_vad.min_speech_duration == 0.4
+    assert captured.config.silero_vad.window_size == 512
+    assert captured.buffer_size >= len(audio) / 1000
+    assert segments == [[0.002, 0.094]]
 
 
 # ---------------------------------------------------------------------------

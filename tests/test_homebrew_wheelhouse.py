@@ -1170,11 +1170,59 @@ def test_accepts_standard_mit_license_classifier(tmp_path: Path) -> None:
     assert record.license == "MIT"
 
 
+def test_accepts_standard_apache_license_classifier(tmp_path: Path) -> None:
+    wheel = make_wheel(
+        tmp_path,
+        license_expression=None,
+        license_classifiers=("License :: OSI Approved :: Apache Software License",),
+    )
+    module = load_module()
+
+    record = module.inspect_wheel(
+        wheel,
+        {"allowed_licenses": ["Apache-2.0"], "wheel_approvals": {}},
+    )
+
+    assert record.license == "Apache-2.0"
+
+
 def test_normalizes_legacy_apache_license_name(tmp_path: Path) -> None:
     wheel = make_wheel(
         tmp_path,
         license_expression=None,
         legacy_license="Apache 2.0",
+    )
+    module = load_module()
+
+    record = module.inspect_wheel(
+        wheel,
+        {"allowed_licenses": ["Apache-2.0"], "wheel_approvals": {}},
+    )
+
+    assert record.license == "Apache-2.0"
+
+
+def test_normalizes_legacy_apache_license_suffix(tmp_path: Path) -> None:
+    wheel = make_wheel(
+        tmp_path,
+        license_expression=None,
+        legacy_license="Apache 2.0 License",
+    )
+    module = load_module()
+
+    record = module.inspect_wheel(
+        wheel,
+        {"allowed_licenses": ["Apache-2.0"], "wheel_approvals": {}},
+    )
+
+    assert record.license == "Apache-2.0"
+
+
+def test_normalizes_sherpa_legacy_apache_license_name(tmp_path: Path) -> None:
+    wheel = make_wheel(
+        tmp_path,
+        license_expression=None,
+        legacy_license="Apache licensed, as found in the LICENSE file",
     )
     module = load_module()
 
@@ -1200,6 +1248,22 @@ def test_normalizes_legacy_mit_license_name(tmp_path: Path) -> None:
     )
 
     assert record.license == "MIT"
+
+
+def test_normalizes_legacy_isc_license_name(tmp_path: Path) -> None:
+    wheel = make_wheel(
+        tmp_path,
+        license_expression=None,
+        legacy_license="ISC License",
+    )
+    module = load_module()
+
+    record = module.inspect_wheel(
+        wheel,
+        {"allowed_licenses": ["ISC"], "wheel_approvals": {}},
+    )
+
+    assert record.license == "ISC"
 
 
 def test_normalizes_legacy_bsd3_license_name(tmp_path: Path) -> None:
@@ -1267,6 +1331,14 @@ def test_repository_policy_allows_permissive_mit_zero() -> None:
     )
 
     assert "MIT-0" in policy["allowed_licenses"]
+
+
+def test_repository_policy_allows_tqdm_license_expression() -> None:
+    policy = json.loads(
+        (ROOT / "packaging/homebrew/license-policy.json").read_text(encoding="utf-8")
+    )
+
+    assert "MPL-2.0 AND MIT" in policy["allowed_licenses"]
 
 
 def test_download_cleans_up_temp_on_failure(tmp_path: Path) -> None:

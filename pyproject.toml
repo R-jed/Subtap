@@ -21,8 +21,9 @@ dependencies = [
     "openpyxl>=3.0",
     "rapidfuzz>=3.0",
     "audioop-lts>=0.2.2; python_version>='3.13'",
-    "silero-vad>=6.2.1",
-    "onnxruntime>=1.24.3",
+    "sherpa-onnx==1.13.4",
+    # sherpa-onnx declares this in wheel metadata, which uv cannot lock from its sdist.
+    "sherpa-onnx-core==1.13.4",
     "mlx>=0.31.1; platform_system == 'Darwin' and platform_machine == 'arm64'",
     "mlx-audio==0.4.3; platform_system == 'Darwin' and platform_machine == 'arm64'",
 ]
@@ -69,5 +70,5 @@ asyncio_mode = "auto"
 addopts = ["--ignore-glob=tests/test_benchmark_*.py"]
 
 [[tool.mypy.overrides]]
-module = ["mlx_audio.*", "pydub", "pydub.*", "yaml", "openpyxl.*", "docx.*", "torch", "torch.*", "torchaudio", "torchaudio.*", "silero_vad", "silero_vad.*", "textual", "textual.*", "questionary"]
+module = ["mlx_audio.*", "pydub", "pydub.*", "yaml", "openpyxl.*", "docx.*", "sherpa_onnx", "sherpa_onnx.*", "textual", "textual.*", "questionary"]
 ignore_missing_imports = true

@@ -1,14 +1,14 @@
-"""VAD-based silence splitting using Silero VAD or pydub fallback."""
+"""VAD-based silence splitting using bundled Silero VAD or pydub fallback."""
 
 from __future__ import annotations
 
-import functools
+from importlib.resources import as_file, files
 import logging
 
 import numpy as np
-import torch
 from pydub import AudioSegment
 from pydub.silence import detect_nonsilent
+import sherpa_onnx
 
 from subtap.schemas.config import SubtapConfig
 from subtap.schemas.models import Chunk
@@ -40,27 +40,13 @@ def _normalize_pcm(audio: AudioSegment) -> np.ndarray:
     return samples / pcm_scale
 
 
-@functools.lru_cache(maxsize=1)
-def _load_silero_vad():
-    """Load Silero VAD model (cached across calls)."""
-    try:
-        from silero_vad import load_silero_vad
-
-        return load_silero_vad()
-    except Exception as e:
-        raise VADError(
-            f"Silero VAD 模型加载失败: {e}\n"
-            "请检查 silero-vad 包是否正确安装：pip install silero-vad"
-        ) from e
-
-
 def _get_speech_segments_silero(
     audio: AudioSegment,
     threshold: float = 0.5,
     min_silence_ms: int = 150,
     min_speech_duration_ms: int = 250,
 ) -> list[list[float]]:
-    """Get speech segments using Silero VAD.
+    """Get speech segments using the bundled Silero model through sherpa-onnx.
 
     Args:
         audio: Already-loaded AudioSegment to avoid double-loading.
@@ -73,8 +59,6 @@ def _get_speech_segments_silero(
     Raises:
         VADError: If audio processing or VAD inference fails.
     """
-    from silero_vad import get_speech_timestamps
-
     try:
         # Silero VAD requires 16kHz mono
         audio = audio.set_frame_rate(16000).set_channels(1)
@@ -83,19 +67,46 @@ def _get_speech_segments_silero(
         raise VADError(f"音频格式转换失败（需要 16kHz 单声道）: {e}") from e
 
     try:
-        model = _load_silero_vad()
-        speech_timestamps = get_speech_timestamps(
-            torch.from_numpy(samples),
-            model,
-            threshold=threshold,
-            sampling_rate=16000,
-            min_silence_duration_ms=min_silence_ms,
-            min_speech_duration_ms=min_speech_duration_ms,
-            speech_pad_ms=30,
-            return_seconds=True,
-        )
-    except VADError:
-        raise
+        duration_sec = len(samples) / 16000.0
+        # Exact model shipped by silero-vad 6.2.1; provenance is recorded in
+        # resources/SILERO-VAD-MODEL.json. sherpa-onnx only replaces the runtime.
+        model_resource = files("subtap").joinpath("resources", "silero_vad.onnx")
+        with as_file(model_resource) as model_path:
+            vad_config = sherpa_onnx.VadModelConfig()
+            vad_config.silero_vad.model = str(model_path)
+            vad_config.silero_vad.threshold = threshold
+            vad_config.silero_vad.min_silence_duration = min_silence_ms / 1000.0
+            vad_config.silero_vad.min_speech_duration = min_speech_duration_ms / 1000.0
+            vad_config.silero_vad.max_speech_duration = duration_sec + 1.0
+            vad_config.silero_vad.window_size = 512
+            vad_config.sample_rate = 16000
+            vad_config.num_threads = 1
+            vad_config.provider = "cpu"
+
+            detector = sherpa_onnx.VoiceActivityDetector(
+                vad_config,
+                buffer_size_in_seconds=duration_sec + 1.0,
+            )
+            for offset in range(0, len(samples), 512):
+                detector.accept_waveform(samples[offset : offset + 512])
+            detector.flush()
+
+            speech_segments: list[list[float]] = []
+            while not detector.empty():
+                segment = detector.front
+                speech_segments.append(
+                    [
+                        round(max(0.0, segment.start / 16000.0 - 0.03), 3),
+                        round(
+                            min(
+                                duration_sec,
+                                (segment.start + len(segment.samples)) / 16000.0 + 0.03,
+                            ),
+                            3,
+                        ),
+                    ]
+                )
+                detector.pop()
     except Exception as e:
         raise VADError(
             f"Silero VAD 推理失败: {e}\n"
@@ -103,8 +114,7 @@ def _get_speech_segments_silero(
             f"min_speech_duration_ms={min_speech_duration_ms}"
         ) from e
 
-    # Convert [{"start": float, "end": float}, ...] to [[start, end], ...]
-    return [[seg["start"], seg["end"]] for seg in speech_timestamps]
+    return speech_segments
 
 
 def split_chunks(workspace: Workspace, config: SubtapConfig) -> list[Chunk]:
@@ -128,7 +138,8 @@ def split_chunks(workspace: Workspace, config: SubtapConfig) -> list[Chunk]:
 
     if vad_cfg.use_silero_vad:
         logger.info(
-            "Using Silero VAD (sensitivity=%s, min_silence=%dms, threshold=%.2f)",
+            "Using bundled Silero VAD via sherpa-onnx "
+            "(sensitivity=%s, min_silence=%dms, threshold=%.2f)",
             vad_cfg.sensitivity,
             min_silence_ms,
             vad_cfg.silero_threshold,

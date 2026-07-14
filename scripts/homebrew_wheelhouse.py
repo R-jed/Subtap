@@ -47,10 +47,14 @@ FORBIDDEN_LICENSE_MARKERS = (
 )
 LICENSE_FILE_MARKERS = ("license", "copying", "notice")
 LICENSE_CLASSIFIERS = {
+    "License :: OSI Approved :: Apache Software License": "Apache-2.0",
     "License :: OSI Approved :: MIT License": "MIT",
 }
 LICENSE_ALIASES = {
     "Apache 2.0": "Apache-2.0",
+    "Apache 2.0 License": "Apache-2.0",
+    "Apache licensed, as found in the LICENSE file": "Apache-2.0",
+    "ISC License": "ISC",
     "MIT License": "MIT",
     "3-Clause BSD License": "BSD-3-Clause",
 }

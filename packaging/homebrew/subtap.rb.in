@@ -5,7 +5,7 @@ class Subtap < Formula
   include Language::Python::Virtualenv
 
   desc "Offline subtitle transcription toolkit"
-  homepage "https://github.com/anthropics/subtap"
+  homepage "https://github.com/R-jed/Subtap"
   version "VERSION_PLACEHOLDER"
   url "WHEELHOUSE_URL_PLACEHOLDER"
   sha256 "WHEELHOUSE_SHA256_PLACEHOLDER"
@@ -20,7 +20,7 @@ class Subtap < Formula
     odie "Subtap supports Apple Silicon macOS only" unless OS.mac? && Hardware::CPU.arm?
 
     venv = virtualenv_create(libexec, "python3.13", system_site_packages: true)
-    wheelhouse = buildpath/"wheelhouse"
+    wheelhouse = buildpath
     venv.pip_install <<~EOS
       --no-index
       --find-links=#{wheelhouse/"wheels"}
@@ -41,6 +41,11 @@ class Subtap < Formula
 
     # Verify key modules are importable
     system libexec/"bin/python3", "-c", "import subtap"
+    system libexec/"bin/python3", "-c", <<~PYTHON
+      from pydub import AudioSegment
+      from subtap.core.vad import _get_speech_segments_silero
+      assert _get_speech_segments_silero(AudioSegment.silent(duration=1000)) == []
+    PYTHON
 
     # NumPy / SciPy must come from Homebrew, not bundled in the venv
     numpy_loc = shell_output(

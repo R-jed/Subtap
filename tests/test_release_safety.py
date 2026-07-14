@@ -48,8 +48,9 @@ def test_homebrew_release_executes_supply_chain_and_formula_gates() -> None:
     assert "--formal-release" in text
     assert "multiple.intoto.jsonl" in text
     assert "slsa-verifier-darwin-arm64" in text
-    assert "brew install --formula" in text
-    assert "brew test subtap" in text
+    assert 'brew tap-new "$local_tap"' in text
+    assert 'brew install "$local_tap/subtap"' in text
+    assert 'brew test "$local_tap/subtap"' in text
 
 
 def test_release_candidate_cannot_publish_stable_channels() -> None:

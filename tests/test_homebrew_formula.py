@@ -103,6 +103,10 @@ class TestTemplateStructure:
         text = TEMPLATE.read_text(encoding="utf-8")
         assert "bottle do" not in text
 
+    def test_homepage_points_to_project_repository(self) -> None:
+        text = TEMPLATE.read_text(encoding="utf-8")
+        assert 'homepage "https://github.com/R-jed/Subtap"' in text
+
     def test_python313_dependency(self) -> None:
         text = TEMPLATE.read_text(encoding="utf-8")
         assert 'depends_on "python@3.13"' in text
@@ -140,7 +144,8 @@ class TestTemplateStructure:
         assert "requirements.txt" in text
         assert "--find-links" in text
         assert ".pip_install [" not in text
-        assert 'wheelhouse = buildpath/"wheelhouse"' in text
+        assert "wheelhouse = buildpath" in text
+        assert 'wheelhouse = buildpath/"wheelhouse"' not in text
 
     def test_formula_explicitly_uses_homebrew_python_packages(self) -> None:
         text = TEMPLATE.read_text(encoding="utf-8")
@@ -179,6 +184,13 @@ class TestTemplateStructure:
         text = TEMPLATE.read_text(encoding="utf-8")
         test_section = text.split("test do")[1]
         assert "import subtap" in test_section
+
+    def test_test_block_runs_bundled_vad(self) -> None:
+        text = TEMPLATE.read_text(encoding="utf-8")
+        test_section = text.split("test do")[1]
+
+        assert "_get_speech_segments_silero" in test_section
+        assert "AudioSegment.silent" in test_section
 
     def test_test_block_checks_numpy_source(self) -> None:
         """test do must verify numpy comes from Homebrew, not bundled."""

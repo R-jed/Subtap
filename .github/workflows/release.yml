@@ -127,9 +127,14 @@ jobs:
             --wheelhouse-url "file://$(pwd)/$wheelhouse" \
             --wheelhouse "$wheelhouse" \
             --output /tmp/Subtap.rb
-          brew install --formula /tmp/Subtap.rb
-          brew test subtap
+          local_tap="subtap/release-test"
+          brew tap-new "$local_tap"
+          tap_dir="$(brew --repository "$local_tap")"
+          cp /tmp/Subtap.rb "$tap_dir/Formula/subtap.rb"
+          brew install "$local_tap/subtap"
+          brew test "$local_tap/subtap"
           brew uninstall subtap
+          brew untap "$local_tap"
           uv run python scripts/render_homebrew_formula.py \
             --manifest homebrew-artifacts/wheelhouse/manifest.json \
             --template packaging/homebrew/subtap.rb.in \
