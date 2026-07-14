@@ -1399,6 +1399,12 @@ def run_final_exports(
         formats = {"srt", "vtt", "json", "tsv"}
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    srt_exporter = SRTExporter(
+        punctuation=punctuation,
+        language=language,
+        max_chars=max_chars,
+        min_chars=min_chars,
+    )
     export_segments = segments
     source_path: Path | None = None
     if translate_to:
@@ -1407,27 +1413,14 @@ def run_final_exports(
         else:
             export_segments = _with_bilingual_text(segments, bilingual)
         source_path = output_dir / f"{stem}.source.srt"
-        SRTExporter(
-            punctuation=punctuation,
-            language=language,
-            max_chars=max_chars,
-            min_chars=min_chars,
-        ).export(_without_alignment_metadata(segments), source_path)
+        srt_exporter.export(_without_alignment_metadata(segments), source_path)
     srt_path = output_dir / f"{stem}.srt"
     vtt_path = output_dir / f"{stem}.vtt"
     json_path = output_dir / f"{stem}.json"
     tsv_path = output_dir / f"{stem}.tsv"
 
-    # Always write SRT
-    srt_path.write_text(
-        SRTExporter(
-            punctuation=punctuation,
-            language=language,
-            max_chars=max_chars,
-            min_chars=min_chars,
-        ).render(export_segments),
-        encoding="utf-8",
-    )
+    # Always write SRT through the delivery quality gate.
+    srt_exporter.export(export_segments, srt_path)
 
     # VTT (opt-in)
     if "vtt" in formats:
