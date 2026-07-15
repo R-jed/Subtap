@@ -41,6 +41,30 @@ def test_release_jobs_are_bounded_and_build_uses_uv() -> None:
     assert all("timeout-minutes" in job for job in workflow["jobs"].values())
 
 
+def test_release_requires_real_offline_1_7b_acceptance() -> None:
+    """No public release may bypass the real local-only Apple Silicon pipeline."""
+    workflow = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
+    jobs = workflow["jobs"]
+    acceptance = jobs["offline-acceptance"]
+    steps = "\n".join(str(step) for step in acceptance["steps"])
+
+    assert set(acceptance["runs-on"]) == {
+        "self-hosted",
+        "macOS",
+        "ARM64",
+        "subtap-release",
+    }
+    assert "SUBTAP_SMOKE_AUDIO_DIR" in acceptance["env"]
+    assert "SUBTAP_SMOKE_MODEL_ROOT" in acceptance["env"]
+    assert acceptance["needs"] == ["metadata", "build"]
+    assert "actions/download-artifact" in steps
+    assert "subtap-release-acceptance/bin/subtap" in steps
+    assert "SUBTAP_SMOKE_SUBTAP_BIN" in steps
+    assert "./scripts/smoke_offline.sh" in steps
+    assert "offline-acceptance" in jobs["github-release"]["needs"]
+    assert "offline-acceptance" in jobs["publish"]["needs"]
+
+
 def test_homebrew_release_executes_supply_chain_and_formula_gates() -> None:
     text = (ROOT / ".github/workflows/release.yml").read_text()
 

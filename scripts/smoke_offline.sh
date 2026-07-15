@@ -8,6 +8,7 @@
 # Environment:
 #   SUBTAP_SMOKE_AUDIO_DIR  — override test audio directory
 #   SUBTAP_SMOKE_MODEL_ROOT — override local model root
+#   SUBTAP_SMOKE_SUBTAP_BIN — run an installed subtap executable instead of uv
 #   SUBTAP_SMOKE_JSON       — write structured JSON result to this path
 
 set -euo pipefail
@@ -21,11 +22,29 @@ AUDIO_DIR="${SUBTAP_SMOKE_AUDIO_DIR:-/Users/qunqing/Downloads/ASR-SRT测试音�
 MODEL_ROOT="${SUBTAP_SMOKE_MODEL_ROOT:-$ROOT/models}"
 TMP_DIR="$(mktemp -d)"
 SMOKE_HOME="$TMP_DIR/home"
+SANDBOX_PROFILE="$TMP_DIR/offline.sb"
+SUBTAP_BIN="${SUBTAP_SMOKE_SUBTAP_BIN:-}"
 
 cleanup() {
     rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
+
+if ! command -v sandbox-exec >/dev/null 2>&1; then
+    echo "[subtap-smoke] macOS sandbox-exec is required for offline acceptance" >&2
+    exit 1
+fi
+
+if [[ -n "$SUBTAP_BIN" && ! -x "$SUBTAP_BIN" ]]; then
+    echo "[subtap-smoke] subtap executable not found: $SUBTAP_BIN" >&2
+    exit 1
+fi
+
+cat > "$SANDBOX_PROFILE" <<'EOF'
+(version 1)
+(allow default)
+(deny network*)
+EOF
 
 if [[ ! -f "$MODEL_ROOT/asr_1.7b/config.json" || ! -f "$MODEL_ROOT/aligner/config.json" ]]; then
     echo "[subtap-smoke] missing local models under: $MODEL_ROOT" >&2
@@ -53,10 +72,6 @@ llm_hotword: false
 translate_to: ""
 EOF
 
-export HTTP_PROXY=http://127.0.0.1:9
-export HTTPS_PROXY=http://127.0.0.1:9
-export ALL_PROXY=http://127.0.0.1:9
-
 run_sample() {
     local input="$1"
     local name="$2"
@@ -66,16 +81,25 @@ run_sample() {
         return 1
     fi
 
-    HOME="$SMOKE_HOME" uv run subtap run "$input" \
-        --local-only \
-        --work-dir "$TMP_DIR/work-$name" \
-        --output-dir "$TMP_DIR/out-$name" \
-        --no-git-check \
-        --no-cleanroom
+    local -a subtap_command
+    if [[ -n "$SUBTAP_BIN" ]]; then
+        subtap_command=("$SUBTAP_BIN")
+    else
+        subtap_command=(uv run subtap)
+    fi
+
+    HOME="$SMOKE_HOME" sandbox-exec -f "$SANDBOX_PROFILE" \
+        "${subtap_command[@]}" run "$input" \
+            --local-only \
+            --work-dir "$TMP_DIR/work-$name" \
+            --output-dir "$TMP_DIR/out-$name" \
+            --no-git-check \
+            --no-cleanroom
 }
 
 run_sample "$AUDIO_DIR/数字测试.mp3" "number"
 run_sample "$AUDIO_DIR/短的演讲音频.wav" "speech"
+run_sample "$AUDIO_DIR/高质量中文语音.mp3" "high-quality-zh"
 
 python3 "$ROOT/scripts/check_srt_delivery.py" "$TMP_DIR"/out-*/*.srt
 
@@ -86,9 +110,10 @@ if [[ -n "$JSON_OUTPUT" ]]; then
   "ok": true,
   "samples": [
     {"name": "number", "input": "$AUDIO_DIR/数字测试.mp3", "output_dir": "$TMP_DIR/out-number"},
-    {"name": "speech", "input": "$AUDIO_DIR/短的演讲音频.wav", "output_dir": "$TMP_DIR/out-speech"}
+    {"name": "speech", "input": "$AUDIO_DIR/短的演讲音频.wav", "output_dir": "$TMP_DIR/out-speech"},
+    {"name": "high-quality-zh", "input": "$AUDIO_DIR/高质量中文语音.mp3", "output_dir": "$TMP_DIR/out-high-quality-zh"}
   ],
-  "output_dirs": ["$TMP_DIR/out-number", "$TMP_DIR/out-speech"],
+  "output_dirs": ["$TMP_DIR/out-number", "$TMP_DIR/out-speech", "$TMP_DIR/out-high-quality-zh"],
   "srt_check": "passed"
 }
 ENDJSON
