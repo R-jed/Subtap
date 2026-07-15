@@ -205,6 +205,160 @@ models:
     assert info["size_bytes"] == 500
 
 
+def test_first_run_view_get_download_plan_includes_asr_and_aligner(tmp_path):
+    from subtap.ui.views.first_run import FirstRunView
+
+    manifest = tmp_path / "manifest.yaml"
+    manifest.write_text("""version: '1'
+models:
+  asr_1.7b:
+    description: quality
+    subdir: asr_1.7b
+    required_files:
+      - name: model.safetensors
+        size_bytes: 700
+  aligner:
+    description: aligner
+    subdir: aligner
+    required_files:
+      - name: model.safetensors
+        size_bytes: 300
+""")
+
+    plan = FirstRunView().get_download_plan(
+        ("asr_1.7b", "aligner"), manifest_path=manifest
+    )
+
+    assert plan["model_names"] == ("asr_1.7b", "aligner")
+    assert plan["size_bytes"] == 1000
+
+
+def test_first_run_view_download_plan_uses_minimum_disk_when_sizes_are_missing(
+    tmp_path,
+):
+    from subtap.ui.views.first_run import FirstRunView
+
+    manifest = tmp_path / "manifest.yaml"
+    manifest.write_text("""version: '1'
+models:
+  asr_0.6b:
+    description: fast
+    subdir: asr_0.6b
+    min_disk_bytes: 900
+    required_files: []
+  aligner:
+    description: aligner
+    subdir: aligner
+    min_disk_bytes: 600
+    required_files: []
+""")
+
+    plan = FirstRunView().get_download_plan(
+        ("asr_0.6b", "aligner"), manifest_path=manifest
+    )
+
+    assert plan["size_bytes"] == 1500
+
+
+def test_first_run_view_download_plan_counts_only_missing_bytes(tmp_path):
+    import hashlib
+
+    from subtap.schemas.config import SubtapConfig
+    from subtap.ui.views.first_run import FirstRunView
+
+    manifest = tmp_path / "manifest.yaml"
+    manifest.write_text(f"""version: '1'
+models:
+  asr_1.7b:
+    description: quality
+    subdir: asr_1.7b
+    required_files:
+      - name: model.safetensors
+        size_bytes: 700
+        sha256: {hashlib.sha256(b'x' * 700).hexdigest()}
+  aligner:
+    description: aligner
+    subdir: aligner
+    required_files:
+      - name: model.safetensors
+        size_bytes: 300
+""")
+    config = SubtapConfig()
+    config.models.root = str(tmp_path / "models")
+    asr_file = tmp_path / "models" / "asr_1.7b" / "model.safetensors"
+    aligner_file = tmp_path / "models" / "aligner" / "model.safetensors"
+    asr_file.parent.mkdir(parents=True)
+    aligner_file.parent.mkdir(parents=True)
+    asr_file.write_bytes(b"x" * 700)
+    aligner_file.write_bytes(b"x" * 100)
+
+    plan = FirstRunView().get_download_plan(
+        ("asr_1.7b", "aligner"), manifest_path=manifest, config=config
+    )
+
+    assert plan["size_bytes"] == 1000
+    assert plan["download_bytes"] == 200
+    assert plan["existing_bytes_by_file"] == {
+        ("asr_1.7b", "model.safetensors"): 700,
+        ("aligner", "model.safetensors"): 100,
+    }
+    assert plan["verified_files"] == {("asr_1.7b", "model.safetensors")}
+    assert plan["target_dir"] == str(tmp_path / "models")
+
+
+def test_first_run_view_counts_full_size_corrupt_file_as_missing(tmp_path):
+    import hashlib
+
+    from subtap.schemas.config import SubtapConfig
+    from subtap.ui.views.first_run import FirstRunView
+
+    expected_content = b"good"
+    manifest = tmp_path / "manifest.yaml"
+    manifest.write_text(f"""version: '1'
+models:
+  asr_0.6b:
+    description: fast
+    subdir: asr_0.6b
+    required_files:
+      - name: model.bin
+        size_bytes: {len(expected_content)}
+        sha256: {hashlib.sha256(expected_content).hexdigest()}
+""")
+    config = SubtapConfig()
+    config.models.root = str(tmp_path / "models")
+    corrupt = tmp_path / "models" / "asr_0.6b" / "model.bin"
+    corrupt.parent.mkdir(parents=True)
+    corrupt.write_bytes(b"baad")
+
+    plan = FirstRunView().get_download_plan(
+        ("asr_0.6b",), manifest_path=manifest, config=config
+    )
+
+    assert plan["download_bytes"] == len(expected_content)
+    assert plan["existing_bytes_by_file"] == {}
+
+
+def test_first_run_download_skips_models_that_already_passed_hash_check(monkeypatch):
+    from subtap.schemas.config import SubtapConfig
+    from subtap.ui.views.first_run import FirstRunView
+
+    downloaded = []
+    monkeypatch.setattr(
+        "subtap.core.models.ModelVerifier.verify",
+        lambda self, name, require_hash=False, **kwargs: {
+            "status": "ok" if name == "asr_0.6b" else "missing"
+        },
+    )
+    monkeypatch.setattr(
+        "subtap.core.models.ModelDownloader.download",
+        lambda self, name, **kwargs: downloaded.append(name),
+    )
+
+    FirstRunView().download_required_models(SubtapConfig(), source="hf")
+
+    assert downloaded == ["aligner"]
+
+
 def test_first_run_offline_self_check_rejects_missing_model(monkeypatch):
     from subtap.schemas.config import SubtapConfig
     from subtap.ui.views.first_run import FirstRunView
@@ -228,7 +382,7 @@ def test_first_run_offline_self_check_rejects_corrupt_model(monkeypatch):
     )
     monkeypatch.setattr(
         "subtap.core.models.ModelVerifier.verify",
-        lambda self, name, require_hash=False: {"status": "corrupt"},
+        lambda self, name, require_hash=False, **kwargs: {"status": "corrupt"},
     )
 
     import pytest

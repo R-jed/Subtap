@@ -335,7 +335,7 @@ def doctor(
         typer.echo("\n▸ 模型状态")
     try:
         from subtap.schemas.config import load_config
-        from subtap.core.models import ModelRegistry
+        from subtap.core.models import ModelRegistry, required_model_names
 
         config = load_config(config_path)
         report["runtime"] = {
@@ -382,7 +382,7 @@ def doctor(
             typer.echo(f"  隐私：{privacy_text}")
             typer.echo("  输出：默认写入 ./output，精对齐生成 final.*")
 
-        required_models = {config.asr.model, config.align.model}
+        required_models = set(required_model_names(config))
         registry = ModelRegistry(config)
         for ms in registry.status():
             required = ms.name in required_models

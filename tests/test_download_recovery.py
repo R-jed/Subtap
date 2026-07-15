@@ -153,8 +153,8 @@ def test_download_sha256_mismatch_triggers_retry(tmp_path):
         assert mock_get_sha256.call_count == len(info["required_files"])
 
 
-def test_download_cleans_model_dir_on_failure(tmp_path):
-    """下载失败后清理 model_dir（生产代码行为：shutil.rmtree）。"""
+def test_download_preserves_partial_model_dir_for_resume(tmp_path):
+    """网络失败后保留已下载内容，让下一次下载可以断点续传。"""
     downloader = _make_downloader(tmp_path)
     model_name = "asr_0.6b"
     info = MODEL_REGISTRY[model_name]
@@ -169,7 +169,7 @@ def test_download_cleans_model_dir_on_failure(tmp_path):
         with pytest.raises(IOError, match="网络错误"):
             downloader.download(model_name, max_retries=1)
 
-    assert not model_dir.exists()
+    assert model_dir.exists()
 
 
 def test_download_success_returns_model_dir(tmp_path):
@@ -199,3 +199,142 @@ def test_download_success_returns_model_dir(tmp_path):
 
     assert result == expected_dir
     assert expected_dir.exists()
+
+
+def test_download_retry_skips_files_that_already_match_hash(tmp_path):
+    """重试部分模型时不再次请求已完成并通过哈希的文件。"""
+    downloader = _make_downloader(tmp_path)
+    model_name = "asr_0.6b"
+    info = MODEL_REGISTRY[model_name]
+    model_dir = downloader.root / info["subdir"]
+    model_dir.mkdir(parents=True)
+    completed = model_dir / info["required_files"][0]
+    completed.write_bytes(b"complete")
+    requested = []
+
+    def fake_download(url, dest, progress=None):
+        requested.append(dest.name)
+        dest.write_bytes(b"downloaded")
+
+    with (
+        patch.object(
+            downloader, "_download_file_with_resume", side_effect=fake_download
+        ),
+        patch("subtap.core.models.ModelRegistry.get_sha256", return_value="expected"),
+        patch("subtap.core.models.ModelRegistry.get_size_bytes", return_value=0),
+        patch.object(
+            downloader,
+            "_verify_sha256",
+            side_effect=lambda path, expected, **kwargs: path.exists(),
+        ),
+    ):
+        downloader.download(model_name, max_retries=1)
+
+    assert completed.name not in requested
+
+
+def test_hash_failure_preserves_other_verified_files(tmp_path):
+    """单个文件损坏时，只删除坏文件，不破坏已完成文件。"""
+    downloader = _make_downloader(tmp_path)
+    model_name = "asr_0.6b"
+    info = MODEL_REGISTRY[model_name]
+    model_dir = downloader.root / info["subdir"]
+    model_dir.mkdir(parents=True)
+    completed = model_dir / info["required_files"][0]
+    damaged = model_dir / info["required_files"][1]
+    completed.write_bytes(b"verified")
+
+    def fake_download(url, dest, progress=None):
+        dest.write_bytes(b"corrupt")
+
+    def fake_verify(path, expected, *, cancelled=None):
+        return path == completed and path.read_bytes() == b"verified"
+
+    with (
+        patch.object(
+            downloader, "_download_file_with_resume", side_effect=fake_download
+        ),
+        patch("subtap.core.models.ModelRegistry.get_sha256", return_value="expected"),
+        patch("subtap.core.models.ModelRegistry.get_size_bytes", return_value=0),
+        patch.object(downloader, "_verify_sha256", side_effect=fake_verify),
+    ):
+        with pytest.raises(RuntimeError, match="SHA256"):
+            downloader.download(model_name, max_retries=1)
+
+    assert completed.read_bytes() == b"verified"
+    assert not damaged.exists()
+
+
+def test_full_size_corrupt_file_is_replaced_instead_of_resumed(tmp_path):
+    """完整大小但哈希错误的文件必须删掉重下，不能从 EOF 续传。"""
+    correct = b"good"
+    manifest = tmp_path / "manifest.yaml"
+    manifest.write_text(f"""version: '1'
+models:
+  test:
+    description: test
+    subdir: test
+    hf_repo: owner/repo
+    required_files:
+      - name: model.bin
+        size_bytes: {len(correct)}
+        sha256: {hashlib.sha256(correct).hexdigest()}
+""")
+    config = SubtapConfig()
+    config.models.root = str(tmp_path / "models")
+    config.models.manifest_path = str(manifest)
+    downloader = ModelDownloader(config)
+    dest = tmp_path / "models" / "test" / "model.bin"
+    dest.parent.mkdir(parents=True)
+    dest.write_bytes(b"baad")
+
+    def fresh_download(url, path, progress=None):
+        assert not path.exists()
+        path.write_bytes(correct)
+
+    with patch.object(
+        downloader, "_download_file_with_resume", side_effect=fresh_download
+    ):
+        downloader.download("test", max_retries=1)
+
+    assert dest.read_bytes() == correct
+
+
+def test_download_reuses_hash_result_from_current_setup_scan(tmp_path):
+    """同一次首次安装扫描已验证的文件，不应在下载阶段重复哈希。"""
+    content = b"good"
+    manifest = tmp_path / "manifest.yaml"
+    manifest.write_text(f"""version: '1'
+models:
+  test:
+    description: test
+    subdir: test
+    hf_repo: owner/repo
+    required_files:
+      - name: model.bin
+        size_bytes: {len(content)}
+        sha256: {hashlib.sha256(content).hexdigest()}
+""")
+    config = SubtapConfig()
+    config.models.root = str(tmp_path / "models")
+    config.models.manifest_path = str(manifest)
+    downloader = ModelDownloader(config)
+    dest = tmp_path / "models" / "test" / "model.bin"
+    dest.parent.mkdir(parents=True)
+    dest.write_bytes(content)
+
+    with (
+        patch.object(
+            downloader,
+            "_verify_sha256",
+            side_effect=AssertionError("不应重复哈希"),
+        ),
+        patch.object(
+            downloader,
+            "_download_file_with_resume",
+            side_effect=AssertionError("不应重复下载"),
+        ),
+    ):
+        downloader.download("test", verified_files={"model.bin"})
+
+    assert dest.read_bytes() == content

@@ -1,4 +1,6 @@
 # tests/test_config_manager.py
+import pytest
+
 from subtap.ui.config_manager import ConfigManager
 
 
@@ -13,6 +15,28 @@ class TestConfigManager:
     def test_load_missing_config_returns_defaults(self, tmp_path):
         mgr = ConfigManager(tmp_path / "missing.yaml")
         assert mgr.get("mode") is None
+
+    def test_invalid_config_fails_without_overwriting_user_file(self, tmp_path):
+        config_file = tmp_path / "config.yaml"
+        invalid = "asr: [broken"
+        config_file.write_text(invalid, encoding="utf-8")
+
+        with pytest.raises(RuntimeError, match="配置文件读取失败"):
+            ConfigManager(config_file)
+
+        assert config_file.read_text(encoding="utf-8") == invalid
+
+    @pytest.mark.parametrize("invalid", ["- item\n", "scalar\n"])
+    def test_non_mapping_config_fails_without_overwriting_user_file(
+        self, tmp_path, invalid
+    ):
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(invalid, encoding="utf-8")
+
+        with pytest.raises(RuntimeError, match="配置文件读取失败"):
+            ConfigManager(config_file)
+
+        assert config_file.read_text(encoding="utf-8") == invalid
 
     def test_set_and_save(self, tmp_path):
         config_file = tmp_path / "config.yaml"

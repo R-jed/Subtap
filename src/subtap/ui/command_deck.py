@@ -119,6 +119,14 @@ try:
                 build_root_command_deck_renderable(self.selected_index), id="deck"
             )
 
+        def on_mount(self) -> None:
+            from subtap.ui.views.home import HomeView
+
+            if HomeView().is_first_run():
+                from subtap.ui.textual_first_run import FirstRunScreen
+
+                self.push_screen(FirstRunScreen())
+
         def action_cursor_down(self) -> None:
             self.selected_index = (self.selected_index + 1) % len(OPTIONS)
             self._refresh_deck()

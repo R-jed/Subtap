@@ -12,6 +12,7 @@ from subtap.core.models import (
     ModelVerifier,
     ModelRemover,
     MODEL_REGISTRY,
+    required_model_names,
 )
 from subtap.core.manifest import get_manifest_path, load_manifest
 from subtap.schemas.config import SubtapConfig
@@ -67,6 +68,36 @@ def test_model_registry_has_expected_models():
     """Only the three supported 8-bit MLX models require downloads."""
     assert set(MODEL_REGISTRY) == {"asr_0.6b", "asr_1.7b", "aligner"}
     assert "required_files" in MODEL_REGISTRY["asr_0.6b"]
+
+
+def test_required_model_names_follow_selected_runtime_config():
+    """Offline readiness requires the selected ASR and the configured aligner."""
+    config = SubtapConfig()
+    config.asr.model = "asr_1.7b"
+
+    assert required_model_names(config) == ("asr_1.7b", "aligner")
+
+
+def test_required_model_names_respect_custom_manifest(tmp_path):
+    manifest = tmp_path / "manifest.yaml"
+    manifest.write_text(
+        """version: '1'
+models:
+  custom_asr:
+    description: custom ASR
+    subdir: custom_asr
+  custom_aligner:
+    description: custom aligner
+    subdir: custom_aligner
+""",
+        encoding="utf-8",
+    )
+    config = SubtapConfig()
+    config.models.manifest_path = str(manifest)
+    config.asr.model = "custom_asr"
+    config.align.model = "custom_aligner"
+
+    assert required_model_names(config) == ("custom_asr", "custom_aligner")
 
 
 def test_default_qwen_models_are_complete_8bit_mlx_entries():
@@ -203,7 +234,7 @@ def test_downloader_download_calls_urlopen(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
         "subtap.core.models.ModelRegistry.get_sha256", lambda *args: "0" * 64
     )
-    monkeypatch.setattr(ModelDownloader, "_verify_sha256", lambda *args: True)
+    monkeypatch.setattr(ModelDownloader, "_verify_sha256", lambda *args, **kwargs: True)
     result = downloader.download("asr_0.6b")
     assert result.name == "asr_0.6b"
     assert call_count == 5  # config.json + model.safetensors + tokenizer files
@@ -217,8 +248,8 @@ def test_downloader_unknown_model(tmp_path: Path):
         downloader.download("nonexistent")
 
 
-def test_download_cleans_up_on_failure(tmp_path: Path, monkeypatch):
-    """Download removes model dir when a file download fails mid-way."""
+def test_download_preserves_partial_files_on_failure(tmp_path: Path, monkeypatch):
+    """Download keeps partial files so a later retry can resume."""
     from unittest.mock import MagicMock
     import urllib.error
 
@@ -253,13 +284,13 @@ def test_download_cleans_up_on_failure(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
         "subtap.core.models.ModelRegistry.get_sha256", lambda *args: "0" * 64
     )
-    monkeypatch.setattr(ModelDownloader, "_verify_sha256", lambda *args: True)
+    monkeypatch.setattr(ModelDownloader, "_verify_sha256", lambda *args, **kwargs: True)
 
     model_dir = tmp_path / "models" / "asr_0.6b"
     with pytest.raises(urllib.error.URLError):
         downloader.download("asr_0.6b")
 
-    assert not model_dir.exists(), "失败后应清理残留的模型目录"
+    assert model_dir.exists(), "失败后应保留残留文件用于断点续传"
 
 
 # ── Verifier tests ──
@@ -399,7 +430,7 @@ def test_cli_models_install_shows_path(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(
         "subtap.core.models.ModelRegistry.get_sha256", lambda *args: "0" * 64
     )
-    monkeypatch.setattr(ModelDownloader, "_verify_sha256", lambda *args: True)
+    monkeypatch.setattr(ModelDownloader, "_verify_sha256", lambda *args, **kwargs: True)
     runner = CliRunner()
     result = runner.invoke(app, ["models", "install", "asr_0.6b"])
     assert result.exit_code == 0

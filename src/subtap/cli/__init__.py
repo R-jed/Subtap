@@ -229,9 +229,9 @@ def observe(
 @app.command()
 def tui() -> None:
     """启动交互式终端界面"""
-    from subtap.ui.tui_app import TuiApp
+    from subtap.ui.command_deck import CommandDeckApp
 
-    app = TuiApp()
+    app = CommandDeckApp()
     app.run()
 
 

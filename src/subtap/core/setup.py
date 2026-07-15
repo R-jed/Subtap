@@ -99,7 +99,12 @@ class SetupWizard:
             True if all required models downloaded successfully.
         """
         from subtap.schemas.config import load_config
-        from subtap.core.models import ModelDownloader, MODEL_REGISTRY
+        from subtap.core.models import (
+            MODEL_REGISTRY,
+            ModelDownloader,
+            ModelRegistry,
+            required_model_names,
+        )
 
         config = load_config(Path.home() / ".subtap" / "config.yaml")
         if endpoint:
@@ -163,9 +168,13 @@ class SetupWizard:
 
         typer.echo(f"  ✓ {selected} 连通正常")
 
-        targets = ["asr_0.6b", "aligner"]
+        targets = list(required_model_names(config))
         if include_optional:
-            targets.append("asr_1.7b")
+            targets.extend(
+                name
+                for name in ModelRegistry(config).list_available()
+                if name not in targets
+            )
         results = [self._download_model(downloader, name, selected) for name in targets]
         return all(results)
 

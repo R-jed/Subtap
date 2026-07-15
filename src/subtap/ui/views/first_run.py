@@ -8,6 +8,8 @@ import os
 import math
 from pathlib import Path
 
+from subtap.schemas.config import SubtapConfig
+
 
 class FirstRunView:
     """7-step initialization wizard for first launch."""
@@ -60,34 +62,136 @@ class FirstRunView:
         self, model_name: str, *, manifest_path: Path | None = None
     ) -> dict:
         """Get download size and estimated time for a model."""
-        from subtap.core.manifest import get_manifest_path, load_manifest
+        plan = self.get_download_plan((model_name,), manifest_path=manifest_path)
+        return {**plan, "model_name": model_name}
 
-        path = manifest_path or get_manifest_path(None)
+    def get_download_plan(
+        self,
+        model_names: tuple[str, ...],
+        *,
+        manifest_path: Path | None = None,
+        config: SubtapConfig | None = None,
+        cancelled=None,
+    ) -> dict:
+        """Get total and remaining download sizes for an offline runtime."""
+        from subtap.core.manifest import get_manifest_path, load_manifest
+        from subtap.core.models import ModelRegistry, verify_file_sha256
+
+        path = manifest_path or get_manifest_path(config)
         manifest = load_manifest(path)
+        model_root = (
+            ModelRegistry(config).root
+            if config is not None
+            else Path.home() / ".subtap" / "models"
+        )
+        size = 0
+        download_bytes = 0
+        existing_bytes_by_file: dict[tuple[str, str], int] = {}
+        verified_files: set[tuple[str, str]] = set()
         try:
-            entry = manifest.models[model_name]
-        except KeyError as exc:
-            raise ValueError(f"未知模型：{model_name}") from exc
-        size = sum(file.size_bytes for file in entry.required_files)
-        if size <= 0:
-            size = entry.min_disk_bytes
+            for model_name in model_names:
+                model = manifest.models[model_name]
+                declared_size = sum(file.size_bytes for file in model.required_files)
+                model_size = declared_size or model.min_disk_bytes
+                size += model_size
+                if config is None or not declared_size:
+                    download_bytes += model_size
+                    continue
+                for file in model.required_files:
+                    expected = file.size_bytes
+                    path = model_root / model.subdir / file.name
+                    existing = (
+                        min(path.stat().st_size, expected) if path.exists() else 0
+                    )
+                    if expected > 0 and existing == expected:
+                        if file.sha256 and verify_file_sha256(
+                            path, file.sha256, cancelled=cancelled
+                        ):
+                            verified_files.add((model_name, file.name))
+                        else:
+                            existing = 0
+                    if existing:
+                        existing_bytes_by_file[(model_name, file.name)] = existing
+                    download_bytes += expected - existing
+        except KeyError as e:
+            raise ValueError(f"未知模型：{e.args[0]}") from e
         return {
-            "model_name": model_name,
+            "model_names": model_names,
             "size_bytes": size,
+            "download_bytes": download_bytes,
+            "existing_bytes_by_file": existing_bytes_by_file,
+            "verified_files": verified_files,
             "size_display": f"{size / (1024**3):.1f} GB",
-            "estimated_seconds": math.ceil(size / (10 * 1024 * 1024)),
-            "target_dir": str(Path.home() / ".subtap" / "models"),
+            "estimated_seconds": math.ceil(download_bytes / (10 * 1024 * 1024)),
+            "target_dir": str(model_root),
         }
 
-    def run_offline_self_check(self, config, model_name: str) -> None:
+    def download_required_models(
+        self,
+        config,
+        *,
+        source: str,
+        progress=None,
+        cancelled=None,
+        verified_files: set[tuple[str, str]] | None = None,
+    ) -> None:
+        """Download missing runtime models while preserving verified completed ones."""
+        from subtap.core.models import (
+            DownloadCancelled,
+            ModelDownloader,
+            ModelVerifier,
+            required_model_names,
+        )
+
+        downloader = ModelDownloader(config)
+        verifier = ModelVerifier(config)
+        for model_name in required_model_names(config):
+            if verified_files is None and (
+                verifier.verify(model_name, require_hash=True, cancelled=cancelled)[
+                    "status"
+                ]
+                == "ok"
+            ):
+                continue
+
+            def on_progress(filename, downloaded, total, *, _model=model_name):
+                if cancelled is not None and cancelled():
+                    raise DownloadCancelled("模型下载已取消，可稍后继续")
+                if progress is not None:
+                    progress(_model, filename, downloaded, total)
+
+            downloader.download(
+                model_name,
+                source=source,
+                progress=on_progress,
+                cancelled=cancelled,
+                verified_files={
+                    filename
+                    for verified_model, filename in (verified_files or set())
+                    if verified_model == model_name
+                },
+            )
+
+    def run_offline_self_check(
+        self, config, model_name: str, *, cancelled=None
+    ) -> None:
         """Verify the downloaded model is complete before finishing setup."""
         from subtap.core.models import ModelVerifier
 
-        result = ModelVerifier(config).verify(model_name, require_hash=True)
+        result = ModelVerifier(config).verify(
+            model_name, require_hash=True, cancelled=cancelled
+        )
         if result["status"] != "ok":
             raise RuntimeError(
                 f"离线自检失败：模型 {model_name} 状态为 {result['status']}"
             )
+
+    def run_required_offline_self_check(self, config, *, cancelled=None) -> None:
+        """Verify every model required by the selected offline runtime."""
+        from subtap.core.models import required_model_names
+
+        for model_name in required_model_names(config):
+            self.run_offline_self_check(config, model_name, cancelled=cancelled)
 
     @staticmethod
     def failure_actions() -> tuple[str, str, str]:

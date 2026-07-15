@@ -23,10 +23,15 @@ class ConfigManager:
 
             with open(self.path, "r", encoding="utf-8") as f:
                 result = yaml.safe_load(f)
-                self._data = result if isinstance(result, dict) else {}
+                if result is None:
+                    self._data = {}
+                elif isinstance(result, dict):
+                    self._data = result
+                else:
+                    raise ValueError("配置根节点必须是键值映射")
         except Exception as e:
-            logger.warning("Failed to load config from %s: %s", self.path, e)
-            self._data = {}
+            logger.error("Failed to load config from %s: %s", self.path, e)
+            raise RuntimeError(f"配置文件读取失败：{self.path}：{e}") from e
 
     def get(self, key: str, default: Any = None) -> Any:
         parts = key.split(".")

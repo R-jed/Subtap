@@ -102,9 +102,12 @@ def test_run_init_failure():
 
 def test_setup_model_selection_default():
     """Test default downloads asr_0.6b and aligner."""
+    from subtap.schemas.config import SubtapConfig
+
     wizard = SetupWizard()
     with (
         patch.object(wizard, "_download_model") as mock_download,
+        patch("subtap.schemas.config.load_config", return_value=SubtapConfig()),
         patch(
             "subtap.core.models.ModelDownloader.check_connectivity", return_value=True
         ),
@@ -120,9 +123,12 @@ def test_setup_model_selection_default():
 
 def test_setup_model_selection_include_optional():
     """Test include_optional downloads all models."""
+    from subtap.schemas.config import SubtapConfig
+
     wizard = SetupWizard()
     with (
         patch.object(wizard, "_download_model") as mock_download,
+        patch("subtap.schemas.config.load_config", return_value=SubtapConfig()),
         patch(
             "subtap.core.models.ModelDownloader.check_connectivity", return_value=True
         ),
@@ -135,6 +141,29 @@ def test_setup_model_selection_include_optional():
         assert "aligner" in calls
         assert "asr_0.6b" in calls
         assert "asr_1.7b" in calls
+
+
+def test_setup_include_optional_installs_all_models_when_quality_is_selected():
+    """Optional setup keeps the fast ASR available beside the selected quality ASR."""
+    from subtap.schemas.config import SubtapConfig
+
+    config = SubtapConfig()
+    config.asr.model = "asr_1.7b"
+    wizard = SetupWizard()
+    with (
+        patch.object(wizard, "_download_model", return_value=True) as mock_download,
+        patch("subtap.schemas.config.load_config", return_value=config),
+        patch(
+            "subtap.core.models.ModelDownloader.check_connectivity", return_value=True
+        ),
+    ):
+        wizard.setup_models(source="hf", include_optional=True)
+
+    assert {call.args[1] for call in mock_download.call_args_list} == {
+        "asr_0.6b",
+        "asr_1.7b",
+        "aligner",
+    }
 
 
 def test_setup_model_download_partial_failure():
