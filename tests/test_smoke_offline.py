@@ -7,6 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import threading
 
 import pytest
@@ -33,6 +34,13 @@ def test_smoke_offline_disables_network():
 def test_smoke_offline_checks_srt_delivery():
     script = Path("scripts/smoke_offline.sh").read_text()
     assert "check_srt_delivery" in script, "脚本必须检查 SRT 交付"
+
+
+def test_smoke_offline_checks_reviewed_subtitle_regression():
+    script = Path("scripts/smoke_offline.sh").read_text()
+
+    assert "SUBTAP_SMOKE_REFERENCE_SRT" in script
+    assert "check_srt_regression.py" in script
 
 
 def test_smoke_offline_runs_1_7b_high_quality_chinese_sample():
@@ -67,6 +75,13 @@ def test_smoke_offline_executes_all_samples_without_network(tmp_path):
         (model_dir / "config.json").write_text("{}", encoding="utf-8")
 
     calls = tmp_path / "calls.log"
+    reviewed = tmp_path / "reviewed.srt"
+    reviewed.write_text(
+        "1\n00:00:00,000 --> 00:00:01,000\n测试字幕\n",
+        encoding="utf-8",
+    )
+    required = tmp_path / "required.txt"
+    required.write_text("测试字幕\n", encoding="utf-8")
 
     class ProbeHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
@@ -116,7 +131,10 @@ printf '1\\n00:00:00,000 --> 00:00:01,000\\n测试字幕\\n' > "$output_dir/resu
                 "PROBE_URL": f"http://127.0.0.1:{probe.server_port}",
                 "SUBTAP_SMOKE_AUDIO_DIR": str(audio_dir),
                 "SUBTAP_SMOKE_MODEL_ROOT": str(model_root),
+                "SUBTAP_SMOKE_REFERENCE_SRT": str(reviewed),
+                "SUBTAP_SMOKE_REQUIRED_CUES": str(required),
                 "SUBTAP_SMOKE_SUBTAP_BIN": str(fake_subtap),
+                "SUBTAP_SMOKE_PYTHON_BIN": sys.executable,
             },
             text=True,
             capture_output=True,
@@ -132,3 +150,4 @@ printf '1\\n00:00:00,000 --> 00:00:01,000\\n测试字幕\\n' > "$output_dir/resu
     assert len(invocations) == 3
     assert all("--local-only" in invocation for invocation in invocations)
     assert any("高质量中文语音.mp3" in invocation for invocation in invocations)
+    assert "CER=0.0000" in result.stdout

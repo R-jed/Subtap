@@ -8,7 +8,10 @@
 # Environment:
 #   SUBTAP_SMOKE_AUDIO_DIR  — override test audio directory
 #   SUBTAP_SMOKE_MODEL_ROOT — override local model root
+#   SUBTAP_SMOKE_REFERENCE_SRT — manually reviewed high-quality Chinese SRT
+#   SUBTAP_SMOKE_REQUIRED_CUES — override required reviewed cue list
 #   SUBTAP_SMOKE_SUBTAP_BIN — run an installed subtap executable instead of uv
+#   SUBTAP_SMOKE_PYTHON_BIN — override Python used by the regression checker
 #   SUBTAP_SMOKE_JSON       — write structured JSON result to this path
 
 set -euo pipefail
@@ -24,6 +27,8 @@ TMP_DIR="$(mktemp -d)"
 SMOKE_HOME="$TMP_DIR/home"
 SANDBOX_PROFILE="$TMP_DIR/offline.sb"
 SUBTAP_BIN="${SUBTAP_SMOKE_SUBTAP_BIN:-}"
+REFERENCE_SRT="${SUBTAP_SMOKE_REFERENCE_SRT:-}"
+REQUIRED_CUES="${SUBTAP_SMOKE_REQUIRED_CUES:-$ROOT/tests/fixtures/high_quality_zh_required_cues.txt}"
 
 cleanup() {
     rm -rf "$TMP_DIR"
@@ -37,6 +42,16 @@ fi
 
 if [[ -n "$SUBTAP_BIN" && ! -x "$SUBTAP_BIN" ]]; then
     echo "[subtap-smoke] subtap executable not found: $SUBTAP_BIN" >&2
+    exit 1
+fi
+
+if [[ -z "$REFERENCE_SRT" || ! -f "$REFERENCE_SRT" ]]; then
+    echo "[subtap-smoke] SUBTAP_SMOKE_REFERENCE_SRT must point to a reviewed SRT" >&2
+    exit 1
+fi
+
+if [[ ! -f "$REQUIRED_CUES" ]]; then
+    echo "[subtap-smoke] required cue list not found: $REQUIRED_CUES" >&2
     exit 1
 fi
 
@@ -101,7 +116,27 @@ run_sample "$AUDIO_DIR/数字测试.mp3" "number"
 run_sample "$AUDIO_DIR/短的演讲音频.wav" "speech"
 run_sample "$AUDIO_DIR/高质量中文语音.mp3" "high-quality-zh"
 
-python3 "$ROOT/scripts/check_srt_delivery.py" "$TMP_DIR"/out-*/*.srt
+if [[ -n "${SUBTAP_SMOKE_PYTHON_BIN:-}" ]]; then
+    SMOKE_PYTHON=("$SUBTAP_SMOKE_PYTHON_BIN")
+elif [[ -n "$SUBTAP_BIN" ]]; then
+    SMOKE_PYTHON=("$(dirname "$SUBTAP_BIN")/python")
+else
+    SMOKE_PYTHON=(uv run python)
+fi
+HOME="$SMOKE_HOME" sandbox-exec -f "$SANDBOX_PROFILE" \
+    "${SMOKE_PYTHON[@]}" "$ROOT/scripts/check_srt_delivery.py" \
+        "$TMP_DIR"/out-*/*.srt
+
+QUALITY_SRT="$(find "$TMP_DIR/out-high-quality-zh" -maxdepth 1 -name '*.srt' -print -quit)"
+if [[ -z "$QUALITY_SRT" ]]; then
+    echo "[subtap-smoke] high-quality Chinese SRT was not generated" >&2
+    exit 1
+fi
+
+HOME="$SMOKE_HOME" sandbox-exec -f "$SANDBOX_PROFILE" \
+    "${SMOKE_PYTHON[@]}" "$ROOT/scripts/check_srt_regression.py" \
+        "$QUALITY_SRT" "$REFERENCE_SRT" \
+        --required-cues "$REQUIRED_CUES"
 
 JSON_OUTPUT="${SUBTAP_SMOKE_JSON:-}"
 if [[ -n "$JSON_OUTPUT" ]]; then

@@ -38,6 +38,34 @@ def test_rejects_zero_duration_cues():
     assert report.zero_duration == 1
 
 
+def test_rejects_duplicate_or_nonsequential_cue_numbers():
+    srt = """1
+00:00:01,000 --> 00:00:02,000
+第一句
+
+1
+00:00:02,100 --> 00:00:03,000
+第二句
+"""
+
+    report = validate_srt_delivery(srt)
+
+    assert report.ok is False
+    assert report.parse_errors == 1
+
+
+def test_rejects_cue_without_text():
+    srt = """1
+00:00:01,000 --> 00:00:02,000
+
+"""
+
+    report = validate_srt_delivery(srt)
+
+    assert report.ok is False
+    assert report.parse_errors == 1
+
+
 def test_reports_readability_without_blocking():
     srt = """1
 00:00:01,000 --> 00:00:02,000
