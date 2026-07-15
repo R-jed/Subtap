@@ -584,7 +584,7 @@ def test_run_full_pipeline_with_align(tmp_path, monkeypatch):
         mode="online",
         output=SimpleNamespace(
             timestamp=True,
-            generate_metrics=True,
+            generate_metrics=False,
             subtitle_punctuation=False,
             subtitle_language="zh",
             max_chars=25,
@@ -692,7 +692,7 @@ def test_run_enhance_local_passes_clean_local_to_pipeline(tmp_path, monkeypatch)
         mode="online",
         output=SimpleNamespace(
             timestamp=True,
-            generate_metrics=True,
+            generate_metrics=False,
             subtitle_punctuation=False,
             subtitle_language="zh",
             max_chars=25,

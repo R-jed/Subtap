@@ -22,6 +22,7 @@ def test_tui_performance_panel_state_updates():
             "align_runtime_sec": 2.0,
             "enhancement_runtime_sec": 1.0,
             "slow_chunks": [{"chunk_id": 1}],
+            "chunk_timing_available": True,
             "asr_model": "asr_0.6b",
             "quantization": "q8",
         }
@@ -31,3 +32,17 @@ def test_tui_performance_panel_state_updates():
     assert dashboard.performance_state["slow_chunks_total"] == 1
     assert dashboard.performance_state["model"] == "asr_0.6b"
     assert dashboard.performance_state["quantization"] == "q8"
+
+
+def test_tui_marks_uncollected_chunk_timings_as_unknown():
+    bus = EventBus()
+    dashboard = PipelineDashboard(bus, PipelineProfiler(bus))
+
+    dashboard.update_performance_metrics(
+        {
+            "slow_chunks": [],
+            "chunk_timing_available": False,
+        }
+    )
+
+    assert dashboard.performance_state["slow_chunks_total"] is None

@@ -89,6 +89,8 @@ class StatsPanel(Static):
         preview = str(streaming.get("preview") or "")
         if len(preview) > 28:
             preview = preview[:28] + "..."
+        slow_chunks = performance.get("slow_chunks_total")
+        slow = "未采集" if slow_chunks is None else str(int(str(slow_chunks)))
         self.update(
             "候选字幕：{candidate}  已对齐：{aligned}\n"
             "RTF：{rtf:.2f}  慢速片段：{slow}\n"
@@ -96,7 +98,7 @@ class StatsPanel(Static):
                 candidate=int(str(streaming.get("candidate_count") or 0)),
                 aligned=int(str(streaming.get("aligned_count") or 0)),
                 rtf=float(str(performance.get("rtf") or 0.0)),
-                slow=int(str(performance.get("slow_chunks_total") or 0)),
+                slow=slow,
                 preview=preview or "暂无",
             )
         )
@@ -125,7 +127,7 @@ class PipelineDashboard(App):
             "asr_runtime_sec": 0.0,
             "align_runtime_sec": 0.0,
             "enhancement_runtime_sec": 0.0,
-            "slow_chunks_total": 0,
+            "slow_chunks_total": None,
             "model": "未知",
             "quantization": "未知",
         }
@@ -244,7 +246,11 @@ class PipelineDashboard(App):
                 "asr_runtime_sec": metrics.get("asr_runtime_sec", 0.0),
                 "align_runtime_sec": metrics.get("align_runtime_sec", 0.0),
                 "enhancement_runtime_sec": metrics.get("enhancement_runtime_sec", 0.0),
-                "slow_chunks_total": len(metrics.get("slow_chunks", [])),
+                "slow_chunks_total": (
+                    len(metrics.get("slow_chunks", []))
+                    if metrics.get("chunk_timing_available", True)
+                    else None
+                ),
                 "model": metrics.get("asr_model", "未知"),
                 "quantization": metrics.get("quantization", "未知"),
             }

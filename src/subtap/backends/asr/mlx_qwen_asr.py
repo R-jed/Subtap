@@ -53,6 +53,10 @@ class MLXQwenASR:
                 "Install: pip install mlx-audio"
             )
 
+    def load_model(self) -> None:
+        """Load the model explicitly so pipeline metrics can time it."""
+        self._load_model()
+
     def _build_hotword_prompt(self, hotwords: list[str]) -> str | None:
         """Build system_prompt from hotword list for ASR attention biasing."""
         if not hotwords:

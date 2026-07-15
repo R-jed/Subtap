@@ -78,19 +78,24 @@ def _apply_cli_overrides(
 
 def _count_jsonl(path: Path) -> int:
     """统计 JSONL 文件行数。"""
-    if not path.exists():
-        return 0
-    return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line)
-
-
-def _audio_duration_sec(path: Path) -> float:
-    """获取音频时长（秒）。"""
-    if not path.exists():
-        return 0.0
-    try:
-        return float(json.loads(path.read_text(encoding="utf-8")).get("duration", 0))
-    except Exception:
-        return 0.0
+    if not path.is_file():
+        raise FileNotFoundError(f"Required pipeline artifact not found: {path}")
+    count = 0
+    for line_number, line in enumerate(
+        path.read_text(encoding="utf-8").splitlines(), start=1
+    ):
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid JSON in {path}:{line_number}") from exc
+        if not isinstance(record, dict):
+            raise ValueError(f"{path}:{line_number} must contain a JSON object")
+        count += 1
+    if count == 0:
+        raise ValueError(f"Required pipeline artifact is empty: {path}")
+    return count
 
 
 def _generate_metrics(
@@ -99,15 +104,28 @@ def _generate_metrics(
     work_dir: Path,
     output_dir: Path,
     enhance: str,
+    event_log_path: Path,
 ) -> None:
     """生成性能指标并写入文件。"""
-    from subtap.metrics.performance import build_subtitle_performance_metrics
+    if not config.output.generate_metrics:
+        return
+
+    from subtap.metrics.performance import (
+        build_subtitle_performance_metrics,
+        load_pipeline_measurements,
+    )
 
     asr_config = getattr(config, "asr", None)
     align_config = getattr(config, "align", None)
+    measurements = load_pipeline_measurements(
+        work_dir / "media_info.json",
+        work_dir / "run_meta.json",
+        event_log_path,
+    )
     performance_metrics = build_subtitle_performance_metrics(
         timings=timings,
-        audio_duration_sec=_audio_duration_sec(work_dir / "media_info.json"),
+        total_runtime_sec=measurements["total_runtime_sec"],
+        audio_duration_sec=measurements["audio_duration_sec"],
         chunks_total=_count_jsonl(work_dir / "chunks" / "chunks.jsonl"),
         subtitles_total=_count_jsonl(work_dir / "aligned.jsonl"),
         alignment_enabled=True,
@@ -115,15 +133,20 @@ def _generate_metrics(
         aligner_model=getattr(align_config, "model", "aligner"),
         quantization=getattr(asr_config, "quantization", "q8"),
         enhance_mode=enhance,
+        asr_model_load_time_sec=measurements["asr_model_load_time_sec"],
+        aligner_model_load_time_sec=measurements["aligner_model_load_time_sec"],
+        keep_model_alive=bool(
+            getattr(asr_config, "keep_model_alive", False)
+            or getattr(align_config, "keep_model_alive", False)
+        ),
     )
-    if config.output.generate_metrics:
-        output_dir.mkdir(parents=True, exist_ok=True)
-        metrics_payload = performance_metrics | {"output_contract": "final"}
-        metrics_path = work_dir / config.metrics.output_path
-        metrics_path.write_text(
-            json.dumps(metrics_payload, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    metrics_payload = performance_metrics | {"output_contract": "final"}
+    metrics_path = work_dir / config.metrics.output_path
+    metrics_path.write_text(
+        json.dumps(metrics_payload, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
 
 
 def _execute_pipeline(
@@ -559,7 +582,14 @@ def _run(
     )
     pipeline.cleanup()
 
-    _generate_metrics(config, timings, work_dir, output_dir, enhance)
+    _generate_metrics(
+        config,
+        timings,
+        work_dir,
+        output_dir,
+        enhance,
+        event_log_path,
+    )
 
     if json_output:
         output_path = output_dir / "final.srt"

@@ -29,6 +29,7 @@ SANDBOX_PROFILE="$TMP_DIR/offline.sb"
 SUBTAP_BIN="${SUBTAP_SMOKE_SUBTAP_BIN:-}"
 REFERENCE_SRT="${SUBTAP_SMOKE_REFERENCE_SRT:-}"
 REQUIRED_CUES="${SUBTAP_SMOKE_REQUIRED_CUES:-$ROOT/tests/fixtures/high_quality_zh_required_cues.txt}"
+MAX_RTF="0.25"
 
 cleanup() {
     rm -rf "$TMP_DIR"
@@ -137,6 +138,11 @@ HOME="$SMOKE_HOME" sandbox-exec -f "$SANDBOX_PROFILE" \
     "${SMOKE_PYTHON[@]}" "$ROOT/scripts/check_srt_regression.py" \
         "$QUALITY_SRT" "$REFERENCE_SRT" \
         --required-cues "$REQUIRED_CUES"
+
+HOME="$SMOKE_HOME" sandbox-exec -f "$SANDBOX_PROFILE" \
+    "${SMOKE_PYTHON[@]}" "$ROOT/scripts/check_performance.py" \
+        "$TMP_DIR/work-high-quality-zh/metrics.json" \
+        --max-rtf "$MAX_RTF"
 
 JSON_OUTPUT="${SUBTAP_SMOKE_JSON:-}"
 if [[ -n "$JSON_OUTPUT" ]]; then

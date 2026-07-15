@@ -57,6 +57,10 @@ class MLXQwenAligner:
                 "Install: pip install mlx-audio"
             )
 
+    def load_model(self) -> None:
+        """Load the model explicitly so pipeline metrics can time it."""
+        self._load_model()
+
     def _load_chunk_info(self, chunks_jsonl: Path):
         """Load chunk metadata for offset and path lookup."""
         if self._chunk_info:

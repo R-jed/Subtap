@@ -29,9 +29,9 @@ class PipelineProfiler:
                 )
             )
 
-            stage_start = time.time()
+            stage_start = time.monotonic()
             result = original_run_stage(stage_name, **kwargs)
-            stage_end = time.time()
+            stage_end = time.monotonic()
 
             # Record stage time
             self._stage_times[stage_name] = stage_end - stage_start

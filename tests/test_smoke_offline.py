@@ -43,6 +43,14 @@ def test_smoke_offline_checks_reviewed_subtitle_regression():
     assert "check_srt_regression.py" in script
 
 
+def test_smoke_offline_checks_performance_regression():
+    script = Path("scripts/smoke_offline.sh").read_text()
+
+    assert 'MAX_RTF="0.25"' in script
+    assert "SUBTAP_SMOKE_MAX_RTF" not in script
+    assert "check_performance.py" in script
+
+
 def test_smoke_offline_runs_1_7b_high_quality_chinese_sample():
     script = Path("scripts/smoke_offline.sh").read_text()
 
@@ -104,15 +112,20 @@ if /usr/bin/curl --noproxy '*' --silent --max-time 1 "$PROBE_URL" >/dev/null 2>&
 fi
 printf '%s\\n' "$*" >> "$CALL_LOG"
 output_dir=""
+work_dir=""
 while [[ $# -gt 0 ]]; do
     if [[ "$1" == "--output-dir" ]]; then
         shift
         output_dir="$1"
+    elif [[ "$1" == "--work-dir" ]]; then
+        shift
+        work_dir="$1"
     fi
     shift
 done
-mkdir -p "$output_dir"
+mkdir -p "$output_dir" "$work_dir"
 printf '1\\n00:00:00,000 --> 00:00:01,000\\n测试字幕\\n' > "$output_dir/result.srt"
+printf '{"metrics_schema_version":2,"audio_duration_sec":100.0,"total_runtime_sec":18.0,"rtf":0.18,"asr_runtime_sec":12.0,"align_runtime_sec":4.0,"asr_model_load_time_sec":2.0,"aligner_model_load_time_sec":1.0}\\n' > "$work_dir/metrics.json"
 """,
         encoding="utf-8",
     )

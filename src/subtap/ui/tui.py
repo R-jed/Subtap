@@ -136,9 +136,9 @@ class BaseRunner(ABC):
             if stage["key"] == "clean":
                 kwargs["enhance_mode"] = enhance
 
-            t = time.time()
+            t = time.monotonic()
             result = pipeline.run_stage(stage["key"], **kwargs)
-            elapsed = time.time() - t
+            elapsed = time.monotonic() - t
             self.timings[stage["key"]] = elapsed
 
             self._after_stage(stage, result, elapsed, step_num, total_steps)
@@ -166,17 +166,17 @@ class BaseRunner(ABC):
         export_stage = {"key": "export", "name": "字幕导出"}
         export_idx = len(stages) - 1  # export is always last
         self._before_stage(export_stage, export_idx + 1, len(stages))
-        t = time.time()
+        t = time.monotonic()
         export_result = self._run_export(
             pipeline, output_dir, fmt, translate_to, bilingual
         )
-        elapsed = time.time() - t
+        elapsed = time.monotonic() - t
         self.timings["export"] = elapsed
         self._after_stage(
             export_stage, export_result, elapsed, export_idx + 1, len(stages)
         )
 
-        total_time = time.time() - self.total_start
+        total_time = time.monotonic() - self.total_start
         self._on_complete(output_dir, fmt, total_time)
         return self._save_meta(pipeline, input_path, output_dir, fmt, total_time)
 
@@ -223,8 +223,8 @@ class BaseRunner(ABC):
             "output_dir": str(output_dir),
             "format": fmt,
             "alignment_enabled": True,
-            "total_time_sec": round(total_time, 2),
-            "timings": {k: round(v, 2) for k, v in self.timings.items()},
+            "total_time_sec": round(total_time, 6),
+            "timings": {k: round(v, 6) for k, v in self.timings.items()},
         }
         (pipeline.workspace.root / "run_meta.json").write_text(
             json.dumps(meta, indent=2, ensure_ascii=False)
@@ -267,7 +267,7 @@ class RichRunner(BaseRunner):
         from rich.table import Table
 
         self._console = Console()
-        self.total_start = time.time()
+        self.total_start = time.monotonic()
 
         def _run() -> dict:
             return self._run_pipeline_inner(
@@ -401,7 +401,7 @@ class TUIRunner(BaseRunner):
         bilingual: str = "off",
     ) -> dict:
         """Execute full pipeline with TUI feedback."""
-        self.total_start = time.time()
+        self.total_start = time.monotonic()
 
         if self.use_tui:
             self.progress.print_header()
@@ -541,7 +541,7 @@ class PlainRunner(BaseRunner):
 
         self._echo = typer.echo
         self._completed = 0
-        self.total_start = time.time()
+        self.total_start = time.monotonic()
 
         try:
             meta = self._run_pipeline_inner(

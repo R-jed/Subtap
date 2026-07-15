@@ -35,11 +35,15 @@ class _MockASR:
     name = "mlx-qwen-asr"
 
     def __init__(self):
-        self._model = object()
+        self._model = None
         self.transcribe_called = False
         self._fail = False
 
+    def load_model(self):
+        self._model = object()
+
     def transcribe(self, chunks, language=None, hotwords=None):
+        assert self._model is not None
         self.transcribe_called = True
         if self._fail:
             raise RuntimeError("ASR inference failed")
@@ -63,10 +67,14 @@ class _MockAligner:
     name = "mlx-qwen-aligner"
 
     def __init__(self):
-        self._model = object()
+        self._model = None
         self._fail = False
 
+    def load_model(self):
+        self._model = object()
+
     def align(self, sentences, audio_path):
+        assert self._model is not None
         if self._fail:
             raise RuntimeError("Align inference failed")
         return [
@@ -165,6 +173,10 @@ def test_asr_model_events_carry_correct_payload(monkeypatch, tmp_path):
         assert event.data["task_id"] == "payload-test"
         assert event.data["stage"] == "asr"
         assert event.data["model"] == "asr_1.7b-q8"
+    load_done = next(
+        event for event in model_events if event.event_type is EventType.MODEL_LOAD_DONE
+    )
+    assert load_done.data["duration_sec"] >= 0
 
 
 def test_asr_no_release_events_when_keep_model_alive(monkeypatch, tmp_path):
@@ -201,8 +213,8 @@ def test_asr_release_events_emitted_on_transcribe_failure(monkeypatch, tmp_path)
 
     types = [e.event_type for e in bus.events]
     assert EventType.MODEL_LOAD_START in types
-    # MODEL_LOAD_DONE should NOT be in types because exception happens before it
-    assert EventType.MODEL_LOAD_DONE not in types
+    # Model loading completed before inference failed.
+    assert EventType.MODEL_LOAD_DONE in types
     # Release events MUST fire even on failure
     assert EventType.MODEL_RELEASE_START in types
     assert EventType.MODEL_RELEASE_DONE in types
@@ -262,6 +274,10 @@ def test_align_model_events_carry_correct_payload(monkeypatch, tmp_path):
         assert event.data["task_id"] == "align-payload"
         assert event.data["stage"] == "align"
         assert event.data["model"] == "aligner-q8"
+    load_done = next(
+        event for event in model_events if event.event_type is EventType.MODEL_LOAD_DONE
+    )
+    assert load_done.data["duration_sec"] >= 0
 
 
 def test_align_no_release_events_when_keep_model_alive(monkeypatch, tmp_path):
@@ -302,7 +318,7 @@ def test_align_release_events_emitted_on_align_failure(monkeypatch, tmp_path):
 
     types = [e.event_type for e in bus.events]
     assert EventType.MODEL_LOAD_START in types
-    assert EventType.MODEL_LOAD_DONE not in types
+    assert EventType.MODEL_LOAD_DONE in types
     assert EventType.MODEL_RELEASE_START in types
     assert EventType.MODEL_RELEASE_DONE in types
 

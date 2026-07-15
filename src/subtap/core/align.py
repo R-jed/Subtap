@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import time
 
 from subtap.backends.align import get_aligner_backend
 from subtap.core.models import _get_model_root
@@ -125,17 +126,23 @@ def run_align(
             )
         )
     try:
-        aligned = backend.align(sentences, workspace.source_audio)
+        model_load_started = time.monotonic()
+        load_model = getattr(backend, "load_model", None)
+        if callable(load_model):
+            load_model()
+        model_load_time_sec = time.monotonic() - model_load_started
         if event_bus is not None:
             event_bus.publish_nowait(
                 make_pipeline_event(
                     EventType.MODEL_LOAD_DONE,
                     task_id=task_id,
                     stage="align",
+                    duration_sec=model_load_time_sec,
                     model=model_name,
                     message_zh="对齐模型加载完成",
                 )
             )
+        aligned = backend.align(sentences, workspace.source_audio)
     finally:
         if not align_config.keep_model_alive and hasattr(backend, "release_model"):
             if event_bus is not None:

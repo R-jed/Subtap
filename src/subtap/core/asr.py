@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import time
 
 from subtap.backends.asr import get_backend
 from subtap.core.models import _get_model_root
@@ -138,21 +139,27 @@ def run_asr(
             )
         )
     try:
-        segments = backend.transcribe(
-            abs_chunks,
-            language=None,
-            hotwords=all_hotwords or None,
-        )
+        model_load_started = time.monotonic()
+        load_model = getattr(backend, "load_model", None)
+        if callable(load_model):
+            load_model()
+        model_load_time_sec = time.monotonic() - model_load_started
         if event_bus is not None:
             event_bus.publish_nowait(
                 make_pipeline_event(
                     EventType.MODEL_LOAD_DONE,
                     task_id=task_id,
                     stage="asr",
+                    duration_sec=model_load_time_sec,
                     model=model_name,
                     message_zh="ASR 模型加载完成",
                 )
             )
+        segments = backend.transcribe(
+            abs_chunks,
+            language=None,
+            hotwords=all_hotwords or None,
+        )
     finally:
         if not asr_config.keep_model_alive and hasattr(backend, "release_model"):
             if event_bus is not None:
