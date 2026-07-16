@@ -17,11 +17,11 @@ class CommandDeckOption:
 
 
 OPTIONS = [
-    CommandDeckOption("Run", "从音频生成字幕", "run"),
+    CommandDeckOption("Run", "使用当前配置从音频生成字幕", "run"),
     CommandDeckOption("Observe", "观察已有 run.log.jsonl", "observe"),
     CommandDeckOption("Batch", "批量处理媒体文件夹", "batch"),
     CommandDeckOption("Doctor", "检查模型和本地运行环境", "doctor"),
-    CommandDeckOption("Config", "编辑本地配置", "config"),
+    CommandDeckOption("Setup", "检查环境和管理模型", "setup"),
 ]
 
 PROJECT_URL = "https://github.com/R-jed/Subtap"

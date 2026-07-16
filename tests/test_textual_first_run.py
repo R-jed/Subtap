@@ -464,3 +464,126 @@ def test_tui_command_uses_textual_command_deck(monkeypatch):
 
     assert result.exit_code == 0
     assert calls == ["run"]
+
+
+@pytest.mark.parametrize(
+    ("action", "expected_args"),
+    [
+        ("run", ["run", "{selected}", "--tui"]),
+        ("observe", ["observe", "{selected}"]),
+        ("batch", ["batch-transcribe", "--dir", "{selected}"]),
+        ("doctor", ["doctor"]),
+        ("setup", ["setup"]),
+    ],
+)
+def test_tui_action_starts_real_command(monkeypatch, tmp_path, action, expected_args):
+    import sys
+
+    from typer.testing import CliRunner
+
+    from subtap.cli import app
+
+    audio = tmp_path / "test audio.wav"
+    audio.write_bytes(b"audio")
+    commands = []
+    monkeypatch.setattr(
+        "subtap.ui.command_deck.CommandDeckApp.run", lambda self: action
+    )
+    monkeypatch.setattr("subtap.cli._choose_command_deck_path", lambda action: audio)
+    monkeypatch.setattr(
+        "subtap.cli.subprocess.run",
+        lambda command, **kwargs: commands.append(command)
+        or type("Result", (), {"returncode": 0})(),
+    )
+
+    result = CliRunner().invoke(app, ["tui"])
+
+    assert result.exit_code == 0
+    expected = [part.replace("{selected}", str(audio)) for part in expected_args]
+    assert commands == [[sys.executable, "-m", "subtap.cli", *expected]]
+
+
+def test_tui_cancelled_file_picker_does_not_start_command(monkeypatch):
+    import subprocess
+
+    from typer.testing import CliRunner
+
+    from subtap.cli import app
+
+    commands = []
+    monkeypatch.setattr("subtap.ui.command_deck.CommandDeckApp.run", lambda self: "run")
+    monkeypatch.setattr(
+        "subtap.cli.subprocess.run",
+        lambda command, **kwargs: commands.append(command)
+        or subprocess.CompletedProcess(command, 1, "", "User canceled. (-128)"),
+    )
+
+    result = CliRunner().invoke(app, ["tui"])
+
+    assert result.exit_code == 0
+    assert commands == [
+        [
+            "osascript",
+            "-e",
+            'POSIX path of (choose file with prompt "选择音频或视频文件")',
+        ]
+    ]
+
+
+def test_tui_file_picker_error_is_visible(monkeypatch):
+    import subprocess
+
+    from typer.testing import CliRunner
+
+    from subtap.cli import app
+
+    monkeypatch.setattr("subtap.ui.command_deck.CommandDeckApp.run", lambda self: "run")
+    monkeypatch.setattr(
+        "subtap.cli.subprocess.run",
+        lambda command, **kwargs: subprocess.CompletedProcess(
+            command, 1, "", "AppleScript failed"
+        ),
+    )
+
+    result = CliRunner().invoke(app, ["tui"])
+
+    assert result.exit_code == 1
+    assert "无法打开文件选择器：AppleScript failed" in result.output
+
+
+def test_tui_unknown_action_fails_fast(monkeypatch):
+    from typer.testing import CliRunner
+
+    from subtap.cli import app
+
+    monkeypatch.setattr(
+        "subtap.ui.command_deck.CommandDeckApp.run", lambda self: "unknown"
+    )
+
+    result = CliRunner().invoke(app, ["tui"])
+
+    assert result.exit_code == 1
+    assert "未知操作：unknown" in result.output
+
+
+def test_tui_output_action_opens_output_directory(monkeypatch, tmp_path):
+    from typer.testing import CliRunner
+
+    from subtap.cli import app
+
+    commands = []
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "subtap.ui.command_deck.CommandDeckApp.run", lambda self: "output"
+    )
+    monkeypatch.setattr(
+        "subtap.cli.subprocess.run",
+        lambda command, **kwargs: commands.append(command)
+        or type("Result", (), {"returncode": 0})(),
+    )
+
+    result = CliRunner().invoke(app, ["tui"])
+
+    assert result.exit_code == 0
+    assert (tmp_path / "output").is_dir()
+    assert commands == [["open", str(tmp_path / "output")]]

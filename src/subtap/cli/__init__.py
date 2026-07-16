@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import platform
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -59,18 +60,30 @@ def _build_root_command_deck() -> str:
     return build_root_command_deck()
 
 
-def _command_deck_hint(action: str | None) -> str:
-    """Return a short follow-up command hint after interactive selection."""
-    hints = {
-        "run": "运行：subtap run <音频文件> --tui",
-        "observe": "观察：subtap observe <work/run.log.jsonl>",
-        "batch": "批量：subtap batch-transcribe --dir <媒体文件夹>",
-        "doctor": "诊断：subtap doctor",
-        "config": "配置：subtap setup",
-        "output": "输出目录：./output",
-        "version": "版本：subtap version",
+def _choose_command_deck_path(action: str) -> Path | None:
+    """Choose a run input using the native macOS picker."""
+    scripts = {
+        "run": 'POSIX path of (choose file with prompt "选择音频或视频文件")',
+        "observe": 'POSIX path of (choose file with prompt "选择 run.log.jsonl")',
+        "batch": 'POSIX path of (choose folder with prompt "选择媒体文件夹")',
     }
-    return hints.get(action or "", "")
+    result = subprocess.run(
+        ["osascript", "-e", scripts[action]],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode:
+        if "(-128)" in result.stderr:
+            return None
+        _handle_error(f"无法打开文件选择器：{result.stderr.strip()}")
+    selected = result.stdout.strip()
+    return Path(selected) if selected else None
+
+
+def _run_subtap_command(*args: str) -> None:
+    result = subprocess.run([sys.executable, "-m", "subtap.cli", *args])
+    if result.returncode:
+        raise typer.Exit(result.returncode)
 
 
 def _handle_command_deck_action(action: str | None) -> None:
@@ -78,9 +91,30 @@ def _handle_command_deck_action(action: str | None) -> None:
     if action == "version":
         version()
         return
-    hint = _command_deck_hint(action)
-    if hint:
-        typer.echo(hint)
+    if action == "output":
+        output_dir = Path.cwd() / "output"
+        output_dir.mkdir(exist_ok=True)
+        result = subprocess.run(["open", str(output_dir)])
+        if result.returncode:
+            raise typer.Exit(result.returncode)
+        return
+    if action in {"run", "observe", "batch"}:
+        selected = _choose_command_deck_path(action)
+        if selected is None:
+            return
+        if action == "run":
+            _run_subtap_command("run", str(selected), "--tui")
+        elif action == "observe":
+            _run_subtap_command("observe", str(selected))
+        else:
+            _run_subtap_command("batch-transcribe", "--dir", str(selected))
+        return
+    if action == "doctor":
+        _run_subtap_command("doctor")
+    elif action == "setup":
+        _run_subtap_command("setup")
+    elif action is not None:
+        _handle_error(f"未知操作：{action}")
 
 
 @app.callback(invoke_without_command=True)
@@ -90,11 +124,8 @@ def main(ctx: typer.Context) -> None:
         if sys.stdin.isatty() and sys.stdout.isatty():
             from subtap.ui.command_deck import CommandDeckApp
 
-            try:
-                _handle_command_deck_action(CommandDeckApp().run())
-                return
-            except RuntimeError:
-                pass
+            _handle_command_deck_action(CommandDeckApp().run())
+            return
         typer.echo(_build_root_command_deck())
 
 
@@ -231,8 +262,7 @@ def tui() -> None:
     """启动交互式终端界面"""
     from subtap.ui.command_deck import CommandDeckApp
 
-    app = CommandDeckApp()
-    app.run()
+    _handle_command_deck_action(CommandDeckApp().run())
 
 
 app.command("batch-transcribe")(batch_transcribe)
