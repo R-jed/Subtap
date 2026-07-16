@@ -54,6 +54,9 @@ def make_pipeline_event(
     progress: int | float | None = None,
     duration_sec: float | None = None,
     model: str | None = None,
+    text: str | None = None,
+    item_index: int | None = None,
+    total_items: int | None = None,
     message_zh: str = "",
 ) -> PipelineEvent:
     """Build a streaming event with the shared payload contract."""
@@ -71,6 +74,9 @@ def make_pipeline_event(
         "progress": progress,
         "duration_sec": duration_sec,
         "model": model,
+        "text": text,
+        "item_index": item_index,
+        "total_items": total_items,
     }
     for key, value in optional.items():
         if value is not None:

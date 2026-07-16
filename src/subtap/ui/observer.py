@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import time
 from typing import Any
+
+from subtap.engine.state import STAGE_CN, STAGE_ORDER
 
 SUBTAP_ASCII = r"""
   ____        _              _
@@ -21,90 +24,281 @@ def iter_event_log(log_path: Path) -> list[dict[str, Any]]:
     if not log_path.exists():
         return []
     rows: list[dict[str, Any]] = []
-    for line in log_path.read_text(encoding="utf-8").splitlines():
+    raw_lines = log_path.read_text(encoding="utf-8").splitlines(keepends=True)
+    for line_number, line in enumerate(raw_lines, start=1):
         if not line.strip():
             continue
+        if line_number == len(raw_lines) and not line.endswith(("\n", "\r")):
+            break
         try:
-            rows.append(json.loads(line))
-        except json.JSONDecodeError:
-            continue
+            row = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise ValueError(
+                f"Invalid event log row {log_path}:{line_number}"
+            ) from error
+        if not isinstance(row, dict) or not isinstance(row.get("data", {}), dict):
+            raise ValueError(f"Invalid event log row {log_path}:{line_number}")
+        rows.append(row)
     return rows
 
 
-def summarize_event_log(log_path: Path) -> dict[str, Any]:
-    """Build the latest observable pipeline state from run.log.jsonl."""
+def _summarize_event_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Reduce validated event rows into the latest pipeline state."""
     state: dict[str, Any] = {
         "stage": "等待中",
-        "progress": 0,
+        "progress": None,
         "chunk_id": None,
         "model": "未知",
         "asr_drafts": 0,
         "aligned": 0,
+        "completed_stages": [],
+        "item_index": None,
+        "total_items": None,
+        "recent_texts": [],
+        "started_at": None,
     }
-    for row in iter_event_log(log_path):
+    draft_texts: list[str] = []
+    aligned_texts: list[str] = []
+    for row in rows:
         event_type = row.get("event_type")
         data = row.get("data") or {}
+        if state["started_at"] is None:
+            state["started_at"] = row.get("timestamp")
         if "stage" in data:
             state["stage"] = data["stage"]
+        if event_type == "stage_start":
+            state["progress"] = None
         if "progress" in data:
             state["progress"] = data["progress"]
         if "chunk_id" in data:
             state["chunk_id"] = data["chunk_id"]
         if "model" in data:
             state["model"] = data["model"]
+        if "item_index" in data:
+            state["item_index"] = data["item_index"]
+        if "total_items" in data:
+            state["total_items"] = data["total_items"]
+        if event_type == "stage_end" and data.get("stage"):
+            state["progress"] = 100
+            stage = data["stage"]
+            if stage not in state["completed_stages"]:
+                state["completed_stages"].append(stage)
         if event_type == "asr_draft_ready":
             state["asr_drafts"] += 1
+            if data.get("text"):
+                draft_texts.append(data["text"])
         if event_type == "alignment_ready":
             state["aligned"] += 1
+            if data.get("text"):
+                aligned_texts.append(data["text"])
+    state["recent_texts"] = (aligned_texts or draft_texts)[-4:]
     return state
+
+
+def summarize_event_log(log_path: Path) -> dict[str, Any]:
+    """Build the latest observable pipeline state from run.log.jsonl."""
+    return _summarize_event_rows(iter_event_log(log_path))
 
 
 def build_command_deck_text(state: dict[str, Any]) -> str:
     """Format pipeline state as human-readable text for CLI output."""
+    progress = state["progress"]
+    progress_text = f"{progress}%" if progress is not None else "计算中"
     return (
         f"当前阶段：{state['stage']}\n"
-        f"进度：{state['progress']}%\n"
+        f"进度：{progress_text}\n"
         f"当前 Chunk：{state['chunk_id']}\n"
         f"当前模型：{state['model']}\n"
         f"ASR 草稿：{state['asr_drafts']}  已对齐：{state['aligned']}"
     )
 
 
-def _make_observer_dashboard(log_path: Path, process, refresh_interval: float = 1.0):
+def _make_observer_dashboard(
+    log_path: Path,
+    process,
+    refresh_interval: float = 1.0,
+    output_path: Path | None = None,
+):
     """Create ObserverDashboard instance (lazy import of textual)."""
-    from textual.app import App
-    from textual.widgets import Footer, Header, Static
+    from textual.app import App, ComposeResult
+    from textual.containers import Vertical
+    from textual.screen import ModalScreen
+    from textual.widgets import Footer, Header, ProgressBar, RichLog, Static
+
+    class CancelTaskScreen(ModalScreen[bool]):
+        """Require an explicit answer before stopping the pipeline."""
+
+        CSS = """
+        CancelTaskScreen {
+            align: center middle;
+            background: $background 70%;
+        }
+        #cancel-dialog {
+            width: 58;
+            height: auto;
+            padding: 2 3;
+            border: round $error;
+            background: $surface;
+        }
+        """
+        BINDINGS = [
+            ("y", "confirm", "确认停止"),
+            ("n", "keep_running", "继续运行"),
+            ("escape", "keep_running", "返回"),
+        ]
+
+        def compose(self) -> ComposeResult:
+            with Vertical(id="cancel-dialog"):
+                yield Static(
+                    "[b]停止当前任务？[/b]\n\n"
+                    "这会终止字幕处理；已生成的工作文件会保留。\n\n"
+                    "按 Y 确认，按 N 或 Esc 返回。"
+                )
+
+        def action_confirm(self) -> None:
+            self.dismiss(True)
+
+        def action_keep_running(self) -> None:
+            self.dismiss(False)
 
     class ObserverDashboard(App):
         """Textual 观察者：只读 run.log.jsonl，不执行 pipeline。"""
 
-        def compose(self):
+        CSS = """
+        Screen {
+            layout: vertical;
+        }
+        #task-panel {
+            margin: 1 2;
+            padding: 1 2;
+            border: round $accent;
+            height: auto;
+        }
+        #stage-map, #current-work, #recent, #output {
+            margin-top: 1;
+        }
+        #details {
+            margin: 0 2 1 2;
+            border: round $secondary;
+            height: 1fr;
+            display: none;
+        }
+        """
+        BINDINGS = [
+            ("l", "toggle_details", "详情"),
+            ("escape", "show_overview", "返回概览"),
+            ("q", "quit_observer", "退出观察"),
+            ("x", "cancel_task", "停止任务"),
+        ]
+
+        def compose(self) -> ComposeResult:
             yield Header()
-            yield Static(self.build_status_text(), id="status")
+            with Vertical(id="task-panel"):
+                yield Static(self.build_status_text(), id="status")
+                yield ProgressBar(total=100, show_eta=False, id="progress")
+                yield Static("", id="stage-map")
+                yield Static("", id="current-work")
+                yield Static("", id="recent")
+                yield Static("", id="output")
+            yield RichLog(max_lines=200, auto_scroll=True, id="details")
             yield Footer()
 
         async def on_mount(self) -> None:
             self.set_interval(refresh_interval, self.refresh_from_log)
             self.refresh_from_log()
 
-        def build_status_text(self) -> str:
-            state = summarize_event_log(log_path)
+        def build_status_text(self, state: dict[str, Any] | None = None) -> str:
+            if state is None:
+                state = summarize_event_log(log_path)
+            returncode = process.poll()
+            if returncode is None:
+                task_status = "任务运行中"
+            elif returncode == 0:
+                task_status = "任务已完成"
+            else:
+                task_status = f"任务失败（退出码 {returncode}）"
+            progress = state["progress"]
+            progress_text = f"{progress}%" if progress is not None else "计算中"
+            output_text = f"\n输出文件：{output_path}" if output_path else ""
             return (
-                "Subtap 观察者进程\n"
+                f"[b]{task_status}[/b]\n"
                 f"当前阶段：{state['stage']}\n"
-                f"进度：{state['progress']}%\n"
+                f"进度：{progress_text}\n"
                 f"当前 Chunk：{state['chunk_id']}\n"
                 f"当前模型：{state['model']}\n"
                 f"ASR 草稿：{state['asr_drafts']}  已对齐：{state['aligned']}\n"
                 "隐私：观察者只读取本地日志，不接触音频和模型推理"
+                f"{output_text}"
             )
 
         def refresh_from_log(self) -> None:
-            try:
-                self.query_one("#status", Static).update(self.build_status_text())
-            except Exception:
-                return
-            if process.poll() is not None:
-                self.exit()
+            rows = iter_event_log(log_path)
+            state = _summarize_event_rows(rows)
+            self.query_one("#status", Static).update(self.build_status_text(state))
+
+            progress = state["progress"]
+            bar = self.query_one("#progress", ProgressBar)
+            if progress is None:
+                bar.update(total=None)
+            else:
+                bar.update(total=100, progress=progress)
+
+            completed = set(state["completed_stages"])
+            current = state["stage"]
+            stages = []
+            for stage in STAGE_ORDER:
+                marker = "✓" if stage in completed else "▶" if stage == current else "·"
+                stages.append(f"{marker} {STAGE_CN[stage]}")
+            self.query_one("#stage-map", Static).update("  ".join(stages))
+
+            item_index = state["item_index"]
+            total_items = state["total_items"]
+            item_text = (
+                f"当前项目：{item_index}/{total_items}"
+                if item_index is not None and total_items is not None
+                else f"当前 Chunk：{state['chunk_id']}"
+            )
+            elapsed = 0
+            if state["started_at"] is not None:
+                elapsed = max(0, int(time.time() - state["started_at"]))
+            self.query_one("#current-work", Static).update(
+                f"{item_text}  已用时：{elapsed // 60:02d}:{elapsed % 60:02d}"
+            )
+
+            recent = state["recent_texts"]
+            recent_text = "\n".join(f"  {text}" for text in recent)
+            self.query_one("#recent", Static).update(
+                f"[b]最近字幕[/b]\n{recent_text or '  暂无'}"
+            )
+            self.query_one("#output", Static).update(
+                f"[b]输出[/b]  {output_path or '任务完成后显示'}"
+            )
+
+            details = self.query_one("#details", RichLog)
+            details.clear()
+            for row in rows[-50:]:
+                data = row.get("data") or {}
+                message = data.get("message_zh") or row.get("event_type", "未知事件")
+                details.write(f"{data.get('stage', '-'):>8}  {message}")
+
+        def action_toggle_details(self) -> None:
+            details = self.query_one("#details", RichLog)
+            details.display = not details.display
+
+        def action_show_overview(self) -> None:
+            self.query_one("#details", RichLog).display = False
+
+        def action_quit_observer(self) -> None:
+            self.exit("quit")
+
+        def action_cancel_task(self) -> None:
+            if process.poll() is None:
+                self.push_screen(CancelTaskScreen(), self._finish_cancel)
+
+        def _finish_cancel(self, confirmed: bool | None) -> None:
+            if confirmed and process.poll() is None:
+                self.exit("interrupt")
+            elif confirmed:
+                self.refresh_from_log()
 
     return ObserverDashboard()

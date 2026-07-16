@@ -14,6 +14,9 @@ def test_streaming_event_payload_has_required_fields():
         progress=50,
         duration_sec=1.25,
         model="asr_0.6b-q8",
+        text="测试字幕",
+        item_index=4,
+        total_items=8,
         message_zh="已生成 ASR 草稿",
     )
 
@@ -26,4 +29,7 @@ def test_streaming_event_payload_has_required_fields():
     assert event.data["progress"] == 50
     assert event.data["duration_sec"] == 1.25
     assert event.data["model"] == "asr_0.6b-q8"
+    assert event.data["text"] == "测试字幕"
+    assert event.data["item_index"] == 4
+    assert event.data["total_items"] == 8
     assert event.data["message_zh"] == "已生成 ASR 草稿"

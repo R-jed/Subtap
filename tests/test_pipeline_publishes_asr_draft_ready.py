@@ -65,4 +65,7 @@ def test_pipeline_publishes_asr_draft_ready(monkeypatch, tmp_path):
     assert asr_events[0].data["task_id"] == "task-1"
     assert asr_events[0].data["stage"] == "asr"
     assert asr_events[0].data["chunk_id"] == 0
+    assert asr_events[0].data["text"] == "测试字幕"
+    assert asr_events[0].data["item_index"] == 1
+    assert asr_events[0].data["total_items"] == 1
     assert asr_events[0].data["message_zh"] == "已生成 ASR 草稿"

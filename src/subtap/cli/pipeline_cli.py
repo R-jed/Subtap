@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import signal
 import shutil
 import subprocess
 import sys
@@ -27,6 +28,35 @@ if TYPE_CHECKING:
     from subtap.core.pipeline import Pipeline
     from subtap.metrics.run_log import RunLog
     from subtap.schemas.config import SubtapConfig
+
+
+def _process_group_exists(process_group: int) -> bool:
+    """Return whether the observer child process group still exists."""
+    try:
+        os.killpg(process_group, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def _stop_observer_child(process: subprocess.Popen) -> None:
+    """Stop the pipeline child and every process it started."""
+    process_group = process.pid
+    try:
+        os.killpg(process_group, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        pass
+    if _process_group_exists(process_group):
+        try:
+            os.killpg(process_group, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+    if process.poll() is None:
+        process.wait(timeout=5)
 
 
 def check_first_run_wizard(config) -> bool:
@@ -491,13 +521,22 @@ def _run(
     if tui and not observer_child and not no_tui:
         from subtap.cli import _build_observer_child_command
 
-        process = subprocess.Popen(_build_observer_child_command(sys.argv))
+        process = subprocess.Popen(
+            _build_observer_child_command(sys.argv),
+            start_new_session=True,
+        )
         from subtap.ui.observer import _make_observer_dashboard
 
-        result = _make_observer_dashboard(work_dir / "run.log.jsonl", process).run()
+        output_path = output_dir / f"{input_path.stem}.{fmt}"
+        result = _make_observer_dashboard(
+            work_dir / "run.log.jsonl",
+            process,
+            output_path=output_path,
+        ).run()
         if result == "output":
             typer.echo(f"输出目录：{work_dir / 'output'}")
         elif result == "interrupt":
+            _stop_observer_child(process)
             typer.echo("已中断子进程。")
             raise typer.Exit(130)
         elif result == "quit" and process.poll() is None:

@@ -76,6 +76,9 @@ def write_aligned_subtitles(
                         progress=round(index / total * 100),
                         duration_sec=seg.end_sec - seg.start_sec,
                         model=model,
+                        text=seg.text,
+                        item_index=index,
+                        total_items=total,
                         message_zh="已完成字幕精对齐",
                     )
                 )

@@ -67,6 +67,9 @@ def write_asr_drafts(
                         progress=round(index / total * 100),
                         duration_sec=seg.end_sec - seg.start_sec,
                         model=f"{model}-{quantization}",
+                        text=seg.text,
+                        item_index=index,
+                        total_items=total,
                         message_zh="已生成 ASR 草稿",
                     )
                 )

@@ -71,4 +71,7 @@ def test_pipeline_publishes_alignment_ready(monkeypatch, tmp_path):
     assert align_events[0].data["task_id"] == "task-1"
     assert align_events[0].data["stage"] == "align"
     assert align_events[0].data["subtitle_id"] == 0
+    assert align_events[0].data["text"] == "测试字幕"
+    assert align_events[0].data["item_index"] == 1
+    assert align_events[0].data["total_items"] == 1
     assert align_events[0].data["message_zh"] == "已完成字幕精对齐"

@@ -98,6 +98,8 @@ class Pipeline:
                 chunk_id=chunk.chunk_id,
                 progress=round(index / total * 100),
                 duration_sec=chunk.end_sec - chunk.start_sec,
+                item_index=index,
+                total_items=total,
                 message_zh="音频片段已准备",
             )
         return {
