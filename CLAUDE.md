@@ -2,13 +2,57 @@
 
 Commits must use English, following Conventional Commits format:
 ```
-<type>: <short summary in English>
+<type>(<scope>): <description>
 
 <body (optional)>
+<footer (optional)>
 ```
-Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `ci`, `perf`
 
-**禁止在 commit message 中引用其他项目名称**（如"借鉴 X 项目"、"参照 Y 优化"、"基于 Z 分析"等）。描述改动本身，不要提及灵感来源。
+### Types
+
+| Type | 用途 |
+|---|---|
+| `feat` | 新功能 |
+| `fix` | Bug 修复 |
+| `docs` | 仅文档变更 |
+| `style` | 代码风格（不影响逻辑） |
+| `refactor` | 重构（不新增功能/修复 Bug） |
+| `perf` | 性能优化 |
+| `test` | 测试相关 |
+| `build` | 构建系统/依赖变更 |
+| `ci` | CI 配置 |
+| `chore` | 其他杂项 |
+| `revert` | 回滚 |
+| `wip` | 进行中（慎用） |
+
+### Rules
+
+1. **description 首字母小写**，不以句号结尾
+2. **description ≤ 72 字符**，超长内容放 body
+3. **body 说明 what & why**，不说明 how（代码即 how）
+4. **scope 可选**，用于标注影响范围（如 `parser`, `ui`, `api`）
+5. **禁止引用其他项目名称**（如"借鉴 X"、"参照 Y"、"基于 Z"等）
+
+### Good Examples
+
+```
+feat: add user authentication
+fix(parser): handle empty input without crash
+docs: update API reference for v2 endpoints
+refactor(tui): extract state management into separate module
+perf: cache parsed subtitle results to avoid re-computation
+test: add edge case coverage for Unicode segmentation
+chore: bump dependencies to latest stable versions
+```
+
+### Bad Examples
+
+```
+fix: Fixed stuff          # 首字母大写，以句号结尾
+Feat: Add feature         # type 大小写错误
+add new button            # 缺少 type 前缀
+借鉴 Mole 项目优化代码    # 引用其他项目名称
+```
 
 ## Test Materials
 
