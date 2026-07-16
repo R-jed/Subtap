@@ -71,6 +71,198 @@ def test_export_never_merges_across_sentence_segments():
     ]
 
 
+def test_export_reconciles_tiny_alignment_overlap_at_cue_boundary():
+    from subtap.core.export import SRTExporter
+    from subtap.schemas.models import AlignedSegment
+
+    first = AlignedSegment(
+        sentence_id=0,
+        start_sec=0.0,
+        end_sec=1.02,
+        text="这是第一句。",
+        words=[_w("这是第一句", 0.0, 1.02)],
+    )
+    second = AlignedSegment(
+        sentence_id=1,
+        start_sec=1.0,
+        end_sec=2.0,
+        text="这是第二句。",
+        words=[_w("这是第二句", 1.0, 2.0)],
+    )
+
+    content = SRTExporter().render([first, second])
+    blocks = content.strip().split("\n\n")
+    first_end = blocks[0].splitlines()[1].split(" --> ")[1]
+    second_start = blocks[1].splitlines()[1].split(" --> ")[0]
+
+    assert first_end == second_start
+
+
+def test_export_interpolates_time_when_split_inside_multi_character_token():
+    from subtap.core.export import SRTExporter
+    from subtap.schemas.models import AlignedSegment
+
+    text = "这是一个很长的中文对齐词需要安全断句"
+    segment = AlignedSegment(
+        sentence_id=0,
+        start_sec=0.0,
+        end_sec=5.0,
+        text=text,
+        words=[_w(text, 0.0, 5.0)],
+    )
+
+    content = SRTExporter(max_chars=10, min_chars=5).render([segment])
+    blocks = content.strip().split("\n\n")
+    timelines = [block.splitlines()[1].split(" --> ") for block in blocks]
+
+    assert len(blocks) >= 2
+    assert all(
+        current[1] <= following[0]
+        for current, following in zip(timelines, timelines[1:])
+    )
+
+
+def test_export_force_splits_overlong_token_to_honor_max_chars():
+    from subtap.core.export import SRTExporter
+    from subtap.schemas.models import AlignedSegment
+
+    text = "Supercalifragilisticexpialidocious"
+    segment = AlignedSegment(
+        sentence_id=0,
+        start_sec=0.0,
+        end_sec=4.0,
+        text=text,
+        words=[_w(text, 0.0, 4.0)],
+    )
+
+    lines = _srt_text_lines(SRTExporter(max_chars=10, min_chars=4).render([segment]))
+
+    assert "".join(lines) == text
+    assert all(len(line) <= 10 for line in lines)
+
+
+def test_export_preserves_structural_ascii_terms_without_punctuation():
+    from subtap.core.export import SRTExporter
+
+    segment = _aligned(0, "这是APS-C相机和G R4。", 0.0)
+
+    content = SRTExporter(punctuation=False).render([segment])
+
+    assert _srt_text_lines(content) == ["这是APS-C相机和GR4"]
+
+
+def test_export_keeps_correlative_clause_together():
+    from subtap.core.export import SRTExporter
+
+    segment = _aligned(0, "不管是美食还是玩具，都没有太多问题。", 0.0)
+
+    content = SRTExporter(max_chars=25, min_chars=10).render([segment])
+
+    assert _srt_text_lines(content) == ["不管是美食还是玩具都没有太多问题"]
+
+
+def test_export_does_not_split_inside_modifier_phrase():
+    from subtap.core.export import SRTExporter
+
+    segment = _aligned(
+        0,
+        "或者把它放进苹果设计的巨抽象的单品——这个iPhone Pocket里面。",
+        0.0,
+    )
+
+    content = SRTExporter(max_chars=25, min_chars=10).render([segment])
+
+    assert _srt_text_lines(content) == [
+        "或者把它放进苹果设计的巨抽象的单品",
+        "这个iPhone Pocket里面",
+    ]
+
+
+def test_export_scores_length_after_number_normalization():
+    from subtap.core.export import SRTExporter
+
+    segment = _aligned(
+        0,
+        "就是它的传感器从两千四百万升级到了两千五百七十四万像素。",
+        0.0,
+    )
+
+    content = SRTExporter(max_chars=25, min_chars=10).render([segment])
+
+    assert _srt_text_lines(content) == ["就是它的传感器从2400万升级到了2574万像素"]
+
+
+def test_export_keeps_short_enumeration_together():
+    from subtap.core.export import SRTExporter
+
+    segment = _aligned(
+        0,
+        "虽然这一代在按键布局、机身结构上有一定的优化。",
+        0.0,
+    )
+
+    content = SRTExporter(max_chars=25, min_chars=10).render([segment])
+
+    assert _srt_text_lines(content) == ["虽然这一代在按键布局机身结构上有一定的优化"]
+
+
+def test_export_keeps_fitting_multiword_latin_term_intact():
+    from subtap.core.export import SRTExporter
+
+    segment = _aligned(0, "就是Highlight Diffusion Filter。", 0.0)
+
+    content = SRTExporter(max_chars=25, min_chars=10).render([segment])
+
+    lines = _srt_text_lines(content)
+
+    assert lines == ["就是", "Highlight Diffusion Filter"]
+    assert all(len(line.replace(" ", "")) <= 25 for line in lines)
+
+
+def test_export_counts_visible_punctuation_toward_max_chars():
+    from subtap.core.export import SRTExporter
+
+    segment = _aligned(0, "这是第一部分内容，这是第二部分内容。", 0.0)
+
+    content = SRTExporter(max_chars=10, min_chars=5, punctuation=True).render([segment])
+
+    assert all(len(line.replace(" ", "")) <= 10 for line in _srt_text_lines(content))
+
+
+def test_export_balances_long_sentence_instead_of_leaving_short_tail():
+    from subtap.core.export import SRTExporter
+
+    segment = _aligned(
+        0,
+        "但是整体色彩你要说和手机上那些模拟胶片的App有多大的区别？",
+        0.0,
+    )
+
+    content = SRTExporter(max_chars=25, min_chars=10).render([segment])
+
+    assert _srt_text_lines(content) == [
+        "但是整体色彩你要说和手机上",
+        "那些模拟胶片的App有多大的区别",
+    ]
+
+
+def test_export_prefers_new_clause_subject_over_noun_phrase_split():
+    from subtap.core.export import SRTExporter
+
+    segment = _aligned(
+        0,
+        "但是我觉得你能够看出它和手机区别的核心的点是这个虚化。",
+        0.0,
+    )
+
+    content = SRTExporter(max_chars=25, min_chars=10).render([segment])
+
+    assert _srt_text_lines(content) == [
+        "但是我觉得你能够看出",
+        "它和手机区别的核心的点是这个虚化",
+    ]
+
+
 def test_export_never_merges_sentence_end_within_one_segment():
     from subtap.core.export import SRTExporter
 
@@ -92,6 +284,32 @@ def test_trailing_word_merge_never_crosses_sentence_end():
     result = _post_process_fragments(lines, max_chars=25, min_chars=10)
 
     assert [line["text"] for line in result] == ["但。", "这是下一句。"]
+
+
+def test_post_process_does_not_merge_punctuation_over_max_chars():
+    from subtap.core.export import _post_process_fragments
+
+    lines = [
+        {"text": "甲乙丙丁，戊己庚辛", "start_sec": 0.0, "end_sec": 1.0},
+        {"text": "壬", "start_sec": 1.0, "end_sec": 1.2},
+    ]
+
+    result = _post_process_fragments(lines, max_chars=9, min_chars=4)
+
+    assert [line["text"] for line in result] == ["甲乙丙丁，戊己庚辛", "壬"]
+
+
+def test_split_word_repair_does_not_overflow_next_line():
+    from subtap.core.export import _post_process_fragments
+
+    lines = [
+        {"text": "前文虚", "start_sec": 0.0, "end_sec": 1.0},
+        {"text": "化甲乙丙丁戊己庚辛壬", "start_sec": 1.0, "end_sec": 2.0},
+    ]
+
+    result = _post_process_fragments(lines, max_chars=10, min_chars=2)
+
+    assert [line["text"] for line in result] == ["前文虚", "化甲乙丙丁戊己庚辛壬"]
 
 
 @pytest.mark.parametrize(
@@ -143,6 +361,57 @@ def test_split_keeps_incomplete_comma_fragment_merged_without_pause():
     )
 
     assert _srt_text_lines(content) == [text]
+
+
+def test_split_keeps_complete_short_clause_after_comma_without_pause():
+    from subtap.core.export import SRTExporter
+    from subtap.schemas.models import AlignedSegment
+
+    text = "它实际市场售价都已经到万元了，很难原价买到。"
+    segment = AlignedSegment(
+        sentence_id=0,
+        start_sec=0.0,
+        end_sec=3.0,
+        text=text,
+        words=_words_with_comma_pause(text, pause_sec=0.0),
+    )
+
+    content = SRTExporter(max_chars=25, min_chars=10, punctuation=True).render(
+        [segment]
+    )
+
+    assert _srt_text_lines(content) == [
+        "它实际市场售价都已经到万元了，",
+        "很难原价买到。",
+    ]
+
+
+def test_export_does_not_end_line_with_conjunction():
+    from subtap.core.export import SRTExporter
+
+    segment = _aligned(
+        0,
+        "虽然这一代在按键布局机身结构上有一定的优化，但是它仍然没有防尘设计。",
+        0.0,
+    )
+
+    lines = _srt_text_lines(SRTExporter(max_chars=25, min_chars=10).render([segment]))
+
+    assert all(not line.endswith("但是") for line in lines)
+
+
+def test_export_prefers_boundary_after_directional_complement():
+    from subtap.core.export import SRTExporter
+
+    segment = _aligned(
+        0,
+        "你可以把它开起来压暗蓝天得到对比更加强烈的照片。",
+        0.0,
+    )
+
+    lines = _srt_text_lines(SRTExporter(max_chars=20, min_chars=8).render([segment]))
+
+    assert lines == ["你可以把它开起来", "压暗蓝天得到对比更加强烈的照片"]
 
 
 class TestSmartSplitV2Basic:

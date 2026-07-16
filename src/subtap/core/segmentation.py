@@ -2,8 +2,8 @@
 
 Stable-ts style segmentation strategy for Chinese colloquial content:
 1. Sentence-ending punctuation (。！？.!?)
-2. Comma/pause punctuation (，、,;) for long sentences
-3. Merge short segments
+2. Preserve comma clauses until forced alignment provides acoustic timing
+3. Merge short sentence fragments
 
 Display-length splitting is deferred until forced alignment provides acoustic
 timing, so this stage cannot cut a Chinese word at an arbitrary character.
@@ -64,16 +64,10 @@ def _split_sentences_zh(
     # Tier 1: Split at sentence-ending punctuation
     segments = _split_at_pattern(text, _SENT_END_RE)
 
-    # Tier 2: For long segments, split at comma/pause
-    expanded: list[str] = []
-    for seg in segments:
-        seg = seg.strip()
-        if not seg:
-            continue
-        if len(seg) > max_chars:
-            expanded.extend(_split_at_comma(seg, max_chars))
-        else:
-            expanded.append(seg)
+    # Comma clauses are not independent sentences. Splitting them here creates
+    # irreversible boundaries before acoustic pauses and word timing exist.
+    # The export stage owns display-width splitting after forced alignment.
+    expanded = [seg.strip() for seg in segments if seg.strip()]
 
     # Latin text has explicit word boundaries and is safe to length-split here.
     # CJK display splitting waits for acoustic timing in the export stage.

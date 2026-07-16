@@ -14,6 +14,7 @@ ALL_PUNCT_RE = re.compile(r"[，。？！、；：“”‘’（）《》,.?!;:
 
 
 _DECIMAL_PLACEHOLDER = "\x00DECIMAL\x00"
+_HYPHEN_PLACEHOLDER = "\x00HYPHEN\x00"
 
 
 def normalize_punct(text: str, language: str = "zh") -> str:
@@ -44,6 +45,11 @@ def remove_cjk_spaces(text: str) -> str:
     - Chinese char + space + digit → 售价 6499 → 售价6499
     - Digit + space + Chinese char → 6499 元 → 6499元
     """
+    text = re.sub(
+        r"(?<![A-Za-z])(?:[A-Z]\s+)+[A-Z]\d*(?![A-Za-z])",
+        lambda match: match.group(0).replace(" ", ""),
+        text,
+    )
     text = re.sub(r"([A-Za-z])\s+(\d)", r"\1\2", text)
     text = re.sub(r"(\d)\s+([A-Za-z])", r"\1\2", text)
     text = re.sub(r"([一-鿿])\s+(\d)", r"\1\2", text)
@@ -57,5 +63,13 @@ def strip_punct(text: str) -> str:
     protected = re.sub(r"(\d)\.(\d)", r"\1<DECIMAL>\2", text)
     # Protect ratio colons (e.g., 21:9)
     protected = re.sub(r"(\d):(\d)", r"\1<RATIO>\2", protected)
+    # Preserve structural hyphens inside Latin/digit terms (e.g., APS-C, UTF-8).
+    protected = re.sub(
+        r"(?<=[A-Za-z0-9])-(?=[A-Za-z0-9])", _HYPHEN_PLACEHOLDER, protected
+    )
     stripped = ALL_PUNCT_RE.sub("", protected)
-    return stripped.replace("<DECIMAL>", ".").replace("<RATIO>", ":")
+    return (
+        stripped.replace("<DECIMAL>", ".")
+        .replace("<RATIO>", ":")
+        .replace(_HYPHEN_PLACEHOLDER, "-")
+    )

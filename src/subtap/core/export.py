@@ -31,6 +31,9 @@ _NUM_CHARS = frozenset("零一二两三四五六七八九十百千万亿")
 # Comma / clause punctuation
 _COMMA_PUNCT = frozenset("，、,;")
 
+# Punctuation that introduces an explanation or apposition.
+_CLAUSE_PUNCT = frozenset("：:—")
+
 # Directional complements stay with the preceding verb in subtitle display.
 _DIRECTIONAL_COMPLEMENTS = (
     "下来",
@@ -50,6 +53,13 @@ _DIRECTIONAL_COMPLEMENTS = (
 
 # One-character modifiers attach to the predicate that follows.
 _PREFIX_MODIFIERS = frozenset("不没很更最太真挺蛮已曾还再又才都就也能会可要该将正")
+
+# One-character locative suffixes stay with the noun before them.
+_LOCATIVE_SUFFIXES = frozenset("上下内外中前后里")
+_SPATIAL_SUFFIXES = frozenset("上下内外中里")
+
+_PRONOUNS = ("我们", "你们", "他们", "她们", "它们", "我", "你", "他", "她", "它")
+_OBJECT_INTRODUCERS = frozenset("比把被给对向跟和为从替让")
 
 # Trailing words that should not appear at line end
 _TRAILING_WORDS = {
@@ -257,6 +267,8 @@ def _fix_split_words(
                 cross_sentence=cross_sentence,
                 prev_char=prev_char,
             ).is_incomplete():
+                if _content_len(tail + curr_text) > max_chars:
+                    continue
                 # 移动 tail 到 curr 开头
                 prev["text"] = prev_text[:-take]
                 curr["text"] = tail + curr_text
@@ -716,6 +728,24 @@ def _smart_split_v2(
 
     # --- Step 2: Enumerate legal split points ---
     linguistic_word_ends = word_end_indices(display_text)
+    marked_words = mark_phrase_boundaries(words)
+
+    def _inside_protected_phrase(index: int) -> bool:
+        """Return whether splitting after index would break one phrase."""
+        left_word = mapped_chars[index][1]
+        right_word = mapped_chars[index + 1][1]
+        while left_word >= 0 and words[left_word]["word"] in _PUNCT_CHARS:
+            left_word -= 1
+        while right_word < len(words) and words[right_word]["word"] in _PUNCT_CHARS:
+            right_word += 1
+        if left_word < 0 or right_word >= len(marked_words):
+            return False
+        left_role = marked_words[left_word].get("phrase_role")
+        right_role = marked_words[right_word].get("phrase_role")
+        return left_role in {"phrase_start", "phrase_mid"} and right_role in {
+            "phrase_mid",
+            "phrase_end",
+        }
 
     # Build pause boundary set: positions where time gap >= pause_threshold
     pause_boundaries: set[int] = set()
@@ -730,9 +760,12 @@ def _smart_split_v2(
 
     # split_after[i] = True if we can split AFTER position i
     split_after = [False] * n
+    protected_boundaries: set[int] = set()
     for i in range(n - 1):
         ch = display_chars[i]
         next_ch = display_chars[i + 1]
+        if _inside_protected_phrase(i):
+            protected_boundaries.add(i)
 
         # Sentence-ending punctuation: always split after
         if ch in _SENT_END:
@@ -744,8 +777,49 @@ def _smart_split_v2(
             split_after[i] = True
             continue
 
+        # A colon or the final dash in an em-dash run is a semantic boundary.
+        if ch in _CLAUSE_PUNCT and (ch != "—" or next_ch != "—"):
+            split_after[i] = True
+            continue
+
         # Space: split after (word boundary)
         if ch == " ":
+            latin_start = i
+            while latin_start > 0 and (
+                display_chars[latin_start - 1] == " "
+                or (
+                    display_chars[latin_start - 1].isascii()
+                    and display_chars[latin_start - 1].isalnum()
+                )
+            ):
+                latin_start -= 1
+            latin_end = i + 1
+            while latin_end < n and (
+                display_chars[latin_end] == " "
+                or (
+                    display_chars[latin_end].isascii()
+                    and display_chars[latin_end].isalnum()
+                )
+            ):
+                latin_end += 1
+            latin_len = sum(
+                char != " " for char in display_chars[latin_start:latin_end]
+            )
+            split_after[i] = latin_len > max_chars
+            continue
+
+        # Chinese/Latin transitions are useful boundaries around embedded
+        # product names and technical terms.
+        if (
+            ch != " "
+            and next_ch != " "
+            and ch not in _PUNCT_CHARS
+            and next_ch not in _PUNCT_CHARS
+            and (
+                (_has_latin(ch) and not _has_latin(next_ch))
+                or (not _has_latin(ch) and _has_latin(next_ch))
+            )
+        ):
             split_after[i] = True
             continue
 
@@ -772,6 +846,23 @@ def _smart_split_v2(
             if i + 1 in linguistic_word_ends:
                 split_after[i] = True
 
+    # Guarantee a legal path under the configured width. Natural boundaries
+    # remain preferred; an overlong indivisible token is cut only when no such
+    # boundary exists within one line.
+    forced_start = 0
+    for i in range(n - 1):
+        if split_after[i]:
+            forced_start = i + 1
+            continue
+        candidate = "".join(display_chars[forced_start : i + 2])
+        if _content_len(candidate) <= max_chars:
+            continue
+        forced_boundary = i
+        if display_chars[i + 1] in _PUNCT_CHARS and i > forced_start:
+            forced_boundary = i - 1
+        split_after[forced_boundary] = True
+        forced_start = forced_boundary + 1
+
     # --- Step 3: Dynamic programming for optimal split ---
     # dp[i] = min cost to split display_chars[0:i+1]
     # parent[i] = best split position before i
@@ -790,6 +881,9 @@ def _smart_split_v2(
 
             # Build segment text
             seg_text = "".join(display_chars[start:end])
+            visible_len = _content_len(seg_text)
+            if visible_len > max_chars:
+                continue
 
             # Cost function
             cost = dp[start] + _split_cost(
@@ -802,6 +896,8 @@ def _smart_split_v2(
                 n,
                 display_chars,
                 mapped_chars,
+                protected_boundaries,
+                pause_boundaries,
             )
 
             if cost < dp[end]:
@@ -821,11 +917,29 @@ def _smart_split_v2(
     splits.append(n)
 
     # --- Step 5: Build output lines ---
+    def _interpolated_token_boundary(boundary: int) -> float | None:
+        if boundary <= 0 or boundary >= n:
+            return None
+        word_index = mapped_chars[boundary - 1][1]
+        if mapped_chars[boundary][1] != word_index or word_index >= len(words):
+            return None
+        token_positions = [
+            index
+            for index, mapped in enumerate(mapped_chars)
+            if mapped[1] == word_index and not display_chars[index].isspace()
+        ]
+        if not token_positions:
+            return None
+        consumed = sum(index < boundary for index in token_positions)
+        fraction = consumed / len(token_positions)
+        word = words[word_index]
+        return word["start_sec"] + (word["end_sec"] - word["start_sec"]) * fraction
+
     lines: list[dict] = []
     for i in range(len(splits)):
         seg_start = splits[i - 1] if i > 0 else 0
         seg_end = splits[i]
-        seg_text = "".join(display_chars[seg_start:seg_end])
+        seg_text = "".join(display_chars[seg_start:seg_end]).strip()
 
         # Find word indices in this segment
         word_indices = set()
@@ -841,6 +955,12 @@ def _smart_split_v2(
         if seg_words:
             line_start = seg_words[0]["start_sec"]
             line_end = seg_words[-1]["end_sec"]
+            interpolated_start = _interpolated_token_boundary(seg_start)
+            interpolated_end = _interpolated_token_boundary(seg_end)
+            if interpolated_start is not None:
+                line_start = interpolated_start
+            if interpolated_end is not None:
+                line_end = interpolated_end
         else:
             line_start = start_sec
             line_end = end_sec
@@ -871,23 +991,54 @@ def _split_cost(
     total_len: int,
     display_chars: list[str],
     display_char_map: list[tuple[str, int, bool]] | None = None,
+    protected_boundaries: set[int] | None = None,
+    pause_boundaries: set[int] | None = None,
 ) -> float:
     """Cost function for a single segment. Lower is better."""
     cost = 0.0
 
-    # Visible length (without spaces for scoring)
-    visible_len = len(seg_text.replace(" ", ""))
+    # Score the text users will actually see. Chinese numerals often shrink
+    # substantially during ITN (e.g. 两千五百七十四 -> 2574).
+    visible_len = _content_len(seg_text)
 
     # Penalty for exceeding max_chars
     if visible_len > max_chars:
-        cost += (visible_len - max_chars) * 10.0
+        cost += (visible_len - max_chars) * 20.0
+
+    # A short orphan line creates more editing work than a slightly earlier,
+    # balanced break in the same sentence.
+    starts_new_sentence = start > 0 and display_chars[start - 1] in _SENT_END
+    starts_after_pause = (
+        start > 0 and pause_boundaries and start - 1 in pause_boundaries
+    )
+    starts_after_comma = start > 0 and display_chars[start - 1] in _COMMA_PUNCT
+    complete_short_comma_clause = starts_after_comma and visible_len >= max(
+        6, min_chars - 4
+    )
+    ends_sentence = bool(seg_text) and seg_text[-1] in _SENT_END
+    complete_standalone_sentence = ends_sentence and (start == 0 or starts_new_sentence)
+    if (
+        visible_len < min_chars
+        and (start > 0 or end < total_len)
+        and not (
+            starts_new_sentence
+            or starts_after_pause
+            or complete_short_comma_clause
+            or complete_standalone_sentence
+        )
+    ):
+        cost += (min_chars - visible_len) * 8.0
 
     # Bonus for ending at sentence-ending punctuation (strong)
     if seg_text and seg_text[-1] in "。！？.!?":
         cost -= 8.0
     # Bonus for ending at comma
-    elif seg_text and seg_text[-1] in "，、,;":
+    elif seg_text and seg_text[-1] in "，,;":
         cost -= 4.0
+    elif seg_text and seg_text[-1] == "、":
+        cost += 2.0
+    elif seg_text and seg_text[-1] in _CLAUSE_PUNCT:
+        cost -= 3.0
 
     # Penalty for ending mid-word (last char is Latin, next is Latin)
     if end < total_len and seg_text:
@@ -906,13 +1057,42 @@ def _split_cost(
         cost += 8.0
     if seg_text and seg_text[-1] in _PREFIX_MODIFIERS:
         cost += 8.0
+    if seg_text and seg_text[-1] in _SPATIAL_SUFFIXES:
+        cost -= 4.0
+    if any(seg_text.endswith(word) for word in _DIRECTIONAL_COMPLEMENTS):
+        cost -= 8.0
+    if any(seg_text.rstrip().endswith(word) for word in _TRAILING_WORDS):
+        cost += 20.0
 
     if end < total_len:
         following = "".join(display_chars[end : end + 2])
         if following in _DIRECTIONAL_COMPLEMENTS:
             cost += 8.0
+        following_text = "".join(display_chars[end : end + 3])
+        previous_char = display_chars[end - 1] if end > 0 else ""
+        if previous_char not in _OBJECT_INTRODUCERS and any(
+            following_text.startswith(pronoun) for pronoun in _PRONOUNS
+        ):
+            cost -= 10.0
         if display_chars[end] in "的得地":
             cost += 8.0
+        if display_chars[end] in _LOCATIVE_SUFFIXES:
+            cost += 8.0
+
+        # Spaces are legal boundaries, but prefer keeping adjacent Latin words
+        # together when the configured width allows it.
+        if seg_text.endswith(" "):
+            previous_visible = next(
+                (char for char in reversed(seg_text[:-1]) if char != " "), ""
+            )
+            next_visible = display_chars[end]
+            if (
+                previous_visible.isascii()
+                and previous_visible.isalnum()
+                and next_visible.isascii()
+                and next_visible.isalnum()
+            ):
+                cost += 6.0
 
     # Penalty for splitting within the same word (CJK compound words)
     if display_char_map and end < len(display_char_map) and end > 0:
@@ -920,6 +1100,11 @@ def _split_cost(
         next_wi = display_char_map[end][1]
         if last_wi == next_wi:
             cost += 15.0  # Heavy penalty for splitting within same word
+
+    # Prefer phrase integrity, but keep the boundary legal so a long phrase can
+    # still obey the configured subtitle width.
+    if end < total_len and protected_boundaries and end - 1 in protected_boundaries:
+        cost += 12.0
 
     # Balance penalty: mild, prefers lines closer to target length
     target = (max_chars + min_chars) / 2
@@ -945,7 +1130,7 @@ def _merge_short_fragments(
     while i < len(lines):
         line = lines[i]
         text = line["text"]
-        visible_len = len(text.replace(" ", ""))
+        visible_len = _content_len(text)
 
         # Don't merge lines ending with sentence-ending punctuation
         ends_with_sent = text.rstrip() and text.rstrip()[-1] in _SENT_END
@@ -953,7 +1138,7 @@ def _merge_short_fragments(
         if visible_len < min_chars and not ends_with_sent and i + 1 < len(lines):
             # Try merging with next line
             next_line = lines[i + 1]
-            combined_len = visible_len + len(next_line["text"].replace(" ", ""))
+            combined_len = visible_len + _content_len(next_line["text"])
             if combined_len <= max_chars:
                 # Merge into next line
                 lines[i + 1] = {
@@ -970,7 +1155,7 @@ def _merge_short_fragments(
                 prev_ends_sent = (
                     prev_text.rstrip() and prev_text.rstrip()[-1] in _SENT_END
                 )
-                prev_len = len(prev_text.replace(" ", ""))
+                prev_len = _content_len(prev_text)
                 if prev_len + visible_len <= max_chars and not prev_ends_sent:
                     merged[-1] = {
                         "text": prev_text + text,
@@ -984,6 +1169,33 @@ def _merge_short_fragments(
         i += 1
 
     return merged
+
+
+def _content_len(text: str) -> int:
+    """Length of semantic content after the export-time transformations."""
+    return len(chinese_to_num(text).replace(" ", ""))
+
+
+def _reconcile_tiny_overlaps(
+    lines: list[dict], tolerance_sec: float = 0.1
+) -> list[dict]:
+    """Share a boundary for harmless aligner jitter; reject real overlaps."""
+    reconciled = [{**line} for line in lines]
+    for previous, current in zip(reconciled, reconciled[1:]):
+        overlap = previous["end_sec"] - current["start_sec"]
+        if overlap <= 0:
+            continue
+        if overlap > tolerance_sec:
+            raise ValueError(
+                f"SRT 交付检查失败：字幕时间轴重叠 {overlap:.3f}s，超过可校正范围"
+            )
+        boundary = (previous["end_sec"] + current["start_sec"]) / 2
+        if boundary <= previous["start_sec"] or boundary >= current["end_sec"]:
+            raise ValueError("字幕时间轴重叠导致非正时长")
+        logger.debug("校正相邻字幕 %.3fs 的对齐器边界抖动", overlap)
+        previous["end_sec"] = boundary
+        current["start_sec"] = boundary
+    return reconciled
 
 
 def _process_segment(
@@ -1034,10 +1246,10 @@ def _post_process_fragments(
     merged_subs: list[dict] = []
     for sub in lines:
         txt = sub["text"].strip()
-        visible = strip_punct(txt).replace(" ", "")
-        if merged_subs and len(visible) <= min_chars - 1:
+        visible_len = _content_len(txt)
+        if merged_subs and visible_len <= min_chars - 1:
             prev = merged_subs[-1]
-            prev_visible = strip_punct(prev["text"]).replace(" ", "")
+            prev_len = _content_len(prev["text"])
             prev_text = prev["text"].rstrip()
             current_ends_sentence = bool(txt) and txt[-1] in _SENT_END
             has_real_pause = (
@@ -1050,8 +1262,8 @@ def _post_process_fragments(
             )
             if (
                 not preserve_semantic_boundary
-                and len(prev_visible) > len(visible)
-                and len(prev_visible) + len(visible) <= max_chars
+                and prev_len > visible_len
+                and prev_len + visible_len <= max_chars
             ):
                 merged_text = prev["text"].rstrip() + txt
                 merged_stripped = strip_punct(merged_text).replace(" ", "")
@@ -1073,17 +1285,18 @@ def _post_process_fragments(
     final_subs: list[dict] = []
     for i, sub in enumerate(merged_subs):
         txt = sub["text"].strip()
-        visible = strip_punct(txt).replace(" ", "")
+        visible_text = strip_punct(txt).replace(" ", "")
+        visible_len = _content_len(txt)
         if (
-            visible in _TRAILING_WORDS
+            visible_text in _TRAILING_WORDS
             and (not txt or txt[-1] not in _SENT_END)
             and i + 1 < len(merged_subs)
             and merged_subs[i + 1]["start_sec"] - sub["end_sec"]
             < pause_threshold - 1e-6
         ):
             nxt = merged_subs[i + 1]
-            nxt_visible = strip_punct(nxt["text"]).replace(" ", "")
-            if len(visible) + len(nxt_visible) <= max_chars:
+            nxt_len = _content_len(nxt["text"])
+            if visible_len + nxt_len <= max_chars:
                 nxt["text"] = txt + nxt["text"]
                 nxt["start_sec"] = sub["start_sec"]
                 continue
@@ -1158,6 +1371,7 @@ class SRTExporter(BaseExporter):
             for sub in _post_process_fragments(raw_subs, self.max_chars, self.min_chars)
             if sub["text"].strip()
         ]
+        all_subs = _reconcile_tiny_overlaps(all_subs)
 
         # Text processing + render SRT
         lines: list[str] = []

@@ -257,6 +257,13 @@ class TestSplitSentencesZh:
         for sent in result:
             assert len(sent) <= 60
 
+    def test_comma_does_not_create_irreversible_nominal_fragment(self):
+        text = "同样APS-C画幅的相机，搭配镜头比它大了这么多，" "属于是比它好的没它小。"
+
+        result = _split_sentences(text, language="zh", max_chars=25, min_chars=10)
+
+        assert result == [text]
+
     def test_no_punctuation_long_text(self):
         """无标点长文本：延后到有逐字时间戳的导出阶段切分。"""
         text = (
