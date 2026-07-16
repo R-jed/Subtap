@@ -51,15 +51,6 @@
       {
         "hooks": [
           {
-            "command": "CMD=$(python3 -c \"import json,sys; d=json.load(sys.stdin); print(d.get('tool_input',d).get('command',''))\" 2>/dev/null || true); if echo \"$CMD\" | grep -qE 'git commit'; then MSG=$(echo \"$CMD\" | sed -E 's/.*-m[[:space:]]+[\"\\x27]?([^\"\\x27]*).*/\\1/'); TYPES='feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|wip'; if ! echo \"$MSG\" | grep -qE \"^($TYPES)(\\\\([a-zA-Z0-9._-]+\\\\))?: .+\"; then echo \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PreToolUse\\\",\\\"additionalContext\\\":\\\"🚫 BLOCKED: commit message 格式错误。必须为 Conventional Commits: <type>: <description>。当前: $MSG\\\"}}\"; exit 1; fi; fi",
-            "type": "command"
-          }
-        ],
-        "matcher": "Bash"
-      },
-      {
-        "hooks": [
-          {
             "command": "CMD=$(python3 -c \"import json,sys; d=json.load(sys.stdin); print(d.get('tool_input',d).get('command',''))\" 2>/dev/null || true); case \"$CMD\" in *rm\\ *|*rmdir*|*git\\ clean*|*git\\ rm*|*unlink*|*shred*) afplay /System/Library/Sounds/Frog.aiff &;; esac",
             "type": "command"
           }
