@@ -17,7 +17,7 @@ class CommandDeckOption:
 
 
 OPTIONS = [
-    CommandDeckOption("Run", "使用当前配置从音频生成字幕", "run"),
+    CommandDeckOption("Run", "选择参数并从音频生成字幕", "run"),
     CommandDeckOption("Observe", "观察已有 run.log.jsonl", "observe"),
     CommandDeckOption("Batch", "批量处理媒体文件夹", "batch"),
     CommandDeckOption("Doctor", "检查模型和本地运行环境", "doctor"),
@@ -99,7 +99,7 @@ try:
             ("2", "select_index(1)", "Observe"),
             ("3", "select_index(2)", "Batch"),
             ("4", "select_index(3)", "Doctor"),
-            ("5", "select_index(4)", "Config"),
+            ("5", "select_index(4)", "Setup"),
             ("o", "open_output", "输出"),
             ("d", "doctor", "诊断"),
             ("v", "version", "版本"),

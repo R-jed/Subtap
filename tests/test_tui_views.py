@@ -475,10 +475,11 @@ def test_wizard_view_build_command(tmp_path):
     audio.write_bytes(b"fake")
     view = WizardView()
     view.select_file(audio)
-    view.select_quality("fast")
+    view.select_quality("quality")
     cmd = view.build_run_command()
     assert str(audio) in cmd
-    assert "--format" in cmd or "run" in cmd
+    assert cmd[cmd.index("--mode") + 1] == "quality"
+    assert "--tui" in cmd
 
 
 def test_wizard_view_build_command_includes_output_dir(tmp_path, monkeypatch):
@@ -520,6 +521,9 @@ def test_wizard_view_build_command_includes_manuscript(tmp_path, monkeypatch):
     from subtap.ui.views.wizard import WizardView
 
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    glossary_dir = tmp_path / ".subtap" / "glossaries"
+    glossary_dir.mkdir(parents=True)
+    (glossary_dir / "default.yaml").write_text("")
     ms_dir = tmp_path / ".subtap" / "manuscripts"
     ms_dir.mkdir(parents=True)
     (ms_dir / "draft.txt").write_text("hello")

@@ -17,6 +17,7 @@ from rich.text import Text
 
 from subtap.core.models import DownloadCancelled, required_model_names
 from subtap.core.safe_delete import ensure_directory_structure
+from subtap.core.user_resources import ensure_default_glossary
 from subtap.core.state_store import StateStore
 from subtap.schemas.config import SubtapConfig
 from subtap.ui.config_manager import ConfigManager
@@ -240,6 +241,7 @@ class FirstRunScreen(Screen[None]):
                 self.prepare_download_plan(*self._plan_context)
             return
         ensure_directory_structure(self._config_path().parent)
+        ensure_default_glossary(self._config_path().parent)
         self._cancel_requested.clear()
         self._downloaded = dict(self.plan.get("existing_bytes_by_file", {}))
         source_value = self.query_one("#source", Select).value

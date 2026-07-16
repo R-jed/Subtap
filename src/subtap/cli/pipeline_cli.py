@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -16,8 +17,11 @@ import typer
 
 from subtap.cli._utils import _handle_error
 from subtap.metrics.profiler import PipelineProfiler
+from subtap.core.user_resources import default_glossary_path
+from subtap.schemas.task_request import SubtitleTaskRequest
 
 REMOTE_ASR_BACKENDS = {"http-asr"}
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from subtap.core.pipeline import Pipeline
@@ -218,15 +222,12 @@ def _execute_pipeline(
 
 def _apply_run_config(
     config: "SubtapConfig",
-    input_path: Path,
+    request: SubtitleTaskRequest,
     timestamp: bool | None,
     punctuation: bool | None,
-    subtitle_language: str | None,
     max_chars: int | None,
     min_chars: int | None,
-    script: str | None,
     script_mode: str,
-    mode: str,
     hotwords: str | None,
     work_dir: Path | None,
 ) -> Path:
@@ -235,25 +236,31 @@ def _apply_run_config(
         config.output.timestamp = timestamp
     if punctuation is not None:
         config.output.subtitle_punctuation = punctuation
-    if subtitle_language is not None:
-        config.output.subtitle_language = subtitle_language
+    if request.subtitle_language is not None:
+        config.output.subtitle_language = request.subtitle_language
     if max_chars is not None or min_chars is not None:
         from subtap.schemas.config import with_output_character_limits
 
         config.output = with_output_character_limits(
             config.output, max_chars=max_chars, min_chars=min_chars
         )
-    config.output.subtitle_stem = input_path.stem
+    config.output.subtitle_stem = request.input_path.stem
 
-    if script:
-        config.output.script_path = script
+    if request.disable_script:
+        config.output.script_path = None
+    elif request.script_path is not None:
+        config.output.script_path = str(request.script_path)
         config.output.script_mode = script_mode
 
-    if mode == "quality":
-        config.asr.model = "asr_1.7b"
+    config.asr.model = "asr_1.7b" if request.mode == "quality" else "asr_0.6b"
 
-    if hotwords:
+    if request.reset_hotwords:
+        config.asr.hotwords = []
+    elif hotwords:
         config.asr.hotwords = [w.strip() for w in hotwords.split(",") if w.strip()]
+    glossary_path = request.resolved_glossary_path()
+    if glossary_path is not None:
+        config.clean.glossary_path = str(glossary_path)
 
     if work_dir is None:
         work_dir = Path(config.workspace.root)
@@ -389,6 +396,16 @@ def _run(
         "--hotwords",
         help="ASR 热词列表，逗号分隔（如：瑞幸,CapCut,TikTok）",
     ),
+    glossary: Path | None = typer.Option(
+        None, "--glossary", help="本次任务使用的热词表路径"
+    ),
+    default_glossary: bool = typer.Option(
+        False, "--default-glossary", help="本次任务使用默认热词表"
+    ),
+    no_script: bool = typer.Option(False, "--no-script", help="本次任务不使用参考文稿"),
+    reset_hotwords: bool = typer.Option(
+        False, "--reset-hotwords", hidden=True, help="内部参数：清除配置中的额外热词"
+    ),
     tui: bool = typer.Option(False, "--tui", help="使用 TUI 观察者运行"),
     observer_child: bool = typer.Option(
         False, "--observer-child", hidden=True, help="内部参数：观察者子进程"
@@ -420,8 +437,28 @@ def _run(
     from subtap.schemas.config import load_config
     from subtap.core.pipeline import Pipeline
 
-    if not input_path.exists():
-        _handle_error(f"错误：文件未找到 {input_path}")
+    if reset_hotwords and hotwords:
+        _handle_error("错误：不能同时使用 --reset-hotwords 和 --hotwords")
+    request = SubtitleTaskRequest(
+        input_path=input_path,
+        output_dir=output_dir.expanduser(),
+        mode=mode,
+        glossary_path=glossary,
+        use_default_glossary=default_glossary,
+        script_path=Path(script) if script else None,
+        disable_script=no_script,
+        reset_hotwords=reset_hotwords,
+        subtitle_format=fmt,
+        subtitle_language=subtitle_language,
+        show_observer=tui,
+    )
+    try:
+        request.validate()
+    except ValueError as error:
+        _handle_error(f"错误：{error}")
+    output_dir = request.output_dir
+    fmt = request.subtitle_format
+    tui = request.show_observer
 
     # ── 加载配置并应用回退 ───────────────────────────────────
     config = load_config(Path.home() / ".subtap" / "config.yaml")
@@ -441,15 +478,12 @@ def _run(
 
     work_dir = _apply_run_config(
         config,
-        input_path,
+        request,
         timestamp,
         punctuation,
-        subtitle_language,
         max_chars,
         min_chars,
-        script,
         script_mode,
-        mode,
         hotwords,
         work_dir,
     )
@@ -508,8 +542,11 @@ def _run(
     )
 
     # Record hotword glossary info
-    _glossary_dir = Path.home() / ".subtap" / "glossaries"
-    _hw_path = _glossary_dir / "default.yaml"
+    _hw_path = (
+        Path(config.clean.glossary_path)
+        if config.clean.glossary_path
+        else default_glossary_path()
+    )
     if _hw_path.exists():
         try:
             from subtap.glossary.hotword import load_glossary
@@ -517,6 +554,7 @@ def _run(
             _hw_g = load_glossary(_hw_path, "zh")
             run_log.hotwords(path=_hw_path, count=len(_hw_g.hotwords), loaded=True)
         except Exception:
+            logger.exception("热词表加载失败：%s", _hw_path)
             run_log.hotwords(path=_hw_path, loaded=False)
     else:
         run_log.hotwords(loaded=False)

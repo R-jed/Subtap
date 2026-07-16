@@ -80,10 +80,14 @@ def _choose_command_deck_path(action: str) -> Path | None:
     return Path(selected) if selected else None
 
 
-def _run_subtap_command(*args: str) -> None:
-    result = subprocess.run([sys.executable, "-m", "subtap.cli", *args])
+def _run_command(command: list[str]) -> None:
+    result = subprocess.run(command)
     if result.returncode:
         raise typer.Exit(result.returncode)
+
+
+def _run_subtap_command(*args: str) -> None:
+    _run_command([sys.executable, "-m", "subtap.cli", *args])
 
 
 def _handle_command_deck_action(action: str | None) -> None:
@@ -103,7 +107,12 @@ def _handle_command_deck_action(action: str | None) -> None:
         if selected is None:
             return
         if action == "run":
-            _run_subtap_command("run", str(selected), "--tui")
+            from subtap.ui.textual_run_setup import RunSetupApp
+
+            command = RunSetupApp(selected).run()
+            if command is None:
+                return
+            _run_command(command)
         elif action == "observe":
             _run_subtap_command("observe", str(selected))
         else:
@@ -189,9 +198,9 @@ def init() -> None:
     if not db_path.exists():
         db_path.touch()
 
-    glossary_default = dirs["glossaries"] / "default.yaml"
-    if not glossary_default.exists():
-        glossary_default.write_text("")
+    from subtap.core.user_resources import ensure_default_glossary
+
+    ensure_default_glossary(subtap_dir)
 
     typer.echo(f"✓ 工作空间已初始化：{subtap_dir}")
     typer.echo(f"  配置文件：{config_path}")

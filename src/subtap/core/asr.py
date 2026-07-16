@@ -72,13 +72,20 @@ def write_asr_drafts(
                 )
 
 
-def _load_hotwords_from_glossary(lang: str = "zh") -> list[str]:
+def _load_hotwords_from_glossary(
+    lang: str = "zh", glossary_path: str | None = None
+) -> list[str]:
     """Load correct hotword forms from glossary file for system_prompt injection."""
     from subtap.glossary.hotword import load_glossary
+    from subtap.core.user_resources import default_glossary_path
     from pathlib import Path
 
-    glossary_dir = Path.home() / ".subtap" / "glossaries"
-    glossary = load_glossary(glossary_dir / "default.yaml", lang)
+    path = Path(glossary_path) if glossary_path else default_glossary_path()
+    if glossary_path and not path.is_file():
+        raise FileNotFoundError(f"热词表不存在：{path}")
+    if not glossary_path and not path.exists():
+        return []
+    glossary = load_glossary(path, lang)
     return [hw.word for hw in glossary.hotwords]
 
 
@@ -110,7 +117,9 @@ def run_asr(
         asr_config.backend = backend_name
 
     # Load hotwords: merge glossary file + config hotwords
-    glossary_hotwords = _load_hotwords_from_glossary()
+    glossary_hotwords = _load_hotwords_from_glossary(
+        glossary_path=config.clean.glossary_path
+    )
     all_hotwords = list(set(glossary_hotwords + (asr_config.hotwords or [])))
 
     if asr_config.backend == "http-asr":

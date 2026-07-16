@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Optional
 
+import pytest
+
 from subtap.backends.asr.base import ASRBackend
 from subtap.backends.asr import get_backend
 from subtap.core.asr import load_chunks, run_asr
@@ -120,6 +122,47 @@ def test_asr_chunk_id_alignment(
     chunk_ids = {c.chunk_id for c in chunksLoaded}
     seg_ids = {s.chunk_id for s in segments}
     assert chunk_ids == seg_ids
+
+
+def test_run_asr_uses_selected_glossary(
+    sample_wav: Path,
+    test_config: SubtapConfig,
+    tmp_path: Path,
+    monkeypatch,
+):
+    import subtap.core.asr as asr_module
+
+    selected = tmp_path / "selected.yaml"
+    selected.write_text("理光GR4=李光机亚四\n", encoding="utf-8")
+    default = tmp_path / ".subtap" / "glossaries" / "default.yaml"
+    default.parent.mkdir(parents=True)
+    default.write_text("默认词=错误词\n", encoding="utf-8")
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+
+    captured_hotwords = []
+
+    class CapturingBackend(MockASRBackend):
+        def transcribe(self, chunks, language=None, hotwords=None):
+            captured_hotwords.extend(hotwords or [])
+            return super().transcribe(chunks, language=language, hotwords=hotwords)
+
+    ws = Workspace(test_config, base_dir=tmp_path / "work")
+    prepare_media(sample_wav, ws, test_config)
+    split_chunks(ws, test_config)
+    test_config.clean.glossary_path = str(selected)
+    monkeypatch.setattr(asr_module, "get_backend", lambda *_a, **_k: CapturingBackend())
+
+    run_asr(ws, test_config)
+
+    assert "理光GR4" in captured_hotwords
+    assert "默认词" not in captured_hotwords
+
+
+def test_selected_missing_glossary_fails(tmp_path):
+    from subtap.core.asr import _load_hotwords_from_glossary
+
+    with pytest.raises(FileNotFoundError, match="热词表不存在"):
+        _load_hotwords_from_glossary(glossary_path=str(tmp_path / "missing.yaml"))
 
 
 def test_http_asr_empty_chunks_returns_empty():

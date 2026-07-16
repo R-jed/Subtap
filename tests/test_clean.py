@@ -205,6 +205,23 @@ replacements:
     assert "maching learning→machine learning" in segs[0].glossary_applied
 
 
+def test_clean_pipeline_uses_configured_default_glossary(
+    test_config: SubtapConfig, tmp_path: Path
+):
+    ws = Workspace(test_config, base_dir=tmp_path / "work")
+    ws.ensure_dirs()
+    _make_asr_jsonl(ws, ["李光机亚四"])
+    default = tmp_path / ".subtap" / "glossaries" / "default.yaml"
+    default.parent.mkdir(parents=True)
+    default.write_text("理光GR4=李光机亚四\n", encoding="utf-8")
+    test_config.clean.glossary_path = str(default)
+
+    run_clean(ws, test_config, enhance_mode="local")
+
+    cleaned = RawCleanSegment.model_validate_json(ws.cleaned_jsonl.read_text())
+    assert cleaned.cleaned_text == "理光GR4"
+
+
 def test_clean_local_mode_does_not_call_llm(
     test_config: SubtapConfig, tmp_path: Path, monkeypatch
 ):

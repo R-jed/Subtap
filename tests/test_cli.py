@@ -582,6 +582,8 @@ def test_run_full_pipeline_with_align(tmp_path, monkeypatch):
 
     config = SimpleNamespace(
         mode="online",
+        asr=SimpleNamespace(model="asr_0.6b"),
+        clean=SimpleNamespace(glossary_path=None),
         output=SimpleNamespace(
             timestamp=True,
             generate_metrics=False,
@@ -690,6 +692,8 @@ def test_run_enhance_local_passes_clean_local_to_pipeline(tmp_path, monkeypatch)
 
     config = SimpleNamespace(
         mode="online",
+        asr=SimpleNamespace(model="asr_0.6b"),
+        clean=SimpleNamespace(glossary_path=None),
         output=SimpleNamespace(
             timestamp=True,
             generate_metrics=False,
@@ -1531,3 +1535,122 @@ def test_cli_run_parameter_validation(tmp_path):
     result = runner.invoke(app, ["run", str(fake_file), "--bilingual", "invalid"])
     assert result.exit_code == 1
     assert "--bilingual" in _strip_ansi(result.output)
+
+    result = runner.invoke(app, ["run", str(fake_file), "--mode", "invalid"])
+    assert result.exit_code == 1
+    assert "--mode" in _strip_ansi(result.output)
+
+
+def test_cli_run_accepts_glossary_selection():
+    result = runner.invoke(app, ["run", "--help"])
+
+    assert result.exit_code == 0
+    assert "--glossary" in _strip_ansi(result.output)
+
+
+def test_cli_run_rejects_reset_and_explicit_hotwords(tmp_path):
+    fake_file = tmp_path / "test.mp3"
+    fake_file.touch()
+
+    result = runner.invoke(
+        app,
+        ["run", str(fake_file), "--reset-hotwords", "--hotwords", "GR4"],
+    )
+
+    assert result.exit_code == 1
+    assert "不能同时" in _strip_ansi(result.output)
+
+
+def test_run_config_applies_selected_glossary(tmp_path):
+    from subtap.cli.pipeline_cli import _apply_run_config
+    from subtap.schemas.config import SubtapConfig
+    from subtap.schemas.task_request import SubtitleTaskRequest
+
+    glossary = tmp_path / "camera.yaml"
+    config = SubtapConfig()
+
+    _apply_run_config(
+        config=config,
+        request=SubtitleTaskRequest(
+            input_path=tmp_path / "voice.wav",
+            output_dir=tmp_path / "output",
+            mode="quality",
+            glossary_path=glossary,
+        ),
+        timestamp=None,
+        punctuation=None,
+        max_chars=None,
+        min_chars=None,
+        script_mode="follow_script",
+        hotwords=None,
+        work_dir=tmp_path / "work",
+    )
+
+    assert config.clean.glossary_path == str(glossary)
+    assert config.asr.model == "asr_1.7b"
+
+
+def test_run_config_fast_mode_selects_06b_model(tmp_path):
+    from subtap.cli.pipeline_cli import _apply_run_config
+    from subtap.schemas.config import SubtapConfig
+    from subtap.schemas.task_request import SubtitleTaskRequest
+
+    config = SubtapConfig()
+    config.asr.model = "asr_1.7b"
+
+    _apply_run_config(
+        config=config,
+        request=SubtitleTaskRequest(
+            input_path=tmp_path / "voice.wav",
+            output_dir=tmp_path / "output",
+            mode="fast",
+        ),
+        timestamp=None,
+        punctuation=None,
+        max_chars=None,
+        min_chars=None,
+        script_mode="follow_script",
+        hotwords=None,
+        work_dir=tmp_path / "work",
+    )
+
+    assert config.asr.model == "asr_0.6b"
+
+
+def test_run_config_explicitly_resets_optional_resources(tmp_path, monkeypatch):
+    from subtap.cli.pipeline_cli import _apply_run_config
+    from subtap.schemas.config import SubtapConfig
+    from subtap.schemas.task_request import SubtitleTaskRequest
+
+    config = SubtapConfig()
+    config.clean.glossary_path = "/old/glossary.yaml"
+    config.output.script_path = "/old/script.txt"
+    config.asr.hotwords = ["旧热词"]
+    default_glossary = tmp_path / ".subtap" / "glossaries" / "default.yaml"
+    default_glossary.parent.mkdir(parents=True)
+    default_glossary.write_text("", encoding="utf-8")
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    request = SubtitleTaskRequest(
+        input_path=tmp_path / "voice.wav",
+        output_dir=tmp_path / "output",
+        mode="fast",
+        use_default_glossary=True,
+        disable_script=True,
+        reset_hotwords=True,
+    )
+
+    _apply_run_config(
+        config=config,
+        request=request,
+        timestamp=None,
+        punctuation=None,
+        max_chars=None,
+        min_chars=None,
+        script_mode="follow_script",
+        hotwords=None,
+        work_dir=tmp_path / "work",
+    )
+
+    assert config.clean.glossary_path == str(default_glossary)
+    assert config.output.script_path is None
+    assert config.asr.hotwords == []

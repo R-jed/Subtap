@@ -231,6 +231,7 @@ async def test_textual_first_run_downloads_and_verifies_before_completion(
     assert downloaded == [("asr_1.7b", "hf")]
     assert load_config(tmp_path / ".subtap" / "config.yaml").asr.model == "asr_1.7b"
     assert (tmp_path / ".subtap" / "state.json").exists()
+    assert (tmp_path / ".subtap" / "glossaries" / "default.yaml").is_file()
 
 
 @pytest.mark.asyncio
@@ -469,7 +470,6 @@ def test_tui_command_uses_textual_command_deck(monkeypatch):
 @pytest.mark.parametrize(
     ("action", "expected_args"),
     [
-        ("run", ["run", "{selected}", "--tui"]),
         ("observe", ["observe", "{selected}"]),
         ("batch", ["batch-transcribe", "--dir", "{selected}"]),
         ("doctor", ["doctor"]),
@@ -501,6 +501,42 @@ def test_tui_action_starts_real_command(monkeypatch, tmp_path, action, expected_
     assert result.exit_code == 0
     expected = [part.replace("{selected}", str(audio)) for part in expected_args]
     assert commands == [[sys.executable, "-m", "subtap.cli", *expected]]
+
+
+def test_tui_run_action_uses_selected_setup_command(monkeypatch, tmp_path):
+    import sys
+
+    from typer.testing import CliRunner
+
+    from subtap.cli import app
+
+    audio = tmp_path / "voice.wav"
+    command = [
+        sys.executable,
+        "-m",
+        "subtap.cli",
+        "run",
+        str(audio),
+        "--mode",
+        "quality",
+        "--tui",
+    ]
+    commands = []
+    monkeypatch.setattr("subtap.ui.command_deck.CommandDeckApp.run", lambda self: "run")
+    monkeypatch.setattr("subtap.cli._choose_command_deck_path", lambda action: audio)
+    monkeypatch.setattr(
+        "subtap.ui.textual_run_setup.RunSetupApp.run", lambda self: command
+    )
+    monkeypatch.setattr(
+        "subtap.cli.subprocess.run",
+        lambda selected, **kwargs: commands.append(selected)
+        or type("Result", (), {"returncode": 0})(),
+    )
+
+    result = CliRunner().invoke(app, ["tui"])
+
+    assert result.exit_code == 0
+    assert commands == [command]
 
 
 def test_tui_cancelled_file_picker_does_not_start_command(monkeypatch):
