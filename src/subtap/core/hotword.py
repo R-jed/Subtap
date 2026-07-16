@@ -6,25 +6,22 @@ import json
 from pathlib import Path
 
 from subtap.glossary.hotword import HotwordGlossary, load_glossary
+from subtap.core.user_resources import default_glossary_path
 from subtap.core.workspace import Workspace
 
 
 def _load_glossary_for_lang(
-    lang: str, glossary_dir: Path | None = None
+    lang: str, glossary_path: Path | None = None
 ) -> HotwordGlossary:
     """Load the canonical default glossary."""
-    if glossary_dir is None:
-        path = Path.home() / ".subtap" / "glossaries" / "default.yaml"
-    else:
-        path = glossary_dir / f"hotwords_{lang}.txt"
-        if not path.exists():
-            path = glossary_dir / f"hotwords_{lang}.tsv"
-    return load_glossary(path, lang)
+    if glossary_path is not None and not glossary_path.is_file():
+        raise FileNotFoundError(f"术语表不存在：{glossary_path}")
+    return load_glossary(glossary_path or default_glossary_path(), lang)
 
 
 def run_hotword(
     workspace: Workspace,
-    glossary_dir: Path | None = None,
+    glossary_path: str | Path | None = None,
     mode: str = "local",
     lang: str = "zh",
 ) -> dict:
@@ -33,11 +30,12 @@ def run_hotword(
     Reads aligned.jsonl, applies hotword replacement on text field,
     writes back. Preserves word-level timestamps.
     """
+    selected_glossary = Path(glossary_path) if glossary_path else None
+    glossary = _load_glossary_for_lang(lang, selected_glossary)
+
     input_path = workspace.aligned_jsonl
     if not input_path.exists():
         return {"replaced": 0, "total": 0}
-
-    glossary = _load_glossary_for_lang(lang, glossary_dir)
 
     # Read segments
     segments = []

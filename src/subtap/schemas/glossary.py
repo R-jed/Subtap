@@ -64,15 +64,36 @@ class Glossary(BaseModel):
 
     def upsert_term(self, term: GlossaryTerm) -> None:
         """Add a canonical term or merge new aliases into the existing term."""
+        aliases: list[str] = []
+        alias_keys: set[str] = set()
+        for alias in term.aliases:
+            key = alias.lower()
+            if key != term.canonical.lower() and key not in alias_keys:
+                aliases.append(alias)
+                alias_keys.add(key)
+        term.aliases = aliases
+        canonical_key = term.canonical.lower()
         existing = next(
-            (item for item in self.terms if item.canonical == term.canonical),
+            (item for item in self.terms if item.canonical.lower() == canonical_key),
             None,
         )
+        conflict = next(
+            (item for item in self.terms if item.canonical.lower() in alias_keys),
+            None,
+        )
+        if conflict is not None:
+            raise ValueError(f"别名不能与已有标准词相同：{conflict.canonical}")
+        for item in self.terms:
+            if item is not existing:
+                item.aliases = [
+                    alias for alias in item.aliases if alias.lower() not in alias_keys
+                ]
         if existing is None:
             self.terms.append(term)
         else:
+            existing_aliases = {alias.lower() for alias in existing.aliases}
             existing.aliases.extend(
-                alias for alias in term.aliases if alias not in existing.aliases
+                alias for alias in term.aliases if alias.lower() not in existing_aliases
             )
         self.model_post_init(None)
 

@@ -775,6 +775,8 @@ def test_observe_command_prints_event_log_status(tmp_path):
 
 def test_tui_run_rejects_zero_exit_without_subtitle(tmp_path, monkeypatch):
     """子进程返回成功但没有字幕文件时，CLI 不能报告成功。"""
+    import subprocess
+
     config = SimpleNamespace(
         mode="online",
         translate_to="",
@@ -790,10 +792,14 @@ def test_tui_run_rejects_zero_exit_without_subtitle(tmp_path, monkeypatch):
     )
     process = SimpleNamespace(returncode=0, pid=42, poll=lambda: 0)
     dashboard = SimpleNamespace(run=lambda: "quit")
+    popen_kwargs = {}
+
+    def start_child(*_args, **kwargs):
+        popen_kwargs.update(kwargs)
+        return process
+
     monkeypatch.setattr("subtap.schemas.config.load_config", lambda _path: config)
-    monkeypatch.setattr(
-        "subtap.cli.pipeline_cli.subprocess.Popen", lambda *_args, **_kwargs: process
-    )
+    monkeypatch.setattr("subtap.cli.pipeline_cli.subprocess.Popen", start_child)
     monkeypatch.setattr(
         "subtap.ui.observer._make_observer_dashboard",
         lambda *_args, **_kwargs: dashboard,
@@ -816,6 +822,9 @@ def test_tui_run_rejects_zero_exit_without_subtitle(tmp_path, monkeypatch):
 
     assert result.exit_code == 1
     assert "未找到字幕文件" in _strip_ansi(result.output)
+    assert popen_kwargs["start_new_session"] is True
+    assert popen_kwargs["stderr"] is subprocess.STDOUT
+    assert popen_kwargs["stdout"].name == str(tmp_path / "work" / "observer-child.log")
 
 
 def test_run_mode_fast():

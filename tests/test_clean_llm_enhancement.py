@@ -116,10 +116,9 @@ def test_hotword_stage_replaces_in_aligned(tmp_path):
     """热词替换统一由 hotword 阶段负责，不再在 clean 阶段执行。"""
     from subtap.core.hotword import run_hotword
 
-    glossary_dir = tmp_path / "glossary"
-    glossary_dir.mkdir()
-    (glossary_dir / "hotwords_zh.txt").write_text(
-        "Big Apple=New York\n",
+    glossary_path = tmp_path / "camera.yaml"
+    glossary_path.write_text(
+        "terms:\n  - canonical: Big Apple\n    aliases: [New York]\n",
         encoding="utf-8",
     )
 
@@ -145,11 +144,20 @@ def test_hotword_stage_replaces_in_aligned(tmp_path):
     from subtap.core.workspace import Workspace
 
     workspace = Workspace(config, base_dir=tmp_path)
-    result = run_hotword(workspace, glossary_dir=glossary_dir)
+    result = run_hotword(workspace, glossary_path=str(glossary_path))
 
     assert result["replaced"] == 1
     payload = workspace.aligned_jsonl.read_text(encoding="utf-8")
     assert "Big Apple" in payload
+
+
+def test_hotword_stage_rejects_missing_selected_glossary(tmp_path):
+    from subtap.core.hotword import run_hotword
+
+    workspace = Workspace(SubtapConfig(), base_dir=tmp_path)
+
+    with pytest.raises(FileNotFoundError):
+        run_hotword(workspace, glossary_path=tmp_path / "missing.yaml")
 
 
 def test_enhance_api_selects_and_repairs_only_suspicious_segments(

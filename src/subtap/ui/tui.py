@@ -35,10 +35,10 @@ class BaseRunner(ABC):
         Optional stages (script_match, translate, learn) are appended
         only when their conditions are met.
         """
-        # Resolve glossary_dir from config (CleanConfig.glossary_path)
+        # Pass the exact user-selected glossary file to downstream stages.
         clean_cfg = getattr(config, "clean", None)
         glossary_path = getattr(clean_cfg, "glossary_path", None) if clean_cfg else None
-        hw_kwargs = {"glossary_dir": glossary_path} if glossary_path else None
+        hw_kwargs = {"glossary_path": glossary_path} if glossary_path else None
 
         stages: list[dict] = [
             {"key": "prepare", "name": "音频标准化"},

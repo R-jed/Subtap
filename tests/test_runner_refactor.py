@@ -13,6 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
 
 from subtap.ui.tui import BaseRunner, RichRunner, TUIRunner, PlainRunner
 
@@ -391,25 +392,23 @@ class TestBaseRunnerSharedLogic:
         assert issubclass(PlainRunner, BaseRunner)
 
 
-# ── P1-2: glossary_dir propagation ────────────────────────────────
+# ── Glossary path propagation ─────────────────────────────────────
 
 
-class TestGlossaryDirPropagation:
-    """P1-2: config.glossary_path should be passed to hotword/learn stages."""
+class TestGlossaryPathPropagation:
+    """The selected glossary file should reach hotword and learning stages."""
 
-    def test_build_stages_hotword_receives_glossary_dir(self):
-        """hotword stage kwargs should include glossary_dir when config has it."""
-        config = _make_config(glossary_path="/custom/glossary")
+    def test_build_stages_hotword_receives_glossary_path(self):
+        config = _make_config(glossary_path="/custom/glossary.yaml")
         stages = BaseRunner._build_stages(config, translate_to=None)
         hotword = next(s for s in stages if s["key"] == "hotword")
-        assert hotword["kwargs"] == {"glossary_dir": "/custom/glossary"}
+        assert hotword["kwargs"] == {"glossary_path": "/custom/glossary.yaml"}
 
-    def test_build_stages_learn_receives_glossary_dir(self):
-        """learn stage kwargs should include glossary_dir when config has it."""
-        config = _make_config(glossary_path="/custom/glossary")
+    def test_build_stages_learn_receives_glossary_path(self):
+        config = _make_config(glossary_path="/custom/glossary.yaml")
         stages = BaseRunner._build_stages(config, translate_to=None)
         learn = next(s for s in stages if s["key"] == "learn")
-        assert learn["kwargs"] == {"glossary_dir": "/custom/glossary"}
+        assert learn["kwargs"] == {"glossary_path": "/custom/glossary.yaml"}
 
     def test_build_stages_no_glossary_path(self):
         """When config.clean.glossary_path is None, kwargs should be None."""
@@ -420,30 +419,37 @@ class TestGlossaryDirPropagation:
         assert hotword["kwargs"] is None
         assert learn["kwargs"] is None
 
-    def test_pipeline_stage_learn_accepts_glossary_dir(self, tmp_path):
-        """Pipeline._stage_learn should use glossary_dir kwarg, not hardcoded path."""
+    def test_pipeline_stage_learn_accepts_glossary_path(self, tmp_path):
         from subtap.core.pipeline import Pipeline
         from subtap.schemas.config import SubtapConfig
 
         config = SubtapConfig()
-        custom_dir = tmp_path / "custom_glossary"
-        custom_dir.mkdir()
+        glossary_path = tmp_path / "camera.yaml"
+        glossary_path.write_text("terms: []\n", encoding="utf-8")
 
         pipeline = Pipeline(config, work_dir=tmp_path)
-        # No ops file -> should return learned=0 without touching any glossary dir
-        result = pipeline.run_stage("learn", glossary_dir=str(custom_dir))
+        result = pipeline.run_stage("learn", glossary_path=str(glossary_path))
         assert result["learned"] == 0
 
-    def test_pipeline_stage_learn_writes_to_custom_dir(self, tmp_path):
-        """Pipeline._stage_learn should write learned hotwords to glossary_dir, not default."""
+    def test_pipeline_stage_learn_rejects_missing_selected_glossary(self, tmp_path):
+        from subtap.core.pipeline import Pipeline
+        from subtap.schemas.config import SubtapConfig
+
+        pipeline = Pipeline(SubtapConfig(), work_dir=tmp_path)
+
+        with pytest.raises(FileNotFoundError):
+            pipeline.run_stage("learn", glossary_path=tmp_path / "missing.yaml")
+
+    def test_pipeline_stage_learn_updates_selected_yaml_glossary(self, tmp_path):
         import json
 
         from subtap.core.pipeline import Pipeline
         from subtap.schemas.config import SubtapConfig
+        from subtap.schemas.glossary import load_glossary
 
         config = SubtapConfig()
-        custom_dir = tmp_path / "custom_glossary"
-        custom_dir.mkdir()
+        glossary_path = tmp_path / "camera.yaml"
+        glossary_path.write_text("style: [简洁]\n", encoding="utf-8")
 
         # Create workspace with ops file
         pipeline = Pipeline(config, work_dir=tmp_path)
@@ -453,13 +459,12 @@ class TestGlossaryDirPropagation:
             encoding="utf-8",
         )
 
-        result = pipeline.run_stage("learn", glossary_dir=str(custom_dir))
+        result = pipeline.run_stage("learn", glossary_path=str(glossary_path))
 
         assert result["learned"] >= 1
-        # Should write to custom dir, not ~/.subtap/glossary
-        expected_path = custom_dir / "hotwords_zh.txt"
-        assert expected_path.exists(), f"Expected hotwords at {expected_path}"
-        assert "VITURE" in expected_path.read_text(encoding="utf-8")
+        glossary = load_glossary(glossary_path)
+        assert glossary.style == ["简洁"]
+        assert glossary.resolve_alias("VITURE") == "维图尔"
 
     def test_pipeline_stage_learn_fallback_default(self, tmp_path):
         """Pipeline._stage_learn should use the canonical learned glossary."""
@@ -476,7 +481,7 @@ class TestGlossaryDirPropagation:
             encoding="utf-8",
         )
 
-        # No glossary_dir -> should use default path
+        # No glossary_path -> should use the learned glossary
         with patch("subtap.core.pipeline.Path.home") as mock_home:
             mock_home.return_value = tmp_path
             result = pipeline.run_stage("learn")

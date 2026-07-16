@@ -238,27 +238,10 @@ class GlossaryLearner:
 
 
 def save_learned_hotwords(update: GlossaryUpdate, path: Path) -> None:
-    """Append learned hotwords to hotwords file (dedup with existing).
+    """Merge learned aliases into the canonical YAML glossary."""
+    from subtap.schemas.glossary import GlossaryTerm, load_glossary, save_glossary
 
-    Format: correct=wrong (one per line).
-    """
-    existing: set[str] = set()
-    if path.exists():
-        for line in path.read_text(encoding="utf-8").strip().splitlines():
-            line = line.strip()
-            if line and not line.startswith("#"):
-                existing.add(line)
-
-    new_lines = []
+    glossary = load_glossary(path)
     for correct, wrong in update.new_terms.items():
-        # Format: wrong=correct (错词=正确词, consistent with hotwords_zh.txt)
-        entry = f"{wrong}={correct}"
-        if entry not in existing:
-            new_lines.append(entry)
-            existing.add(entry)
-
-    if new_lines:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "a", encoding="utf-8") as f:
-            for line in new_lines:
-                f.write(line + "\n")
+        glossary.upsert_term(GlossaryTerm(canonical=correct, aliases=[wrong]))
+    save_glossary(path, glossary)

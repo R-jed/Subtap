@@ -521,10 +521,15 @@ def _run(
     if tui and not observer_child and not no_tui:
         from subtap.cli import _build_observer_child_command
 
-        process = subprocess.Popen(
-            _build_observer_child_command(sys.argv),
-            start_new_session=True,
-        )
+        work_dir.mkdir(parents=True, exist_ok=True)
+        child_log_path = work_dir / "observer-child.log"
+        with child_log_path.open("w", encoding="utf-8") as child_log:
+            process = subprocess.Popen(
+                _build_observer_child_command(sys.argv),
+                start_new_session=True,
+                stdout=child_log,
+                stderr=subprocess.STDOUT,
+            )
         from subtap.ui.observer import _make_observer_dashboard
 
         output_path = output_dir / f"{input_path.stem}.{fmt}"

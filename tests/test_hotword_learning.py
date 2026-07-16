@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 
 from subtap.ai.glossary_learner import GlossaryLearner, GlossaryUpdate
 from subtap.backends.llm.openai_compat import OpenAICompatibleLLM
@@ -241,46 +242,101 @@ class TestGlossaryLearnerFromOps:
 
 
 class TestWriteLearnedHotwords:
-    """GlossaryUpdate should be writable to hotwords_zh.txt format."""
+    """GlossaryUpdate should merge into the canonical YAML glossary."""
 
     def test_writes_hotwords_file(self, tmp_path):
         from subtap.ai.glossary_learner import save_learned_hotwords
 
-        hotwords_path = tmp_path / "hotwords_zh.txt"
+        from subtap.schemas.glossary import load_glossary
+
+        hotwords_path = tmp_path / "learned.yaml"
         update = GlossaryUpdate(
             new_terms={"VITURE": "维图尔", "GR IV": "吉亚四"},
         )
         save_learned_hotwords(update, hotwords_path)
 
-        content = hotwords_path.read_text(encoding="utf-8")
-        # Format: wrong=correct (错词=正确词)
-        assert "维图尔=VITURE" in content
-        assert "吉亚四=GR IV" in content
+        glossary = load_glossary(hotwords_path)
+        assert glossary.resolve_alias("维图尔") == "VITURE"
+        assert glossary.resolve_alias("吉亚四") == "GR IV"
 
     def test_appends_to_existing_hotwords(self, tmp_path):
         from subtap.ai.glossary_learner import save_learned_hotwords
 
-        hotwords_path = tmp_path / "hotwords_zh.txt"
+        from subtap.schemas.glossary import load_glossary
+
+        hotwords_path = tmp_path / "learned.yaml"
         hotwords_path.write_text("荣耀=华为荣耀\n", encoding="utf-8")
 
         update = GlossaryUpdate(new_terms={"VITURE": "维图尔"})
         save_learned_hotwords(update, hotwords_path)
 
-        content = hotwords_path.read_text(encoding="utf-8")
-        assert "荣耀=华为荣耀" in content
-        assert "维图尔=VITURE" in content
+        glossary = load_glossary(hotwords_path)
+        assert glossary.resolve_alias("华为荣耀") == "荣耀"
+        assert glossary.resolve_alias("维图尔") == "VITURE"
 
     def test_deduplicates_existing_hotwords(self, tmp_path):
         from subtap.ai.glossary_learner import save_learned_hotwords
 
-        hotwords_path = tmp_path / "hotwords_zh.txt"
-        hotwords_path.write_text("维图尔=VITURE\n", encoding="utf-8")
+        from subtap.schemas.glossary import load_glossary
+
+        hotwords_path = tmp_path / "learned.yaml"
+        hotwords_path.write_text("VITURE=维图尔\n", encoding="utf-8")
 
         update = GlossaryUpdate(new_terms={"VITURE": "维图尔"})
         save_learned_hotwords(update, hotwords_path)
 
-        content = hotwords_path.read_text(encoding="utf-8")
-        assert content.count("维图尔=VITURE") == 1
+        glossary = load_glossary(hotwords_path)
+        term = next(item for item in glossary.terms if item.canonical == "VITURE")
+        assert term.aliases == ["维图尔"]
+
+    def test_moves_alias_to_new_canonical_term(self, tmp_path):
+        from subtap.ai.glossary_learner import save_learned_hotwords
+        from subtap.schemas.glossary import load_glossary
+
+        hotwords_path = tmp_path / "learned.yaml"
+        hotwords_path.write_text("旧名称=同一错词\n", encoding="utf-8")
+
+        save_learned_hotwords(
+            GlossaryUpdate(new_terms={"新名称": "同一错词"}), hotwords_path
+        )
+
+        glossary = load_glossary(hotwords_path)
+        assert glossary.resolve_alias("同一错词") == "新名称"
+        old_term = next(item for item in glossary.terms if item.canonical == "旧名称")
+        assert old_term.aliases == []
+
+    def test_rejects_alias_that_is_another_canonical_term(self, tmp_path):
+        from subtap.ai.glossary_learner import save_learned_hotwords
+        from subtap.schemas.glossary import load_glossary
+
+        hotwords_path = tmp_path / "learned.yaml"
+        hotwords_path.write_text("VITURE=维图尔\n", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="标准词"):
+            save_learned_hotwords(
+                GlossaryUpdate(new_terms={"OTHER": "VITURE"}), hotwords_path
+            )
+
+        assert load_glossary(hotwords_path).resolve_alias("VITURE") == "VITURE"
+
+    def test_deduplicates_aliases_case_insensitively(self):
+        from subtap.schemas.glossary import Glossary, GlossaryTerm
+
+        glossary = Glossary(
+            terms=[GlossaryTerm(canonical="VITURE", aliases=["Viture"])]
+        )
+        glossary.upsert_term(GlossaryTerm(canonical="VITURE", aliases=["viture"]))
+
+        assert glossary.terms[0].aliases == ["Viture"]
+
+    def test_merges_canonical_terms_case_insensitively(self):
+        from subtap.schemas.glossary import Glossary, GlossaryTerm
+
+        glossary = Glossary(terms=[GlossaryTerm(canonical="VITURE")])
+        glossary.upsert_term(GlossaryTerm(canonical="viture", aliases=["维图尔"]))
+
+        assert len(glossary.terms) == 1
+        assert glossary.resolve_alias("维图尔") == "VITURE"
 
 
 # ── Test: Batch LLM calls for long audio ─────────────────────

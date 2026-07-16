@@ -155,7 +155,7 @@ class Pipeline:
 
         return run_hotword(
             self.workspace,
-            glossary_dir=kwargs.get("glossary_dir"),
+            glossary_path=kwargs.get("glossary_path"),
             mode=kwargs.get("mode", "local"),
             lang=kwargs.get("lang", "zh"),
         )
@@ -240,14 +240,16 @@ class Pipeline:
 
     def _stage_learn(
         self,
-        hotword_lang: str = "zh",
-        glossary_dir: str | Path | None = None,
+        glossary_path: str | Path | None = None,
         **_,
     ) -> dict:
         """Learn hotwords from LLM ops recorded during clean stage."""
         import json
 
         from subtap.ai.glossary_learner import GlossaryLearner, save_learned_hotwords
+
+        if glossary_path is not None and not Path(glossary_path).is_file():
+            raise FileNotFoundError(f"术语表不存在：{glossary_path}")
 
         ops_path = self.workspace.root / "llm_hotword_ops.jsonl"
         if not ops_path.exists():
@@ -268,15 +270,10 @@ class Pipeline:
             ops_path.unlink(missing_ok=True)
             return {"learned": 0}
 
-        gdir = (
-            Path(glossary_dir)
-            if glossary_dir
-            else Path.home() / ".subtap" / "glossaries"
-        )
         hotwords_path = (
-            gdir / f"hotwords_{hotword_lang}.txt"
-            if glossary_dir
-            else gdir / "learned.yaml"
+            Path(glossary_path)
+            if glossary_path
+            else Path.home() / ".subtap" / "glossaries" / "learned.yaml"
         )
         save_learned_hotwords(update, hotwords_path)
 
