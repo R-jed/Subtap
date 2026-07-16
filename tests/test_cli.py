@@ -773,6 +773,51 @@ def test_observe_command_prints_event_log_status(tmp_path):
     assert "已对齐：1" in clean
 
 
+def test_tui_run_rejects_zero_exit_without_subtitle(tmp_path, monkeypatch):
+    """子进程返回成功但没有字幕文件时，CLI 不能报告成功。"""
+    config = SimpleNamespace(
+        mode="online",
+        translate_to="",
+        asr=SimpleNamespace(backend="mlx-qwen-asr", model="asr_0.6b"),
+        clean=SimpleNamespace(glossary_path=None),
+        output=SimpleNamespace(
+            timestamp=True,
+            subtitle_punctuation=False,
+            subtitle_language="zh",
+            subtitle_stem="output",
+        ),
+        workspace=SimpleNamespace(root=str(tmp_path / "work")),
+    )
+    process = SimpleNamespace(returncode=0, pid=42, poll=lambda: 0)
+    dashboard = SimpleNamespace(run=lambda: "quit")
+    monkeypatch.setattr("subtap.schemas.config.load_config", lambda _path: config)
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli.subprocess.Popen", lambda *_args, **_kwargs: process
+    )
+    monkeypatch.setattr(
+        "subtap.ui.observer._make_observer_dashboard",
+        lambda *_args, **_kwargs: dashboard,
+    )
+    input_path = tmp_path / "voice.wav"
+    input_path.write_bytes(b"audio")
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            str(input_path),
+            "--tui",
+            "--work-dir",
+            str(tmp_path / "work"),
+            "--output-dir",
+            str(tmp_path / "output"),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "未找到字幕文件" in _strip_ansi(result.output)
+
+
 def test_run_mode_fast():
     """subtap run should accept --mode fast."""
     result = runner.invoke(app, ["run", "--help"])

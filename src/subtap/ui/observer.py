@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
+import subprocess
 import time
 from typing import Any
 
 from subtap.engine.state import STAGE_CN, STAGE_ORDER
+
+logger = logging.getLogger(__name__)
+_UNSET = object()
 
 SUBTAP_ASCII = r"""
   ____        _              _
@@ -124,6 +129,7 @@ def _make_observer_dashboard(
     from textual.containers import Vertical
     from textual.screen import ModalScreen
     from textual.widgets import Footer, Header, ProgressBar, RichLog, Static
+    from rich.text import Text
 
     class CancelTaskScreen(ModalScreen[bool]):
         """Require an explicit answer before stopping the pipeline."""
@@ -186,6 +192,9 @@ def _make_observer_dashboard(
         """
         BINDINGS = [
             ("l", "toggle_details", "详情"),
+            ("o", "open_subtitle", "打开字幕"),
+            ("f", "open_output_directory", "输出目录"),
+            ("d", "open_diagnostics", "诊断日志"),
             ("escape", "show_overview", "返回概览"),
             ("q", "quit_observer", "退出观察"),
             ("x", "cancel_task", "停止任务"),
@@ -200,6 +209,7 @@ def _make_observer_dashboard(
                 yield Static("", id="current-work")
                 yield Static("", id="recent")
                 yield Static("", id="output")
+                yield Static("", id="action-status")
             yield RichLog(max_lines=200, auto_scroll=True, id="details")
             yield Footer()
 
@@ -207,14 +217,23 @@ def _make_observer_dashboard(
             self.set_interval(refresh_interval, self.refresh_from_log)
             self.refresh_from_log()
 
-        def build_status_text(self, state: dict[str, Any] | None = None) -> str:
+        def build_status_text(
+            self,
+            state: dict[str, Any] | None = None,
+            returncode: Any = _UNSET,
+        ) -> str:
             if state is None:
                 state = summarize_event_log(log_path)
-            returncode = process.poll()
+            if returncode is _UNSET:
+                returncode = process.poll()
             if returncode is None:
                 task_status = "任务运行中"
             elif returncode == 0:
-                task_status = "任务已完成"
+                task_status = (
+                    "任务已完成"
+                    if output_path is None or output_path.is_file()
+                    else "任务异常：未找到字幕文件"
+                )
             else:
                 task_status = f"任务失败（退出码 {returncode}）"
             progress = state["progress"]
@@ -234,7 +253,10 @@ def _make_observer_dashboard(
         def refresh_from_log(self) -> None:
             rows = iter_event_log(log_path)
             state = _summarize_event_rows(rows)
-            self.query_one("#status", Static).update(self.build_status_text(state))
+            returncode = process.poll()
+            self.query_one("#status", Static).update(
+                self.build_status_text(state, returncode)
+            )
 
             progress = state["progress"]
             bar = self.query_one("#progress", ProgressBar)
@@ -270,9 +292,21 @@ def _make_observer_dashboard(
             self.query_one("#recent", Static).update(
                 f"[b]最近字幕[/b]\n{recent_text or '  暂无'}"
             )
-            self.query_one("#output", Static).update(
-                f"[b]输出[/b]  {output_path or '任务完成后显示'}"
-            )
+            if returncode is None:
+                output_text = f"[b]输出[/b]  {output_path or '任务完成后显示'}"
+            elif returncode == 0 and output_path is not None and output_path.is_file():
+                output_text = (
+                    f"[green]✓ 字幕已生成[/green]  {output_path}\n"
+                    "O 打开字幕  F 打开输出目录  Q 返回"
+                )
+            elif returncode == 0 and output_path is not None:
+                output_text = (
+                    f"[red]未找到字幕文件[/red]  {output_path}\n"
+                    "D 打开诊断日志  Q 返回"
+                )
+            else:
+                output_text = "[red]未生成可交付字幕[/red]\nD 打开诊断日志  Q 返回"
+            self.query_one("#output", Static).update(output_text)
 
             details = self.query_one("#details", RichLog)
             details.clear()
@@ -284,6 +318,65 @@ def _make_observer_dashboard(
         def action_toggle_details(self) -> None:
             details = self.query_one("#details", RichLog)
             details.display = not details.display
+
+        def _open_path(self, target: Path, label: str) -> None:
+            status = self.query_one("#action-status", Static)
+            try:
+                result = subprocess.run(
+                    ["open", str(target)],
+                    capture_output=True,
+                    text=True,
+                )
+            except OSError as error:
+                logger.exception("打开%s失败：%s", label, target)
+                status.update(f"打开{label}失败：{error}")
+                return
+            if result.returncode:
+                detail = result.stderr.strip() or f"退出码 {result.returncode}"
+                logger.error("打开%s失败：%s", label, detail)
+                status.update(Text(f"打开{label}失败：{detail}"))
+            else:
+                status.update(f"已打开{label}。")
+
+        def _open_completed_result(self, target: Path, label: str) -> None:
+            status = self.query_one("#action-status", Static)
+            if process.poll() is None:
+                status.update("任务完成后才能打开结果。")
+                return
+            if (
+                process.returncode != 0
+                or output_path is None
+                or not output_path.is_file()
+            ):
+                status.update("没有可打开的字幕结果。")
+                return
+            self._open_path(target, label)
+
+        def action_open_subtitle(self) -> None:
+            if output_path is None:
+                self.query_one("#action-status", Static).update(
+                    "没有可打开的字幕结果。"
+                )
+                return
+            self._open_completed_result(output_path, "字幕")
+
+        def action_open_output_directory(self) -> None:
+            if output_path is None:
+                self.query_one("#action-status", Static).update(
+                    "没有可打开的字幕结果。"
+                )
+                return
+            self._open_completed_result(output_path.parent, "输出目录")
+
+        def action_open_diagnostics(self) -> None:
+            status = self.query_one("#action-status", Static)
+            diagnostic_path = log_path.with_name("run_latest.log")
+            if process.poll() is None:
+                status.update("任务结束后才能打开诊断日志。")
+            elif not diagnostic_path.is_file():
+                status.update(f"未找到诊断日志：{diagnostic_path}")
+            else:
+                self._open_path(diagnostic_path, "诊断日志")
 
         def action_show_overview(self) -> None:
             self.query_one("#details", RichLog).display = False

@@ -241,7 +241,15 @@ async def test_observer_does_not_cancel_task_that_finished_during_confirmation(
 async def test_observer_refresh_parses_log_once(tmp_path, monkeypatch):
     import subtap.ui.observer as observer
 
-    process = SimpleNamespace(poll=lambda: None, returncode=None)
+    class Process:
+        returncode = None
+        poll_calls = 0
+
+        def poll(self):
+            self.poll_calls += 1
+            return self.returncode
+
+    process = Process()
     dashboard = observer._make_observer_dashboard(
         tmp_path / "run.log.jsonl", process, refresh_interval=60
     )
@@ -255,9 +263,11 @@ async def test_observer_refresh_parses_log_once(tmp_path, monkeypatch):
             return original(log_path)
 
         monkeypatch.setattr(observer, "iter_event_log", tracked)
+        process.poll_calls = 0
         dashboard.refresh_from_log()
         await pilot.pause()
         assert len(calls) == 1
+        assert process.poll_calls == 1
         await pilot.press("q")
 
 
@@ -267,11 +277,13 @@ async def test_observer_dashboard_keeps_completed_task_visible(tmp_path):
 
     from subtap.ui.observer import _make_observer_dashboard
 
+    output_path = tmp_path / "result.srt"
+    output_path.write_text("subtitle", encoding="utf-8")
     process = SimpleNamespace(poll=lambda: 0, returncode=0)
     dashboard = _make_observer_dashboard(
         tmp_path / "run.log.jsonl",
         process,
-        output_path=tmp_path / "result.srt",
+        output_path=output_path,
     )
 
     async with dashboard.run_test() as pilot:
@@ -280,6 +292,143 @@ async def test_observer_dashboard_keeps_completed_task_visible(tmp_path):
         assert "任务已完成" in rendered
         assert "result.srt" in rendered
         assert dashboard.return_value is None
+        await pilot.press("q")
+
+
+@pytest.mark.asyncio
+async def test_zero_exit_without_output_is_reported_as_incomplete(tmp_path):
+    from textual.widgets import Static
+
+    from subtap.ui.observer import _make_observer_dashboard
+
+    missing_output = tmp_path / "missing.srt"
+    process = SimpleNamespace(poll=lambda: 0, returncode=0)
+    dashboard = _make_observer_dashboard(
+        tmp_path / "run.log.jsonl",
+        process,
+        output_path=missing_output,
+    )
+
+    async with dashboard.run_test() as pilot:
+        rendered = str(dashboard.query_one("#status", Static).render())
+        result = str(dashboard.query_one("#output", Static).render())
+        assert "任务异常" in rendered
+        assert "未找到字幕文件" in result
+        assert "字幕已生成" not in result
+        await pilot.press("q")
+
+
+@pytest.mark.asyncio
+async def test_completed_task_can_open_subtitle_and_output_directory(
+    tmp_path, monkeypatch
+):
+    import subprocess
+
+    from subtap.ui.observer import _make_observer_dashboard
+
+    output_path = tmp_path / "output" / "result.srt"
+    output_path.parent.mkdir()
+    output_path.write_text("subtitle", encoding="utf-8")
+    opened = []
+    monkeypatch.setattr(
+        "subtap.ui.observer.subprocess.run",
+        lambda command, **_kwargs: opened.append(command)
+        or subprocess.CompletedProcess(command, 0),
+    )
+    process = SimpleNamespace(poll=lambda: 0, returncode=0)
+    dashboard = _make_observer_dashboard(
+        tmp_path / "run.log.jsonl",
+        process,
+        output_path=output_path,
+    )
+
+    async with dashboard.run_test() as pilot:
+        await pilot.press("o")
+        await pilot.press("f")
+        await pilot.press("q")
+
+    assert opened == [
+        ["open", str(output_path)],
+        ["open", str(output_path.parent)],
+    ]
+
+
+@pytest.mark.asyncio
+async def test_failed_task_can_open_diagnostic_log(tmp_path, monkeypatch):
+    import subprocess
+
+    from textual.widgets import Static
+
+    from subtap.ui.observer import _make_observer_dashboard
+
+    diagnostic_path = tmp_path / "run_latest.log"
+    diagnostic_path.write_text("failure details", encoding="utf-8")
+    opened = []
+    monkeypatch.setattr(
+        "subtap.ui.observer.subprocess.run",
+        lambda command, **_kwargs: opened.append(command)
+        or subprocess.CompletedProcess(command, 0),
+    )
+    process = SimpleNamespace(poll=lambda: 2, returncode=2)
+    dashboard = _make_observer_dashboard(
+        tmp_path / "run.log.jsonl",
+        process,
+        output_path=tmp_path / "result.srt",
+    )
+
+    async with dashboard.run_test() as pilot:
+        await pilot.press("d")
+        status = str(dashboard.query_one("#action-status", Static).render())
+        assert "已打开诊断日志" in status
+        await pilot.press("q")
+
+    assert opened == [["open", str(diagnostic_path)]]
+
+
+@pytest.mark.asyncio
+async def test_open_failure_shows_native_error(tmp_path, monkeypatch):
+    import subprocess
+
+    from textual.widgets import Static
+
+    from subtap.ui.observer import _make_observer_dashboard
+
+    output_path = tmp_path / "result.srt"
+    output_path.write_text("subtitle", encoding="utf-8")
+    monkeypatch.setattr(
+        "subtap.ui.observer.subprocess.run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(
+            command, 1, "", "LaunchServices 无法打开文件"
+        ),
+    )
+    process = SimpleNamespace(poll=lambda: 0, returncode=0)
+    dashboard = _make_observer_dashboard(
+        tmp_path / "run.log.jsonl", process, output_path=output_path
+    )
+
+    async with dashboard.run_test() as pilot:
+        await pilot.press("o")
+        status = str(dashboard.query_one("#action-status", Static).render())
+        assert "LaunchServices 无法打开文件" in status
+        await pilot.press("q")
+
+
+@pytest.mark.asyncio
+async def test_output_shortcuts_explain_when_result_is_unavailable(tmp_path):
+    from textual.widgets import Static
+
+    from subtap.ui.observer import _make_observer_dashboard
+
+    process = SimpleNamespace(poll=lambda: 0, returncode=0)
+    dashboard = _make_observer_dashboard(tmp_path / "run.log.jsonl", process)
+
+    async with dashboard.run_test() as pilot:
+        await pilot.press("o")
+        status = str(dashboard.query_one("#action-status", Static).render())
+        assert "没有可打开的字幕结果" in status
+        await pilot.press("f")
+        status = str(dashboard.query_one("#action-status", Static).render())
+        assert "没有可打开的字幕结果" in status
         await pilot.press("q")
 
 

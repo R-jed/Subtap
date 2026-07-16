@@ -533,9 +533,7 @@ def _run(
             process,
             output_path=output_path,
         ).run()
-        if result == "output":
-            typer.echo(f"输出目录：{work_dir / 'output'}")
-        elif result == "interrupt":
+        if result == "interrupt":
             _stop_observer_child(process)
             typer.echo("已中断子进程。")
             raise typer.Exit(130)
@@ -545,6 +543,9 @@ def _run(
         if returncode not in (None, 0):
             typer.echo(f"观察者子进程失败：退出码 {returncode}", err=True)
             raise typer.Exit(returncode if returncode is not None else 1)
+        if returncode == 0 and not output_path.is_file():
+            typer.echo(f"任务异常：未找到字幕文件：{output_path}", err=True)
+            raise typer.Exit(1)
         return
 
     pipeline = Pipeline(config, work_dir=work_dir)
