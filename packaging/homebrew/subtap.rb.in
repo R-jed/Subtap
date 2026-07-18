@@ -6,7 +6,6 @@ class Subtap < Formula
 
   desc "Offline subtitle transcription toolkit"
   homepage "https://github.com/R-jed/Subtap"
-  version "VERSION_PLACEHOLDER"
   url "WHEELHOUSE_URL_PLACEHOLDER"
   sha256 "WHEELHOUSE_SHA256_PLACEHOLDER"
   license "MIT"
@@ -17,7 +16,8 @@ class Subtap < Formula
   depends_on "scipy"
 
   def install
-    odie "Subtap supports Apple Silicon macOS only" unless OS.mac? && Hardware::CPU.arm?
+    odie "Subtap supports macOS only" unless OS.mac?
+    odie "Subtap supports Apple Silicon only" unless Hardware::CPU.arm?
 
     venv = virtualenv_create(libexec, "python3.13", system_site_packages: true)
     wheelhouse = buildpath
@@ -50,20 +50,20 @@ class Subtap < Formula
     # NumPy / SciPy must come from Homebrew, not bundled in the venv
     numpy_loc = shell_output(
       "#{libexec}/bin/python3 -c \"import os, numpy; " \
-      "print(os.path.realpath(numpy.__file__))\""
+      "print(os.path.realpath(numpy.__file__))\"",
     ).strip
     assert_match Formula["numpy"].prefix.realpath.to_s, numpy_loc
 
     scipy_loc = shell_output(
       "#{libexec}/bin/python3 -c \"import os, scipy; " \
-      "print(os.path.realpath(scipy.__file__))\""
+      "print(os.path.realpath(scipy.__file__))\"",
     ).strip
     assert_match Formula["scipy"].prefix.realpath.to_s, scipy_loc
 
     # Ensure no duplicate copies inside the venv
-    refute_predicate libexec/"lib/python3.13/site-packages/numpy", :exist?,
+    refute_path_exists libexec/"lib/python3.13/site-packages/numpy",
       "numpy must not be installed inside the venv (use Homebrew copy)"
-    refute_predicate libexec/"lib/python3.13/site-packages/scipy", :exist?,
+    refute_path_exists libexec/"lib/python3.13/site-packages/scipy",
       "scipy must not be installed inside the venv (use Homebrew copy)"
   end
 end

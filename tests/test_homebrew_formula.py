@@ -156,6 +156,7 @@ class TestTemplateStructure:
         assert "OS.mac?" in text
         assert "Hardware::CPU.arm?" in text
         assert "odie" in text
+        assert "unless OS.mac? && Hardware::CPU.arm?" not in text
 
     def test_test_block_exists(self) -> None:
         """Template must contain a test do block."""
@@ -218,19 +219,22 @@ class TestTemplateStructure:
         """test do must ensure no duplicate numpy inside venv."""
         text = TEMPLATE.read_text(encoding="utf-8")
         test_section = text.split("test do")[1]
-        assert "refute_predicate" in test_section
+        assert "refute_path_exists" in test_section
         assert "numpy" in test_section
 
     def test_test_block_refutes_scipy_in_venv(self) -> None:
         """test do must ensure no duplicate scipy inside venv."""
         text = TEMPLATE.read_text(encoding="utf-8")
         test_section = text.split("test do")[1]
-        assert "refute_predicate" in test_section
+        assert "refute_path_exists" in test_section
         assert "scipy" in test_section
 
-    def test_version_placeholder(self) -> None:
+    def test_version_is_inferred_from_wheelhouse_url(self) -> None:
         text = TEMPLATE.read_text(encoding="utf-8")
-        assert "VERSION_PLACEHOLDER" in text
+        assert "VERSION_PLACEHOLDER" not in text
+        assert not any(
+            line.strip().startswith("version ") for line in text.splitlines()
+        )
 
     def test_wheelhouse_url_placeholder(self) -> None:
         text = TEMPLATE.read_text(encoding="utf-8")
@@ -274,17 +278,17 @@ class TestRenderer:
         assert "WHEELHOUSE_URL_PLACEHOLDER" not in result
         assert "WHEELHOUSE_SHA256_PLACEHOLDER" not in result
 
-    def test_render_injects_version(
+    def test_render_rejects_url_without_manifest_version(
         self, manifest_path: Path, template_copy: Path, wheelhouse_path: Path
     ) -> None:
         mod = _import_renderer()
-        result = mod.render(
-            manifest_path=manifest_path,
-            template_path=template_copy,
-            wheelhouse_url=SAMPLE_WHEELHOUSE_URL,
-            wheelhouse_path=wheelhouse_path,
-        )
-        assert SAMPLE_MANIFEST["subtap_version"] in result
+        with pytest.raises(ValueError, match="manifest version"):
+            mod.render(
+                manifest_path=manifest_path,
+                template_path=template_copy,
+                wheelhouse_url=SAMPLE_WHEELHOUSE_URL.replace("0.1.0", "9.9.9"),
+                wheelhouse_path=wheelhouse_path,
+            )
 
     def test_render_injects_wheelhouse_url(
         self, manifest_path: Path, template_copy: Path, wheelhouse_path: Path

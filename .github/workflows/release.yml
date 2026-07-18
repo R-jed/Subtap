@@ -178,6 +178,8 @@ jobs:
           tap_dir="$(brew --repository "$local_tap")"
           mkdir -p "$tap_dir/Formula"
           cp /tmp/Subtap.rb "$tap_dir/Formula/subtap.rb"
+          brew audit --strict "$local_tap/subtap"
+          brew style "$local_tap/subtap"
           brew install "$local_tap/subtap"
           brew test "$local_tap/subtap"
           brew uninstall subtap

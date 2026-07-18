@@ -6,8 +6,8 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from urllib.parse import urlparse
 
-PLACEHOLDER_VERSION = "VERSION_PLACEHOLDER"
 PLACEHOLDER_URL = "WHEELHOUSE_URL_PLACEHOLDER"
 PLACEHOLDER_SHA256 = "WHEELHOUSE_SHA256_PLACEHOLDER"
 
@@ -57,16 +57,19 @@ def render(
     if not version:
         raise ValueError("manifest is missing required field 'subtap_version'")
     version = str(version)
+    archive_name = Path(urlparse(wheelhouse_url).path).name
+    if version not in archive_name:
+        raise ValueError(
+            f"wheelhouse URL archive name must include manifest version {version}"
+        )
 
     try:
         template = template_path.read_text(encoding="utf-8")
     except OSError as exc:
         raise ValueError(f"cannot read {template_path}: {exc}") from exc
 
-    rendered = (
-        template.replace(PLACEHOLDER_VERSION, version)
-        .replace(PLACEHOLDER_URL, wheelhouse_url)
-        .replace(PLACEHOLDER_SHA256, wheelhouse_sha256)
+    rendered = template.replace(PLACEHOLDER_URL, wheelhouse_url).replace(
+        PLACEHOLDER_SHA256, wheelhouse_sha256
     )
     return rendered
 
