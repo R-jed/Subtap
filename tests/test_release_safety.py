@@ -129,6 +129,12 @@ def test_homebrew_lifecycle_acceptance_blocks_publication() -> None:
     )
     assert "render_homebrew_formula.py" in steps
     assert "subtap-candidate.rb" in steps
+    assert (
+        "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
+        in steps
+    )
+    assert "brew audit --strict r-jed/tap/subtap" in steps
+    assert "SUBTAP_SKIP_FORMULA_AUDIT=1" in steps
     assert "SUBTAP_HOMEBREW_ACCEPTANCE=1" in steps
     assert "SUBTAP_ACCEPTANCE_HOME" in steps
     assert "PREVIOUS_FORMULA" in steps

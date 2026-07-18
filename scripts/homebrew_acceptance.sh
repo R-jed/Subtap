@@ -79,8 +79,12 @@ if int(sys.argv[2]) and all(model.get("installed") for model in payload.get("mod
     raise SystemExit("doctor returned non-zero without a missing model")
 PY
 
-info "strict formula validation"
-brew audit --strict r-jed/tap/subtap
+if [[ "${SUBTAP_SKIP_FORMULA_AUDIT:-}" == "1" ]]; then
+    info "strict formula validation already completed for the public candidate"
+else
+    info "strict formula validation"
+    brew audit --strict r-jed/tap/subtap
+fi
 brew test r-jed/tap/subtap
 
 info "prepare previous version"

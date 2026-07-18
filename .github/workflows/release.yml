@@ -221,16 +221,25 @@ jobs:
           python3 scripts/render_homebrew_formula.py \
             --manifest lifecycle-assets/wheelhouse/manifest.json \
             --template packaging/homebrew/subtap.rb.in \
-            --wheelhouse-url "file://$(pwd)/$wheelhouse" \
+            --wheelhouse-url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/$(basename "$wheelhouse")" \
             --wheelhouse "$wheelhouse" \
             --output "$candidate_formula"
           brew tap r-jed/tap
           tap_dir="$(brew --repository r-jed/tap)"
           cp "$candidate_formula" "$tap_dir/Formula/subtap.rb"
+          brew audit --strict r-jed/tap/subtap
+          python3 scripts/render_homebrew_formula.py \
+            --manifest lifecycle-assets/wheelhouse/manifest.json \
+            --template packaging/homebrew/subtap.rb.in \
+            --wheelhouse-url "file://$(pwd)/$wheelhouse" \
+            --wheelhouse "$wheelhouse" \
+            --output "$RUNNER_TEMP/subtap-local-candidate.rb"
+          cp "$RUNNER_TEMP/subtap-local-candidate.rb" "$tap_dir/Formula/subtap.rb"
           acceptance_home="$RUNNER_TEMP/subtap-homebrew-acceptance"
           mkdir -p "$acceptance_home"
           HOME="$acceptance_home" \
           SUBTAP_HOMEBREW_ACCEPTANCE=1 \
+          SUBTAP_SKIP_FORMULA_AUDIT=1 \
           SUBTAP_ACCEPTANCE_HOME="$acceptance_home" \
           PREVIOUS_FORMULA="$previous_formula" \
             ./scripts/homebrew_acceptance.sh
