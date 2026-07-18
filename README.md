@@ -6,7 +6,7 @@
 
 **本地优先的 AI 字幕生成引擎** — 基于 MLX Qwen3 的端到端字幕工具，完全离线运行。
 
-> ⚠️ 开发中，尚未正式发布。
+> 当前提供预发布版本，适用于 Apple Silicon Mac。
 
 ## 支持范围
 
@@ -14,13 +14,12 @@ Subtap 当前支持 Apple Silicon Mac（macOS 13.5+），使用 MLX 在本地生
 
 ## 安装
 
-<!-- TODO: 待真实 Tap 冷安装验证通过后，替换为以下命令 -->
-<!-- ```bash -->
-<!-- brew install r-jed/tap/subtap -->
-<!-- subtap -->
-<!-- ``` -->
+```bash
+brew install r-jed/tap/subtap
+subtap setup
+```
 
-当前仅支持开发环境使用，详见下方。
+首次使用会在本地下载所选 ASR 模型和必需的对齐模型。
 
 > 卸载 Subtap 不会删除 `~/.subtap` 中的模型、热词、文稿和历史任务。
 
