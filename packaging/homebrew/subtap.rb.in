@@ -36,7 +36,7 @@ class Subtap < Formula
   end
 
   test do
-    assert_match version.to_s, shell_output("#{bin}/subtap --version")
+    assert_match version.to_s, shell_output("#{bin}/subtap version")
     assert_match '"checks"', shell_output("#{bin}/subtap doctor 2>&1")
 
     # Verify key modules are importable

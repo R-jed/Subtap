@@ -167,6 +167,13 @@ class TestTemplateStructure:
         # Should invoke the CLI in the test block
         assert "subtap" in text.split("test do")[1]
 
+    def test_test_block_uses_supported_version_command(self) -> None:
+        text = TEMPLATE.read_text(encoding="utf-8")
+        test_section = text.split("test do")[1]
+
+        assert 'shell_output("#{bin}/subtap version")' in test_section
+        assert "subtap --version" not in test_section
+
     def test_test_block_verifies_doctor(self) -> None:
         """test do must verify `subtap doctor` works."""
         text = TEMPLATE.read_text(encoding="utf-8")

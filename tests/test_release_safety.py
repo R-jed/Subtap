@@ -83,6 +83,7 @@ def test_release_requires_real_offline_1_7b_acceptance() -> None:
     assert "SUBTAP_SMOKE_AUDIO_DIR" in acceptance["env"]
     assert "SUBTAP_SMOKE_MODEL_ROOT" in acceptance["env"]
     assert "SUBTAP_SMOKE_REFERENCE_SRT" in acceptance["env"]
+    assert acceptance["env"]["NODE_OPTIONS"] == "--use-system-ca"
     assert acceptance["needs"] == ["metadata", "build"]
     assert "actions/download-artifact" in steps
     assert "subtap-release-acceptance/bin/subtap" in steps
