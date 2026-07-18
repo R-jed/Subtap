@@ -70,6 +70,14 @@ _RATIO_EXPRESSION_RE = re.compile(
     rf"(?:到[{''.join(_NUM_CHARS)}\d]+比[{''.join(_NUM_CHARS)}\d]+)?"
 )
 
+
+def _starts_clause_subject(text: str) -> bool:
+    return any(text.startswith(pronoun) for pronoun in _PRONOUNS) or (
+        text.startswith("那")
+        and any(text[1:].startswith(pronoun) for pronoun in _PRONOUNS)
+    )
+
+
 # Trailing words that should not appear at line end
 _TRAILING_WORDS = {
     # 连词（双字）
@@ -134,6 +142,7 @@ _TRAILING_WORDS = {
     "那些",
     "那这",
     "那还",
+    "那",
 }
 
 
@@ -1128,8 +1137,8 @@ def _split_cost(
             cost += 8.0
         following_text = "".join(display_chars[end : end + 3])
         previous_char = display_chars[end - 1] if end > 0 else ""
-        if previous_char not in _OBJECT_INTRODUCERS and any(
-            following_text.startswith(pronoun) for pronoun in _PRONOUNS
+        if previous_char not in _OBJECT_INTRODUCERS and _starts_clause_subject(
+            following_text
         ):
             cost -= 10.0
         if display_chars[end] in "的得地":
@@ -1220,11 +1229,25 @@ def _merge_short_fragments(
         line = lines[i]
         text = line["text"]
         visible_len = _content_len(text)
+        following_text = "".join(
+            candidate["text"] for candidate in lines[i + 1 : i + 3]
+        ).lstrip()
 
         # Don't merge lines ending with sentence-ending punctuation
         ends_with_sent = text.rstrip() and text.rstrip()[-1] in _SENT_END
+        ends_complete_comma_clause = (
+            bool(text.rstrip())
+            and text.rstrip()[-1] in _COMMA_PUNCT
+            and visible_len >= max(6, min_chars - 4)
+            and _starts_clause_subject(following_text)
+        )
 
-        if visible_len < min_chars and not ends_with_sent and i + 1 < len(lines):
+        if (
+            visible_len < min_chars
+            and not ends_with_sent
+            and not ends_complete_comma_clause
+            and i + 1 < len(lines)
+        ):
             # Try merging with next line
             next_line = lines[i + 1]
             combined_len = visible_len + _content_len(next_line["text"])

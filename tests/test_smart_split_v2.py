@@ -423,6 +423,21 @@ def test_split_keeps_complete_short_clause_after_comma_without_pause():
     ]
 
 
+def test_split_keeps_complete_short_clause_before_comma():
+    from subtap.core.export import SRTExporter
+
+    segment = _aligned(
+        0,
+        "它叫做理光GR4，那它虽然卖得好但是一点也不便宜。",
+        0.0,
+    )
+
+    lines = _srt_text_lines(SRTExporter(max_chars=25, min_chars=10).render([segment]))
+
+    assert lines[0] == "它叫做理光GR4"
+    assert lines[1].startswith("那它虽然卖得好")
+
+
 def test_export_does_not_end_line_with_conjunction():
     from subtap.core.export import SRTExporter
 
