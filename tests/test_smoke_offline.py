@@ -107,6 +107,7 @@ def test_smoke_offline_executes_all_samples_without_network(tmp_path):
     fake_subtap.write_text(
         """#!/usr/bin/env bash
 set -euo pipefail
+grep -q 'canonical: GR4' "$HOME/.subtap/glossaries/default.yaml"
 if /usr/bin/curl --noproxy '*' --silent --max-time 1 "$PROBE_URL" >/dev/null 2>&1; then
     exit 97
 fi

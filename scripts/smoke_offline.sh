@@ -29,6 +29,7 @@ SANDBOX_PROFILE="$TMP_DIR/offline.sb"
 SUBTAP_BIN="${SUBTAP_SMOKE_SUBTAP_BIN:-}"
 REFERENCE_SRT="${SUBTAP_SMOKE_REFERENCE_SRT:-}"
 REQUIRED_CUES="${SUBTAP_SMOKE_REQUIRED_CUES:-$ROOT/tests/fixtures/high_quality_zh_required_cues.txt}"
+GLOSSARY="$ROOT/tests/fixtures/high_quality_zh_glossary.yaml"
 MAX_RTF="0.25"
 
 cleanup() {
@@ -56,6 +57,11 @@ if [[ ! -f "$REQUIRED_CUES" ]]; then
     exit 1
 fi
 
+if [[ ! -f "$GLOSSARY" ]]; then
+    echo "[subtap-smoke] test glossary not found: $GLOSSARY" >&2
+    exit 1
+fi
+
 cat > "$SANDBOX_PROFILE" <<'EOF'
 (version 1)
 (allow default)
@@ -69,6 +75,7 @@ if [[ ! -f "$MODEL_ROOT/asr_1.7b/config.json" || ! -f "$MODEL_ROOT/aligner/confi
 fi
 
 mkdir -p "$SMOKE_HOME/.subtap/glossaries"
+cp "$GLOSSARY" "$SMOKE_HOME/.subtap/glossaries/default.yaml"
 cat > "$SMOKE_HOME/.subtap/config.yaml" <<EOF
 mode: offline
 models:
