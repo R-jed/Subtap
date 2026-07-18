@@ -83,9 +83,13 @@ def test_release_requires_real_offline_1_7b_acceptance() -> None:
     assert "SUBTAP_SMOKE_AUDIO_DIR" in acceptance["env"]
     assert "SUBTAP_SMOKE_MODEL_ROOT" in acceptance["env"]
     assert "SUBTAP_SMOKE_REFERENCE_SRT" in acceptance["env"]
-    assert acceptance["env"]["NODE_OPTIONS"] == "--use-system-ca"
     assert acceptance["needs"] == ["metadata", "build"]
     assert "actions/download-artifact" in steps
+    assert "actions/setup-python@" not in steps
+    assert "astral-sh/setup-uv@" not in steps
+    assert "command -v python3.13" in steps
+    assert "command -v uv" in steps
+    assert '--python "$(command -v python3.13)"' in steps
     assert "subtap-release-acceptance/bin/subtap" in steps
     assert "SUBTAP_SMOKE_SUBTAP_BIN" in steps
     assert "./scripts/smoke_offline.sh" in steps
@@ -101,6 +105,7 @@ def test_homebrew_release_executes_supply_chain_and_formula_gates() -> None:
     assert "multiple.intoto.jsonl" in text
     assert "slsa-verifier-darwin-arm64" in text
     assert 'brew tap-new "$local_tap"' in text
+    assert 'mkdir -p "$tap_dir/Formula"' in text
     assert 'brew install "$local_tap/subtap"' in text
     assert 'brew test "$local_tap/subtap"' in text
 

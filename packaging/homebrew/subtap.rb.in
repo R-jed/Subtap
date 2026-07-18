@@ -49,12 +49,12 @@ class Subtap < Formula
 
     # NumPy / SciPy must come from Homebrew, not bundled in the venv
     numpy_loc = shell_output(
-      libexec/"bin/python3 -c \"import numpy; print(numpy.__file__)\""
+      "#{libexec}/bin/python3 -c \"import numpy; print(numpy.__file__)\""
     ).strip
     assert_match Formula["numpy"].prefix.realpath.to_s, numpy_loc
 
     scipy_loc = shell_output(
-      libexec/"bin/python3 -c \"import scipy; print(scipy.__file__)\""
+      "#{libexec}/bin/python3 -c \"import scipy; print(scipy.__file__)\""
     ).strip
     assert_match Formula["scipy"].prefix.realpath.to_s, scipy_loc
 
