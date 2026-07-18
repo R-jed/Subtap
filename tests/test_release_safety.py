@@ -11,6 +11,17 @@ import pytest
 
 ROOT = Path(__file__).parents[1]
 
+NODE24_ACTIONS = {
+    "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7",
+    "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6",
+    "astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8",
+}
+NODE24_ACTION_NAMES = (
+    "actions/checkout@",
+    "actions/setup-python@",
+    "astral-sh/setup-uv@",
+)
+
 
 def test_cli_version_matches_distribution_version() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
@@ -39,6 +50,21 @@ def test_release_jobs_are_bounded_and_build_uses_uv() -> None:
     assert "grep -- --tui" not in text
     assert workflow["concurrency"]["cancel-in-progress"] is False
     assert all("timeout-minutes" in job for job in workflow["jobs"].values())
+
+
+def test_workflows_pin_node24_actions() -> None:
+    texts = [
+        (ROOT / ".github/workflows/ci.yml").read_text(),
+        (ROOT / ".github/workflows/release.yml").read_text(),
+    ]
+
+    for text in texts:
+        pinned_actions = {
+            line.strip().removeprefix("- uses: ")
+            for line in text.splitlines()
+            if any(name in line for name in NODE24_ACTION_NAMES)
+        }
+        assert pinned_actions == NODE24_ACTIONS
 
 
 def test_release_requires_real_offline_1_7b_acceptance() -> None:
