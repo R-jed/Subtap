@@ -28,7 +28,7 @@ def git_workspace(tmp_path: Path) -> Path:
     (tmp_path / "README.md").write_text("init")
     subprocess.run(["git", "add", "."], cwd=tmp_path, capture_output=True)
     subprocess.run(
-        ["git", "commit", "-m", "init"],
+        ["git", "commit", "-m", "chore: initialize test repository"],
         cwd=tmp_path,
         capture_output=True,
     )
@@ -144,7 +144,7 @@ class TestAutoCommitIfNeeded:
             capture_output=True,
             text=True,
         )
-        assert "auto: checkpoint" in log.stdout
+        assert "chore: checkpoint" in log.stdout
 
     def test_uses_checkpoint_message(self, git_guard: GitGuard, git_workspace: Path):
         (git_workspace / "temp.txt").write_text("temp")

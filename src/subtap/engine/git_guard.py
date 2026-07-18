@@ -114,7 +114,7 @@ class GitGuard:
         """Auto-commit dirty state with checkpoint message.
 
         Only commits if there are actual changes. Uses message:
-        "auto: checkpoint before pipeline execution"
+        "chore: checkpoint before pipeline execution"
 
         Returns:
             {"committed": bool, "commit_hash": str, "reason": str}
@@ -131,7 +131,7 @@ class GitGuard:
 
         # Commit with checkpoint message
         result = subprocess.run(
-            ["git", "commit", "-m", "auto: checkpoint before pipeline execution"],
+            ["git", "commit", "-m", "chore: checkpoint before pipeline execution"],
             cwd=self.root,
             capture_output=True,
             text=True,
