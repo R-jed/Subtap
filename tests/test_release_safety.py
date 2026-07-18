@@ -131,7 +131,6 @@ def test_release_candidate_cannot_publish_stable_channels() -> None:
         release_step["with"]["prerelease"]
         == "${{ needs.metadata.outputs.is_prerelease }}"
     )
-
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
     assert project["project"]["version"] == "0.1.0rc6"
 
@@ -281,7 +280,7 @@ def test_release_builds_and_publishes_homebrew_assets() -> None:
     assert "homebrew" in workflow["jobs"]["github-release"]["needs"]
 
 
-def test_release_attests_and_uploads_all_release_assets() -> None:
+def test_release_attests_bundle_and_uploads_public_assets_only() -> None:
     workflow = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
     attest_steps = workflow["jobs"]["attest"]["steps"]
     release_steps = workflow["jobs"]["github-release"]["steps"]
@@ -300,7 +299,13 @@ def test_release_attests_and_uploads_all_release_assets() -> None:
         for step in release_steps
         if step.get("name") == "Upload GitHub Release assets"
     )
-    assert release["with"]["files"] == "release-assets/**/*"
+    assert set(release["with"]["files"].splitlines()) == {
+        "release-assets/dist/*.whl",
+        "release-assets/dist/*.tar.gz",
+        "release-assets/homebrew/*.tar.gz",
+        "release-assets/homebrew/*.tar.gz.sha256",
+        "release-assets/homebrew/subtap.rb",
+    }
 
 
 def test_homebrew_acceptance_refuses_existing_install(tmp_path: Path) -> None:
