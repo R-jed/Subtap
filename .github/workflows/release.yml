@@ -173,17 +173,6 @@ jobs:
             --wheelhouse-url "file://$(pwd)/$wheelhouse" \
             --wheelhouse "$wheelhouse" \
             --output /tmp/Subtap.rb
-          local_tap="subtap/release-test"
-          brew tap-new "$local_tap"
-          tap_dir="$(brew --repository "$local_tap")"
-          mkdir -p "$tap_dir/Formula"
-          cp /tmp/Subtap.rb "$tap_dir/Formula/subtap.rb"
-          brew audit --strict "$local_tap/subtap"
-          brew style "$local_tap/subtap"
-          brew install "$local_tap/subtap"
-          brew test "$local_tap/subtap"
-          brew uninstall subtap
-          brew untap "$local_tap"
           uv run python scripts/render_homebrew_formula.py \
             --manifest homebrew-artifacts/wheelhouse/manifest.json \
             --template packaging/homebrew/subtap.rb.in \
@@ -191,11 +180,60 @@ jobs:
             --wheelhouse "$wheelhouse" \
             --output homebrew-artifacts/subtap.rb
           ruby -c homebrew-artifacts/subtap.rb
+          local_tap="subtap/release-test"
+          brew tap-new "$local_tap"
+          tap_dir="$(brew --repository "$local_tap")"
+          mkdir -p "$tap_dir/Formula"
+          cp homebrew-artifacts/subtap.rb "$tap_dir/Formula/subtap.rb"
+          brew audit --strict "$local_tap/subtap"
+          brew style "$local_tap/subtap"
+          cp /tmp/Subtap.rb "$tap_dir/Formula/subtap.rb"
+          brew install "$local_tap/subtap"
+          brew test "$local_tap/subtap"
+          brew uninstall subtap
+          brew untap "$local_tap"
       - name: Upload Homebrew assets
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: homebrew
           path: homebrew-artifacts/
+
+  homebrew-lifecycle:
+    needs: [homebrew]
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7
+      - name: Download Homebrew candidate assets
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+        with:
+          name: homebrew
+          path: lifecycle-assets/
+      - name: Run install, upgrade, rollback, and uninstall acceptance
+        run: |
+          previous_formula="$RUNNER_TEMP/subtap-previous.rb"
+          candidate_formula="$RUNNER_TEMP/subtap-candidate.rb"
+          curl -fsSL \
+            https://raw.githubusercontent.com/R-jed/homebrew-tap/main/Formula/subtap.rb \
+            -o "$previous_formula"
+          wheelhouse="$(find lifecycle-assets -maxdepth 1 -name '*-wheelhouse.tar.gz' -print -quit)"
+          test -n "$wheelhouse"
+          python3 scripts/render_homebrew_formula.py \
+            --manifest lifecycle-assets/wheelhouse/manifest.json \
+            --template packaging/homebrew/subtap.rb.in \
+            --wheelhouse-url "file://$(pwd)/$wheelhouse" \
+            --wheelhouse "$wheelhouse" \
+            --output "$candidate_formula"
+          brew tap r-jed/tap
+          tap_dir="$(brew --repository r-jed/tap)"
+          cp "$candidate_formula" "$tap_dir/Formula/subtap.rb"
+          acceptance_home="$RUNNER_TEMP/subtap-homebrew-acceptance"
+          mkdir -p "$acceptance_home"
+          HOME="$acceptance_home" \
+          SUBTAP_HOMEBREW_ACCEPTANCE=1 \
+          SUBTAP_ACCEPTANCE_HOME="$acceptance_home" \
+          PREVIOUS_FORMULA="$previous_formula" \
+            ./scripts/homebrew_acceptance.sh
 
   attest:
     needs: [build, homebrew]
@@ -222,7 +260,7 @@ jobs:
           subject-path: release-assets/
 
   github-release:
-    needs: [metadata, test, offline-acceptance, build, homebrew, attest]
+    needs: [metadata, test, offline-acceptance, build, homebrew, homebrew-lifecycle, attest]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -251,7 +289,7 @@ jobs:
 
   publish:
     if: ${{ needs.metadata.outputs.is_prerelease == 'false' }}
-    needs: [metadata, test, offline-acceptance, build, attest]
+    needs: [metadata, test, offline-acceptance, build, homebrew-lifecycle, attest]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: pypi

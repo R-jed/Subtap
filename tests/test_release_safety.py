@@ -111,6 +111,30 @@ def test_homebrew_release_executes_supply_chain_and_formula_gates() -> None:
     assert 'brew style "$local_tap/subtap"' in text
     assert 'brew install "$local_tap/subtap"' in text
     assert 'brew test "$local_tap/subtap"' in text
+    assert text.index("--output homebrew-artifacts/subtap.rb") < text.index(
+        'brew audit --strict "$local_tap/subtap"'
+    )
+
+
+def test_homebrew_lifecycle_acceptance_blocks_publication() -> None:
+    workflow = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
+    jobs = workflow["jobs"]
+    lifecycle = jobs["homebrew-lifecycle"]
+    steps = "\n".join(str(step) for step in lifecycle["steps"])
+
+    assert lifecycle["needs"] == ["homebrew"]
+    assert lifecycle["runs-on"] == "macos-14"
+    assert (
+        "raw.githubusercontent.com/R-jed/homebrew-tap/main/Formula/subtap.rb" in steps
+    )
+    assert "render_homebrew_formula.py" in steps
+    assert "subtap-candidate.rb" in steps
+    assert "SUBTAP_HOMEBREW_ACCEPTANCE=1" in steps
+    assert "SUBTAP_ACCEPTANCE_HOME" in steps
+    assert "PREVIOUS_FORMULA" in steps
+    assert "./scripts/homebrew_acceptance.sh" in steps
+    assert "homebrew-lifecycle" in jobs["github-release"]["needs"]
+    assert "homebrew-lifecycle" in jobs["publish"]["needs"]
 
 
 def test_release_candidate_cannot_publish_stable_channels() -> None:
