@@ -21,8 +21,10 @@ from subtap.schemas.models import RawCleanSegment, SentenceSegment
 _DEFAULT_MAX_CHARS = 25
 _DEFAULT_MIN_CHARS = 10
 
-# Sentence-ending punctuation
-_SENT_END_RE = re.compile(r"[。！？.!?]+")
+# Sentence-ending punctuation. A dot before an ASCII letter/digit belongs to a
+# decimal or dotted initialism; the final dot in an initialism is protected by
+# the fixed-width lookbehind.
+_SENT_END_RE = re.compile(r"[。！？!?]+|(?<![A-Za-z]\.[A-Za-z])\.+(?![A-Za-z0-9])")
 
 # Comma/pause punctuation (secondary split points)
 _COMMA_RE = re.compile(r"[，、,;；]+")

@@ -32,6 +32,13 @@ def test_split_on_latin_punctuation():
     assert result == ["Hello world.", "How are you?", "Fine!"]
 
 
+def test_split_preserves_decimal_and_dotted_initialism():
+    """Decimal points and dotted initialisms are not sentence boundaries."""
+    result = _split_sentences("数值到了8.2。响度维持在L.U.F.S.的水平。")
+
+    assert result == ["数值到了8.2。", "响度维持在L.U.F.S.的水平。"]
+
+
 def test_split_long_segment():
     """Long segment (>80 chars) is force-split at word boundaries."""
     long_text = "word " * 30  # 150 chars

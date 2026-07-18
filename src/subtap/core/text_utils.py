@@ -14,6 +14,7 @@ ALL_PUNCT_RE = re.compile(r"[，。？！、；：“”‘’（）《》,.?!;:
 
 
 _DECIMAL_PLACEHOLDER = "\x00DECIMAL\x00"
+_INITIALISM_DOT_PLACEHOLDER = "\x00INITIALISM_DOT\x00"
 _HYPHEN_PLACEHOLDER = "\x00HYPHEN\x00"
 
 
@@ -24,10 +25,19 @@ def normalize_punct(text: str, language: str = "zh") -> str:
     en: half-width English punctuation
     """
     if language in ("zh", "ja"):
+        # Preserve the spelling of dotted initialisms while translating other
+        # full stops to CJK punctuation.
+        text = re.sub(
+            r"(?<![A-Za-z])(?:[A-Za-z]\.){2,}[A-Za-z]?",
+            lambda match: match.group(0).replace(".", _INITIALISM_DOT_PLACEHOLDER),
+            text,
+        )
         # Protect decimal points (e.g., 3.14, 123.456) before full-width conversion
         protected = re.sub(r"(\d)\.(\d)", rf"\1{_DECIMAL_PLACEHOLDER}\2", text)
         result = protected.translate(_PUNCT_MAP)
-        return result.replace(_DECIMAL_PLACEHOLDER, ".")
+        return result.replace(_DECIMAL_PLACEHOLDER, ".").replace(
+            _INITIALISM_DOT_PLACEHOLDER, "."
+        )
     # English: convert full-width back to half-width
     _EN_PUNCT_MAP = str.maketrans(
         "，。？！；：（）",

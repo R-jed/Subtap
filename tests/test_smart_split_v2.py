@@ -71,6 +71,43 @@ def test_export_never_merges_across_sentence_segments():
     ]
 
 
+def test_export_does_not_split_decimal_as_sentence_punctuation():
+    from subtap.core.export import SRTExporter
+
+    segment = _aligned(0, "当前数值到了8.2。", 0.0)
+
+    assert _srt_text_lines(SRTExporter().render([segment])) == ["当前数值到了8.2"]
+
+
+def test_export_does_not_split_after_dotted_initialism():
+    from subtap.core.export import SRTExporter
+
+    segment = _aligned(0, "响度维持在L.U.F.S.的水平。", 0.0)
+
+    lines = _srt_text_lines(SRTExporter(max_chars=10, min_chars=4).render([segment]))
+
+    assert "".join(lines) == "响度维持在LUFS的水平"
+    assert all(not line.startswith("的水平") for line in lines)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "这个问题确实存在。功能已经恢复正常。",
+        "上一句已经结束。了解情况后继续处理。",
+        "校准已经完成。量一下最终响度。",
+    ],
+)
+def test_export_never_crosses_sentence_punctuation(text: str):
+    from subtap.core.export import SRTExporter
+
+    lines = _srt_text_lines(
+        SRTExporter(max_chars=25, min_chars=10).render([_aligned(0, text, 0.0)])
+    )
+
+    assert len(lines) == 2
+
+
 def test_export_reconciles_tiny_alignment_overlap_at_cue_boundary():
     from subtap.core.export import SRTExporter
     from subtap.schemas.models import AlignedSegment
@@ -412,6 +449,53 @@ def test_export_prefers_boundary_after_directional_complement():
     lines = _srt_text_lines(SRTExporter(max_chars=20, min_chars=8).render([segment]))
 
     assert lines == ["你可以把它开起来", "压暗蓝天得到对比更加强烈的照片"]
+
+
+@pytest.mark.parametrize(
+    ("text", "required_units"),
+    [
+        (
+            "在之前的课程中，我们已经对前期拍摄阶段的声音录制有了一个大致的了解。",
+            ["有了"],
+        ),
+        (
+            "这样做的目的是为了在后期编辑阶段，声音素材不免会被剪辑成很多片段，在播放的时候会因为片段之间没有声音而导致听感的断裂。",
+            ["片段之间", "没有声音"],
+        ),
+        (
+            "播放了一段时间后，可以看到人声轨道的整体响度来到了负二十四 L U F S 左右。",
+            ["人声轨道", "来到了"],
+        ),
+        (
+            "这个插件，我们只需要用到下方中间的压缩器功能和右上方的补偿。",
+            ["压缩器功能"],
+        ),
+        (
+            "将菜单中所需要的Loudness Meter效果器拉到对应的轨道上。",
+            ["Loudness Meter效果器"],
+        ),
+        (
+            "一般情况下人声的压缩可以设置在三比一到六比一这个范围内。",
+            ["3:1", "6:1"],
+        ),
+        (
+            "信噪比越大，表明声音信号越干净清晰；相反，信噪比越小，表明噪声越大。",
+            ["相反信噪比"],
+        ),
+    ],
+)
+def test_export_keeps_generic_grammar_units_together(
+    text: str, required_units: list[str]
+):
+    from subtap.core.export import SRTExporter
+
+    lines = _srt_text_lines(
+        SRTExporter(max_chars=25, min_chars=10).render([_aligned(0, text, 0.0)])
+    )
+
+    assert all(any(unit in line for line in lines) for unit in required_units)
+    assert all(not line.startswith(("了", "着", "过", "之间")) for line in lines)
+    assert all(not line.endswith("相反") for line in lines)
 
 
 class TestSmartSplitV2Basic:

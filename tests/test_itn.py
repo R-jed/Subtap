@@ -63,6 +63,15 @@ def test_single_digit_not_converted():
     assert chinese_to_num("一点都不便宜") == "一点都不便宜"
 
 
+def test_lexical_ten_is_not_converted_as_a_number():
+    assert chinese_to_num("现场监听十分重要") == "现场监听十分重要"
+    assert chinese_to_num("这个操作十分危险") == "这个操作十分危险"
+    assert chinese_to_num("等待十分钟") == "等待10分钟"
+    assert chinese_to_num("价格是十分钱") == "价格是10分钱"
+    assert chinese_to_num("声音提高十分贝") == "声音提高10分贝"
+    assert chinese_to_num("长度是十分米") == "长度是10分米"
+
+
 def test_itn_approximate_shang():
     """上1000张 → 上千张（概数前缀）"""
     assert chinese_to_num("上1000张") == "上千张"

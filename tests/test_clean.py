@@ -11,6 +11,7 @@ from helpers import MockLLMBackend
 
 from subtap.core.clean import run_clean
 from subtap.core.replacement import apply_replacements
+from subtap.core.text_utils import normalize_punct
 from subtap.core.workspace import Workspace
 from subtap.schemas.config import SubtapConfig
 from subtap.schemas.glossary import (
@@ -22,6 +23,11 @@ from subtap.schemas.glossary import (
 from subtap.schemas.models import ASRSegment, RawCleanSegment
 
 # ── Glossary tests ──
+
+
+def test_normalize_punct_canonicalizes_dotted_initialism():
+    assert normalize_punct("负十六L.U.F.S.的水平。") == "负十六L.U.F.S.的水平。"
+    assert normalize_punct("例如e.g.这个写法。") == "例如e.g.这个写法。"
 
 
 def test_load_glossary_from_yaml(tmp_path: Path):

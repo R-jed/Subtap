@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,7 +33,7 @@ _NUM_CHARS = frozenset("零一二两三四五六七八九十百千万亿")
 _COMMA_PUNCT = frozenset("，、,;")
 
 # Punctuation that introduces an explanation or apposition.
-_CLAUSE_PUNCT = frozenset("：:—")
+_CLAUSE_PUNCT = frozenset("；：:—")
 
 # Directional complements stay with the preceding verb in subtitle display.
 _DIRECTIONAL_COMPLEMENTS = (
@@ -60,6 +61,14 @@ _SPATIAL_SUFFIXES = frozenset("上下内外中里")
 
 _PRONOUNS = ("我们", "你们", "他们", "她们", "它们", "我", "你", "他", "她", "它")
 _OBJECT_INTRODUCERS = frozenset("比把被给对向跟和为从替让")
+_BOUND_PREFIXES = ("之间", "之内", "之外", "之中")
+# Productive noun-forming suffixes. They are consulted only together with the
+# platform tokenizer, never as standalone split rules.
+_NOMINAL_SUFFIXES = frozenset("器性化度率量")
+_RATIO_EXPRESSION_RE = re.compile(
+    rf"[{''.join(_NUM_CHARS)}\d]+比[{''.join(_NUM_CHARS)}\d]+"
+    rf"(?:到[{''.join(_NUM_CHARS)}\d]+比[{''.join(_NUM_CHARS)}\d]+)?"
+)
 
 # Trailing words that should not appear at line end
 _TRAILING_WORDS = {
@@ -75,6 +84,10 @@ _TRAILING_WORDS = {
     "于是",
     "因此",
     "虽然",
+    "相反",
+    "假设",
+    "没有",
+    "各个",
     # 单字连词
     "因",
     "则",
@@ -85,6 +98,17 @@ _TRAILING_WORDS = {
     "会",
     "又",
     "也",
+    "有",
+    "在",
+    "到",
+    "把",
+    "被",
+    "给",
+    "跟",
+    "和",
+    "与",
+    "或",
+    "及",
     # 语气词
     "呃",
     "呢",
@@ -760,7 +784,16 @@ def _smart_split_v2(
 
     # split_after[i] = True if we can split AFTER position i
     split_after = [False] * n
+    sentence_boundaries: set[int] = set()
     protected_boundaries: set[int] = set()
+    numeric_boundaries = {
+        boundary
+        for match in _RATIO_EXPRESSION_RE.finditer(display_text)
+        for boundary in range(match.start(), match.end() - 1)
+    }
+    dotted_initialism_ends = {
+        match.end() - 1 for match in re.finditer(r"(?:[A-Za-z]\.){2,}", display_text)
+    }
     for i in range(n - 1):
         ch = display_chars[i]
         next_ch = display_chars[i + 1]
@@ -769,7 +802,24 @@ def _smart_split_v2(
 
         # Sentence-ending punctuation: always split after
         if ch in _SENT_END:
+            if (
+                ch == "."
+                and i > 0
+                and i + 1 < n
+                and (
+                    (display_chars[i - 1].isdigit() and next_ch.isdigit())
+                    or (
+                        display_chars[i - 1].isascii()
+                        and display_chars[i - 1].isalpha()
+                        and next_ch.isascii()
+                        and next_ch.isalpha()
+                    )
+                    or i in dotted_initialism_ends
+                )
+            ):
+                continue
             split_after[i] = True
+            sentence_boundaries.add(i + 1)
             continue
 
         # Comma punctuation: split after if enough content before
@@ -873,6 +923,8 @@ def _smart_split_v2(
 
     for end in range(1, n + 1):
         for start in range(max(0, end - max_chars * 2), end):
+            if any(start < boundary < end for boundary in sentence_boundaries):
+                continue
             if start > 0 and not split_after[start - 1]:
                 continue
             seg_len = end - start
@@ -898,6 +950,8 @@ def _smart_split_v2(
                 mapped_chars,
                 protected_boundaries,
                 pause_boundaries,
+                numeric_boundaries,
+                linguistic_word_ends,
             )
 
             if cost < dp[end]:
@@ -993,6 +1047,8 @@ def _split_cost(
     display_char_map: list[tuple[str, int, bool]] | None = None,
     protected_boundaries: set[int] | None = None,
     pause_boundaries: set[int] | None = None,
+    numeric_boundaries: set[int] | None = None,
+    linguistic_word_ends: frozenset[int] | None = None,
 ) -> float:
     """Cost function for a single segment. Lower is better."""
     cost = 0.0
@@ -1061,11 +1117,13 @@ def _split_cost(
         cost -= 4.0
     if any(seg_text.endswith(word) for word in _DIRECTIONAL_COMPLEMENTS):
         cost -= 8.0
-    if any(seg_text.rstrip().endswith(word) for word in _TRAILING_WORDS):
-        cost += 20.0
+    visible_text = strip_punct(seg_text).replace(" ", "")
+    if any(visible_text.endswith(word) for word in _TRAILING_WORDS):
+        cost += 40.0
 
     if end < total_len:
         following = "".join(display_chars[end : end + 2])
+        following_word = "".join(display_chars[end : end + 4])
         if following in _DIRECTIONAL_COMPLEMENTS:
             cost += 8.0
         following_text = "".join(display_chars[end : end + 3])
@@ -1078,6 +1136,37 @@ def _split_cost(
             cost += 8.0
         if display_chars[end] in _LOCATIVE_SUFFIXES:
             cost += 8.0
+        if display_chars[end] in "了着过呢":
+            cost += 40.0
+        if any(following_word.startswith(prefix) for prefix in _BOUND_PREFIXES):
+            cost += 40.0
+        word_ends = linguistic_word_ends or frozenset()
+        previous_word_start = max(
+            (boundary for boundary in word_ends if boundary < end), default=0
+        )
+        next_word_end = min(
+            (boundary for boundary in word_ends if boundary > end),
+            default=total_len,
+        )
+        previous_word = "".join(display_chars[previous_word_start:end]).strip()
+        next_word = "".join(display_chars[end:next_word_end]).strip()
+        if next_word in _NOMINAL_SUFFIXES or (
+            previous_word.endswith(tuple(_NOMINAL_SUFFIXES))
+            and 0 < len(next_word) <= 2
+            and next_word not in _TRAILING_WORDS
+        ):
+            cost += 40.0
+        previous_visible = next(
+            (char for char in reversed(seg_text) if char != " "), ""
+        )
+        if (
+            previous_visible.isascii()
+            and previous_visible.isalnum()
+            and "\u3400" <= display_chars[end] <= "\u9fff"
+        ):
+            cost += 40.0
+        if numeric_boundaries and end - 1 in numeric_boundaries:
+            cost += 40.0
 
         # Spaces are legal boundaries, but prefer keeping adjacent Latin words
         # together when the configured width allows it.

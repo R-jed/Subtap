@@ -384,6 +384,14 @@ def chinese_to_num(text: str) -> str:
     def _replace(match):
         matched = match.group()
         start, end = match.start(), match.end()
+        # "十分" is commonly an adverb (十分重要). Preserve it unless "分"
+        # starts a complete numeric unit or a fraction marker.
+        if (
+            matched == "十"
+            and text.startswith("分", end)
+            and not text.startswith(("分钟", "分贝", "分钱", "分米", "分之"), end)
+        ):
+            return matched
         # Skip bare units followed by non-digit (万元, 亿元)
         if matched in ("万", "亿") and end < len(text) and text[end] not in _NUM_MAP:
             return matched
