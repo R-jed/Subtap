@@ -132,7 +132,7 @@ def test_release_candidate_cannot_publish_stable_channels() -> None:
     )
 
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    assert project["project"]["version"] == "0.1.0rc4"
+    assert project["project"]["version"] == "0.1.0rc5"
 
 
 def test_release_metadata_requires_exact_tag_and_detects_prerelease() -> None:
