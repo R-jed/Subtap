@@ -205,14 +205,14 @@ class TestTemplateStructure:
         test_section = text.split("test do")[1]
         assert "numpy" in test_section
         assert "Formula" in test_section
-        assert '"#{libexec}/bin/python3 -c \\"import numpy;' in test_section
+        assert "os.path.realpath(numpy.__file__)" in test_section
 
     def test_test_block_checks_scipy_source(self) -> None:
         """test do must verify scipy comes from Homebrew, not bundled."""
         text = TEMPLATE.read_text(encoding="utf-8")
         test_section = text.split("test do")[1]
         assert "scipy" in test_section
-        assert '"#{libexec}/bin/python3 -c \\"import scipy;' in test_section
+        assert "os.path.realpath(scipy.__file__)" in test_section
 
     def test_test_block_refutes_numpy_in_venv(self) -> None:
         """test do must ensure no duplicate numpy inside venv."""

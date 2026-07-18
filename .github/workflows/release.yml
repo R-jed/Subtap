@@ -54,6 +54,7 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, subtap-release]
     timeout-minutes: 45
     env:
+      NODE_OPTIONS: --use-system-ca
       SUBTAP_SMOKE_AUDIO_DIR: ${{ vars.SUBTAP_SMOKE_AUDIO_DIR }}
       SUBTAP_SMOKE_MODEL_ROOT: ${{ vars.SUBTAP_SMOKE_MODEL_ROOT }}
       SUBTAP_SMOKE_REFERENCE_SRT: ${{ vars.SUBTAP_SMOKE_REFERENCE_SRT }}
