@@ -15,6 +15,7 @@ from subtap.schemas.config import SubtapConfig
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL_ROOT = Path.home() / ".subtap" / "models"
+ASR_MODEL_BY_MODE = {"fast": "asr_0.6b", "quality": "asr_1.7b"}
 
 
 class ModelEntry(TypedDict):
@@ -64,6 +65,56 @@ def required_model_names(config: SubtapConfig) -> tuple[str, ...]:
     if unknown:
         raise ValueError(f"未知必需模型：{', '.join(unknown)}")
     return names
+
+
+def apply_asr_mode(config: SubtapConfig, mode: str | None) -> None:
+    """Apply an explicit user-facing quality mode to the ASR model selection."""
+    if mode is None:
+        return
+    try:
+        config.asr.model = ASR_MODEL_BY_MODE[mode]
+    except KeyError as exc:
+        raise ValueError(f"--mode 必须是 fast/quality，收到：{mode}") from exc
+
+
+def asr_mode_for_model(model_name: str) -> str:
+    """Return the user-facing quality mode for a supported ASR model."""
+    for mode, candidate in ASR_MODEL_BY_MODE.items():
+        if candidate == model_name:
+            return mode
+    raise ValueError(f"未知 ASR 模型：{model_name}")
+
+
+def validate_required_models(
+    config: SubtapConfig, model_names: tuple[str, ...] | None = None
+) -> None:
+    """Fail before runtime work starts when a required local model is unavailable."""
+    required = model_names or required_model_names(config)
+    status_by_name = {status.name: status for status in ModelRegistry(config).status()}
+    unknown = [name for name in required if name not in status_by_name]
+    if unknown:
+        raise ValueError(f"未知必需模型：{', '.join(unknown)}")
+    missing = [
+        status_by_name[name] for name in required if not status_by_name[name].installed
+    ]
+    if not missing:
+        return
+
+    details = "; ".join(
+        f"{status.name}（{', '.join(status.missing_files)}）" for status in missing
+    )
+    commands = "；".join(f"subtap models install {status.name}" for status in missing)
+    raise RuntimeError(f"必需模型未就绪：{details}。请运行：{commands}")
+
+
+def validate_runtime_models(config: SubtapConfig) -> None:
+    """Validate the models used by the configured ASR and mandatory aligner."""
+    model_names = (
+        required_model_names(config)
+        if config.asr.backend == "mlx-qwen-asr"
+        else (config.align.model,)
+    )
+    validate_required_models(config, model_names)
 
 
 def _get_model_root(config: SubtapConfig) -> Path:

@@ -15,7 +15,7 @@ class SubtitleTaskRequest:
 
     input_path: Path
     output_dir: Path
-    mode: str
+    mode: str | None = None
     glossary_path: Path | None = None
     use_default_glossary: bool = False
     script_path: Path | None = None
@@ -29,7 +29,7 @@ class SubtitleTaskRequest:
         """Reject choices that cannot describe one unambiguous task."""
         if not self.input_path.is_file():
             raise ValueError(f"输入文件不存在：{self.input_path}")
-        if self.mode not in ("fast", "quality"):
+        if self.mode is not None and self.mode not in ("fast", "quality"):
             raise ValueError(f"--mode 必须是 fast/quality，收到：{self.mode}")
         if self.glossary_path is not None and self.use_default_glossary:
             raise ValueError("不能同时选择自定义热词表和默认热词表")
@@ -61,11 +61,10 @@ class SubtitleTaskRequest:
             "subtap.cli",
             "run",
             str(self.input_path),
-            "--mode",
-            self.mode,
-            "--format",
-            self.subtitle_format,
         ]
+        if self.mode is not None:
+            command.extend(["--mode", self.mode])
+        command.extend(["--format", self.subtitle_format])
         if self.subtitle_language is not None:
             command.extend(["--subtitle-language", self.subtitle_language])
         if self.glossary_path is not None:

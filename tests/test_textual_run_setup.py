@@ -73,6 +73,24 @@ async def test_run_setup_returns_selected_pipeline_command(tmp_path, monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_run_setup_defaults_to_configured_asr_model(tmp_path, monkeypatch):
+    from textual.widgets import Select
+
+    from subtap.ui.textual_run_setup import RunSetupApp
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    config_path = tmp_path / ".subtap" / "config.yaml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text("asr:\n  model: asr_1.7b\n", encoding="utf-8")
+    audio = tmp_path / "voice.wav"
+    audio.write_bytes(b"audio")
+
+    app = RunSetupApp(audio)
+    async with app.run_test():
+        assert app.query_one("#quality", Select).value == "quality"
+
+
+@pytest.mark.asyncio
 async def test_run_setup_rejects_blank_output(tmp_path, monkeypatch):
     from textual.widgets import Button, Input, Static
 

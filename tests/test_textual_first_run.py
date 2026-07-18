@@ -60,6 +60,51 @@ async def test_textual_first_run_prepares_model_plan_off_main_thread(
 
 
 @pytest.mark.asyncio
+async def test_textual_first_run_uses_user_selected_asr_with_required_aligner(
+    tmp_path, monkeypatch
+):
+    from textual.widgets import Select
+
+    from subtap.ui.command_deck import CommandDeckApp
+    from subtap.ui.textual_first_run import FirstRunScreen
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.setattr(
+        "subtap.ui.views.first_run.FirstRunView.check_device", lambda self: _device()
+    )
+    planned = []
+
+    def build_plan(self, names, **kwargs):
+        planned.append(names)
+        return {
+            "model_names": names,
+            "size_bytes": 1024,
+            "download_bytes": 1024,
+            "existing_bytes_by_file": {},
+            "verified_files": set(),
+            "size_display": "0.1 GB",
+            "estimated_seconds": 1,
+            "target_dir": str(tmp_path / ".subtap" / "models"),
+        }
+
+    monkeypatch.setattr(
+        "subtap.ui.views.first_run.FirstRunView.get_download_plan", build_plan
+    )
+
+    app = CommandDeckApp()
+    async with app.run_test() as pilot:
+        await pilot.pause(0.1)
+        assert isinstance(app.screen, FirstRunScreen)
+        app.screen.query_one("#asr-model", Select).value = "asr_0.6b"
+        await pilot.pause(0.1)
+
+        assert planned[-1] == ("asr_0.6b", "aligner")
+        assert "对齐模型：自动安装并始终使用" in str(
+            app.screen.query_one("#summary").render()
+        )
+
+
+@pytest.mark.asyncio
 async def test_textual_first_run_plan_error_is_visible_and_retryable(
     tmp_path, monkeypatch
 ):
@@ -138,6 +183,7 @@ async def test_command_deck_uses_textual_first_run_and_blocks_insufficient_disk(
         assert isinstance(app.screen, FirstRunScreen)
         assert app.screen.query_one("#download").disabled is True
         assert "空间不足" in str(app.screen.query_one("#status").render())
+        assert "asr_0.6b + aligner" in str(app.screen.query_one("#summary").render())
 
 
 @pytest.mark.asyncio
@@ -179,6 +225,43 @@ async def test_textual_first_run_uses_remaining_bytes_for_resume_space_check(
         progress = app.screen.query_one("#progress")
         assert progress.total == total
         assert progress.progress == total - remaining
+
+
+@pytest.mark.asyncio
+async def test_insufficient_disk_summary_uses_selected_quality_asr(
+    tmp_path, monkeypatch
+):
+    from subtap.ui.command_deck import CommandDeckApp
+    from subtap.ui.textual_first_run import FirstRunScreen
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    config_path = tmp_path / ".subtap" / "config.yaml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text("asr:\n  model: asr_1.7b\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "subtap.ui.views.first_run.FirstRunView.check_device",
+        lambda self: _device(free_gb=1),
+    )
+    monkeypatch.setattr(
+        "subtap.ui.views.first_run.FirstRunView.get_download_plan",
+        lambda self, names, **kwargs: {
+            "model_names": names,
+            "size_bytes": 2 * 1024**3,
+            "download_bytes": 2 * 1024**3,
+            "existing_bytes_by_file": {},
+            "verified_files": set(),
+            "size_display": "2.0 GB",
+            "estimated_seconds": 200,
+            "target_dir": str(tmp_path / ".subtap" / "models"),
+        },
+    )
+
+    app = CommandDeckApp()
+    async with app.run_test() as pilot:
+        await pilot.pause(0.1)
+
+        assert isinstance(app.screen, FirstRunScreen)
+        assert "asr_1.7b + aligner" in str(app.screen.query_one("#summary").render())
 
 
 @pytest.mark.asyncio
@@ -228,8 +311,8 @@ async def test_textual_first_run_downloads_and_verifies_before_completion(
 
         assert not isinstance(app.screen, FirstRunScreen)
 
-    assert downloaded == [("asr_1.7b", "hf")]
-    assert load_config(tmp_path / ".subtap" / "config.yaml").asr.model == "asr_1.7b"
+    assert downloaded == [("asr_0.6b", "hf")]
+    assert load_config(tmp_path / ".subtap" / "config.yaml").asr.model == "asr_0.6b"
     assert (tmp_path / ".subtap" / "state.json").exists()
     assert (tmp_path / ".subtap" / "glossaries" / "default.yaml").is_file()
 
@@ -421,6 +504,31 @@ async def test_textual_first_run_does_not_change_config_before_confirmation(
         assert isinstance(app.screen, FirstRunScreen)
         assert load_config(config_path).asr.model == "asr_0.6b"
         assert config_path.read_text() == original
+
+
+@pytest.mark.asyncio
+async def test_textual_first_run_rejects_unknown_configured_model(
+    tmp_path, monkeypatch
+):
+    from subtap.ui.command_deck import CommandDeckApp
+    from subtap.ui.textual_first_run import FirstRunScreen
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    config_path = tmp_path / ".subtap" / "config.yaml"
+    config_path.parent.mkdir(parents=True)
+    original = "asr:\n  model: unknown-asr\n"
+    config_path.write_text(original, encoding="utf-8")
+    monkeypatch.setattr(
+        "subtap.ui.views.first_run.FirstRunView.check_device", lambda self: _device()
+    )
+
+    app = CommandDeckApp()
+    async with app.run_test() as pilot:
+        await pilot.pause(0.1)
+        assert isinstance(app.screen, FirstRunScreen)
+        status = str(app.screen.query_one("#status").render())
+        assert "未知必需模型：unknown-asr" in status
+        assert config_path.read_text(encoding="utf-8") == original
 
 
 @pytest.mark.asyncio

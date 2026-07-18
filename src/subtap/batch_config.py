@@ -9,7 +9,7 @@ from typing import Any
 import yaml
 
 DEFAULT_CONFIG = {
-    "mode": "fast",
+    "mode": None,
     "enhance": "local",
     "translate_to": None,
     "bilingual": "off",
@@ -24,7 +24,7 @@ DEFAULT_CONFIG = {
 class BatchConfig:
     """Batch transcription configuration."""
 
-    mode: str = "fast"
+    mode: str | None = None
     enhance: str = "local"
     translate_to: str | None = None
     bilingual: str = "off"

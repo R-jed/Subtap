@@ -95,7 +95,7 @@ class WizardView:
         return SubtitleTaskRequest(
             input_path=self._state["file_path"],
             output_dir=self._state["output_dir"] or Path("./output"),
-            mode=self._state["quality"] or "fast",
+            mode=self._state["quality"],
             glossary_path=glossary_path,
             use_default_glossary=glossary_path is None,
             script_path=manuscript_path,
@@ -116,7 +116,10 @@ class WizardView:
         fp = s["file_path"]
         display_name = Path(fp).name if fp else "未选择"
         items = [f"文件：{display_name}"]
-        items.append(f"质量：{'快速' if s['quality'] == 'fast' else '高质量'}")
+        quality = {"fast": "快速", "quality": "高质量"}.get(
+            s["quality"], "使用默认模型"
+        )
+        items.append(f"质量：{quality}")
         glossary = s["glossary_path"].name if s["glossary_path"] else "默认"
         items.append(f"热词表：{glossary}")
         manuscript = s["manuscript_path"].name if s["manuscript_path"] else "不使用"

@@ -69,6 +69,14 @@ def local_config(tmp_path: Path) -> SubtapConfig:
 
 
 @pytest.fixture
+def skip_runtime_model_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep pipeline-focused tests independent from installed local models."""
+    monkeypatch.setattr(
+        "subtap.core.models.validate_runtime_models", lambda _config: None
+    )
+
+
+@pytest.fixture
 def workspace(local_config: SubtapConfig):
     """创建工作空间"""
     from subtap.core.workspace import Workspace

@@ -99,8 +99,8 @@ class SetupWizard:
             True if all required models downloaded successfully.
         """
         from subtap.schemas.config import load_config
+        from subtap.core.manifest import get_manifest_path, load_manifest
         from subtap.core.models import (
-            MODEL_REGISTRY,
             ModelDownloader,
             ModelRegistry,
             required_model_names,
@@ -113,18 +113,18 @@ class SetupWizard:
         selected = self.choose_download_source(source)
         self.last_model_source = selected
         if selected == "manual":
-            self.print_manual_model_instructions()
+            self.print_manual_model_instructions(config.asr.model)
             return False
 
         # 检测网络连通性
         import typer
 
-        first_model = "asr_0.6b"
+        first_model = load_manifest(get_manifest_path(config)).models[config.asr.model]
 
         def repo_for(download_source: str) -> str:
             if download_source == "modelscope":
-                return MODEL_REGISTRY[first_model]["modelscope_repo"]
-            return MODEL_REGISTRY[first_model]["hf_repo"]
+                return first_model.modelscope_repo
+            return first_model.hf_repo
 
         typer.echo(f"▸ 检测 {selected} 连通性...")
         if not downloader.check_connectivity(selected, repo_for(selected)):
@@ -151,7 +151,7 @@ class SetupWizard:
 
                 if fallback == "manual":
                     self.last_model_source = "manual"
-                    self.print_manual_model_instructions()
+                    self.print_manual_model_instructions(config.asr.model)
                     return False
 
                 selected = fallback
@@ -178,14 +178,15 @@ class SetupWizard:
         results = [self._download_model(downloader, name, selected) for name in targets]
         return all(results)
 
-    def print_manual_model_instructions(self) -> None:
+    def print_manual_model_instructions(self, selected_asr: str = "asr_0.6b") -> None:
         """Print instructions for manual model placement."""
         import typer
 
+        optional_asr = "asr_1.7b" if selected_asr == "asr_0.6b" else "asr_0.6b"
         typer.echo("请手动下载模型并放入用户目录的 ~/.subtap/models/ 目录：")
-        typer.echo("  - models/asr_0.6b/（必需）")
-        typer.echo("  - models/aligner/（必需）")
-        typer.echo("  - models/asr_1.7b/（可选，高质量 ASR）")
+        typer.echo(f"  - models/{selected_asr}/（已选，必需）")
+        typer.echo("  - models/aligner/（自动必需）")
+        typer.echo(f"  - models/{optional_asr}/（可选）")
         typer.echo("")
         typer.echo("不同模型目录需要的文件不同，安装命令会按清单自动校验")
 

@@ -15,7 +15,7 @@ class TestBatchConfig:
 
     def test_default_config(self):
         config = BatchConfig()
-        assert config.mode == "fast"
+        assert config.mode is None
         assert config.enhance == "local"
         assert config.translate_to is None
         assert config.bilingual == "off"
@@ -75,10 +75,10 @@ class TestLoadSaveConfig:
     def test_load_nonexistent(self, tmp_path):
         config_path = tmp_path / "nonexistent.yaml"
         config = load_batch_config(config_path)
-        assert config.mode == "fast"  # default
+        assert config.mode is None
 
     def test_load_invalid_yaml(self, tmp_path):
         config_path = tmp_path / "invalid.yaml"
         config_path.write_text("invalid: yaml: content: [")
         config = load_batch_config(config_path)
-        assert config.mode == "fast"  # fallback to default
+        assert config.mode is None

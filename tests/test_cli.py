@@ -292,7 +292,9 @@ def test_batch_transcribe_command_exists():
     assert "--json" in _strip_ansi(result.output)
 
 
-def test_batch_transcribe_runs_each_file(tmp_path, monkeypatch):
+def test_batch_transcribe_runs_each_file(
+    tmp_path, monkeypatch, skip_runtime_model_validation
+):
     """batch-transcribe should run the pipeline once per input file."""
     calls = []
 
@@ -375,7 +377,9 @@ def test_batch_transcribe_runs_each_file(tmp_path, monkeypatch):
     assert calls[1][2] == tmp_path / "out" / "two_wav"
 
 
-def test_batch_transcribe_passes_translate_and_bilingual(tmp_path, monkeypatch):
+def test_batch_transcribe_passes_translate_and_bilingual(
+    tmp_path, monkeypatch, skip_runtime_model_validation
+):
     """batch-transcribe 应传递 translate_to、bilingual 和 fmt 参数。"""
     captured_kwargs = []
 
@@ -449,7 +453,9 @@ def test_batch_transcribe_passes_translate_and_bilingual(tmp_path, monkeypatch):
     assert kw["bilingual"] == "source-first"
 
 
-def test_batch_transcribe_bilingual_defaults_to_off(tmp_path, monkeypatch):
+def test_batch_transcribe_bilingual_defaults_to_off(
+    tmp_path, monkeypatch, skip_runtime_model_validation
+):
     """batch-transcribe bilingual 未指定时应默认 off。"""
     captured_kwargs = []
 
@@ -519,7 +525,9 @@ def test_batch_transcribe_bilingual_defaults_to_off(tmp_path, monkeypatch):
     assert kw["bilingual"] == "off"
 
 
-def test_run_full_pipeline_with_align(tmp_path, monkeypatch):
+def test_run_full_pipeline_with_align(
+    tmp_path, monkeypatch, skip_runtime_model_validation
+):
     """run should always execute align stage."""
     calls = []
 
@@ -629,7 +637,9 @@ def test_run_full_pipeline_with_align(tmp_path, monkeypatch):
     assert '"event_type": "stage_start"' in run_log.read_text(encoding="utf-8")
 
 
-def test_run_enhance_local_passes_clean_local_to_pipeline(tmp_path, monkeypatch):
+def test_run_enhance_local_passes_clean_local_to_pipeline(
+    tmp_path, monkeypatch, skip_runtime_model_validation
+):
     """--enhance local 应传到 clean 阶段，避免触发 LLM backend。"""
     clean_kwargs = []
 
@@ -773,7 +783,9 @@ def test_observe_command_prints_event_log_status(tmp_path):
     assert "已对齐：1" in clean
 
 
-def test_tui_run_rejects_zero_exit_without_subtitle(tmp_path, monkeypatch):
+def test_tui_run_rejects_zero_exit_without_subtitle(
+    tmp_path, monkeypatch, skip_runtime_model_validation
+):
     """子进程返回成功但没有字幕文件时，CLI 不能报告成功。"""
     import subprocess
 
@@ -958,7 +970,26 @@ def test_setup_help_has_download_source_option():
 
     assert result.exit_code == 0
     assert "--download-source" in _strip_ansi(result.output)
+    assert "--asr-model" in _strip_ansi(result.output)
     assert "hf-mirror" in _strip_ansi(result.output)
+
+
+def test_setup_persists_explicit_asr_selection(tmp_path, monkeypatch):
+    from subtap.schemas.config import load_config
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.setattr(
+        "subtap.core.setup.SetupWizard.check_system_deps",
+        lambda self: {"ffmpeg": True, "ffprobe": True, "python": True},
+    )
+    monkeypatch.setattr(
+        "subtap.core.setup.SetupWizard.check_config_exists", lambda self: True
+    )
+
+    result = runner.invoke(app, ["setup", "--skip-models", "--asr-model", "asr_1.7b"])
+
+    assert result.exit_code == 0
+    assert load_config(tmp_path / ".subtap" / "config.yaml").asr.model == "asr_1.7b"
 
 
 def test_clean_stage_copies_external_input_and_output(tmp_path, monkeypatch):
@@ -1669,6 +1700,32 @@ def test_run_config_fast_mode_selects_06b_model(tmp_path):
     )
 
     assert config.asr.model == "asr_0.6b"
+
+
+def test_run_config_without_mode_preserves_selected_model(tmp_path):
+    from subtap.cli.pipeline_cli import _apply_run_config
+    from subtap.schemas.config import SubtapConfig
+    from subtap.schemas.task_request import SubtitleTaskRequest
+
+    config = SubtapConfig()
+    config.asr.model = "asr_1.7b"
+
+    _apply_run_config(
+        config=config,
+        request=SubtitleTaskRequest(
+            input_path=tmp_path / "voice.wav",
+            output_dir=tmp_path / "output",
+        ),
+        timestamp=None,
+        punctuation=None,
+        max_chars=None,
+        min_chars=None,
+        script_mode="follow_script",
+        hotwords=None,
+        work_dir=tmp_path / "work",
+    )
+
+    assert config.asr.model == "asr_1.7b"
 
 
 def test_run_config_explicitly_resets_optional_resources(tmp_path, monkeypatch):

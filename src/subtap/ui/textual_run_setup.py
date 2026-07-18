@@ -9,6 +9,8 @@ from textual.app import App, ComposeResult
 from textual.containers import VerticalScroll
 from textual.widgets import Button, Input, Select, Static
 
+from subtap.core.models import asr_mode_for_model
+from subtap.schemas.config import load_config
 from subtap.ui.views.wizard import WizardView
 
 
@@ -27,6 +29,8 @@ class RunSetupApp(App[list[str] | None]):
     def __init__(self, input_path: Path) -> None:
         super().__init__()
         self.input_path = input_path
+        config = load_config(Path.home() / ".subtap" / "config.yaml")
+        self.default_mode = asr_mode_for_model(config.asr.model)
         self._pending_command: list[str] | None = None
 
     def compose(self) -> ComposeResult:
@@ -38,7 +42,7 @@ class RunSetupApp(App[list[str] | None]):
             yield Static("质量")
             yield Select(
                 [("快速 · 0.6B", "fast"), ("高质量 · 1.7B", "quality")],
-                value="fast",
+                value=self.default_mode,
                 id="quality",
             )
             yield Static("热词表")
@@ -66,7 +70,9 @@ class RunSetupApp(App[list[str] | None]):
         wizard = WizardView()
         wizard.select_file(self.input_path)
         quality = self.query_one("#quality", Select).value
-        wizard.select_quality(quality if isinstance(quality, str) else "fast")
+        wizard.select_quality(
+            quality if isinstance(quality, str) else self.default_mode
+        )
         glossary = self.query_one("#glossary", Select).value
         manuscript = self.query_one("#manuscript", Select).value
         wizard.select_glossary(

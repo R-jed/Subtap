@@ -13,6 +13,7 @@ from subtap.core.models import (
     ModelRemover,
     MODEL_REGISTRY,
     required_model_names,
+    validate_required_models,
 )
 from subtap.core.manifest import get_manifest_path, load_manifest
 from subtap.schemas.config import SubtapConfig
@@ -76,6 +77,21 @@ def test_required_model_names_follow_selected_runtime_config():
     config.asr.model = "asr_1.7b"
 
     assert required_model_names(config) == ("asr_1.7b", "aligner")
+
+
+def test_validate_required_models_reports_missing_aligner_before_runtime(tmp_path):
+    config = _config_with_model_root(tmp_path)
+    _create_model_files(tmp_path / "models" / "asr_0.6b")
+
+    with pytest.raises(RuntimeError, match=r"aligner.*subtap models install aligner"):
+        validate_required_models(config)
+
+
+def test_validate_required_models_rejects_unknown_explicit_name(tmp_path):
+    config = _config_with_model_root(tmp_path)
+
+    with pytest.raises(ValueError, match="未知必需模型：missing"):
+        validate_required_models(config, ("missing",))
 
 
 def test_required_model_names_respect_custom_manifest(tmp_path):

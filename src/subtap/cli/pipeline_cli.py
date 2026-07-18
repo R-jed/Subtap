@@ -282,7 +282,9 @@ def _apply_run_config(
         config.output.script_path = str(request.script_path)
         config.output.script_mode = script_mode
 
-    config.asr.model = "asr_1.7b" if request.mode == "quality" else "asr_0.6b"
+    from subtap.core.models import apply_asr_mode
+
+    apply_asr_mode(config, request.mode)
 
     if request.reset_hotwords:
         config.asr.hotwords = []
@@ -355,7 +357,12 @@ def _run(
         "-f",
         help="输出清单标记：srt / vtt / json / tsv；精对齐默认生成 final.srt/final.vtt/final.json/final.tsv",
     ),
-    mode: str = typer.Option("fast", "--mode", "-m", help="执行模式：fast / quality"),
+    mode: str | None = typer.Option(
+        None,
+        "--mode",
+        "-m",
+        help="执行模式：fast / quality（默认使用首次设置选择的 ASR）",
+    ),
     enhance: str = typer.Option(
         "local",
         "--enhance",
@@ -449,8 +456,9 @@ def _run(
     [bold]流程：[/bold] 音频标准化 → 切段 → 语音识别 → 文本清洗 → 智能断句 → 时间轴对齐 → 字幕导出
 
     [bold]模式：[/bold]
-      fast     — 快速模式，使用 0.6B 模型（默认）
+      fast     — 快速模式，使用 0.6B 模型
       quality  — 高质量模式，使用 1.7B 模型
+      未指定   — 使用首次设置时选择的 ASR（默认）
 
     [bold]增强：[/bold]
       local    — 本地规则增强（默认，始终执行）
@@ -517,6 +525,13 @@ def _run(
         hotwords,
         work_dir,
     )
+
+    from subtap.core.models import validate_runtime_models
+
+    try:
+        validate_runtime_models(config)
+    except (RuntimeError, ValueError, FileNotFoundError) as exc:
+        _handle_error(f"错误：{exc}")
 
     if tui and not observer_child and not no_tui:
         from subtap.cli import _build_observer_child_command

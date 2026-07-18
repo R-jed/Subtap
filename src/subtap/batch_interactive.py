@@ -154,12 +154,19 @@ def run_config_wizard(config_path: Path) -> BatchConfig:
 
     # Load existing config as defaults
     existing = load_batch_config(config_path)
+    default_mode = existing.mode
+    if default_mode is None:
+        from subtap.core.models import asr_mode_for_model
+        from subtap.schemas.config import load_config
+
+        main_config = load_config(Path.home() / ".subtap" / "config.yaml")
+        default_mode = asr_mode_for_model(main_config.asr.model)
 
     # Mode
     mode = prompt_choice(
         "模式",
         ["fast", "quality"],
-        default=existing.mode,
+        default=default_mode,
     )
 
     # Enhance

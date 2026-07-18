@@ -445,7 +445,10 @@ class TestBatchCleanup:
     """测试批量转录完成后的清理行为。"""
 
     def test_batch_transcribe_calls_cleanup_on_success(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        skip_runtime_model_validation,
     ) -> None:
         """批量转录成功处理文件后应调用 clean_intermediate_files() 清理 L2 中间文件。"""
         from unittest.mock import MagicMock, patch
@@ -457,7 +460,6 @@ class TestBatchCleanup:
         config = SubtapConfig()
         monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
         monkeypatch.setattr("subtap.cli.Path.home", lambda: tmp_path)
-
         # 创建测试音频文件
         audio_file = tmp_path / "test.wav"
         audio_file.write_bytes(b"fake wav")
@@ -504,7 +506,10 @@ class TestBatchCleanup:
                 ), "batch_transcribe 成功后应调用 clean_intermediate_files()"
 
     def test_batch_transcribe_no_cleanup_on_failure(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        skip_runtime_model_validation,
     ) -> None:
         """批量转录失败时不应调用 clean_intermediate_files()。"""
         from unittest.mock import MagicMock, patch
@@ -516,7 +521,6 @@ class TestBatchCleanup:
         config = SubtapConfig()
         monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
         monkeypatch.setattr("subtap.cli.Path.home", lambda: tmp_path)
-
         # 创建测试音频文件
         audio_file = tmp_path / "test.wav"
         audio_file.write_bytes(b"fake wav")
@@ -560,7 +564,10 @@ class TestCLIRunCleanup:
     """测试 CLI run 命令完成后的清理行为。"""
 
     def test_run_cleanup_removes_temp_files(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        skip_runtime_model_validation,
     ) -> None:
         """CLI run 应在成功执行后调用 pipeline.cleanup() 清理临时文件。"""
         from unittest.mock import MagicMock, patch
@@ -572,7 +579,6 @@ class TestCLIRunCleanup:
         config = SubtapConfig()
         monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
         monkeypatch.setattr("subtap.cli.Path.home", lambda: tmp_path)
-
         # 创建测试音频文件
         audio_file = tmp_path / "test.wav"
         audio_file.write_bytes(b"fake wav")

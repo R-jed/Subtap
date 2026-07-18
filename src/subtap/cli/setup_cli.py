@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import typer
+from pathlib import Path
 
 
 def setup(
@@ -14,6 +15,11 @@ def setup(
     ),
     include_optional: bool = typer.Option(
         False, "--include-optional", help="同时下载可选大模型"
+    ),
+    asr_model: str | None = typer.Option(
+        None,
+        "--asr-model",
+        help="首次安装的 ASR：asr_0.6b / asr_1.7b（默认沿用配置）",
     ),
     model_endpoint: str | None = typer.Option(
         None, "--model-endpoint", help="自定义 Hugging Face 镜像地址"
@@ -37,6 +43,11 @@ def setup(
     from subtap.core.setup import SetupWizard
 
     wizard = SetupWizard()
+
+    if asr_model is not None and asr_model not in ("asr_0.6b", "asr_1.7b"):
+        raise typer.BadParameter(
+            "必须是 asr_0.6b 或 asr_1.7b", param_hint="--asr-model"
+        )
 
     typer.echo("═══ Subtap 初始化向导 ═══\n")
 
@@ -74,6 +85,14 @@ def setup(
         typer.echo("  ✓ ~/.subtap/ 已创建")
     else:
         typer.echo("  ✓ ~/.subtap/ 已存在")
+
+    if asr_model is not None:
+        from subtap.ui.config_manager import ConfigManager
+
+        config_manager = ConfigManager(Path.home() / ".subtap" / "config.yaml")
+        selected_config = config_manager.to_subtap_config()
+        selected_config.asr.model = asr_model
+        config_manager.sync_from_config(selected_config)
 
     # Step 3: Model setup
     if skip_models:

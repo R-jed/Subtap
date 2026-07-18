@@ -121,6 +121,17 @@ def test_setup_model_selection_default():
         assert "asr_0.6b" in calls
 
 
+def test_manual_model_instructions_follow_selected_asr(capsys):
+    wizard = SetupWizard()
+
+    wizard.print_manual_model_instructions("asr_1.7b")
+
+    output = capsys.readouterr().out
+    assert "models/asr_1.7b/（已选，必需）" in output
+    assert "models/asr_0.6b/（可选）" in output
+    assert "models/aligner/（自动必需）" in output
+
+
 def test_setup_model_selection_include_optional():
     """Test include_optional downloads all models."""
     from subtap.schemas.config import SubtapConfig

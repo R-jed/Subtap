@@ -31,7 +31,9 @@ def _make_mock_config():
     return config
 
 
-def test_batch_transcribe_writes_manifest_and_keeps_failed_items(tmp_path, monkeypatch):
+def test_batch_transcribe_writes_manifest_and_keeps_failed_items(
+    tmp_path, monkeypatch, skip_runtime_model_validation
+):
     """batch-transcribe should write a retryable manifest for mixed results."""
     calls = []
 
@@ -111,3 +113,73 @@ def test_batch_transcribe_writes_manifest_and_keeps_failed_items(tmp_path, monke
     assert "failed" in statuses
     assert saved["items"][1]["error"] == "文件不存在"
     assert len(calls) == 1
+
+
+def test_batch_transcribe_stops_before_output_when_models_are_missing(
+    tmp_path, monkeypatch
+):
+    from subtap.schemas.config import SubtapConfig
+
+    config = SubtapConfig()
+    config.models.root = str(tmp_path / "models")
+    monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
+    audio = tmp_path / "voice.wav"
+    audio.write_bytes(b"audio")
+    output = tmp_path / "output"
+
+    result = runner.invoke(
+        app,
+        [
+            "batch-transcribe",
+            str(audio),
+            "--output-dir",
+            str(output),
+            "--no-confirm",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "必需模型未就绪" in result.output
+    assert not output.exists()
+
+
+def test_batch_transcribe_explicit_fast_selects_06b(
+    tmp_path, monkeypatch, skip_runtime_model_validation
+):
+    captured_models = []
+
+    class FakePipeline:
+        def __init__(self, config, work_dir):
+            captured_models.append(config.asr.model)
+            self.work_dir = work_dir
+            self.workspace = SimpleNamespace(ensure_dirs=lambda: None)
+
+    class FakeRunner:
+        def run_pipeline(self, _pipeline, _input, output_dir, **_kwargs):
+            return {"output_dir": str(output_dir), "timings": {}}
+
+    config = _make_mock_config()
+    config.asr.model = "asr_1.7b"
+    monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
+    monkeypatch.setattr("subtap.core.pipeline.Pipeline", FakePipeline)
+    monkeypatch.setattr("subtap.ui.tui.RichRunner", FakeRunner)
+    audio = tmp_path / "voice.wav"
+    audio.write_bytes(b"audio")
+
+    result = runner.invoke(
+        app,
+        [
+            "batch-transcribe",
+            str(audio),
+            "--mode",
+            "fast",
+            "--output-dir",
+            str(tmp_path / "output"),
+            "--no-confirm",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured_models == ["asr_0.6b"]

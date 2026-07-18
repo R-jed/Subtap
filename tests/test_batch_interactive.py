@@ -78,7 +78,8 @@ class TestPromptBool:
 class TestRunConfigWizard:
     """Test run_config_wizard function."""
 
-    def test_wizard_creates_config(self, tmp_path):
+    def test_wizard_creates_config(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
         config_path = tmp_path / "batch-config.yaml"
         # Simulate user accepting all defaults
         with patch("builtins.input", return_value=""):

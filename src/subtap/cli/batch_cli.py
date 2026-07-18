@@ -189,8 +189,23 @@ def batch_transcribe(
         )
     config.output.subtitle_stem = "batch"
 
-    if mode == "quality":
-        config.asr.model = "asr_1.7b"
+    from subtap.core.models import (
+        apply_asr_mode,
+        asr_mode_for_model,
+        validate_runtime_models,
+    )
+
+    try:
+        apply_asr_mode(config, mode)
+        mode = asr_mode_for_model(config.asr.model)
+    except ValueError as exc:
+        _handle_error(f"错误：{exc}")
+    assert mode is not None
+
+    try:
+        validate_runtime_models(config)
+    except (RuntimeError, ValueError, FileNotFoundError) as exc:
+        _handle_error(f"错误：{exc}")
 
     # Hotwords: CLI overrides config
     if hotwords:
@@ -347,8 +362,7 @@ def batch_transcribe(
                 )
             item_config.output.subtitle_stem = path.stem
 
-            if mode == "quality":
-                item_config.asr.model = "asr_1.7b"
+            apply_asr_mode(item_config, mode)
 
             pipeline = Pipeline(item_config, work_dir=item_output_dir / "work")
             pipeline.workspace.ensure_dirs()
