@@ -275,6 +275,15 @@ def test_run_has_mode_flag():
     assert "mode" in clean
 
 
+def test_run_exposes_only_maximum_subtitle_character_limit():
+    result = runner.invoke(app, ["run", "--help"])
+
+    assert result.exit_code == 0
+    clean = _strip_ansi(result.output)
+    assert "--max-chars" in clean
+    assert "--min-chars" not in clean
+
+
 def test_run_json_flag_is_available():
     """subtap run should accept --json for machine-readable output."""
     result = runner.invoke(app, ["run", "--help"])
@@ -335,7 +344,6 @@ def test_batch_transcribe_runs_each_file(
         c.output.subtitle_punctuation = False
         c.output.subtitle_language = "zh"
         c.output.max_chars = 25
-        c.output.min_chars = 10
         c.output.subtitle_stem = "test"
         c.asr = SimpleNamespace()
         c.asr.model = "asr_0.6b"
@@ -414,7 +422,6 @@ def test_batch_transcribe_passes_translate_and_bilingual(
         c.output.subtitle_punctuation = False
         c.output.subtitle_language = "zh"
         c.output.max_chars = 25
-        c.output.min_chars = 10
         c.output.subtitle_stem = "test"
         c.asr = SimpleNamespace()
         c.asr.model = "asr_0.6b"
@@ -490,7 +497,6 @@ def test_batch_transcribe_bilingual_defaults_to_off(
         c.output.subtitle_punctuation = False
         c.output.subtitle_language = "zh"
         c.output.max_chars = 25
-        c.output.min_chars = 10
         c.output.subtitle_stem = "test"
         c.asr = SimpleNamespace()
         c.asr.model = "asr_0.6b"
@@ -598,7 +604,6 @@ def test_run_full_pipeline_with_align(
             subtitle_punctuation=False,
             subtitle_language="zh",
             max_chars=25,
-            min_chars=10,
             subtitle_formats=["srt"],
             subtitle_stem="output",
         ),
@@ -710,7 +715,6 @@ def test_run_enhance_local_passes_clean_local_to_pipeline(
             subtitle_punctuation=False,
             subtitle_language="zh",
             max_chars=25,
-            min_chars=10,
             subtitle_formats=["srt"],
             subtitle_stem="output",
         ),
@@ -940,7 +944,6 @@ def test_setup_full_flow():
         patch("subtap.core.setup.SetupWizard.check_config_exists") as mock_config,
         patch("subtap.core.setup.SetupWizard.setup_models") as mock_models,
     ):
-
         mock_deps.return_value = {"ffmpeg": True, "ffprobe": True, "python": True}
         mock_config.return_value = False
         mock_models.return_value = True
@@ -1166,7 +1169,6 @@ def test_setup_interactive_fallback_hf_to_mirror(tmp_path, monkeypatch):
         patch("subtap.core.setup.SetupWizard.choose_download_source") as mock_choose,
         patch("subtap.core.models.ModelDownloader") as mock_downloader_cls,
     ):
-
         mock_deps.return_value = {"ffmpeg": True, "ffprobe": True, "python": True}
         mock_config.return_value = True
         # 模拟用户选择 hf
@@ -1204,7 +1206,6 @@ def test_setup_non_interactive_fails_on_connectivity_error(tmp_path, monkeypatch
         patch("subtap.core.setup.SetupWizard.check_config_exists") as mock_config,
         patch("subtap.core.models.ModelDownloader") as mock_downloader_cls,
     ):
-
         mock_deps.return_value = {"ffmpeg": True, "ffprobe": True, "python": True}
         mock_config.return_value = True
 
@@ -1236,7 +1237,6 @@ def test_setup_model_download_failure_exits(tmp_path, monkeypatch):
         patch("subtap.core.setup.SetupWizard.check_config_exists") as mock_config,
         patch("subtap.core.setup.SetupWizard.setup_models") as mock_models,
     ):
-
         mock_deps.return_value = {"ffmpeg": True, "ffprobe": True, "python": True}
         mock_config.return_value = True
         # 模拟模型下载失败（非 manual 模式）
@@ -1265,7 +1265,6 @@ def test_setup_manual_model_failure_continues(tmp_path, monkeypatch):
         patch("subtap.core.setup.SetupWizard.check_config_exists") as mock_config,
         patch("subtap.core.setup.SetupWizard.setup_models") as mock_models,
     ):
-
         mock_deps.return_value = {"ffmpeg": True, "ffprobe": True, "python": True}
         mock_config.return_value = True
         # manual 模式下 setup_models 返回 False（预期行为）
@@ -1296,7 +1295,6 @@ def test_setup_interactive_manual_choice_continues(tmp_path, monkeypatch):
             return_value="manual",
         ),
     ):
-
         mock_deps.return_value = {"ffmpeg": True, "ffprobe": True, "python": True}
         mock_config.return_value = True
 
@@ -1665,7 +1663,6 @@ def test_run_config_applies_selected_glossary(tmp_path):
         timestamp=None,
         punctuation=None,
         max_chars=None,
-        min_chars=None,
         script_mode="follow_script",
         hotwords=None,
         work_dir=tmp_path / "work",
@@ -1693,7 +1690,6 @@ def test_run_config_fast_mode_selects_06b_model(tmp_path):
         timestamp=None,
         punctuation=None,
         max_chars=None,
-        min_chars=None,
         script_mode="follow_script",
         hotwords=None,
         work_dir=tmp_path / "work",
@@ -1719,7 +1715,6 @@ def test_run_config_without_mode_preserves_selected_model(tmp_path):
         timestamp=None,
         punctuation=None,
         max_chars=None,
-        min_chars=None,
         script_mode="follow_script",
         hotwords=None,
         work_dir=tmp_path / "work",
@@ -1756,7 +1751,6 @@ def test_run_config_explicitly_resets_optional_resources(tmp_path, monkeypatch):
         timestamp=None,
         punctuation=None,
         max_chars=None,
-        min_chars=None,
         script_mode="follow_script",
         hotwords=None,
         work_dir=tmp_path / "work",

@@ -90,7 +90,6 @@ def run_segment(
                 c_end,
                 language=language,
                 max_chars=workspace.config.output.max_chars,
-                min_chars=workspace.config.output.min_chars,
             )
             all_sentences.extend(chunk_sentences)
 
@@ -108,7 +107,6 @@ def run_segment(
             chunk_end,
             language=language,
             max_chars=workspace.config.output.max_chars,
-            min_chars=workspace.config.output.min_chars,
         )
         write_sentences(sentences, workspace.sentences_jsonl)
         return {"sentence_count": len(sentences)}

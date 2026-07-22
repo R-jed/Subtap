@@ -39,7 +39,6 @@ class TestLocalExport:
             fmt="srt",
             stem="test",
             max_chars=25,
-            min_chars=10,
             punctuation=False,
             language="zh",
         )
@@ -78,7 +77,6 @@ class TestLocalExport:
             fmt="txt",
             stem="test",
             max_chars=25,
-            min_chars=10,
             punctuation=False,
             language="zh",
         )
@@ -111,7 +109,6 @@ class TestLocalExport:
             fmt="ass",
             stem="test",
             max_chars=25,
-            min_chars=10,
             punctuation=False,
             language="zh",
         )

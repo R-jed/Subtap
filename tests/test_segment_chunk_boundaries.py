@@ -7,7 +7,7 @@ import json
 
 from subtap.core.segment import run_segment
 from subtap.core.workspace import Workspace
-from subtap.schemas.config import SubtapConfig, with_output_character_limits
+from subtap.schemas.config import SubtapConfig, with_output_max_chars
 from subtap.schemas.models import RawCleanSegment, Chunk
 
 
@@ -66,9 +66,7 @@ def test_run_segment_uses_output_character_limits(
     test_config: SubtapConfig, tmp_path: Path, monkeypatch
 ):
     """Segment and export must share the user's character limits."""
-    test_config.output = with_output_character_limits(
-        test_config.output, max_chars=18, min_chars=6
-    )
+    test_config.output = with_output_max_chars(test_config.output, max_chars=18)
     ws = Workspace(test_config, base_dir=tmp_path / "work")
     ws.ensure_dirs()
     ws.chunks_jsonl.write_text(
@@ -96,13 +94,12 @@ def test_run_segment_uses_output_character_limits(
         language="zh",
         *,
         max_chars,
-        min_chars,
     ):
-        captured.update(max_chars=max_chars, min_chars=min_chars)
+        captured.update(max_chars=max_chars)
         return []
 
     monkeypatch.setattr("subtap.core.segment.segment_clean_segments", fake_segment)
 
     run_segment(ws)
 
-    assert captured == {"max_chars": 18, "min_chars": 6}
+    assert captured == {"max_chars": 18}

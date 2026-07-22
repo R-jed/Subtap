@@ -60,6 +60,22 @@ _LOCATIVE_SUFFIXES = frozenset("上下内外中前后里")
 _SPATIAL_SUFFIXES = frozenset("上下内外中里")
 
 _PRONOUNS = ("我们", "你们", "他们", "她们", "它们", "我", "你", "他", "她", "它")
+_CLAUSE_PREDICATE_STARTERS = (
+    "以及",
+    "而且",
+    "但是",
+    "不过",
+    "所以",
+    "然后",
+    "很难",
+    "真的",
+    "其实",
+    "可能",
+    "也许",
+    "当然",
+    "反正",
+    "结果",
+)
 _OBJECT_INTRODUCERS = frozenset("比把被给对向跟和为从替让")
 _BOUND_PREFIXES = ("之间", "之内", "之外", "之中")
 # Productive noun-forming suffixes. They are consulted only together with the
@@ -72,9 +88,13 @@ _RATIO_EXPRESSION_RE = re.compile(
 
 
 def _starts_clause_subject(text: str) -> bool:
-    return any(text.startswith(pronoun) for pronoun in _PRONOUNS) or (
-        text.startswith("那")
-        and any(text[1:].startswith(pronoun) for pronoun in _PRONOUNS)
+    return (
+        any(text.startswith(pronoun) for pronoun in _PRONOUNS)
+        or any(text.startswith(word) for word in _CLAUSE_PREDICATE_STARTERS)
+        or (
+            text.startswith("那")
+            and any(text[1:].startswith(pronoun) for pronoun in _PRONOUNS)
+        )
     )
 
 
@@ -478,7 +498,6 @@ def _greedy_split(
     text: str,
     boundaries: Sequence[tuple[str, float | int] | None],
     max_chars: int,
-    min_chars: int,
     pause_threshold: float,
 ) -> list[dict]:
     """Greedy accumulation split using clause boundaries."""
@@ -542,15 +561,11 @@ def _greedy_split(
             b = boundaries[i]
             assert b is not None
             boundary_type, score = b
-            if boundary_type == "pause" and cur_text and len(cur_text) >= min_chars:
+            if boundary_type == "pause" and cur_text:
                 if not any(cur_text.startswith(c) for c in _CONJ_PAIRS):
                     should_split_before = True
                     split_bt = "pause"
-            elif (
-                boundary_type == "conjunction"
-                and cur_text
-                and len(cur_text) >= min_chars
-            ):
+            elif boundary_type == "conjunction" and cur_text:
                 if i > 0:
                     gap = w["start_sec"] - words[i - 1]["end_sec"]
                     if gap >= pause_threshold and not any(
@@ -558,9 +573,7 @@ def _greedy_split(
                     ):
                         should_split_before = True
                         split_bt = "conjunction"
-            elif (
-                boundary_type == "particle" and cur_text and len(cur_text) >= min_chars
-            ):
+            elif boundary_type == "particle" and cur_text:
                 should_split_before = True
                 split_bt = "particle"
 
@@ -590,13 +603,6 @@ def _greedy_split(
             elif boundary_type == "comma":
                 should_split_after = True
                 after_bt = "comma"
-        if (
-            should_split_after
-            and len(cur_text) < min_chars
-            and len(cur_text) < max_chars
-        ):
-            if after_bt not in ("comma", "sentence_end"):
-                should_split_after = False
         if should_split_after:
             stripped = _flush_split_line(lines, cur_words, cur_text, after_bt)
             if stripped:
@@ -627,7 +633,6 @@ def _smart_split(
     words: list[dict],
     text: str,
     max_chars: int = 25,
-    min_chars: int = 10,
     pause_threshold: float = 0.2,
     start_sec: float = 0.0,
     end_sec: float = 0.0,
@@ -645,9 +650,7 @@ def _smart_split(
         words, marked=marked_words, pause_threshold=pause_threshold
     )
 
-    lines = _greedy_split(
-        words, text, boundaries, max_chars, min_chars, pause_threshold
-    )
+    lines = _greedy_split(words, text, boundaries, max_chars, pause_threshold)
 
     # Merge very short fragments (≤1 char always, ≤2 char unless hard break)
     _HARD_BREAKS = {"sentence_end", "comma"}
@@ -683,7 +686,6 @@ def _smart_split_v2(
     words: list[dict],
     text: str,
     max_chars: int = 25,
-    min_chars: int = 10,
     pause_threshold: float = 0.2,
     start_sec: float = 0.0,
     end_sec: float = 0.0,
@@ -700,7 +702,7 @@ def _smart_split_v2(
     1. Map source display text to alignment timing without inventing spaces
     2. Enumerate punctuation, pause, and linguistic word boundaries
     3. Dynamic programming: find optimal split minimizing cost function
-    4. Post-merge: absorb short fragments into adjacent lines
+    4. Reconstruct lines while preserving semantic boundaries
     """
     if not words:
         return [{"text": text, "start_sec": start_sec, "end_sec": end_sec}]
@@ -951,7 +953,6 @@ def _smart_split_v2(
                 seg_text,
                 seg_len,
                 max_chars,
-                min_chars,
                 start,
                 end,
                 n,
@@ -1036,9 +1037,6 @@ def _smart_split_v2(
             }
         )
 
-    # --- Step 6: Post-merge short fragments ---
-    lines = _merge_short_fragments(lines, min_chars, max_chars)
-
     return (
         lines if lines else [{"text": text, "start_sec": start_sec, "end_sec": end_sec}]
     )
@@ -1048,7 +1046,6 @@ def _split_cost(
     seg_text: str,
     seg_len: int,
     max_chars: int,
-    min_chars: int,
     start: int,
     end: int,
     total_len: int,
@@ -1069,30 +1066,6 @@ def _split_cost(
     # Penalty for exceeding max_chars
     if visible_len > max_chars:
         cost += (visible_len - max_chars) * 20.0
-
-    # A short orphan line creates more editing work than a slightly earlier,
-    # balanced break in the same sentence.
-    starts_new_sentence = start > 0 and display_chars[start - 1] in _SENT_END
-    starts_after_pause = (
-        start > 0 and pause_boundaries and start - 1 in pause_boundaries
-    )
-    starts_after_comma = start > 0 and display_chars[start - 1] in _COMMA_PUNCT
-    complete_short_comma_clause = starts_after_comma and visible_len >= max(
-        6, min_chars - 4
-    )
-    ends_sentence = bool(seg_text) and seg_text[-1] in _SENT_END
-    complete_standalone_sentence = ends_sentence and (start == 0 or starts_new_sentence)
-    if (
-        visible_len < min_chars
-        and (start > 0 or end < total_len)
-        and not (
-            starts_new_sentence
-            or starts_after_pause
-            or complete_short_comma_clause
-            or complete_standalone_sentence
-        )
-    ):
-        cost += (min_chars - visible_len) * 8.0
 
     # Bonus for ending at sentence-ending punctuation (strong)
     if seg_text and seg_text[-1] in "。！？.!?":
@@ -1137,10 +1110,16 @@ def _split_cost(
             cost += 8.0
         following_text = "".join(display_chars[end : end + 3])
         previous_char = display_chars[end - 1] if end > 0 else ""
-        if previous_char not in _OBJECT_INTRODUCERS and _starts_clause_subject(
-            following_text
+        following_is_complete = any(char in _SENT_END for char in display_chars[end:])
+        follows_acoustic_pause = bool(pause_boundaries and end - 1 in pause_boundaries)
+        if (
+            previous_char not in _OBJECT_INTRODUCERS
+            and _starts_clause_subject(following_text)
+            and (following_is_complete or follows_acoustic_pause)
         ):
             cost -= 10.0
+        if follows_acoustic_pause:
+            cost -= 12.0
         if display_chars[end] in "的得地":
             cost += 8.0
         if display_chars[end] in _LOCATIVE_SUFFIXES:
@@ -1159,6 +1138,8 @@ def _split_cost(
         )
         previous_word = "".join(display_chars[previous_word_start:end]).strip()
         next_word = "".join(display_chars[end:next_word_end]).strip()
+        if previous_word.endswith(("相较", "相比")) and next_word.startswith("于"):
+            cost += 40.0
         if next_word in _NOMINAL_SUFFIXES or (
             previous_word.endswith(tuple(_NOMINAL_SUFFIXES))
             and 0 < len(next_word) <= 2
@@ -1204,83 +1185,12 @@ def _split_cost(
     if end < total_len and protected_boundaries and end - 1 in protected_boundaries:
         cost += 12.0
 
-    # Balance penalty: mild, prefers lines closer to target length
-    target = (max_chars + min_chars) / 2
-    cost += abs(visible_len - target) * 0.2
+    # Prefer balanced cues relative to the chosen maximum. This is a soft
+    # quality target, not a second user-facing length constraint.
+    preferred_len = max_chars * 0.7
+    cost += abs(visible_len - preferred_len)
 
     return cost
-
-
-def _merge_short_fragments(
-    lines: list[dict], min_chars: int, max_chars: int
-) -> list[dict]:
-    """Merge lines shorter than min_chars into adjacent lines.
-
-    Never merge lines ending with sentence-ending punctuation (。！？.!?)
-    since those are intentional semantic boundaries.
-    """
-    if len(lines) <= 1:
-        return lines
-
-    # Forward pass: merge short lines into next line
-    merged: list[dict] = []
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        text = line["text"]
-        visible_len = _content_len(text)
-        following_text = "".join(
-            candidate["text"] for candidate in lines[i + 1 : i + 3]
-        ).lstrip()
-
-        # Don't merge lines ending with sentence-ending punctuation
-        ends_with_sent = text.rstrip() and text.rstrip()[-1] in _SENT_END
-        ends_complete_comma_clause = (
-            bool(text.rstrip())
-            and text.rstrip()[-1] in _COMMA_PUNCT
-            and visible_len >= max(6, min_chars - 4)
-            and _starts_clause_subject(following_text)
-        )
-
-        if (
-            visible_len < min_chars
-            and not ends_with_sent
-            and not ends_complete_comma_clause
-            and i + 1 < len(lines)
-        ):
-            # Try merging with next line
-            next_line = lines[i + 1]
-            combined_len = visible_len + _content_len(next_line["text"])
-            if combined_len <= max_chars:
-                # Merge into next line
-                lines[i + 1] = {
-                    "text": text + next_line["text"],
-                    "start_sec": line["start_sec"],
-                    "end_sec": next_line["end_sec"],
-                }
-                i += 1
-                continue
-            elif merged:
-                # Try merging with previous line
-                prev = merged[-1]
-                prev_text = prev["text"]
-                prev_ends_sent = (
-                    prev_text.rstrip() and prev_text.rstrip()[-1] in _SENT_END
-                )
-                prev_len = _content_len(prev_text)
-                if prev_len + visible_len <= max_chars and not prev_ends_sent:
-                    merged[-1] = {
-                        "text": prev_text + text,
-                        "start_sec": prev["start_sec"],
-                        "end_sec": line["end_sec"],
-                    }
-                    i += 1
-                    continue
-
-        merged.append(line)
-        i += 1
-
-    return merged
 
 
 def _content_len(text: str) -> int:
@@ -1313,7 +1223,6 @@ def _reconcile_tiny_overlaps(
 def _process_segment(
     seg: AlignedSegment,
     max_chars: int = 25,
-    min_chars: int = 10,
 ) -> list[dict]:
     """Common pipeline: segment -> list of subtitle dicts (text + timestamps).
 
@@ -1330,7 +1239,6 @@ def _process_segment(
         words_with_punct,
         word_filter_text,
         max_chars=max_chars,
-        min_chars=min_chars,
         start_sec=seg.start_sec,
         end_sec=seg.end_sec,
     )
@@ -1346,67 +1254,21 @@ def _process_segment(
 def _post_process_fragments(
     lines: list[dict],
     max_chars: int,
-    min_chars: int = 10,
     pause_threshold: float = 0.2,
 ) -> list[dict]:
-    """Three-layer post-processing in a single pass.
-
-    Merges: cross-sentence fragment merge, standalone trailing word merge,
-    and _fix_split_words. Called after _process_segment for SRT rendering.
-    """
-    # Layer 1: Cross-sentence fragment merge
-    merged_subs: list[dict] = []
-    for sub in lines:
-        txt = sub["text"].strip()
-        visible_len = _content_len(txt)
-        if merged_subs and visible_len <= min_chars - 1:
-            prev = merged_subs[-1]
-            prev_len = _content_len(prev["text"])
-            prev_text = prev["text"].rstrip()
-            current_ends_sentence = bool(txt) and txt[-1] in _SENT_END
-            has_real_pause = (
-                sub["start_sec"] - prev["end_sec"] >= pause_threshold - 1e-6
-            )
-            preserve_semantic_boundary = bool(prev_text) and (
-                prev_text[-1] in _SENT_END
-                or has_real_pause
-                or (prev_text[-1] in _COMMA_PUNCT and current_ends_sentence)
-            )
-            if (
-                not preserve_semantic_boundary
-                and prev_len > visible_len
-                and prev_len + visible_len <= max_chars
-            ):
-                merged_text = prev["text"].rstrip() + txt
-                merged_stripped = strip_punct(merged_text).replace(" ", "")
-                creates_trailing = False
-                for tlen in (2, 1):
-                    if (
-                        len(merged_stripped) > tlen
-                        and merged_stripped[-tlen:] in _TRAILING_WORDS
-                    ):
-                        creates_trailing = True
-                        break
-                if not creates_trailing:
-                    prev["text"] = merged_text
-                    prev["end_sec"] = sub["end_sec"]
-                    continue
-        merged_subs.append(sub)
-
-    # Layer 2: Merge standalone trailing words into the next line
+    """Merge standalone trailing words, then repair cross-sentence word splits."""
     final_subs: list[dict] = []
-    for i, sub in enumerate(merged_subs):
+    for i, sub in enumerate(lines):
         txt = sub["text"].strip()
         visible_text = strip_punct(txt).replace(" ", "")
         visible_len = _content_len(txt)
         if (
             visible_text in _TRAILING_WORDS
             and (not txt or txt[-1] not in _SENT_END)
-            and i + 1 < len(merged_subs)
-            and merged_subs[i + 1]["start_sec"] - sub["end_sec"]
-            < pause_threshold - 1e-6
+            and i + 1 < len(lines)
+            and lines[i + 1]["start_sec"] - sub["end_sec"] < pause_threshold - 1e-6
         ):
-            nxt = merged_subs[i + 1]
+            nxt = lines[i + 1]
             nxt_len = _content_len(nxt["text"])
             if visible_len + nxt_len <= max_chars:
                 nxt["text"] = txt + nxt["text"]
@@ -1414,7 +1276,6 @@ def _post_process_fragments(
                 continue
         final_subs.append(sub)
 
-    # Layer 3: Fix cross-sentence word splits
     return _fix_split_words(final_subs, max_chars, cross_sentence=True)
 
 
@@ -1426,12 +1287,10 @@ class BaseExporter(ABC):
         punctuation: bool = False,
         language: str = "zh",
         max_chars: int = 25,
-        min_chars: int = 10,
     ):
         self.punctuation = punctuation
         self.language = language
         self.max_chars = max_chars
-        self.min_chars = min_chars
 
     @property
     @abstractmethod
@@ -1473,14 +1332,10 @@ class SRTExporter(BaseExporter):
         sorted_segs = sorted(segments, key=lambda s: s.start_sec)
         raw_subs: list[dict] = []
         for seg in sorted_segs:
-            raw_subs.extend(
-                _process_segment(
-                    seg, max_chars=self.max_chars, min_chars=self.min_chars
-                )
-            )
+            raw_subs.extend(_process_segment(seg, max_chars=self.max_chars))
         all_subs = [
             sub
-            for sub in _post_process_fragments(raw_subs, self.max_chars, self.min_chars)
+            for sub in _post_process_fragments(raw_subs, self.max_chars)
             if sub["text"].strip()
         ]
         all_subs = _reconcile_tiny_overlaps(all_subs)
@@ -1547,7 +1402,7 @@ class TXTExporter(BaseExporter):
     """Plain text exporter with timestamps."""
 
     def __init__(self, **kwargs):
-        # TXTExporter 不需要 punctuation/language/max_chars/min_chars 等配置
+        # TXTExporter 不需要字幕分行配置
         # 接受 kwargs 是为了与 run_export() 的统一调用接口保持一致
         pass
 
@@ -1579,7 +1434,6 @@ def run_export(
     fmt: str = "srt",
     stem: str = "output",
     max_chars: int = 25,
-    min_chars: int = 10,
     punctuation: bool = False,
     language: str = "zh",
 ) -> dict:
@@ -1611,7 +1465,6 @@ def run_export(
         punctuation=punctuation,
         language=language,
         max_chars=max_chars,
-        min_chars=min_chars,
     )
     output_path = output_dir / f"{stem}.{exporter.extension}"
     exporter.export(segments, output_path)
@@ -1707,7 +1560,6 @@ def run_final_exports(
     punctuation: bool = False,
     language: str = "zh",
     max_chars: int = 25,
-    min_chars: int = 10,
     formats: set[str] | None = None,
     stem: str = "final",
     translate_to: str | None = None,
@@ -1729,7 +1581,6 @@ def run_final_exports(
         punctuation=punctuation,
         language=language,
         max_chars=max_chars,
-        min_chars=min_chars,
     )
     export_segments = segments
     source_path: Path | None = None
@@ -1753,7 +1604,7 @@ def run_final_exports(
         vtt_lines = ["WEBVTT", ""]
         vtt_index = 0
         for seg in sorted(export_segments, key=lambda s: s.start_sec):
-            sub_lines = _process_segment(seg, max_chars=max_chars, min_chars=min_chars)
+            sub_lines = _process_segment(seg, max_chars=max_chars)
             for sub in sub_lines:
                 if not sub["text"].strip():
                     continue

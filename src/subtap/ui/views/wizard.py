@@ -29,6 +29,7 @@ class WizardView:
             "output_dir": None,
             "subtitle_lang": "zh",
             "subtitle_format": "srt",
+            "max_chars": None,
         }
 
     def get_state(self) -> dict:
@@ -48,6 +49,9 @@ class WizardView:
 
     def select_output_dir(self, path: Path | None) -> None:
         self._state["output_dir"] = path
+
+    def select_max_chars(self, max_chars: int) -> None:
+        self._state["max_chars"] = max_chars
 
     def next_step(self) -> int:
         self._state["step"] = min(self._state["step"] + 1, len(self.STEPS) - 1)
@@ -103,6 +107,8 @@ class WizardView:
             reset_hotwords=True,
             subtitle_format=self._state["subtitle_format"],
             subtitle_language=self._state["subtitle_lang"],
+            max_chars=self._state["max_chars"],
+            local_only=True,
         )
 
     def build_run_command(self) -> list[str]:
@@ -124,5 +130,6 @@ class WizardView:
         items.append(f"热词表：{glossary}")
         manuscript = s["manuscript_path"].name if s["manuscript_path"] else "不使用"
         items.append(f"参考文稿：{manuscript}")
+        items.append(f"字幕最大字数：{s['max_chars'] or '使用默认值'}")
         items.append(f"输出：{s['output_dir'] or '默认目录'}")
         return items

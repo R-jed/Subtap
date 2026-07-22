@@ -95,7 +95,7 @@ def test_srt_exporter_uses_split():
     )
     exporter = SRTExporter()
     srt = exporter.render([seg])
-    # _smart_split sees no punctuation in words, no pause (only 2 chars < min_chars=3),
+    # _smart_split sees no punctuation in words and no meaningful pause,
     # so outputs 1 block. Punctuation stripped: "你好世界"
     assert "你好" in srt
     assert "世界" in srt
@@ -125,7 +125,7 @@ def test_srt_exporter_smart_split_with_pause():
     exporter = SRTExporter()
     srt = exporter.render([seg])
     # 1.5s gap between "句"(1.0) and "这"(2.5) >= pause_threshold 0.3s
-    # "这是第一句" = 5 chars >= min_chars=3, should trigger pause split
+    # "这是第一句" ends before a meaningful pause, which should trigger a split
     assert "2\n" in srt  # two subtitle blocks
     assert "第一" in srt
     assert "第二" in srt

@@ -36,6 +36,11 @@ def test_local_only_allows_local_enhance(tmp_path, monkeypatch):
 
     input_file = tmp_path / "test.mp3"
     input_file.write_bytes(b"fake audio")
+    wizard_calls = []
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli.check_first_run_wizard",
+        lambda config: wizard_calls.append(config),
+    )
 
     monkeypatch.setattr(
         "subtap.schemas.config.load_config",
@@ -49,3 +54,4 @@ def test_local_only_allows_local_enhance(tmp_path, monkeypatch):
     )
     output = _strip_ansi(result.output)
     assert "local-only 模式下不能使用" not in output
+    assert wizard_calls == []

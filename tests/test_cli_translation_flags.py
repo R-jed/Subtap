@@ -42,7 +42,6 @@ def test_translate_to_shows_external_api_warning(tmp_path, monkeypatch):
             subtitle_punctuation=False,
             subtitle_language="zh",
             max_chars=25,
-            min_chars=10,
             subtitle_stem="output",
         ),
         metrics=SimpleNamespace(output_path="metrics.json"),

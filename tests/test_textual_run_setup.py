@@ -39,6 +39,7 @@ async def test_run_setup_returns_selected_pipeline_command(tmp_path, monkeypatch
         app.query_one("#quality", Select).value = "quality"
         app.query_one("#glossary", Select).value = str(glossary)
         app.query_one("#manuscript", Select).value = str(manuscript)
+        app.query_one("#max-chars", Input).value = "32"
         app.query_one("#output", Input).value = str(output)
         app.query_one("#start", Button).press()
         await pilot.pause()
@@ -61,6 +62,9 @@ async def test_run_setup_returns_selected_pipeline_command(tmp_path, monkeypatch
         "srt",
         "--subtitle-language",
         "zh",
+        "--max-chars",
+        "32",
+        "--local-only",
         "--glossary",
         str(glossary),
         "--reset-hotwords",
@@ -110,6 +114,25 @@ async def test_run_setup_rejects_blank_output(tmp_path, monkeypatch):
         await pilot.pause()
 
     assert app.return_value is None
+
+
+@pytest.mark.asyncio
+async def test_run_setup_rejects_invalid_maximum_characters(tmp_path, monkeypatch):
+    from textual.widgets import Button, Input, Static
+
+    from subtap.ui.textual_run_setup import RunSetupApp
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    audio = tmp_path / "voice.wav"
+    audio.write_bytes(b"audio")
+    app = RunSetupApp(audio)
+
+    async with app.run_test() as pilot:
+        app.query_one("#max-chars", Input).value = "9"
+        app.query_one("#start", Button).press()
+        await pilot.pause()
+
+        assert "10 到 60" in str(app.query_one("#status", Static).render())
 
 
 @pytest.mark.asyncio

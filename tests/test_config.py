@@ -7,14 +7,11 @@ import tempfile
 from pathlib import Path
 
 import yaml
-import pytest
-from pydantic import ValidationError
 
 from subtap.schemas.config import (
     OutputConfig,
     SubtapConfig,
     load_config,
-    with_output_character_limits,
 )
 
 
@@ -36,20 +33,21 @@ def test_subtap_config_translate_to_field():
     assert config.translate_to == ""  # 默认空值
 
 
-def test_output_config_rejects_min_chars_above_max_chars():
-    with pytest.raises(ValidationError, match="min_chars 不能大于 max_chars"):
-        OutputConfig(max_chars=10, min_chars=11)
+def test_output_config_exposes_only_maximum_character_limit():
+    output = OutputConfig(max_chars=15)
+
+    assert output.max_chars == 15
+    assert "min_chars" not in OutputConfig.model_fields
 
 
-def test_output_config_updates_character_limits_atomically():
-    output = OutputConfig(max_chars=25, min_chars=20)
+def test_load_config_reports_removed_minimum_character_limit(tmp_path, caplog):
+    path = tmp_path / "config.yaml"
+    path.write_text("output:\n  max_chars: 30\n  min_chars: 10\n", encoding="utf-8")
 
-    updated = with_output_character_limits(output, max_chars=15, min_chars=10)
+    config = load_config(path)
 
-    assert (updated.max_chars, updated.min_chars) == (15, 10)
-    with pytest.raises(ValidationError, match="min_chars 不能大于 max_chars"):
-        with_output_character_limits(output, max_chars=10, min_chars=11)
-    assert (output.max_chars, output.min_chars) == (25, 20)
+    assert config.output.max_chars == 30
+    assert "output.min_chars=10" in caplog.text
 
 
 def test_config_load_round_trip():

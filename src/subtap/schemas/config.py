@@ -151,18 +151,6 @@ class OutputConfig(BaseModel):
         ge=10,
         le=60,
     )
-    min_chars: int = Field(
-        default=10,
-        description="每行字幕最小字符数（低于此值不做停顿断句）",
-        ge=4,
-        le=30,
-    )
-
-    @model_validator(mode="after")
-    def validate_character_limits(self):
-        if self.min_chars > self.max_chars:
-            raise ValueError("min_chars 不能大于 max_chars")
-        return self
 
     subtitle_formats: set[str] = Field(
         default={"srt"},
@@ -182,18 +170,13 @@ class OutputConfig(BaseModel):
     )
 
 
-def with_output_character_limits(
-    output: object, *, max_chars: int | None, min_chars: int | None
-) -> OutputConfig:
+def with_output_max_chars(output: object, *, max_chars: int) -> OutputConfig:
     values = {
         name: getattr(output, name)
         for name in OutputConfig.model_fields
         if hasattr(output, name)
     }
-    if max_chars is not None:
-        values["max_chars"] = max_chars
-    if min_chars is not None:
-        values["min_chars"] = min_chars
+    values["max_chars"] = max_chars
     return OutputConfig.model_validate(values)
 
 
@@ -244,6 +227,18 @@ def load_config(config_path: Optional[Path] = None) -> SubtapConfig:
         with open(config_path) as f:
             result = yaml.safe_load(f)
             user_data = result if isinstance(result, dict) else {}
+        output_data = user_data.get("output")
+        removed_minimum_key = "min_chars"
+        if isinstance(output_data, dict) and removed_minimum_key in output_data:
+            output_data = dict(output_data)
+            removed_value = output_data.pop(removed_minimum_key)
+            user_data = dict(user_data)
+            user_data["output"] = output_data
+            logger.warning(
+                "配置项 output.%s=%r 已移除并忽略；现在仅支持 output.max_chars",
+                removed_minimum_key,
+                removed_value,
+            )
         audio_data = user_data.get("audio")
         if isinstance(audio_data, dict):
             vad_data = audio_data.get("vad")

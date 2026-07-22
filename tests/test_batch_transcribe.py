@@ -20,7 +20,6 @@ def _make_mock_config():
     config.output.subtitle_punctuation = False
     config.output.subtitle_language = "zh"
     config.output.max_chars = 25
-    config.output.min_chars = 10
     config.output.subtitle_stem = "test"
     config.asr = SimpleNamespace()
     config.asr.model = "asr_0.6b"

@@ -256,7 +256,6 @@ def _apply_run_config(
     timestamp: bool | None,
     punctuation: bool | None,
     max_chars: int | None,
-    min_chars: int | None,
     script_mode: str,
     hotwords: str | None,
     work_dir: Path | None,
@@ -268,12 +267,10 @@ def _apply_run_config(
         config.output.subtitle_punctuation = punctuation
     if request.subtitle_language is not None:
         config.output.subtitle_language = request.subtitle_language
-    if max_chars is not None or min_chars is not None:
-        from subtap.schemas.config import with_output_character_limits
+    if max_chars is not None:
+        from subtap.schemas.config import with_output_max_chars
 
-        config.output = with_output_character_limits(
-            config.output, max_chars=max_chars, min_chars=min_chars
-        )
+        config.output = with_output_max_chars(config.output, max_chars=max_chars)
     config.output.subtitle_stem = request.input_path.stem
 
     if request.disable_script:
@@ -393,13 +390,6 @@ def _run(
         min=10,
         max=60,
     ),
-    min_chars: int | None = typer.Option(
-        None,
-        "--min-chars",
-        help="每行字幕最小字符数（4-30），默认读取配置文件",
-        min=4,
-        max=30,
-    ),
     no_git_check: bool = typer.Option(
         False, "--no-git-check", help="跳过 Git 状态检查"
     ),
@@ -500,11 +490,12 @@ def _run(
 
     # ── 加载配置并应用回退 ───────────────────────────────────
     config = load_config(Path.home() / ".subtap" / "config.yaml")
-    check_first_run_wizard(config)
 
     # Config mode → local_only merge (config sets baseline, CLI can override)
     if getattr(config, "mode", "online") == "offline" and not local_only:
         local_only = True
+    if not local_only:
+        check_first_run_wizard(config)
 
     # translate_to: CLI overrides config; if CLI not provided, fall back to config
     if translate_to is None and getattr(config, "translate_to", ""):  # type: ignore[arg-type]
@@ -520,7 +511,6 @@ def _run(
         timestamp,
         punctuation,
         max_chars,
-        min_chars,
         script_mode,
         hotwords,
         work_dir,

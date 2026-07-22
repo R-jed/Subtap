@@ -807,14 +807,12 @@ class TuiApp:
     def _view_settings_format(self) -> str:
         fmts = self.config.get("output.subtitle_formats", ["srt"])
         max_chars = self.config.get("output.max_chars", 25)
-        min_chars = self.config.get("output.min_chars", 10)
         punctuation = self.config.get("output.subtitle_punctuation", False)
         bilingual = self.config.get("output.bilingual", "off")
 
         nonlocal_vars = {
             "fmts": fmts,
             "max_chars": max_chars,
-            "min_chars": min_chars,
             "punctuation": punctuation,
             "bilingual": bilingual,
         }
@@ -829,7 +827,6 @@ class TuiApp:
             return [
                 f"字幕格式：{', '.join(f.upper() for f in v['fmts'])}",
                 f"每行最大字数：{v['max_chars']}",
-                f"每行最小字数：{v['min_chars']}",
                 f"标点符号：{'开启' if v['punctuation'] else '关闭'}",
                 f"双语字幕：{bi_map.get(v['bilingual'], '关闭')}",
             ]
@@ -880,18 +877,11 @@ class TuiApp:
                     )
                     self.config.set("output.max_chars", nonlocal_vars["max_chars"])
                 elif menu.cursor == 2:
-                    nonlocal_vars["min_chars"] = (
-                        4
-                        if nonlocal_vars["min_chars"] >= 30
-                        else nonlocal_vars["min_chars"] + 2
-                    )
-                    self.config.set("output.min_chars", nonlocal_vars["min_chars"])
-                elif menu.cursor == 3:
                     nonlocal_vars["punctuation"] = not nonlocal_vars["punctuation"]
                     self.config.set(
                         "output.subtitle_punctuation", nonlocal_vars["punctuation"]
                     )
-                elif menu.cursor == 4:
+                elif menu.cursor == 3:
                     modes = ["off", "source-first", "target-first"]
                     idx = (
                         modes.index(nonlocal_vars["bilingual"])

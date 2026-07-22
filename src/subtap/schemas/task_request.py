@@ -23,6 +23,8 @@ class SubtitleTaskRequest:
     reset_hotwords: bool = False
     subtitle_format: str = "srt"
     subtitle_language: str | None = "zh"
+    max_chars: int | None = None
+    local_only: bool = False
     show_observer: bool = True
 
     def validate(self) -> None:
@@ -43,6 +45,8 @@ class SubtitleTaskRequest:
             raise ValueError(f"参考文稿不存在：{self.script_path}")
         if self.output_dir.exists() and not self.output_dir.is_dir():
             raise ValueError(f"输出位置不是目录：{self.output_dir}")
+        if self.max_chars is not None and not 10 <= self.max_chars <= 60:
+            raise ValueError("字幕最大字数必须在 10 到 60 之间")
 
     def resolved_glossary_path(self) -> Path | None:
         """Return the exact glossary file selected for this task."""
@@ -67,6 +71,10 @@ class SubtitleTaskRequest:
         command.extend(["--format", self.subtitle_format])
         if self.subtitle_language is not None:
             command.extend(["--subtitle-language", self.subtitle_language])
+        if self.max_chars is not None:
+            command.extend(["--max-chars", str(self.max_chars)])
+        if self.local_only:
+            command.append("--local-only")
         if self.glossary_path is not None:
             command.extend(["--glossary", str(self.glossary_path)])
         elif self.use_default_glossary:

@@ -3,7 +3,7 @@
 Stable-ts style segmentation strategy for Chinese colloquial content:
 1. Sentence-ending punctuation (。！？.!?)
 2. Preserve comma clauses until forced alignment provides acoustic timing
-3. Merge short sentence fragments
+3. Defer display-length splitting until acoustic timing is available
 
 Display-length splitting is deferred until forced alignment provides acoustic
 timing, so this stage cannot cut a Chinese word at an arbitrary character.
@@ -19,7 +19,6 @@ import unicodedata
 from subtap.schemas.models import RawCleanSegment, SentenceSegment
 
 _DEFAULT_MAX_CHARS = 25
-_DEFAULT_MIN_CHARS = 10
 
 # Sentence-ending punctuation. A dot before an ASCII letter/digit belongs to a
 # decimal or dotted initialism; the final dot in an initialism is protected by
@@ -35,7 +34,6 @@ def _split_sentences(
     text: str,
     language: str = "zh",
     max_chars: int = _DEFAULT_MAX_CHARS,
-    min_chars: int = _DEFAULT_MIN_CHARS,
 ) -> list[str]:
     """Split text into sentences using tiered strategy.
 
@@ -52,14 +50,13 @@ def _split_sentences(
     if language in ("en",):
         return _split_sentences_en(text)
 
-    return _split_sentences_zh(text, max_chars=max_chars, min_chars=min_chars)
+    return _split_sentences_zh(text, max_chars=max_chars)
 
 
 def _split_sentences_zh(
     text: str,
     *,
     max_chars: int = _DEFAULT_MAX_CHARS,
-    min_chars: int = _DEFAULT_MIN_CHARS,
 ) -> list[str]:
     """Chinese sentence segmentation with stable-ts style strategy."""
 
@@ -80,10 +77,7 @@ def _split_sentences_zh(
         else:
             length_safe.append(seg)
 
-    # Merge very short sentences
-    result = _merge_short_sentences(length_safe, min_chars)
-
-    return result if result else [""]
+    return length_safe if length_safe else [""]
 
 
 def _split_sentences_en(text: str) -> list[str]:
@@ -206,59 +200,6 @@ def _split_at_word_boundary(text: str, max_chars: int) -> list[str]:
     return result
 
 
-def _merge_short_sentences(sentences: list[str], min_chars: int) -> list[str]:
-    """Merge sentences that are too short.
-
-    Preserves sentence-ending punctuation boundaries: sentences ending with
-    。！？.!? are never merged with adjacent sentences, even if short.
-
-    Args:
-        sentences: List of sentences.
-        min_chars: Minimum characters for a valid sentence.
-
-    Returns:
-        List of merged sentences.
-    """
-    if not sentences:
-        return []
-
-    _SENT_END_CHARS = set("。！？.!?")
-
-    # If all sentences are short, don't merge (preserve original structure)
-    if all(len(s) < min_chars for s in sentences):
-        return sentences
-
-    merged: list[str] = []
-    buffer = ""
-
-    for seg in sentences:
-        if buffer:
-            # If buffer ends with sentence-ending punctuation, don't merge
-            if buffer and buffer[-1] in _SENT_END_CHARS:
-                merged.append(buffer)
-                buffer = seg
-            # If buffer is long enough, output and start new segment
-            elif len(buffer) >= min_chars:
-                merged.append(buffer)
-                buffer = seg
-            # Otherwise merge
-            else:
-                buffer += seg
-        else:
-            buffer = seg
-
-    if buffer:
-        # If last buffer ends with sentence-ending punctuation, don't merge
-        if buffer[-1] in _SENT_END_CHARS:
-            merged.append(buffer)
-        elif merged and len(buffer) < min_chars:
-            merged[-1] += buffer
-        else:
-            merged.append(buffer)
-
-    return merged
-
-
 def _allocate_time(
     sentences: list[str],
     start_sec: float,
@@ -292,7 +233,6 @@ def segment_clean_segments(
     language: str = "zh",
     *,
     max_chars: int = _DEFAULT_MAX_CHARS,
-    min_chars: int = _DEFAULT_MIN_CHARS,
 ) -> list[SentenceSegment]:
     """Split RawCleanSegments into SentenceSegments.
 
@@ -317,7 +257,6 @@ def segment_clean_segments(
             seg.cleaned_text,
             language=language,
             max_chars=max_chars,
-            min_chars=min_chars,
         )
         seg_start = chunk_start + i * seg_duration
         seg_end = seg_start + seg_duration

@@ -224,14 +224,6 @@ def run_config_wizard(config_path: Path) -> BatchConfig:
         max_val=60,
     )
 
-    # Min chars
-    min_chars = prompt_int(
-        "最小字符数",
-        default=existing.min_chars,
-        min_val=4,
-        max_val=30,
-    )
-
     # Punctuation
     punctuation = prompt_bool(
         "是否带标点",
@@ -252,7 +244,6 @@ def run_config_wizard(config_path: Path) -> BatchConfig:
         translate_to=translate_to,
         bilingual=bilingual,
         max_chars=max_chars,
-        min_chars=min_chars,
         punctuation=punctuation,
         subtitle_language=subtitle_language,
     )

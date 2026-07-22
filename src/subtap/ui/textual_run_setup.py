@@ -18,11 +18,12 @@ class RunSetupApp(App[list[str] | None]):
     """Collect per-task options and return the real pipeline command."""
 
     CSS = """
-    Screen { background: #000000; color: #f2f2f2; padding: 2 4; }
+    Screen { background: #0b0d10; color: #f2f2f2; padding: 2 4; }
     #form { height: 1fr; }
     Static, Select, Input { margin-bottom: 1; }
     Button { margin-right: 2; }
     #status { color: #ffcc66; }
+    #hint { color: #8b8b92; }
     """
     BINDINGS = [("escape", "cancel", "取消")]
 
@@ -31,6 +32,7 @@ class RunSetupApp(App[list[str] | None]):
         self.input_path = input_path
         config = load_config(Path.home() / ".subtap" / "config.yaml")
         self.default_mode = asr_mode_for_model(config.asr.model)
+        self.default_max_chars = config.output.max_chars
         self._pending_command: list[str] | None = None
 
     def compose(self) -> ComposeResult:
@@ -53,8 +55,15 @@ class RunSetupApp(App[list[str] | None]):
                 value="",
                 id="manuscript",
             )
+            yield Static("字幕目标最大字数（10–60，完整英文单词可能超出）")
+            yield Input(
+                value=str(self.default_max_chars),
+                type="integer",
+                id="max-chars",
+            )
             yield Static("输出目录")
             yield Input(value=str(Path.cwd() / "output"), id="output")
+            yield Static("Tab 切换 · Enter 确认 · Esc 取消", id="hint")
             yield Static("", id="status")
             yield Static("", id="confirmation")
             yield Button("检查设置", id="start", variant="primary")
@@ -65,6 +74,16 @@ class RunSetupApp(App[list[str] | None]):
         output = self.query_one("#output", Input).value.strip()
         if not output:
             self.query_one("#status", Static).update("请选择输出目录")
+            return
+        try:
+            max_chars = int(self.query_one("#max-chars", Input).value)
+        except ValueError:
+            self.query_one("#status", Static).update(
+                "字幕最大字数必须是 10 到 60 的整数"
+            )
+            return
+        if not 10 <= max_chars <= 60:
+            self.query_one("#status", Static).update("字幕最大字数必须在 10 到 60 之间")
             return
 
         wizard = WizardView()
@@ -82,6 +101,7 @@ class RunSetupApp(App[list[str] | None]):
             Path(manuscript) if isinstance(manuscript, str) and manuscript else None
         )
         wizard.select_output_dir(Path(output).expanduser())
+        wizard.select_max_chars(max_chars)
         try:
             command = wizard.build_run_command()
         except ValueError as error:

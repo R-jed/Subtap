@@ -6,11 +6,10 @@ from pathlib import Path
 
 from subtap.core.segment import run_segment
 from subtap.core.segmentation import (
-    _split_at_comma,
-    _split_sentences,
-    _split_by_length,
-    _merge_short_sentences,
     _allocate_time,
+    _split_at_comma,
+    _split_by_length,
+    _split_sentences,
     segment_clean_segments,
 )
 from subtap.core.workspace import Workspace
@@ -57,7 +56,7 @@ def test_force_split_keeps_trailing_punctuation_with_spoken_text():
     """A max-length boundary must not create a punctuation-only sentence."""
     text = "那你的确可以拍摄出这种很多人喜欢的CCD直闪的画面。"
 
-    result = _split_sentences(text, language="zh", max_chars=25, min_chars=10)
+    result = _split_sentences(text, language="zh", max_chars=25)
 
     assert result == [text]
     assert all(any(char.isalnum() for char in part) for part in result)
@@ -265,9 +264,9 @@ class TestSplitSentencesZh:
             assert len(sent) <= 60
 
     def test_comma_does_not_create_irreversible_nominal_fragment(self):
-        text = "同样APS-C画幅的相机，搭配镜头比它大了这么多，" "属于是比它好的没它小。"
+        text = "同样APS-C画幅的相机，搭配镜头比它大了这么多，属于是比它好的没它小。"
 
-        result = _split_sentences(text, language="zh", max_chars=25, min_chars=10)
+        result = _split_sentences(text, language="zh", max_chars=25)
 
         assert result == [text]
 
@@ -289,7 +288,7 @@ class TestSplitSentencesZh:
             "因为相较于手机有着更大的传感器和更好的镜组，"
         )
 
-        result = _split_sentences(text, language="zh", max_chars=25, min_chars=10)
+        result = _split_sentences(text, language="zh", max_chars=25)
 
         assert "".join(result) == text
         assert all(not part.endswith("虚") for part in result)
@@ -360,7 +359,7 @@ class TestSplitByLength:
     def test_semantic_split_does_not_cut_latin_word(self):
         text = "就是 High Light Diffusion Filter 啊就是把你的高光柔化的这么一个滤镜"
 
-        result = _split_sentences(text, max_chars=25, min_chars=10)
+        result = _split_sentences(text, max_chars=25)
 
         assert "".join(result) == text
         assert all(not part.endswith("F") for part in result)
@@ -370,31 +369,10 @@ class TestSplitByLength:
         latin_word = "SupercalifragilisticexpialidociousFilter"
         text = f"这是一个{latin_word}测试"
 
-        result = _split_sentences(text, max_chars=25, min_chars=10)
+        result = _split_sentences(text, max_chars=25)
 
         assert "".join(result) == text
         assert any(latin_word in part for part in result)
-
-
-class TestMergeShortSentences:
-    """Test _merge_short_sentences."""
-
-    def test_merge_short(self):
-        """短句合并。"""
-        sentences = ["好的", "然后呢", "理光GR4是一款非常不错的相机"]
-        result = _merge_short_sentences(sentences, min_chars=10)
-        assert len(result) < len(sentences)
-
-    def test_no_merge_long(self):
-        """长句不合并。"""
-        sentences = ["理光GR4是一款非常不错的相机", "它的画质非常好而且体积小巧"]
-        result = _merge_short_sentences(sentences, min_chars=10)
-        assert len(result) == 2
-
-    def test_empty_input(self):
-        """空输入返回空列表。"""
-        result = _merge_short_sentences([], min_chars=10)
-        assert result == []
 
 
 # ── Pipeline language config passthrough ──

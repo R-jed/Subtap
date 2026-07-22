@@ -62,7 +62,7 @@ def test_export_never_merges_across_sentence_segments():
         _aligned(1, "它叫做理光GR4。", 4.0),
     ]
 
-    content = SRTExporter(max_chars=25, min_chars=10).render(segments)
+    content = SRTExporter(max_chars=25).render(segments)
 
     assert _srt_text_lines(content) == [
         "这台相机从2025年8月发布到今天",
@@ -84,7 +84,7 @@ def test_export_does_not_split_after_dotted_initialism():
 
     segment = _aligned(0, "响度维持在L.U.F.S.的水平。", 0.0)
 
-    lines = _srt_text_lines(SRTExporter(max_chars=10, min_chars=4).render([segment]))
+    lines = _srt_text_lines(SRTExporter(max_chars=10).render([segment]))
 
     assert "".join(lines) == "响度维持在LUFS的水平"
     assert all(not line.startswith("的水平") for line in lines)
@@ -101,9 +101,7 @@ def test_export_does_not_split_after_dotted_initialism():
 def test_export_never_crosses_sentence_punctuation(text: str):
     from subtap.core.export import SRTExporter
 
-    lines = _srt_text_lines(
-        SRTExporter(max_chars=25, min_chars=10).render([_aligned(0, text, 0.0)])
-    )
+    lines = _srt_text_lines(SRTExporter(max_chars=25).render([_aligned(0, text, 0.0)]))
 
     assert len(lines) == 2
 
@@ -148,7 +146,7 @@ def test_export_interpolates_time_when_split_inside_multi_character_token():
         words=[_w(text, 0.0, 5.0)],
     )
 
-    content = SRTExporter(max_chars=10, min_chars=5).render([segment])
+    content = SRTExporter(max_chars=10).render([segment])
     blocks = content.strip().split("\n\n")
     timelines = [block.splitlines()[1].split(" --> ") for block in blocks]
 
@@ -172,7 +170,7 @@ def test_export_force_splits_overlong_token_to_honor_max_chars():
         words=[_w(text, 0.0, 4.0)],
     )
 
-    lines = _srt_text_lines(SRTExporter(max_chars=10, min_chars=4).render([segment]))
+    lines = _srt_text_lines(SRTExporter(max_chars=10).render([segment]))
 
     assert "".join(lines) == text
     assert all(len(line) <= 10 for line in lines)
@@ -193,7 +191,7 @@ def test_export_keeps_correlative_clause_together():
 
     segment = _aligned(0, "不管是美食还是玩具，都没有太多问题。", 0.0)
 
-    content = SRTExporter(max_chars=25, min_chars=10).render([segment])
+    content = SRTExporter(max_chars=25).render([segment])
 
     assert _srt_text_lines(content) == ["不管是美食还是玩具都没有太多问题"]
 
@@ -207,7 +205,7 @@ def test_export_does_not_split_inside_modifier_phrase():
         0.0,
     )
 
-    content = SRTExporter(max_chars=25, min_chars=10).render([segment])
+    content = SRTExporter(max_chars=25).render([segment])
 
     assert _srt_text_lines(content) == [
         "或者把它放进苹果设计的巨抽象的单品",
@@ -224,7 +222,7 @@ def test_export_scores_length_after_number_normalization():
         0.0,
     )
 
-    content = SRTExporter(max_chars=25, min_chars=10).render([segment])
+    content = SRTExporter(max_chars=25).render([segment])
 
     assert _srt_text_lines(content) == ["就是它的传感器从2400万升级到了2574万像素"]
 
@@ -238,7 +236,7 @@ def test_export_keeps_short_enumeration_together():
         0.0,
     )
 
-    content = SRTExporter(max_chars=25, min_chars=10).render([segment])
+    content = SRTExporter(max_chars=25).render([segment])
 
     assert _srt_text_lines(content) == ["虽然这一代在按键布局机身结构上有一定的优化"]
 
@@ -248,7 +246,7 @@ def test_export_keeps_fitting_multiword_latin_term_intact():
 
     segment = _aligned(0, "就是Highlight Diffusion Filter。", 0.0)
 
-    content = SRTExporter(max_chars=25, min_chars=10).render([segment])
+    content = SRTExporter(max_chars=25).render([segment])
 
     lines = _srt_text_lines(content)
 
@@ -261,7 +259,7 @@ def test_export_counts_visible_punctuation_toward_max_chars():
 
     segment = _aligned(0, "这是第一部分内容，这是第二部分内容。", 0.0)
 
-    content = SRTExporter(max_chars=10, min_chars=5, punctuation=True).render([segment])
+    content = SRTExporter(max_chars=10, punctuation=True).render([segment])
 
     assert all(len(line.replace(" ", "")) <= 10 for line in _srt_text_lines(content))
 
@@ -275,7 +273,7 @@ def test_export_balances_long_sentence_instead_of_leaving_short_tail():
         0.0,
     )
 
-    content = SRTExporter(max_chars=25, min_chars=10).render([segment])
+    content = SRTExporter(max_chars=25).render([segment])
 
     assert _srt_text_lines(content) == [
         "但是整体色彩你要说和手机上",
@@ -292,7 +290,7 @@ def test_export_prefers_new_clause_subject_over_noun_phrase_split():
         0.0,
     )
 
-    content = SRTExporter(max_chars=25, min_chars=10).render([segment])
+    content = SRTExporter(max_chars=25).render([segment])
 
     assert _srt_text_lines(content) == [
         "但是我觉得你能够看出",
@@ -305,7 +303,7 @@ def test_export_never_merges_sentence_end_within_one_segment():
 
     segment = _aligned(0, "这是比较长的第一句话。短句。", 0.0)
 
-    content = SRTExporter(max_chars=25, min_chars=10).render([segment])
+    content = SRTExporter(max_chars=25).render([segment])
 
     assert _srt_text_lines(content) == ["这是比较长的第一句话", "短句"]
 
@@ -318,7 +316,7 @@ def test_trailing_word_merge_never_crosses_sentence_end():
         {"text": "这是下一句。", "start_sec": 0.4, "end_sec": 1.4},
     ]
 
-    result = _post_process_fragments(lines, max_chars=25, min_chars=10)
+    result = _post_process_fragments(lines, max_chars=25)
 
     assert [line["text"] for line in result] == ["但。", "这是下一句。"]
 
@@ -331,7 +329,7 @@ def test_post_process_does_not_merge_punctuation_over_max_chars():
         {"text": "壬", "start_sec": 1.0, "end_sec": 1.2},
     ]
 
-    result = _post_process_fragments(lines, max_chars=9, min_chars=4)
+    result = _post_process_fragments(lines, max_chars=9)
 
     assert [line["text"] for line in result] == ["甲乙丙丁，戊己庚辛", "壬"]
 
@@ -344,7 +342,7 @@ def test_split_word_repair_does_not_overflow_next_line():
         {"text": "化甲乙丙丁戊己庚辛壬", "start_sec": 1.0, "end_sec": 2.0},
     ]
 
-    result = _post_process_fragments(lines, max_chars=10, min_chars=2)
+    result = _post_process_fragments(lines, max_chars=10)
 
     assert [line["text"] for line in result] == ["前文虚", "化甲乙丙丁戊己庚辛壬"]
 
@@ -374,9 +372,7 @@ def test_split_keeps_short_clause_after_comma_pause(text: str, expected: list[st
         words=_words_with_comma_pause(text, pause_sec=0.3),
     )
 
-    content = SRTExporter(max_chars=25, min_chars=10, punctuation=True).render(
-        [segment]
-    )
+    content = SRTExporter(max_chars=25, punctuation=True).render([segment])
 
     assert _srt_text_lines(content) == expected
 
@@ -393,9 +389,7 @@ def test_split_keeps_incomplete_comma_fragment_merged_without_pause():
         text=text,
         words=_words_with_comma_pause(text, pause_sec=0.0),
     )
-    content = SRTExporter(max_chars=25, min_chars=10, punctuation=True).render(
-        [segment]
-    )
+    content = SRTExporter(max_chars=25, punctuation=True).render([segment])
 
     assert _srt_text_lines(content) == [text]
 
@@ -413,9 +407,7 @@ def test_split_keeps_complete_short_clause_after_comma_without_pause():
         words=_words_with_comma_pause(text, pause_sec=0.0),
     )
 
-    content = SRTExporter(max_chars=25, min_chars=10, punctuation=True).render(
-        [segment]
-    )
+    content = SRTExporter(max_chars=25, punctuation=True).render([segment])
 
     assert _srt_text_lines(content) == [
         "它实际市场售价都已经到万元了，",
@@ -432,7 +424,7 @@ def test_split_keeps_complete_short_clause_before_comma():
         0.0,
     )
 
-    lines = _srt_text_lines(SRTExporter(max_chars=25, min_chars=10).render([segment]))
+    lines = _srt_text_lines(SRTExporter(max_chars=25).render([segment]))
 
     assert lines[0] == "它叫做理光GR4"
     assert lines[1].startswith("那它虽然卖得好")
@@ -447,7 +439,7 @@ def test_export_does_not_end_line_with_conjunction():
         0.0,
     )
 
-    lines = _srt_text_lines(SRTExporter(max_chars=25, min_chars=10).render([segment]))
+    lines = _srt_text_lines(SRTExporter(max_chars=25).render([segment]))
 
     assert all(not line.endswith("但是") for line in lines)
 
@@ -461,7 +453,7 @@ def test_export_prefers_boundary_after_directional_complement():
         0.0,
     )
 
-    lines = _srt_text_lines(SRTExporter(max_chars=20, min_chars=8).render([segment]))
+    lines = _srt_text_lines(SRTExporter(max_chars=20).render([segment]))
 
     assert lines == ["你可以把它开起来", "压暗蓝天得到对比更加强烈的照片"]
 
@@ -504,9 +496,7 @@ def test_export_keeps_generic_grammar_units_together(
 ):
     from subtap.core.export import SRTExporter
 
-    lines = _srt_text_lines(
-        SRTExporter(max_chars=25, min_chars=10).render([_aligned(0, text, 0.0)])
-    )
+    lines = _srt_text_lines(SRTExporter(max_chars=25).render([_aligned(0, text, 0.0)]))
 
     assert all(any(unit in line for line in lines) for unit in required_units)
     assert all(not line.startswith(("了", "着", "过", "之间")) for line in lines)
@@ -521,7 +511,7 @@ class TestSmartSplitV2Basic:
         from subtap.core.export import _smart_split_v2
 
         words = [_w("短文本", 0.0, 1.0)]
-        result = _smart_split_v2(words, "短文本", max_chars=25, min_chars=10)
+        result = _smart_split_v2(words, "短文本", max_chars=25)
         assert len(result) == 1
         assert result[0]["text"] == "短文本"
 
@@ -530,9 +520,7 @@ class TestSmartSplitV2Basic:
         from subtap.core.export import _smart_split_v2
 
         words = [_w("这是第一句。", 0.0, 1.0), _w("这是第二句。", 1.0, 2.0)]
-        result = _smart_split_v2(
-            words, "这是第一句。这是第二句。", max_chars=25, min_chars=5
-        )
+        result = _smart_split_v2(words, "这是第一句。这是第二句。", max_chars=25)
         texts = [r["text"] for r in result]
         assert len(texts) >= 2
         assert any("第一句" in t for t in texts)
@@ -547,7 +535,7 @@ class TestSmartSplitV2Basic:
             _w("以及第二部分文本。", 1.0, 2.0),
         ]
         result = _smart_split_v2(
-            words, "很长的第一部分文本，以及第二部分文本。", max_chars=20, min_chars=5
+            words, "很长的第一部分文本，以及第二部分文本。", max_chars=20
         )
         assert len(result) >= 2
 
@@ -556,12 +544,12 @@ class TestSmartSplitV2Basic:
         from subtap.core.export import _smart_split_v2
 
         words = [_w("短句", 0.0, 1.0)]
-        result = _smart_split_v2(words, "短句", max_chars=25, min_chars=5)
+        result = _smart_split_v2(words, "短句", max_chars=25)
         assert len(result) == 1
 
 
 class TestShortFragmentProtection:
-    """Short fragment (< min_chars) should be merged into adjacent lines."""
+    """A trailing phrase should not become an avoidable standalone fragment."""
 
     def test_no_single_char_fragments(self):
         """Single character should never be a standalone line."""
@@ -577,7 +565,7 @@ class TestShortFragmentProtection:
         words.append(_w("这个", 5.6, 5.8))
         words.append(_w("虚化", 5.8, 6.0))
         text = "差别没有特别特别大但是我觉得你能看出它和手机区别的核心的点是这个虚化"
-        result = _smart_split_v2(words, text, max_chars=25, min_chars=10)
+        result = _smart_split_v2(words, text, max_chars=25)
         for r in result:
             assert len(r["text"]) >= 2, f"Fragment too short: '{r['text']}'"
 
@@ -588,7 +576,7 @@ class TestShortFragmentProtection:
         words = [_w("这是一个测试文本用于验证短碎片合并功能", 0.0, 3.0)]
         words.append(_w("能", 3.0, 3.1))
         text = "这是一个测试文本用于验证短碎片合并功能能"
-        result = _smart_split_v2(words, text, max_chars=20, min_chars=10)
+        result = _smart_split_v2(words, text, max_chars=20)
         # No line should be <= 2 chars
         for r in result:
             assert len(r["text"]) > 2, f"Fragment too short: '{r['text']}'"
@@ -602,7 +590,7 @@ class TestEnglishWordSpacing:
         from subtap.core.export import _smart_split_v2
 
         words = [_w("Hello", 0.0, 0.5), _w("World", 0.5, 1.0)]
-        result = _smart_split_v2(words, "Hello World", max_chars=25, min_chars=5)
+        result = _smart_split_v2(words, "Hello World", max_chars=25)
         assert any("Hello World" in r["text"] or "Hello" in r["text"] for r in result)
         # Should not have "HelloWorld" without space
         for r in result:
@@ -618,7 +606,7 @@ class TestEnglishWordSpacing:
             _w("a", 0.5, 0.6),
             _w("test", 0.6, 1.0),
         ]
-        result = _smart_split_v2(words, "This is a test", max_chars=25, min_chars=5)
+        result = _smart_split_v2(words, "This is a test", max_chars=25)
         text_combined = " ".join(r["text"] for r in result)
         assert "This" in text_combined
         assert "test" in text_combined
@@ -633,7 +621,7 @@ class TestLineBalance:
 
         words = [_w("这是一段很长的文本需要被分成两行显示", 0.0, 3.0)]
         text = "这是一段很长的文本需要被分成两行显示"
-        result = _smart_split_v2(words, text, max_chars=12, min_chars=5)
+        result = _smart_split_v2(words, text, max_chars=12)
         if len(result) >= 2:
             lengths = [len(r["text"]) for r in result]
             # Lines should be somewhat balanced
@@ -648,7 +636,7 @@ class TestTimePreservation:
         from subtap.core.export import _smart_split_v2
 
         words = [_w("第一句。", 0.0, 1.0), _w("第二句。", 1.0, 2.0)]
-        result = _smart_split_v2(words, "第一句。第二句。", max_chars=10, min_chars=3)
+        result = _smart_split_v2(words, "第一句。第二句。", max_chars=10)
         assert result[0]["start_sec"] == 0.0
         assert result[-1]["end_sec"] == 2.0
 
@@ -657,9 +645,7 @@ class TestTimePreservation:
         from subtap.core.export import _smart_split_v2
 
         words = [_w("第一部分文本，", 0.0, 1.0), _w("第二部分文本。", 1.0, 2.0)]
-        result = _smart_split_v2(
-            words, "第一部分文本，第二部分文本。", max_chars=10, min_chars=3
-        )
+        result = _smart_split_v2(words, "第一部分文本，第二部分文本。", max_chars=10)
         for i in range(1, len(result)):
             assert result[i]["start_sec"] >= result[i - 1]["end_sec"]
 
@@ -673,7 +659,7 @@ class TestNoWordLoss:
 
         words = [_w("这台相机从二零二五年八月发布到今天一直是一机难求的状态", 0.0, 5.0)]
         text = "这台相机从二零二五年八月发布到今天一直是一机难求的状态"
-        result = _smart_split_v2(words, text, max_chars=20, min_chars=8)
+        result = _smart_split_v2(words, text, max_chars=20)
         output_text = "".join(r["text"] for r in result)
         # All characters must be preserved (order may change slightly due to punctuation handling)
         for ch in text:
@@ -692,7 +678,7 @@ class TestNoWordLoss:
             _w("test", 1.8, 2.0),
         ]
         text = "Hello World this is a test"
-        result = _smart_split_v2(words, text, max_chars=15, min_chars=5)
+        result = _smart_split_v2(words, text, max_chars=15)
         output_text = " ".join(r["text"] for r in result)
         assert "Hello" in output_text
         assert "World" in output_text
@@ -713,7 +699,7 @@ class TestCJKBoundarySplitting:
             )
         ]
         text = "这是一个很长的中文句子没有任何标点符号需要在字符边界处断行"
-        result = _smart_split_v2(words, text, max_chars=15, min_chars=5)
+        result = _smart_split_v2(words, text, max_chars=15)
         # Should produce multiple lines
         assert len(result) >= 2
         # Each line should be within max_chars
@@ -758,7 +744,6 @@ class TestRealMaterialIntegration:
                 words_with_punct,
                 word_filter_text,
                 max_chars=25,
-                min_chars=10,
                 start_sec=seg["start_sec"],
                 end_sec=seg["end_sec"],
             )
@@ -793,7 +778,6 @@ class TestRealMaterialIntegration:
                 words_with_punct,
                 word_filter_text,
                 max_chars=25,
-                min_chars=10,
                 start_sec=seg["start_sec"],
                 end_sec=seg["end_sec"],
             )

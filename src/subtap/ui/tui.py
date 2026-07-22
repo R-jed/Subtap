@@ -199,7 +199,6 @@ class BaseRunner(ABC):
             punctuation=pipeline.config.output.subtitle_punctuation,
             language=pipeline.config.output.subtitle_language,
             max_chars=pipeline.config.output.max_chars,
-            min_chars=pipeline.config.output.min_chars,
             formats={fmt},
             stem=pipeline.config.output.subtitle_stem,
             translate_to=translate_to,

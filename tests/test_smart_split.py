@@ -108,7 +108,7 @@ def test_split_by_sentence_ending_punctuation():
 
 
 def test_split_by_pause():
-    """停顿 > threshold 且行长度 ≥ min_chars 时断句。"""
+    """停顿超过 threshold 时断句。"""
     words = [
         {"word": "这", "start_sec": 0.0, "end_sec": 0.2},
         {"word": "台", "start_sec": 0.2, "end_sec": 0.4},
@@ -178,7 +178,7 @@ def test_wo_men_merged():
         {"word": "我", "start_sec": 1.2, "end_sec": 1.3},
         {"word": "们", "start_sec": 1.3, "end_sec": 1.4},
     ]
-    result = _smart_split(words, "这台相机我们", max_chars=20, min_chars=3)
+    result = _smart_split(words, "这台相机我们", max_chars=20)
     total = "".join(r["text"] for r in result)
     assert total == "这台相机我们"
     # "我们" should NOT be a standalone line (merged back into previous)
@@ -201,7 +201,7 @@ def test_na_hai_merged():
         {"word": "那", "start_sec": 1.2, "end_sec": 1.3},
         {"word": "还", "start_sec": 1.3, "end_sec": 1.4},
     ]
-    result = _smart_split(words, "这台相机那还", max_chars=20, min_chars=3)
+    result = _smart_split(words, "这台相机那还", max_chars=20)
     total = "".join(r["text"] for r in result)
     assert total == "这台相机那还"
     # "那还" should NOT be a standalone line (merged back into previous)
@@ -210,7 +210,7 @@ def test_na_hai_merged():
 
 
 def test_merge_short_fragments():
-    """短碎片（< min_chars）合并到相邻行。"""
+    """单字碎片在不超过最大长度时合并到相邻行。"""
     words = [
         {"word": "这", "start_sec": 0.0, "end_sec": 0.2},
         {"word": "台", "start_sec": 0.2, "end_sec": 0.4},
@@ -219,7 +219,7 @@ def test_merge_short_fragments():
         {"word": "。", "start_sec": 0.8, "end_sec": 0.8},
         {"word": "的", "start_sec": 1.0, "end_sec": 1.1},
     ]
-    result = _smart_split(words, "这台相机。的", max_chars=20, min_chars=3)
+    result = _smart_split(words, "这台相机。的", max_chars=20)
     # "的" 只有 1 字，应合并到前一行
     assert len(result) == 1
     assert "的" in result[0]["text"]
@@ -307,7 +307,6 @@ def test_conjunction_not_at_line_end():
         words,
         "是我见过开机速度最快的相机但是轻便",
         max_chars=25,
-        min_chars=5,
         pause_threshold=0.2,
     )
     total = "".join(r["text"] for r in result)
@@ -423,7 +422,6 @@ def test_single_conjunction_stripped_from_line_end():
         words,
         "这台相机很好用但价格太贵",
         max_chars=20,
-        min_chars=3,
         pause_threshold=0.3,
     )
     total = "".join(r["text"] for r in result)

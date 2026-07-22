@@ -97,7 +97,6 @@ class TestRunConfigWizard:
             "2",  # translate_to: en
             "2",  # bilingual: source-first
             "",  # max_chars: default (25)
-            "",  # min_chars: default (10)
             "y",  # punctuation: yes
             "2",  # subtitle_language: en
         ]

@@ -91,7 +91,11 @@ def test_resume_sends_range_header(tmp_path):
     dest = tmp_path / "model.bin"
     dest.write_bytes(b"X" * 100)
 
-    response = _make_http_response(b"Y" * 50, status=206)
+    response = _make_http_response(
+        b"Y" * 50,
+        status=206,
+        headers={"content-range": "bytes 100-149/150"},
+    )
 
     with patch(
         "subtap.core.models.urllib.request.urlopen", return_value=response
@@ -119,6 +123,63 @@ def test_fresh_download_when_server_returns_200(tmp_path):
     assert dest.read_bytes() == full_data
 
 
+def test_resume_rejects_wrong_content_range_before_appending(tmp_path):
+    """服务器返回错误续传位置时必须拒绝拼接损坏文件。"""
+    downloader = _make_downloader(tmp_path)
+    dest = tmp_path / "model.bin"
+    dest.write_bytes(b"A" * 500)
+    response = _make_http_response(
+        b"B" * 500,
+        status=206,
+        headers={"content-range": "bytes 0-499/1000"},
+    )
+
+    with (
+        patch("subtap.core.models.urllib.request.urlopen", return_value=response),
+        pytest.raises(RuntimeError, match="续传位置不一致"),
+    ):
+        downloader._download_file_with_resume("https://example.com/f", dest)
+
+    assert dest.read_bytes() == b""
+
+
+def test_resume_rejects_truncated_partial_response(tmp_path):
+    """续传响应提前结束时必须失败，且保留已收到内容供下次续传。"""
+    downloader = _make_downloader(tmp_path)
+    dest = tmp_path / "model.bin"
+    dest.write_bytes(b"A" * 500)
+    response = _make_http_response(
+        b"B" * 100,
+        status=206,
+        headers={"content-range": "bytes 500-999/1000"},
+    )
+
+    with (
+        patch("subtap.core.models.urllib.request.urlopen", return_value=response),
+        pytest.raises(RuntimeError, match="续传响应不完整"),
+    ):
+        downloader._download_file_with_resume("https://example.com/f", dest)
+
+    assert dest.stat().st_size == 600
+
+
+def test_resume_never_writes_beyond_declared_range(tmp_path):
+    """续传层不得把服务端越界返回的字节写入模型文件。"""
+    downloader = _make_downloader(tmp_path)
+    dest = tmp_path / "model.bin"
+    dest.write_bytes(b"A" * 500)
+    response = _make_http_response(
+        b"B" * 600,
+        status=206,
+        headers={"content-range": "bytes 500-999/1000"},
+    )
+
+    with patch("subtap.core.models.urllib.request.urlopen", return_value=response):
+        downloader._download_file_with_resume("https://example.com/f", dest)
+
+    assert dest.stat().st_size == 1000
+
+
 # --- download: full orchestration with retry ---
 
 
@@ -139,7 +200,6 @@ def test_download_sha256_mismatch_triggers_retry(tmp_path):
             return_value=correct_hash,
         ) as mock_get_sha256,
     ):
-
         # Make dest file exist with bad content after each "download"
         def fake_download(url, dest, progress=None):
             dest.parent.mkdir(parents=True, exist_ok=True)

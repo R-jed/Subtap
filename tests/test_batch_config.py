@@ -20,7 +20,6 @@ class TestBatchConfig:
         assert config.translate_to is None
         assert config.bilingual == "off"
         assert config.max_chars == 25
-        assert config.min_chars == 10
         assert config.punctuation is False
         assert config.subtitle_language == "zh"
 
@@ -31,7 +30,6 @@ class TestBatchConfig:
             "translate_to": "en",
             "bilingual": "source-first",
             "max_chars": 30,
-            "min_chars": 15,
             "punctuation": True,
             "subtitle_language": "en",
         }
@@ -41,7 +39,6 @@ class TestBatchConfig:
         assert config.translate_to == "en"
         assert config.bilingual == "source-first"
         assert config.max_chars == 30
-        assert config.min_chars == 15
         assert config.punctuation is True
         assert config.subtitle_language == "en"
 

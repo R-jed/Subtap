@@ -38,9 +38,6 @@ def batch_transcribe(
     max_chars: int | None = typer.Option(
         None, "--max-chars", help="每行字幕最大字符数（10-60）", min=10, max=60
     ),
-    min_chars: int | None = typer.Option(
-        None, "--min-chars", help="每行字幕最小字符数（4-30）", min=4, max=30
-    ),
     punctuation: bool | None = typer.Option(
         None, "--punctuation", help="字幕带标点符号（默认不带）"
     ),
@@ -140,8 +137,6 @@ def batch_transcribe(
         bilingual = batch_config.bilingual
     if max_chars is None:
         max_chars = batch_config.max_chars
-    if min_chars is None:
-        min_chars = batch_config.min_chars
     if punctuation is None:
         punctuation = batch_config.punctuation
     if subtitle_language is None:
@@ -181,12 +176,10 @@ def batch_transcribe(
         config.output.subtitle_punctuation = punctuation
     if subtitle_language is not None:
         config.output.subtitle_language = subtitle_language
-    if max_chars is not None or min_chars is not None:
-        from subtap.schemas.config import with_output_character_limits
+    if max_chars is not None:
+        from subtap.schemas.config import with_output_max_chars
 
-        config.output = with_output_character_limits(
-            config.output, max_chars=max_chars, min_chars=min_chars
-        )
+        config.output = with_output_max_chars(config.output, max_chars=max_chars)
     config.output.subtitle_stem = "batch"
 
     from subtap.core.models import (
@@ -259,7 +252,6 @@ def batch_transcribe(
         "translate_to": translate_to,
         "bilingual": bilingual,
         "max_chars": max_chars,
-        "min_chars": min_chars,
         "punctuation": punctuation,
         "subtitle_language": subtitle_language,
         "concurrency": concurrency,
@@ -354,11 +346,11 @@ def batch_transcribe(
                 item_config.output.subtitle_punctuation = punctuation
             if subtitle_language is not None:
                 item_config.output.subtitle_language = subtitle_language
-            if max_chars is not None or min_chars is not None:
-                from subtap.schemas.config import with_output_character_limits
+            if max_chars is not None:
+                from subtap.schemas.config import with_output_max_chars
 
-                item_config.output = with_output_character_limits(
-                    item_config.output, max_chars=max_chars, min_chars=min_chars
+                item_config.output = with_output_max_chars(
+                    item_config.output, max_chars=max_chars
                 )
             item_config.output.subtitle_stem = path.stem
 

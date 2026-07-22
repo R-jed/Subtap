@@ -14,7 +14,6 @@ DEFAULT_CONFIG = {
     "translate_to": None,
     "bilingual": "off",
     "max_chars": 25,
-    "min_chars": 10,
     "punctuation": False,
     "subtitle_language": "zh",
 }
@@ -29,7 +28,6 @@ class BatchConfig:
     translate_to: str | None = None
     bilingual: str = "off"
     max_chars: int = 25
-    min_chars: int = 10
     punctuation: bool = False
     subtitle_language: str = "zh"
 
@@ -43,7 +41,6 @@ class BatchConfig:
             translate_to=merged["translate_to"],
             bilingual=merged["bilingual"],
             max_chars=merged["max_chars"],
-            min_chars=merged["min_chars"],
             punctuation=merged["punctuation"],
             subtitle_language=merged["subtitle_language"],
         )
@@ -56,7 +53,6 @@ class BatchConfig:
             "translate_to": self.translate_to,
             "bilingual": self.bilingual,
             "max_chars": self.max_chars,
-            "min_chars": self.min_chars,
             "punctuation": self.punctuation,
             "subtitle_language": self.subtitle_language,
         }

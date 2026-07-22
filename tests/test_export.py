@@ -299,7 +299,7 @@ def test_smart_split_pause_break():
         {"word": "半", "start_sec": 2.1, "end_sec": 2.2},
         {"word": "句", "start_sec": 2.2, "end_sec": 2.3},
     ]
-    result = _smart_split(words, "前半句后半句", min_chars=2)
+    result = _smart_split(words, "前半句后半句")
     assert len(result) == 2
 
 
@@ -365,7 +365,7 @@ def test_smart_split_filler_merge():
         {"word": "该", "start_sec": 2.1, "end_sec": 2.2},
         {"word": "是", "start_sec": 2.2, "end_sec": 2.3},
     ]
-    result = _smart_split(words, "我觉得呃应该是", min_chars=2)
+    result = _smart_split(words, "我觉得呃应该是")
     for line in result:
         assert line["text"] != "呃"
 
@@ -636,7 +636,7 @@ def test_process_segment_returns_raw_text():
             {"word": "一万两千九百九十九", "start_sec": 0.5, "end_sec": 2.5},
         ],
     )
-    result = _process_segment(seg, max_chars=25, min_chars=10)
+    result = _process_segment(seg, max_chars=25)
     # chinese_to_num should NOT be applied yet
     all_text = " ".join(r["text"] for r in result)
     assert "一万两千九百九十九" in all_text
@@ -661,7 +661,7 @@ def test_process_segment_applies_hotword_replacements():
         aligned_text="这是GR四",
         hotword_replacements={"GR": "理光GR四"},
     )
-    result = _process_segment(seg, max_chars=25, min_chars=10)
+    result = _process_segment(seg, max_chars=25)
     all_text = " ".join(r["text"] for r in result)
     assert "理光GR四" in all_text
 
@@ -677,22 +677,9 @@ def test_process_segment_filters_empty():
         text="",
         words=[],
     )
-    result = _process_segment(seg, max_chars=25, min_chars=10)
+    result = _process_segment(seg, max_chars=25)
     # Empty segment returns a single dict with empty text
     assert len(result) >= 1
-
-
-def test_post_process_fragments_merges_short():
-    """_post_process_fragments merges short fragments into adjacent lines."""
-    from subtap.core.export import _post_process_fragments
-
-    lines = [
-        {"text": "这是一个比较长的句子", "start_sec": 0.0, "end_sec": 2.0},
-        {"text": "短句", "start_sec": 2.0, "end_sec": 2.5},
-    ]
-    result = _post_process_fragments(lines, max_chars=25, min_chars=10)
-    assert len(result) == 1
-    assert "短句" in result[0]["text"]
 
 
 def test_post_process_fragments_merges_trailing_word():
@@ -704,7 +691,7 @@ def test_post_process_fragments_merges_trailing_word():
         {"text": "但是", "start_sec": 2.0, "end_sec": 2.2},
         {"text": "第二句话也比较长", "start_sec": 2.2, "end_sec": 4.0},
     ]
-    result = _post_process_fragments(lines, max_chars=25, min_chars=10)
+    result = _post_process_fragments(lines, max_chars=25)
     # "但是" should be prepended to next line
     assert len(result) == 2
     assert result[1]["text"].startswith("但是")
@@ -718,7 +705,7 @@ def test_post_process_fragments_no_merge_long_lines():
         {"text": "这是一句足够长的话不会被合并", "start_sec": 0.0, "end_sec": 2.0},
         {"text": "这也是一句足够长的话不会被合并", "start_sec": 2.0, "end_sec": 4.0},
     ]
-    result = _post_process_fragments(lines, max_chars=25, min_chars=10)
+    result = _post_process_fragments(lines, max_chars=25)
     assert len(result) == 2
 
 
@@ -731,7 +718,7 @@ def test_post_process_fragments_preserves_real_pause():
         {"text": "短句", "start_sec": 3.0, "end_sec": 3.5},
     ]
 
-    result = _post_process_fragments(lines, max_chars=25, min_chars=10)
+    result = _post_process_fragments(lines, max_chars=25)
 
     assert [line["text"] for line in result] == ["这是一句比较长的话", "短句"]
 
@@ -745,7 +732,7 @@ def test_post_process_fragments_does_not_move_connector_across_pause():
         {"text": "下一句话比较长", "start_sec": 1.0, "end_sec": 2.5},
     ]
 
-    result = _post_process_fragments(lines, max_chars=25, min_chars=10)
+    result = _post_process_fragments(lines, max_chars=25)
 
     assert [line["text"] for line in result] == ["但是", "下一句话比较长"]
 
@@ -776,7 +763,7 @@ def test_srt_uses_process_segment_and_post_process():
             ],
         ),
     ]
-    srt = SRTExporter(punctuation=False, max_chars=25, min_chars=10).render(segs)
+    srt = SRTExporter(punctuation=False, max_chars=25).render(segs)
     assert "-->" in srt
     # Verify both segments appear
     assert "这是一段比较长的话" in srt
@@ -820,7 +807,7 @@ def test_srt_post_processes_across_aligned_segments():
         ),
     ]
 
-    srt = SRTExporter(punctuation=True, max_chars=25, min_chars=10).render(segs)
+    srt = SRTExporter(punctuation=True, max_chars=25).render(segs)
 
     assert "这个虚\n" not in srt
     assert "虚化，因为传感器更大，" in srt
@@ -904,9 +891,7 @@ def test_srt_preserves_all_three_user_approved_chinese_boundaries():
             words=words,
         )
 
-        srt = SRTExporter(punctuation=False, max_chars=25, min_chars=10).render(
-            [segment]
-        )
+        srt = SRTExporter(punctuation=False, max_chars=25).render([segment])
         actual = [block.splitlines()[2] for block in srt.strip().split("\n\n")]
 
         assert actual == expected
@@ -931,7 +916,7 @@ def test_srt_uses_real_chinese_words_for_unpunctuated_character_alignment():
         ],
     )
 
-    srt = SRTExporter(punctuation=False, max_chars=15, min_chars=10).render([segment])
+    srt = SRTExporter(punctuation=False, max_chars=15).render([segment])
     actual = [block.splitlines()[2] for block in srt.strip().split("\n\n")]
 
     assert actual == ["一直是一机难求的状态", "它叫做理光GR4"]
@@ -966,9 +951,7 @@ def test_srt_does_not_split_system_tokenized_chinese_words():
             ],
         )
 
-        srt = SRTExporter(punctuation=False, max_chars=15, min_chars=8).render(
-            [segment]
-        )
+        srt = SRTExporter(punctuation=False, max_chars=15).render([segment])
         actual = [block.splitlines()[2] for block in srt.strip().split("\n\n")]
 
         for left, right in forbidden_splits:
@@ -996,7 +979,7 @@ def test_srt_keeps_directional_complement_with_its_verb():
         ],
     )
 
-    srt = SRTExporter(punctuation=False, max_chars=25, min_chars=10).render([segment])
+    srt = SRTExporter(punctuation=False, max_chars=25).render([segment])
     actual = [block.splitlines()[2] for block in srt.strip().split("\n\n")]
 
     assert all(
@@ -1031,7 +1014,7 @@ def test_srt_keeps_chinese_number_sequence_together_before_itn():
         ],
     )
 
-    srt = SRTExporter(punctuation=True, max_chars=25, min_chars=10).render([seg])
+    srt = SRTExporter(punctuation=True, max_chars=25).render([seg])
 
     assert "2004" not in srt
     assert "2400万" in srt
@@ -1056,7 +1039,7 @@ def test_latin_word_boundary_does_not_share_timestamps_between_cues():
         ],
     )
 
-    lines = _process_segment(seg, max_chars=12, min_chars=4)
+    lines = _process_segment(seg, max_chars=12)
 
     assert len(lines) >= 2
     assert all(

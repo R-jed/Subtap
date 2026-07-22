@@ -90,7 +90,6 @@ output:
   subtitle_punctuation: false   # 字幕是否带标点符号（默认不带）
   subtitle_language: zh         # 字幕输出语种：zh / en / ja（影响标点全角/半角）
   max_chars: 25                 # 每行字幕最大字符数（10-60）
-  min_chars: 10                 # 每行字幕最小字符数（4-30）
   subtitle_formats:             # 输出字幕格式列表
     - srt
   subtitle_stem: final          # 输出文件名前缀（不含扩展名）；CLI run 命令会自动覆盖为输入文件名

@@ -23,7 +23,6 @@ class TestFormatParameterPassing:
         pipeline.config.output.subtitle_punctuation = False
         pipeline.config.output.subtitle_language = "zh"
         pipeline.config.output.max_chars = 25
-        pipeline.config.output.min_chars = 10
         pipeline.config.output.subtitle_formats = {"srt"}
         pipeline.config.output.subtitle_stem = "final"
         pipeline.config.asr = MagicMock()

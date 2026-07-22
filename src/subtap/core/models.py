@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 import shutil
 import urllib.request
 from pathlib import Path
@@ -411,23 +412,40 @@ class ModelDownloader:
             status = response.status
             if status == 206 and existing_size > 0:
                 # Resume: append to existing file
-                downloaded = existing_size
                 total_header = response.getheader("content-range", "")
-                # Content-Range: bytes start-end/total
-                total = existing_size
-                if "/" in total_header:
-                    total = int(total_header.split("/")[-1])
+                match = re.fullmatch(r"bytes (\d+)-(\d+)/(\d+)", total_header)
+                if match is None:
+                    dest.write_bytes(b"")
+                    raise RuntimeError(
+                        "服务器返回的续传位置不一致，已清空断点文件以便重新下载"
+                    )
+                range_start, range_end, total = map(int, match.groups())
+                if (
+                    range_start != existing_size
+                    or range_end < range_start
+                    or range_end >= total
+                ):
+                    dest.write_bytes(b"")
+                    raise RuntimeError(
+                        "服务器返回的续传位置不一致，已清空断点文件以便重新下载"
+                    )
+                downloaded = existing_size
                 if progress:
                     progress(dest.name, downloaded, total)
                 with open(dest, "ab") as f:
-                    while True:
-                        chunk = response.read(8192)
+                    while downloaded <= range_end:
+                        remaining = range_end + 1 - downloaded
+                        chunk = response.read(min(8192, remaining))
                         if not chunk:
                             break
                         f.write(chunk)
                         downloaded += len(chunk)
                         if progress:
                             progress(dest.name, downloaded, total)
+                if downloaded != range_end + 1 or downloaded != total:
+                    raise RuntimeError(
+                        "服务器续传响应不完整，已保留有效断点供下次继续下载"
+                    )
             else:
                 # Fresh download (server returned 200 or no prior file)
                 total = int(response.getheader("content-length", "0"))

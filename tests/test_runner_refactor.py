@@ -27,7 +27,6 @@ def _make_config(script_path=None, glossary_path=None):
             subtitle_punctuation=False,
             subtitle_language="zh",
             max_chars=25,
-            min_chars=10,
             subtitle_formats=["srt", "vtt"],
             subtitle_stem="final",
             script_path=script_path,
