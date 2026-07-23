@@ -6,6 +6,7 @@ Uses mlx_audio.stt.generate_transcription for speech-to-text.
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 from subtap.schemas.config import ASRConfig
@@ -14,6 +15,100 @@ from subtap.schemas.models import Chunk, ASRSegment
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL_ROOT = Path.home() / ".subtap" / "models"
+_TOKENS_PER_AUDIO_SECOND = 16
+_TOKEN_BUDGET_HEADROOM = 64
+_MAX_GENERATION_TOKENS = 2048
+_HOTWORD_PROMPT_PREFIX = "请注意以下专业术语和人名："
+
+
+def _generation_token_budget(duration_sec: float) -> int:
+    """Bound decoder work to the amount of speech that can exist in a chunk."""
+    return min(
+        _MAX_GENERATION_TOKENS,
+        max(
+            _TOKEN_BUDGET_HEADROOM,
+            int(duration_sec * _TOKENS_PER_AUDIO_SECOND) + _TOKEN_BUDGET_HEADROOM,
+        ),
+    )
+
+
+def _extract_text(result) -> str:
+    """Extract transcript text from the runtime's supported result shapes."""
+    if isinstance(result, dict):
+        if "text" in result:
+            text = result["text"]
+            if not isinstance(text, str):
+                raise TypeError("unsupported result text type")
+            if text or "segments" not in result:
+                return text
+        if "segments" in result:
+            segments = result["segments"]
+            if not isinstance(segments, list):
+                raise TypeError("unsupported result segments type")
+            segment_texts = []
+            for segment in segments:
+                if (
+                    not isinstance(segment, dict)
+                    or "text" not in segment
+                    or not isinstance(segment["text"], str)
+                ):
+                    raise TypeError("unsupported result type in segments")
+                segment_texts.append(segment["text"])
+            text = " ".join(segment_texts)
+        else:
+            raise TypeError("unsupported result type: dict without text or segments")
+        return text
+    if isinstance(result, str):
+        return result
+    if hasattr(result, "text"):
+        text = result.text
+        if isinstance(text, str):
+            return text
+        raise TypeError("unsupported result text type")
+    raise TypeError(f"unsupported result type: {type(result).__name__}")
+
+
+def _has_runaway_repetition(text: str) -> bool:
+    """Detect short decoder loops that cannot represent natural speech."""
+    compact = re.sub(r"\s+", "", text)
+    return len(compact) >= 20 and re.search(r"(.{1,4})\1{9,}", compact) is not None
+
+
+def _generate_checked_transcript(generate, gen_kwargs: dict, chunk_id: int) -> str:
+    """Generate a transcript with the same protocol checks on every attempt."""
+    repetition_count = 0
+    for attempt in range(3):
+        text = _extract_text(generate(**gen_kwargs)).strip()
+        if text.startswith(_HOTWORD_PROMPT_PREFIX):
+            if "system_prompt" not in gen_kwargs:
+                raise RuntimeError(
+                    f"hotword prompt persisted for chunk {chunk_id} after retry"
+                )
+            logger.warning(
+                "Chunk %d echoed the hotword prompt; retrying without it",
+                chunk_id,
+            )
+            gen_kwargs.pop("system_prompt")
+            continue
+        if not _has_runaway_repetition(text):
+            return text
+
+        repetition_count += 1
+        if repetition_count >= 2 and "system_prompt" in gen_kwargs:
+            logger.warning(
+                "Chunk %d repeated again; retrying without hotwords",
+                chunk_id,
+            )
+            gen_kwargs.pop("system_prompt")
+        else:
+            logger.warning(
+                "Chunk %d entered a decoder repetition loop; retrying",
+                chunk_id,
+            )
+        if attempt == 2:
+            break
+
+    raise RuntimeError(f"ASR decoder repetition persisted for chunk {chunk_id}")
 
 
 class MLXQwenASR:
@@ -62,7 +157,7 @@ class MLXQwenASR:
         if not hotwords:
             return None
         word_list = "、".join(hotwords)
-        return f"请注意以下专业术语和人名：{word_list}"
+        return f"{_HOTWORD_PROMPT_PREFIX}{word_list}"
 
     def transcribe(
         self,
@@ -94,25 +189,18 @@ class MLXQwenASR:
                     "model": self._model,
                     "audio": str(audio_path),
                     "format": "json",
+                    "max_tokens": _generation_token_budget(
+                        chunk.end_sec - chunk.start_sec
+                    ),
                 }
                 if system_prompt:
                     gen_kwargs["system_prompt"] = system_prompt
 
-                result = generate_transcription(**gen_kwargs)
+                text = _generate_checked_transcript(
+                    generate_transcription, gen_kwargs, chunk.chunk_id
+                )
             except Exception as e:
                 raise RuntimeError(f"ASR failed for chunk {chunk.chunk_id}: {e}") from e
-
-            # Extract text from result
-            text = ""
-            if isinstance(result, dict):
-                text = result.get("text", "")
-                if not text and "segments" in result:
-                    segs = result["segments"]
-                    text = " ".join(s.get("text", "") for s in segs) if segs else ""
-            elif isinstance(result, str):
-                text = result
-            elif hasattr(result, "text"):
-                text = result.text
 
             logger.info("Chunk %d result: %s", chunk.chunk_id, text[:100])
             segments.append(

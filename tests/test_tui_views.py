@@ -364,7 +364,8 @@ def test_first_run_offline_self_check_rejects_missing_model(monkeypatch):
     from subtap.ui.views.first_run import FirstRunView
 
     monkeypatch.setattr(
-        "subtap.core.models.ModelRegistry.is_available", lambda self, name: False
+        "subtap.core.models.ModelVerifier.verify",
+        lambda self, name, require_hash=False, **kwargs: {"status": "missing"},
     )
 
     import pytest

@@ -231,3 +231,14 @@ def test_manifest_sha256_not_empty() -> None:
         for file_info in entry.required_files:
             if (model_dir / file_info.name).exists():
                 assert file_info.sha256, f"{model_id}/{file_info.name} SHA256 为空"
+
+
+def test_default_manifest_requires_asr_preprocessor_config() -> None:
+    """ASR models must include the feature extractor configuration."""
+    manifest = load_manifest(get_manifest_path(None))
+
+    for model_id in ("asr_0.6b", "asr_1.7b"):
+        required = {
+            file_info.name for file_info in manifest.models[model_id].required_files
+        }
+        assert "preprocessor_config.json" in required

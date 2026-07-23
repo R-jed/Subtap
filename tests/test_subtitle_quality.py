@@ -79,6 +79,17 @@ def test_reports_readability_without_blocking():
     assert report.long_lines == 1
 
 
+def test_line_length_uses_visible_characters():
+    srt = """1
+00:00:01,000 --> 00:00:03,000
+Highlight Diffusion Filter
+"""
+
+    report = validate_srt_delivery(srt, max_line_chars=24)
+
+    assert report.long_lines == 0
+
+
 def test_accepts_clean_short_srt():
     srt = """1
 00:00:01,000 --> 00:00:02,500

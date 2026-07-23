@@ -69,6 +69,9 @@ pythonpath = ["src", "tests"]
 asyncio_mode = "auto"
 addopts = ["--ignore-glob=tests/test_benchmark_*.py"]
 
+[tool.black]
+target-version = ["py310"]
+
 [[tool.mypy.overrides]]
 module = ["mlx_audio.*", "pydub", "pydub.*", "yaml", "openpyxl.*", "docx.*", "sherpa_onnx", "sherpa_onnx.*", "textual", "textual.*", "questionary"]
 ignore_missing_imports = true

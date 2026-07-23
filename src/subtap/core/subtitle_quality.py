@@ -113,7 +113,7 @@ def validate_srt_delivery(
             zero_duration += 1
         if duration > 0 and len(cue.text.replace(" ", "")) / duration > max_cps:
             high_cps += 1
-        if any(len(line) > max_line_chars for line in cue.text_lines):
+        if any(len(line.replace(" ", "")) > max_line_chars for line in cue.text_lines):
             long_lines += 1
 
         previous_end = max(previous_end, cue.end)

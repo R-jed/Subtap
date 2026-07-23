@@ -253,7 +253,9 @@ def test_downloader_download_calls_urlopen(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(ModelDownloader, "_verify_sha256", lambda *args, **kwargs: True)
     result = downloader.download("asr_0.6b")
     assert result.name == "asr_0.6b"
-    assert call_count == 5  # config.json + model.safetensors + tokenizer files
+    assert call_count == len(
+        ModelRegistry(config)._registry()["asr_0.6b"]["required_files"]
+    )
 
 
 def test_downloader_unknown_model(tmp_path: Path):
