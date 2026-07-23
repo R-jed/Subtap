@@ -9,6 +9,7 @@ import logging
 import re
 from pathlib import Path
 
+from subtap.backends.asr.base import ProgressCallback
 from subtap.schemas.config import ASRConfig
 from subtap.schemas.models import Chunk, ASRSegment
 
@@ -124,6 +125,7 @@ class MLXQwenASR:
             f"qwen3-asr-{self.model_name.replace('asr_', '')}-{self.quantization}"
         )
         self._model = None
+        self._progress_callback: ProgressCallback | None = None
         root = model_root or DEFAULT_MODEL_ROOT
         model_subdir = "asr_1.7b" if self.model_name == "asr_1.7b" else "asr_0.6b"
         self._model_path = str(root / model_subdir)
@@ -131,6 +133,10 @@ class MLXQwenASR:
     def release_model(self) -> None:
         """Release the in-memory MLX model after the ASR stage."""
         self._model = None
+
+    def set_progress_callback(self, callback: ProgressCallback | None) -> None:
+        """Report completion immediately after each audio chunk."""
+        self._progress_callback = callback
 
     def _load_model(self):
         """Lazy-load the MLX STT model."""
@@ -172,7 +178,8 @@ class MLXQwenASR:
         if system_prompt:
             logger.info("Hotword injection enabled: %s", system_prompt)
 
-        for chunk in chunks:
+        total = len(chunks)
+        for index, chunk in enumerate(chunks, start=1):
             audio_path = Path(chunk.path)
             if not audio_path.is_absolute():
                 audio_path = Path.cwd() / audio_path
@@ -213,5 +220,7 @@ class MLXQwenASR:
                     confidence=None,
                 )
             )
+            if self._progress_callback is not None:
+                self._progress_callback(index, total, chunk)
 
         return segments

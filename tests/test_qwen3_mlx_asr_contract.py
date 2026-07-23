@@ -15,6 +15,9 @@ class MockASRBackend:
     def __init__(self):
         self._model = object()
 
+    def set_progress_callback(self, callback):
+        self._progress_callback = callback
+
     def transcribe(self, chunks, language=None, hotwords=None):
         return [
             ASRSegment(

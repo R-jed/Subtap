@@ -155,8 +155,7 @@ class TestLearnStageInAllRunners:
 class TestExportFormatConsistency:
     """P2-2: all runners should use {fmt} for export, not config.subtitle_formats."""
 
-    @patch("subtap.core.export.run_final_exports")
-    def test_run_export_uses_fmt_as_set(self, mock_export, tmp_path):
+    def test_run_export_uses_fmt_as_set(self, tmp_path):
         """_run_export should pass formats={fmt} to run_final_exports."""
         config = _make_config()
         pipeline = _make_pipeline(config)
@@ -164,14 +163,11 @@ class TestExportFormatConsistency:
         pipeline.workspace.aligned_jsonl.write_text(
             '{"sentence_id":0,"start_sec":0,"end_sec":1,"text":"hi","words":[]}\n'
         )
-        mock_export.return_value = {"output_path": str(tmp_path / "final.srt")}
-
         BaseRunner._run_export(pipeline, tmp_path, "vtt", None, "off")
 
-        call_kwargs = mock_export.call_args[1]
-        assert call_kwargs["formats"] == {
-            "vtt"
-        }, f"Expected formats={{'vtt'}}, got {call_kwargs['formats']}"
+        stage, call_kwargs = pipeline._calls[-1]
+        assert stage == "export"
+        assert call_kwargs["fmt"] == "vtt"
 
     @patch("subtap.core.export.run_final_exports")
     def test_rich_runner_uses_fmt(self, mock_export, tmp_path):

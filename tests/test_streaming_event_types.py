@@ -15,3 +15,4 @@ def test_streaming_event_types_exist():
     assert EventType.MODEL_LOAD_DONE.value == "model_load_done"
     assert EventType.MODEL_RELEASE_START.value == "model_release_start"
     assert EventType.MODEL_RELEASE_DONE.value == "model_release_done"
+    assert EventType.PIPELINE_PLAN.value == "pipeline_plan"

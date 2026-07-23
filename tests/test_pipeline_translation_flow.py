@@ -29,6 +29,10 @@ class FakePipeline:
         self.workspace = FakeWorkspace(root)
         self.config = FakeConfig()
         self.calls: list[tuple[str, dict]] = []
+        self.plans: list[list[str]] = []
+
+    def publish_plan(self, stages):
+        self.plans.append(stages)
 
     def run_stage(self, stage: str, **kwargs):
         self.calls.append((stage, kwargs))
@@ -52,18 +56,14 @@ class FakePipeline:
             return {"learned": 0}
         if stage == "translate":
             return {"translated_count": 1}
+        if stage == "export":
+            return {"output_path": str(Path(kwargs["output_dir"]) / "final.srt")}
         raise AssertionError(stage)
 
 
-def test_plain_runner_passes_translate_and_bilingual(monkeypatch, tmp_path):
+def test_plain_runner_passes_translate_and_bilingual(tmp_path):
     pipeline = FakePipeline(tmp_path / "work")
     pipeline.workspace.root.mkdir(parents=True)
-
-    def fake_final_exports(*_args, **kwargs):
-        pipeline.calls.append(("export", kwargs))
-        return {"output_path": str(tmp_path / "output" / "final.srt")}
-
-    monkeypatch.setattr("subtap.core.export.run_final_exports", fake_final_exports)
 
     RichRunner().run_pipeline(
         pipeline,
@@ -82,3 +82,17 @@ def test_plain_runner_passes_translate_and_bilingual(monkeypatch, tmp_path):
         for call in pipeline.calls
     )
     assert any(call[0] == "hotword" for call in pipeline.calls)
+    assert pipeline.plans == [
+        [
+            "prepare",
+            "chunk",
+            "asr",
+            "clean",
+            "segment",
+            "align",
+            "hotword",
+            "learn",
+            "translate",
+            "export",
+        ]
+    ]

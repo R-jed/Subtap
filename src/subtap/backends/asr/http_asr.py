@@ -13,6 +13,7 @@ from typing import Optional
 
 import httpx
 
+from subtap.backends.asr.base import ProgressCallback
 from subtap.schemas.config import ASRConfig, RemoteAPIConfig
 from subtap.schemas.models import Chunk, ASRSegment
 
@@ -34,6 +35,11 @@ class HttpASRBackend:
         self.model = self.remote_api.model or "whisper-1"
         self.timeout_sec = self.remote_api.timeout_sec
         self.provider = self.remote_api.provider
+        self._progress_callback: ProgressCallback | None = None
+
+    def set_progress_callback(self, callback: ProgressCallback | None) -> None:
+        """Report completion immediately after each audio chunk."""
+        self._progress_callback = callback
 
     def transcribe(
         self,
@@ -44,7 +50,8 @@ class HttpASRBackend:
         """Transcribe chunks via remote API."""
         segments: list[ASRSegment] = []
         with httpx.Client(timeout=self.timeout_sec) as client:
-            for chunk in chunks:
+            total = len(chunks)
+            for index, chunk in enumerate(chunks, start=1):
                 if self.provider.startswith("anthropic"):
                     audio_b64 = base64.b64encode(Path(chunk.path).read_bytes()).decode()
                     resp = client.post(
@@ -100,4 +107,6 @@ class HttpASRBackend:
                         text=text,
                     )
                 )
+                if self._progress_callback is not None:
+                    self._progress_callback(index, total, chunk)
         return segments

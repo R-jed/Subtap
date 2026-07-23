@@ -155,6 +155,9 @@ class BaseRunner(ABC):
     ) -> dict:
         """Core pipeline execution: build stages, run loop, export, save meta."""
         stages = self._build_stages(pipeline.config, translate_to)
+        publish_plan = getattr(pipeline, "publish_plan", None)
+        if callable(publish_plan):
+            publish_plan([stage["key"] for stage in stages])
         # Inject input_path into prepare stage kwargs
         for stage in stages:
             if stage["key"] == "prepare":
@@ -191,15 +194,10 @@ class BaseRunner(ABC):
         bilingual: str,
     ) -> dict:
         """Run final exports with consistent parameters from config."""
-        from subtap.core.export import run_final_exports
-
-        return run_final_exports(
-            pipeline.workspace.aligned_jsonl,
-            output_dir,
-            punctuation=pipeline.config.output.subtitle_punctuation,
-            language=pipeline.config.output.subtitle_language,
-            max_chars=pipeline.config.output.max_chars,
-            formats={fmt},
+        return pipeline.run_stage(
+            "export",
+            fmt=fmt,
+            output_dir=str(output_dir),
             stem=pipeline.config.output.subtitle_stem,
             translate_to=translate_to,
             bilingual=bilingual,

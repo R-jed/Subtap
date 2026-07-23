@@ -9,19 +9,34 @@ import subprocess
 import time
 from typing import Any
 
-from subtap.engine.state import STAGE_CN, STAGE_ORDER
+from subtap.engine.state import STAGE_CN
 
 logger = logging.getLogger(__name__)
 _UNSET = object()
 
-SUBTAP_ASCII = r"""
-  ____        _              _
- / ___| _   _| |_ __ _ _ __ | |_
- \___ \| | | | __/ _` | '_ \| __|
-  ___) | |_| | || (_| | |_) | |_
- |____/ \__, |\__\__,_| .__/ \__|
-        |___/         |_|
+SUBTAP_ASCII = """
+█▀▀ █ █ █▀▄ ▀█▀ ▄▀█ █▀█
+▄██ █▄█ █▄▀  █  █▀█ █▀▀
 """
+
+_OBSERVED_STAGE_ORDER = [
+    "prepare",
+    "chunk",
+    "asr",
+    "clean",
+    "segment",
+    "align",
+    "hotword",
+    "learn",
+    "export",
+]
+_OBSERVED_STAGE_CN = {
+    **STAGE_CN,
+    "script_match": "文稿匹配",
+    "hotword": "热词替换",
+    "learn": "热词学习",
+    "translate": "字幕翻译",
+}
 
 
 def iter_event_log(log_path: Path) -> list[dict[str, Any]]:
@@ -61,6 +76,10 @@ def _summarize_event_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "total_items": None,
         "recent_texts": [],
         "started_at": None,
+        "last_event_at": None,
+        "stage_progress": 0,
+        "stage_order": list(_OBSERVED_STAGE_ORDER),
+        "has_pipeline_plan": False,
     }
     draft_texts: list[str] = []
     aligned_texts: list[str] = []
@@ -69,12 +88,19 @@ def _summarize_event_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         data = row.get("data") or {}
         if state["started_at"] is None:
             state["started_at"] = row.get("timestamp")
+        if row.get("timestamp") is not None:
+            state["last_event_at"] = row["timestamp"]
+        if event_type == "pipeline_plan" and data.get("stages"):
+            state["stage_order"] = list(data["stages"])
+            state["has_pipeline_plan"] = True
         if "stage" in data:
             state["stage"] = data["stage"]
         if event_type == "stage_start":
-            state["progress"] = None
+            state["stage_progress"] = 0
+            state["item_index"] = None
+            state["total_items"] = None
         if "progress" in data:
-            state["progress"] = data["progress"]
+            state["stage_progress"] = data["progress"]
         if "chunk_id" in data:
             state["chunk_id"] = data["chunk_id"]
         if "model" in data:
@@ -84,7 +110,7 @@ def _summarize_event_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         if "total_items" in data:
             state["total_items"] = data["total_items"]
         if event_type == "stage_end" and data.get("stage"):
-            state["progress"] = 100
+            state["stage_progress"] = 100
             stage = data["stage"]
             if stage not in state["completed_stages"]:
                 state["completed_stages"].append(stage)
@@ -96,6 +122,19 @@ def _summarize_event_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
             state["aligned"] += 1
             if data.get("text"):
                 aligned_texts.append(data["text"])
+    stage_order = state["stage_order"]
+    completed = {stage for stage in state["completed_stages"] if stage in stage_order}
+    current_stage = state["stage"]
+    current_fraction = (
+        state["stage_progress"] / 100
+        if current_stage in stage_order and current_stage not in completed
+        else 0
+    )
+    state["progress"] = (
+        round((len(completed) + current_fraction) / len(stage_order) * 100)
+        if state["has_pipeline_plan"]
+        else state["stage_progress"]
+    )
     state["recent_texts"] = (aligned_texts or draft_texts)[-4:]
     return state
 
@@ -128,7 +167,7 @@ def _make_observer_dashboard(
     from textual.app import App, ComposeResult
     from textual.containers import Vertical
     from textual.screen import ModalScreen
-    from textual.widgets import Footer, Header, ProgressBar, RichLog, Static
+    from textual.widgets import Header, ProgressBar, RichLog, Static
     from rich.text import Text
 
     class CancelTaskScreen(ModalScreen[bool]):
@@ -189,10 +228,16 @@ def _make_observer_dashboard(
             height: 1fr;
             display: none;
         }
+        #keys {
+            dock: bottom;
+            height: 1;
+            padding: 0 2;
+            color: #8b8b92;
+            background: #111820;
+        }
         """
         BINDINGS = [
             ("l", "toggle_details", "详情"),
-            ("o", "open_subtitle", "打开字幕"),
             ("f", "open_output_directory", "输出目录"),
             ("d", "open_diagnostics", "诊断日志"),
             ("escape", "show_overview", "返回概览"),
@@ -211,7 +256,7 @@ def _make_observer_dashboard(
                 yield Static("", id="output")
                 yield Static("", id="action-status")
             yield RichLog(max_lines=200, auto_scroll=True, id="details")
-            yield Footer()
+            yield Static("", id="keys")
 
         async def on_mount(self) -> None:
             self.set_interval(refresh_interval, self.refresh_from_log)
@@ -268,9 +313,9 @@ def _make_observer_dashboard(
             completed = set(state["completed_stages"])
             current = state["stage"]
             stages = []
-            for stage in STAGE_ORDER:
+            for stage in state["stage_order"]:
                 marker = "✓" if stage in completed else "▶" if stage == current else "·"
-                stages.append(f"{marker} {STAGE_CN[stage]}")
+                stages.append(f"{marker} {_OBSERVED_STAGE_CN.get(stage, stage)}")
             self.query_one("#stage-map", Static).update("  ".join(stages))
 
             item_index = state["item_index"]
@@ -282,7 +327,12 @@ def _make_observer_dashboard(
             )
             elapsed = 0
             if state["started_at"] is not None:
-                elapsed = max(0, int(time.time() - state["started_at"]))
+                end_time = (
+                    time.time()
+                    if returncode is None
+                    else state["last_event_at"] or state["started_at"]
+                )
+                elapsed = max(0, int(end_time - state["started_at"]))
             self.query_one("#current-work", Static).update(
                 f"{item_text}  已用时：{elapsed // 60:02d}:{elapsed % 60:02d}"
             )
@@ -297,7 +347,7 @@ def _make_observer_dashboard(
             elif returncode == 0 and output_path is not None and output_path.is_file():
                 output_text = (
                     f"[green]✓ 字幕已生成[/green]  {output_path}\n"
-                    "O 打开字幕  F 打开输出目录  Q 返回"
+                    "F 打开输出目录  Q 返回"
                 )
             elif returncode == 0 and output_path is not None:
                 output_text = (
@@ -307,6 +357,16 @@ def _make_observer_dashboard(
             else:
                 output_text = "[red]未生成可交付字幕[/red]\nD 打开诊断日志  Q 返回"
             self.query_one("#output", Static).update(output_text)
+            if returncode is None:
+                keys = (
+                    "L 详情   F 输出目录   D 诊断日志   Esc 返回概览   "
+                    "Q 退出观察   X 停止任务"
+                )
+            elif returncode == 0 and output_path is not None and output_path.is_file():
+                keys = "F 输出目录   Q 返回"
+            else:
+                keys = "D 诊断日志   Q 返回"
+            self.query_one("#keys", Static).update(keys)
 
             details = self.query_one("#details", RichLog)
             details.clear()
@@ -351,14 +411,6 @@ def _make_observer_dashboard(
                 status.update("没有可打开的字幕结果。")
                 return
             self._open_path(target, label)
-
-        def action_open_subtitle(self) -> None:
-            if output_path is None:
-                self.query_one("#action-status", Static).update(
-                    "没有可打开的字幕结果。"
-                )
-                return
-            self._open_completed_result(output_path, "字幕")
 
         def action_open_output_directory(self) -> None:
             if output_path is None:

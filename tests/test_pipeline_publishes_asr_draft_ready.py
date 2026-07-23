@@ -11,19 +11,27 @@ class MockASRBackend:
 
     def __init__(self):
         self._model = object()
+        self._progress_callback = None
+
+    def set_progress_callback(self, callback):
+        self._progress_callback = callback
 
     def transcribe(self, chunks, language=None, hotwords=None):
-        return [
-            ASRSegment(
-                chunk_id=chunk.chunk_id,
-                segment_id=0,
-                start_sec=chunk.start_sec,
-                end_sec=chunk.end_sec,
-                text="测试字幕",
-                confidence=0.9,
+        segments = []
+        for index, chunk in enumerate(chunks, start=1):
+            segments.append(
+                ASRSegment(
+                    chunk_id=chunk.chunk_id,
+                    segment_id=0,
+                    start_sec=chunk.start_sec,
+                    end_sec=chunk.end_sec,
+                    text="测试字幕",
+                    confidence=0.9,
+                )
             )
-            for chunk in chunks
-        ]
+            if self._progress_callback is not None:
+                self._progress_callback(index, len(chunks), chunk)
+        return segments
 
     def release_model(self):
         self._model = None
@@ -69,3 +77,15 @@ def test_pipeline_publishes_asr_draft_ready(monkeypatch, tmp_path):
     assert asr_events[0].data["item_index"] == 1
     assert asr_events[0].data["total_items"] == 1
     assert asr_events[0].data["message_zh"] == "已生成 ASR 草稿"
+    progress_events = [
+        event for event in events if event.event_type == EventType.PROGRESS
+    ]
+    assert len(progress_events) == 1
+    assert progress_events[0].data["progress"] == 100
+    assert progress_events[0].data["item_index"] == 1
+    assert progress_events[0].data["message_zh"] == "已识别 1/1 个音频片段"
+    assert events.index(progress_events[0]) < next(
+        index
+        for index, event in enumerate(events)
+        if event.event_type == EventType.MODEL_RELEASE_START
+    )

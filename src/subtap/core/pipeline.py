@@ -57,6 +57,16 @@ class Pipeline:
             )
         )
 
+    def publish_plan(self, stages: list[str]) -> None:
+        """Publish the exact stage sequence selected for this run."""
+        self._publish_event(
+            EventType.PIPELINE_PLAN,
+            stage="pipeline",
+            stages=stages,
+            total_items=len(stages),
+            message_zh="已确定本次任务流程",
+        )
+
     def run_stage(self, stage: str, **kwargs) -> dict:
         """Run a single pipeline stage."""
         handler = {
@@ -298,25 +308,29 @@ class Pipeline:
         )
 
     def _stage_export(
-        self, fmt: str = "srt", output_dir: str | None = None, stem: str = "output", **_
+        self,
+        fmt: str = "srt",
+        output_dir: str | None = None,
+        stem: str = "output",
+        translate_to: str | None = None,
+        bilingual: str = "off",
+        **_,
     ) -> dict:
-        from subtap.core.export import run_export
+        from subtap.core.export import run_final_exports
 
         out = Path(output_dir) if output_dir else self.workspace.root / "output"
-        result = run_export(
+        result = run_final_exports(
             self.workspace.aligned_jsonl,
             out,
-            fmt=fmt,
-            stem=stem,
-            max_chars=self.config.output.max_chars,
             punctuation=self.config.output.subtitle_punctuation,
             language=self.config.output.subtitle_language,
+            max_chars=self.config.output.max_chars,
+            formats={fmt},
+            stem=stem,
+            translate_to=translate_to,
+            bilingual=bilingual,
         )
-        return {
-            "output_path": result["output_path"],
-            "format": result["format"],
-            "segment_count": result["segment_count"],
-        }
+        return result
 
     def cleanup(self) -> dict[str, Any]:
         """清理 L1 临时文件。"""

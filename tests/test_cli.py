@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import re
 from types import SimpleNamespace
 
@@ -587,7 +588,13 @@ def test_run_full_pipeline_with_align(
             if stage == "translate":
                 return {"translated_count": 0}
             if stage == "export":
-                return {"exported_count": 1}
+                output_path = Path(kwargs["output_dir"]) / "input.srt"
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_text("subtitle", encoding="utf-8")
+                return {
+                    "exported_count": 1,
+                    "output_path": str(output_path),
+                }
             raise AssertionError(stage)
 
         def cleanup(self):
@@ -698,7 +705,13 @@ def test_run_enhance_local_passes_clean_local_to_pipeline(
             if stage == "translate":
                 return {"translated_count": 0}
             if stage == "export":
-                return {"exported_count": 1}
+                output_path = Path(kwargs["output_dir"]) / "input.srt"
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_text("subtitle", encoding="utf-8")
+                return {
+                    "exported_count": 1,
+                    "output_path": str(output_path),
+                }
             raise AssertionError(stage)
 
         def cleanup(self):

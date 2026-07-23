@@ -32,6 +32,7 @@ class EventType(Enum):
     MODEL_LOAD_DONE = "model_load_done"
     MODEL_RELEASE_START = "model_release_start"
     MODEL_RELEASE_DONE = "model_release_done"
+    PIPELINE_PLAN = "pipeline_plan"
 
 
 @dataclass
@@ -57,6 +58,7 @@ def make_pipeline_event(
     text: str | None = None,
     item_index: int | None = None,
     total_items: int | None = None,
+    stages: list[str] | None = None,
     message_zh: str = "",
 ) -> PipelineEvent:
     """Build a streaming event with the shared payload contract."""
@@ -77,6 +79,7 @@ def make_pipeline_event(
         "text": text,
         "item_index": item_index,
         "total_items": total_items,
+        "stages": stages,
     }
     for key, value in optional.items():
         if value is not None:

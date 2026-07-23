@@ -23,6 +23,9 @@ class MockASRBackend:
 
     name = "mock-asr"
 
+    def set_progress_callback(self, callback):
+        self._progress_callback = callback
+
     def transcribe(
         self,
         chunks: list[Chunk],

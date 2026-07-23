@@ -66,6 +66,7 @@ def test_summarize_event_log_restores_latest_status(tmp_path):
     state = summarize_event_log(log_path)
 
     assert state["stage"] == "align"
+    assert state["stage_progress"] == 80
     assert state["progress"] == 80
     assert state["chunk_id"] == 0
     assert state["model"] == "asr_0.6b-q8"
@@ -76,6 +77,105 @@ def test_summarize_event_log_restores_latest_status(tmp_path):
     assert state["total_items"] == 10
     assert state["recent_texts"] == ["最终字幕"]
     assert state["started_at"] == 0.5
+    assert state["last_event_at"] == 3.0
+
+
+def test_observer_reports_monotonic_overall_pipeline_progress(tmp_path):
+    log_path = tmp_path / "run.log.jsonl"
+    rows = [
+        {
+            "event_type": "pipeline_plan",
+            "timestamp": 0.5,
+            "data": {
+                "stage": "pipeline",
+                "stages": [
+                    "prepare",
+                    "chunk",
+                    "asr",
+                    "clean",
+                    "segment",
+                    "align",
+                    "hotword",
+                    "learn",
+                    "export",
+                ],
+            },
+        },
+        {
+            "event_type": "stage_end",
+            "timestamp": 1.0,
+            "data": {"stage": "prepare"},
+        },
+        {
+            "event_type": "stage_end",
+            "timestamp": 2.0,
+            "data": {"stage": "chunk"},
+        },
+        {
+            "event_type": "stage_start",
+            "timestamp": 3.0,
+            "data": {"stage": "asr"},
+        },
+        {
+            "event_type": "asr_draft_ready",
+            "timestamp": 4.0,
+            "data": {
+                "stage": "asr",
+                "progress": 50,
+                "item_index": 2,
+                "total_items": 4,
+            },
+        },
+    ]
+    log_path.write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+
+    state = summarize_event_log(log_path)
+
+    assert state["stage_progress"] == 50
+    assert state["progress"] == 28
+
+
+def test_observer_uses_the_pipeline_plan_for_optional_stages(tmp_path):
+    log_path = tmp_path / "run.log.jsonl"
+    rows = [
+        {
+            "event_type": "pipeline_plan",
+            "timestamp": 0.5,
+            "data": {
+                "stage": "pipeline",
+                "stages": [
+                    "prepare",
+                    "asr",
+                    "script_match",
+                    "align",
+                    "translate",
+                    "export",
+                ],
+            },
+        },
+        {
+            "event_type": "stage_end",
+            "timestamp": 1.0,
+            "data": {"stage": "prepare"},
+        },
+        {
+            "event_type": "asr_draft_ready",
+            "timestamp": 2.0,
+            "data": {"stage": "asr", "progress": 50},
+        },
+    ]
+    log_path.write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+
+    state = summarize_event_log(log_path)
+
+    assert state["progress"] == 25
+    assert state["stage_order"] == rows[0]["data"]["stages"]
 
 
 def test_event_log_ignores_only_incomplete_final_row(tmp_path):
@@ -289,9 +389,50 @@ async def test_observer_dashboard_keeps_completed_task_visible(tmp_path):
     async with dashboard.run_test() as pilot:
         await pilot.pause()
         rendered = str(dashboard.query_one("#status", Static).render())
+        footer = str(dashboard.query_one("#keys", Static).render())
         assert "任务已完成" in rendered
         assert "result.srt" in rendered
+        assert footer == "F 输出目录   Q 返回"
         assert dashboard.return_value is None
+        await pilot.press("q")
+
+
+@pytest.mark.asyncio
+async def test_completed_task_elapsed_time_stops_at_last_event(tmp_path, monkeypatch):
+    from textual.widgets import Static
+
+    from subtap.ui.observer import _make_observer_dashboard
+
+    log_path = tmp_path / "run.log.jsonl"
+    log_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "event_type": "stage_start",
+                        "timestamp": 10.0,
+                        "data": {"stage": "prepare"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "event_type": "stage_end",
+                        "timestamp": 40.0,
+                        "data": {"stage": "export"},
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("subtap.ui.observer.time.time", lambda: 100.0)
+    process = SimpleNamespace(poll=lambda: 0, returncode=0)
+    dashboard = _make_observer_dashboard(log_path, process)
+
+    async with dashboard.run_test() as pilot:
+        elapsed = str(dashboard.query_one("#current-work", Static).render())
+        assert "已用时：00:30" in elapsed
         await pilot.press("q")
 
 
@@ -319,9 +460,7 @@ async def test_zero_exit_without_output_is_reported_as_incomplete(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_completed_task_can_open_subtitle_and_output_directory(
-    tmp_path, monkeypatch
-):
+async def test_completed_task_can_open_output_directory(tmp_path, monkeypatch):
     import subprocess
 
     from subtap.ui.observer import _make_observer_dashboard
@@ -343,14 +482,11 @@ async def test_completed_task_can_open_subtitle_and_output_directory(
     )
 
     async with dashboard.run_test() as pilot:
-        await pilot.press("o")
         await pilot.press("f")
         await pilot.press("q")
 
-    assert opened == [
-        ["open", str(output_path)],
-        ["open", str(output_path.parent)],
-    ]
+    assert opened == [["open", str(output_path.parent)]]
+    assert all(binding[0] != "o" for binding in dashboard.BINDINGS)
 
 
 @pytest.mark.asyncio
@@ -407,7 +543,7 @@ async def test_open_failure_shows_native_error(tmp_path, monkeypatch):
     )
 
     async with dashboard.run_test() as pilot:
-        await pilot.press("o")
+        await pilot.press("f")
         status = str(dashboard.query_one("#action-status", Static).render())
         assert "LaunchServices 无法打开文件" in status
         await pilot.press("q")
@@ -423,9 +559,6 @@ async def test_output_shortcuts_explain_when_result_is_unavailable(tmp_path):
     dashboard = _make_observer_dashboard(tmp_path / "run.log.jsonl", process)
 
     async with dashboard.run_test() as pilot:
-        await pilot.press("o")
-        status = str(dashboard.query_one("#action-status", Static).render())
-        assert "没有可打开的字幕结果" in status
         await pilot.press("f")
         status = str(dashboard.query_one("#action-status", Static).render())
         assert "没有可打开的字幕结果" in status

@@ -14,6 +14,9 @@ from subtap.schemas.models import ASRSegment, Chunk, SentenceSegment
 class CapturingASRBackend:
     name = "mlx-qwen-asr"
 
+    def set_progress_callback(self, callback):
+        self._progress_callback = callback
+
     def transcribe(self, chunks, language=None, hotwords=None):
         return [
             ASRSegment(

@@ -167,11 +167,35 @@ def run_asr(
                     message_zh="ASR 模型加载完成",
                 )
             )
-        segments = backend.transcribe(
-            abs_chunks,
-            language=None,
-            hotwords=all_hotwords or None,
-        )
+
+        def publish_transcription_progress(
+            item_index: int, total_items: int, chunk: Chunk
+        ) -> None:
+            if event_bus is None:
+                return
+            event_bus.publish_nowait(
+                make_pipeline_event(
+                    EventType.PROGRESS,
+                    task_id=task_id,
+                    stage="asr",
+                    chunk_id=chunk.chunk_id,
+                    progress=round(item_index / total_items * 100),
+                    model=model_name,
+                    item_index=item_index,
+                    total_items=total_items,
+                    message_zh=f"已识别 {item_index}/{total_items} 个音频片段",
+                )
+            )
+
+        backend.set_progress_callback(publish_transcription_progress)
+        try:
+            segments = backend.transcribe(
+                abs_chunks,
+                language=None,
+                hotwords=all_hotwords or None,
+            )
+        finally:
+            backend.set_progress_callback(None)
     finally:
         if not asr_config.keep_model_alive and hasattr(backend, "release_model"):
             if event_bus is not None:

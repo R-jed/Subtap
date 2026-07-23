@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Callable, Protocol, runtime_checkable
 
 from subtap.schemas.models import Chunk, ASRSegment
+
+ProgressCallback = Callable[[int, int, Chunk], None]
 
 
 @runtime_checkable
@@ -17,6 +19,10 @@ class ASRBackend(Protocol):
     """
 
     name: str
+
+    def set_progress_callback(self, callback: ProgressCallback | None) -> None:
+        """Set the callback invoked after each completed audio chunk."""
+        ...
 
     def transcribe(
         self,

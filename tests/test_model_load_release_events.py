@@ -42,6 +42,9 @@ class _MockASR:
     def load_model(self):
         self._model = object()
 
+    def set_progress_callback(self, callback):
+        self._progress_callback = callback
+
     def transcribe(self, chunks, language=None, hotwords=None):
         assert self._model is not None
         self.transcribe_called = True
