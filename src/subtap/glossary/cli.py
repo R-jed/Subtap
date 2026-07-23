@@ -3,21 +3,33 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 import typer
 
 from subtap.schemas.glossary import (
-    Glossary,
     GlossaryTerm,
     load_glossary,
+    remove_plain_glossary_entry,
     save_glossary,
+    upsert_plain_glossary_terms,
 )
 
 app = typer.Typer(help="热词/术语管理")
 
 
 def _default_path() -> Path:
-    return Path.home() / ".subtap" / "glossaries" / "default.yaml"
+    from subtap.core.user_resources import default_glossary_path
+
+    return default_glossary_path()
+
+
+def _resolve_path(path: Path | None) -> Path:
+    if path is not None:
+        return path
+    from subtap.core.user_resources import ensure_default_glossary
+
+    return ensure_default_glossary()
 
 
 def _parse_hotword_terms(text: str) -> list[GlossaryTerm]:
@@ -52,9 +64,10 @@ def _parse_hotword_terms(text: str) -> list[GlossaryTerm]:
 
 @app.command("list")
 def list_glossary(
-    path: Path = typer.Option(_default_path(), "--file", "-f", help="术语文件路径"),
+    path: Path | None = typer.Option(None, "--file", "-f", help="术语文件路径"),
 ) -> None:
     """列出当前术语。"""
+    path = _resolve_path(path)
     glossary = load_glossary(path)
     if not glossary.terms and not glossary.replacements:
         typer.echo("暂无术语")
@@ -68,21 +81,39 @@ def list_glossary(
 
 @app.command("add")
 def add_glossary(
-    input_text: str = typer.Option(..., "--input", help="格式：术语=别名1,别名2"),
-    path: Path = typer.Option(_default_path(), "--file", "-f", help="术语文件路径"),
+    input_text: str = typer.Option(
+        ..., "--input", help="格式：术语 或 术语=别名1,别名2"
+    ),
+    path: Path | None = typer.Option(None, "--file", "-f", help="术语文件路径"),
 ) -> None:
     """添加一条术语。"""
-    if "=" not in input_text:
-        typer.echo("✗ 格式错误：请使用 术语=别名1,别名2", err=True)
+    separators = list(re.finditer(r"[=＝]", input_text))
+    if len(separators) > 1:
+        typer.echo("✗ 格式错误：只能使用一个等号", err=True)
         raise typer.Exit(1)
-    canonical, aliases_text = [part.strip() for part in input_text.split("=", 1)]
-    aliases = [item.strip() for item in aliases_text.split(",") if item.strip()]
-    if not canonical or not aliases:
+    if separators:
+        separator = separators[0]
+        canonical = input_text[: separator.start()].strip()
+        aliases = [
+            item.strip() for item in re.split(r"[,，]", input_text[separator.end() :])
+        ]
+    else:
+        if re.search(r"[,，]", input_text):
+            typer.echo("✗ 格式错误：逗号只能用于等号右侧的错写列表", err=True)
+            raise typer.Exit(1)
+        canonical = input_text.strip()
+        aliases = []
+    if not canonical or any(not alias for alias in aliases):
         typer.echo("✗ 格式错误：术语和别名不能为空", err=True)
         raise typer.Exit(1)
-    glossary = load_glossary(path)
-    glossary.upsert_term(GlossaryTerm(canonical=canonical, aliases=aliases))
-    save_glossary(path, glossary)
+    path = _resolve_path(path)
+    term = GlossaryTerm(canonical=canonical, aliases=aliases)
+    if path.suffix.lower() == ".txt":
+        upsert_plain_glossary_terms(path, [term])
+    else:
+        glossary = load_glossary(path)
+        glossary.upsert_term(term)
+        save_glossary(path, glossary)
     typer.echo(f"✓ 已添加：{input_text}")
 
 
@@ -91,7 +122,7 @@ def batch_add_glossary(
     language: str = typer.Option(..., "--language", "-l", help="热词语言"),
     input_text: str | None = typer.Option(None, "--input", help="直接传入热词文本"),
     source: Path | None = typer.Option(None, "--source", "-s", help="从文件读取热词"),
-    path: Path = typer.Option(_default_path(), "--file", "-f", help="术语文件路径"),
+    path: Path | None = typer.Option(None, "--file", "-f", help="术语文件路径"),
 ) -> None:
     """批量添加热词；支持 A=B,C 和块格式。"""
     if source is None and not input_text:
@@ -114,10 +145,14 @@ def batch_add_glossary(
         typer.echo("✗ 没有解析到有效热词", err=True)
         raise typer.Exit(1)
 
-    glossary = load_glossary(path)
-    for term in terms:
-        glossary.upsert_term(term)
-    save_glossary(path, glossary)
+    path = _resolve_path(path)
+    if path.suffix.lower() == ".txt":
+        upsert_plain_glossary_terms(path, terms)
+    else:
+        glossary = load_glossary(path)
+        for term in terms:
+            glossary.upsert_term(term)
+        save_glossary(path, glossary)
     alias_count = sum(len(term.aliases) for term in terms)
     typer.echo(f"✓ 已添加 {alias_count} 条 {language} 热词")
 
@@ -125,12 +160,16 @@ def batch_add_glossary(
 @app.command("remove")
 def remove_glossary(
     find: str = typer.Argument(..., help="要删除的错词或术语"),
-    path: Path = typer.Option(_default_path(), "--file", "-f", help="术语文件路径"),
+    path: Path | None = typer.Option(None, "--file", "-f", help="术语文件路径"),
 ) -> None:
     """删除一条术语。"""
-    glossary = load_glossary(path)
-    changed = glossary.remove_entry(find)
-    save_glossary(path, glossary)
+    path = _resolve_path(path)
+    if path.suffix.lower() == ".txt":
+        changed = remove_plain_glossary_entry(path, find)
+    else:
+        glossary = load_glossary(path)
+        changed = glossary.remove_entry(find)
+        save_glossary(path, glossary)
     if not changed:
         typer.echo("未找到匹配术语")
     else:

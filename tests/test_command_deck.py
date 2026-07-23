@@ -126,4 +126,4 @@ def test_command_deck_glossary_action_opens_glossary_library(tmp_path, monkeypat
 
     glossary_dir = tmp_path / ".subtap" / "glossaries"
     assert opened == [glossary_dir]
-    assert (glossary_dir / "default.yaml").is_file()
+    assert (glossary_dir / "default.txt").is_file()

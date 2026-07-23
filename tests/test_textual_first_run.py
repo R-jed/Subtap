@@ -314,7 +314,7 @@ async def test_textual_first_run_downloads_and_verifies_before_completion(
     assert downloaded == [("asr_0.6b", "hf")]
     assert load_config(tmp_path / ".subtap" / "config.yaml").asr.model == "asr_0.6b"
     assert (tmp_path / ".subtap" / "state.json").exists()
-    assert (tmp_path / ".subtap" / "glossaries" / "default.yaml").is_file()
+    assert (tmp_path / ".subtap" / "glossaries" / "default.txt").is_file()
 
 
 @pytest.mark.asyncio

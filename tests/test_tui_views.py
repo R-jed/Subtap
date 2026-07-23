@@ -469,9 +469,13 @@ def test_wizard_view_select_quality():
     assert view.get_state()["quality"] == "fast"
 
 
-def test_wizard_view_build_command(tmp_path):
+def test_wizard_view_build_command(tmp_path, monkeypatch):
     from subtap.ui.views.wizard import WizardView
 
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    default = tmp_path / ".subtap" / "glossaries" / "default.txt"
+    default.parent.mkdir(parents=True)
+    default.write_text("", encoding="utf-8")
     audio = tmp_path / "test.mp3"
     audio.write_bytes(b"fake")
     view = WizardView()
@@ -486,6 +490,10 @@ def test_wizard_view_build_command(tmp_path):
 def test_wizard_view_build_command_includes_output_dir(tmp_path, monkeypatch):
     from subtap.ui.views.wizard import WizardView
 
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    default = tmp_path / ".subtap" / "glossaries" / "default.txt"
+    default.parent.mkdir(parents=True)
+    default.write_text("", encoding="utf-8")
     audio = tmp_path / "test.mp3"
     audio.write_bytes(b"fake")
     out_dir = tmp_path / "my_output"
@@ -524,7 +532,7 @@ def test_wizard_view_build_command_includes_manuscript(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
     glossary_dir = tmp_path / ".subtap" / "glossaries"
     glossary_dir.mkdir(parents=True)
-    (glossary_dir / "default.yaml").write_text("")
+    (glossary_dir / "default.txt").write_text("")
     ms_dir = tmp_path / ".subtap" / "manuscripts"
     ms_dir.mkdir(parents=True)
     (ms_dir / "draft.txt").write_text("hello")

@@ -134,7 +134,7 @@ def test_run_asr_uses_selected_glossary(
 
     selected = tmp_path / "selected.yaml"
     selected.write_text("理光GR4=李光机亚四\n", encoding="utf-8")
-    default = tmp_path / ".subtap" / "glossaries" / "default.yaml"
+    default = tmp_path / ".subtap" / "glossaries" / "default.txt"
     default.parent.mkdir(parents=True)
     default.write_text("默认词=错误词\n", encoding="utf-8")
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)

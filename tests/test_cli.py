@@ -120,7 +120,7 @@ def test_init(tmp_path, monkeypatch):
     subtap_dir = fake_home / ".subtap"
     assert subtap_dir.exists()
     assert (subtap_dir / "config.yaml").exists()
-    assert (subtap_dir / "glossaries" / "default.yaml").exists()
+    assert (subtap_dir / "glossaries" / "default.txt").exists()
     assert not (subtap_dir / "glossary").exists()
     assert (subtap_dir / "subtap.db").exists()
 
@@ -1732,7 +1732,7 @@ def test_run_config_explicitly_resets_optional_resources(tmp_path, monkeypatch):
     config.clean.glossary_path = "/old/glossary.yaml"
     config.output.script_path = "/old/script.txt"
     config.asr.hotwords = ["旧热词"]
-    default_glossary = tmp_path / ".subtap" / "glossaries" / "default.yaml"
+    default_glossary = tmp_path / ".subtap" / "glossaries" / "default.txt"
     default_glossary.parent.mkdir(parents=True)
     default_glossary.write_text("", encoding="utf-8")
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)

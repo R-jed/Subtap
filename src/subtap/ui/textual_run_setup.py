@@ -45,13 +45,13 @@ def _choose_native_folder(prompt: str) -> Path | None:
 
 
 def _glossary_choices(paths: list[Path]) -> list[tuple[str, str]]:
-    choices = [("使用默认热词表（default.yaml）", "")]
+    choices = [("使用默认热词表（default.txt）", "")]
     for path in paths:
-        if path.name == "default.yaml":
+        if path.name == "default.txt":
             continue
         label = (
-            "自动学习热词表（learned.yaml）"
-            if path.name == "learned.yaml"
+            "自动学习热词表（learned.txt）"
+            if path.name == "learned.txt"
             else f"自定义 · {path.name}"
         )
         choices.append((label, str(path)))
@@ -103,7 +103,8 @@ class RunSetupApp(App[list[str] | None]):
             yield Select(self._glossary_options, value="", id="glossary")
             yield Static(
                 f"位置：{glossary_dir}\n"
-                "default.yaml 是你维护的默认热词；learned.yaml 是系统学习结果。",
+                "default.txt 由你维护；learned.txt 由系统更新，"
+                "手动修改可能被覆盖。",
                 id="glossary-help",
                 classes="resource-help",
             )
@@ -194,7 +195,9 @@ class RunSetupApp(App[list[str] | None]):
 
     @on(Button.Pressed, "#view-learned-glossary")
     def view_learned_glossary(self) -> None:
-        self._open_glossary(Path.home() / ".subtap" / "glossaries" / "learned.yaml")
+        from subtap.core.user_resources import ensure_learned_glossary
+
+        self._open_glossary(ensure_learned_glossary())
 
     @on(Button.Pressed, "#choose-manuscript")
     def choose_manuscript(self) -> None:

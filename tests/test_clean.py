@@ -217,7 +217,7 @@ def test_clean_pipeline_uses_configured_default_glossary(
     ws = Workspace(test_config, base_dir=tmp_path / "work")
     ws.ensure_dirs()
     _make_asr_jsonl(ws, ["李光机亚四"])
-    default = tmp_path / ".subtap" / "glossaries" / "default.yaml"
+    default = tmp_path / ".subtap" / "glossaries" / "default.txt"
     default.parent.mkdir(parents=True)
     default.write_text("理光GR4=李光机亚四\n", encoding="utf-8")
     test_config.clean.glossary_path = str(default)

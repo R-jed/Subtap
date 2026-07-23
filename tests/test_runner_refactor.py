@@ -439,12 +439,11 @@ class TestGlossaryPathPropagation:
         with pytest.raises(FileNotFoundError):
             pipeline.run_stage("learn", glossary_path=tmp_path / "missing.yaml")
 
-    def test_pipeline_stage_learn_updates_selected_yaml_glossary(self, tmp_path):
+    def test_pipeline_stage_learn_keeps_selected_yaml_read_only(self, tmp_path):
         import json
 
         from subtap.core.pipeline import Pipeline
         from subtap.schemas.config import SubtapConfig
-        from subtap.schemas.glossary import load_glossary
 
         config = SubtapConfig()
         glossary_path = tmp_path / "camera.yaml"
@@ -458,12 +457,14 @@ class TestGlossaryPathPropagation:
             encoding="utf-8",
         )
 
-        result = pipeline.run_stage("learn", glossary_path=str(glossary_path))
+        with patch("pathlib.Path.home", return_value=tmp_path):
+            result = pipeline.run_stage("learn", glossary_path=str(glossary_path))
 
         assert result["learned"] >= 1
-        glossary = load_glossary(glossary_path)
-        assert glossary.style == ["简洁"]
-        assert glossary.resolve_alias("VITURE") == "维图尔"
+        assert glossary_path.read_text(encoding="utf-8") == "style: [简洁]\n"
+        assert result["path"] == str(
+            tmp_path / ".subtap" / "glossaries" / "learned.txt"
+        )
 
     def test_pipeline_stage_learn_fallback_default(self, tmp_path):
         """Pipeline._stage_learn should use the canonical learned glossary."""
@@ -486,5 +487,5 @@ class TestGlossaryPathPropagation:
             result = pipeline.run_stage("learn")
 
         assert result["learned"] >= 1
-        default_path = tmp_path / ".subtap" / "glossaries" / "learned.yaml"
+        default_path = tmp_path / ".subtap" / "glossaries" / "learned.txt"
         assert default_path.exists(), f"Expected hotwords at {default_path}"

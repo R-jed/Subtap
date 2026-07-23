@@ -14,7 +14,7 @@ def test_default_glossary_path_uses_canonical_directory(tmp_path, monkeypatch):
     from subtap.glossary.cli import _default_path
 
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
-    assert _default_path() == tmp_path / ".subtap" / "glossaries" / "default.yaml"
+    assert _default_path() == tmp_path / ".subtap" / "glossaries" / "default.txt"
 
 
 def test_glossary_command_exists():
@@ -40,6 +40,16 @@ def test_glossary_add_writes_canonical_term(tmp_path):
     glossary = load_glossary(path)
     assert glossary.terms[0].canonical == "正确词"
     assert glossary.terms[0].aliases == ["错词"]
+
+
+def test_glossary_add_accepts_a_bare_hotword(tmp_path, monkeypatch):
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+
+    result = runner.invoke(app, ["glossary", "add", "--input", "Subtap"])
+
+    assert result.exit_code == 0
+    path = tmp_path / ".subtap" / "glossaries" / "default.txt"
+    assert load_glossary(path).terms[0].canonical == "Subtap"
 
 
 def test_glossary_list_reads_file(tmp_path):
@@ -120,7 +130,7 @@ def test_glossary_batch_add_from_block_file(tmp_path):
 def test_glossary_commands_preserve_each_others_hotwords(tmp_path, monkeypatch):
     """Both public glossary command groups must share one lossless store."""
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
-    path = tmp_path / ".subtap" / "glossaries" / "default.yaml"
+    path = tmp_path / ".subtap" / "glossaries" / "default.txt"
 
     first = runner.invoke(
         app,
@@ -156,7 +166,7 @@ def test_glossary_commands_preserve_each_others_hotwords(tmp_path, monkeypatch):
 def test_glossary_commands_merge_aliases_for_the_same_term(tmp_path, monkeypatch):
     """Both command groups must upsert one canonical term instead of duplicating it."""
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
-    path = tmp_path / ".subtap" / "glossaries" / "default.yaml"
+    path = tmp_path / ".subtap" / "glossaries" / "default.txt"
 
     first = runner.invoke(
         app,
@@ -182,11 +192,9 @@ def test_glossary_commands_merge_aliases_for_the_same_term(tmp_path, monkeypatch
     ]
 
 
-def test_hotword_command_preserves_canonical_glossary_metadata(tmp_path, monkeypatch):
-    """Adding a hotword must not downgrade or discard the YAML document."""
-    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
-    path = tmp_path / ".subtap" / "glossaries" / "default.yaml"
-    path.parent.mkdir(parents=True)
+def test_glossary_command_preserves_custom_yaml_metadata(tmp_path):
+    """Backward-compatible custom YAML files keep their advanced sections."""
+    path = tmp_path / "custom.yaml"
     path.write_text(
         """terms:
 - canonical: 理光GR3
@@ -202,7 +210,14 @@ style:
 
     result = runner.invoke(
         app,
-        ["glossary", "hotword", "add", "理光GR4", "吉亚四"],
+        [
+            "glossary",
+            "add",
+            "--input",
+            "理光GR4=吉亚四",
+            "--file",
+            str(path),
+        ],
     )
 
     assert result.exit_code == 0
@@ -220,7 +235,7 @@ style:
 def test_batch_added_terms_are_visible_to_hotword_command(tmp_path, monkeypatch):
     """Batch and interactive commands must expose the same hotword entries."""
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
-    path = tmp_path / ".subtap" / "glossaries" / "default.yaml"
+    path = tmp_path / ".subtap" / "glossaries" / "default.txt"
 
     added = runner.invoke(
         app,
@@ -264,3 +279,25 @@ def test_batch_add_rejects_invalid_entries_without_writing(tmp_path):
     assert result.exit_code == 1
     assert "术语和别名不能为空" in result.output
     assert not path.exists()
+
+
+def test_default_glossary_commands_preserve_user_formatting(tmp_path, monkeypatch):
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    path = tmp_path / ".subtap" / "glossaries" / "default.txt"
+    path.parent.mkdir(parents=True)
+    path.write_text("# 相机\n理光GR4 = 吉亚四\n\n# 其他\nSubtap\n", encoding="utf-8")
+
+    added = runner.invoke(
+        app,
+        ["glossary", "hotword", "add", "理光GR4", "李光机亚四"],
+    )
+    removed = runner.invoke(
+        app,
+        ["glossary", "remove", "Subtap"],
+    )
+
+    assert added.exit_code == 0
+    assert removed.exit_code == 0
+    assert path.read_text(encoding="utf-8") == (
+        "# 相机\n理光GR4 = 吉亚四, 李光机亚四\n\n# 其他\n"
+    )

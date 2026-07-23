@@ -11,7 +11,7 @@ pytest.importorskip("textual")
 
 
 def _create_default_glossary(home):
-    default = home / ".subtap" / "glossaries" / "default.yaml"
+    default = home / ".subtap" / "glossaries" / "default.txt"
     default.parent.mkdir(parents=True, exist_ok=True)
     default.write_text("", encoding="utf-8")
     return default
@@ -103,8 +103,8 @@ async def test_run_setup_explains_and_selects_local_resources(tmp_path, monkeypa
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
     glossary_dir = tmp_path / ".subtap" / "glossaries"
     glossary_dir.mkdir(parents=True)
-    (glossary_dir / "default.yaml").write_text("", encoding="utf-8")
-    (glossary_dir / "learned.yaml").write_text("", encoding="utf-8")
+    (glossary_dir / "default.txt").write_text("", encoding="utf-8")
+    (glossary_dir / "learned.txt").write_text("", encoding="utf-8")
     external_glossary = tmp_path / "camera.yaml"
     external_glossary.write_text("", encoding="utf-8")
     external_manuscript = tmp_path / "draft.txt"
@@ -126,8 +126,9 @@ async def test_run_setup_explains_and_selects_local_resources(tmp_path, monkeypa
     async with app.run_test() as pilot:
         help_text = str(app.query_one("#glossary-help", Static).render())
         assert str(glossary_dir) in help_text
-        assert "default.yaml" in help_text
-        assert "learned.yaml" in help_text
+        assert "default.txt" in help_text
+        assert "learned.txt" in help_text
+        assert "手动修改可能被覆盖" in help_text
 
         app.query_one("#choose-glossary", Button).press()
         app.query_one("#choose-manuscript", Button).press()
@@ -148,8 +149,8 @@ async def test_run_setup_can_open_owned_and_learned_glossaries(tmp_path, monkeyp
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
     glossary_dir = tmp_path / ".subtap" / "glossaries"
     glossary_dir.mkdir(parents=True)
-    default = glossary_dir / "default.yaml"
-    learned = glossary_dir / "learned.yaml"
+    default = glossary_dir / "default.txt"
+    learned = glossary_dir / "learned.txt"
     default.write_text("", encoding="utf-8")
     learned.write_text("", encoding="utf-8")
     audio = tmp_path / "voice.wav"

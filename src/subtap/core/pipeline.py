@@ -270,11 +270,9 @@ class Pipeline:
             ops_path.unlink(missing_ok=True)
             return {"learned": 0}
 
-        hotwords_path = (
-            Path(glossary_path)
-            if glossary_path
-            else Path.home() / ".subtap" / "glossaries" / "learned.yaml"
-        )
+        from subtap.core.user_resources import ensure_learned_glossary
+
+        hotwords_path = ensure_learned_glossary()
         save_learned_hotwords(update, hotwords_path)
 
         # Clean up ops file after learning

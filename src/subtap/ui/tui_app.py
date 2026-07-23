@@ -406,7 +406,9 @@ class TuiApp:
         hotword = self.config.get("llm_hotword", False)
         translate = self.config.get("translate_to", "")
         # 热词列表
-        hotwords_path = Path.home() / ".subtap" / "glossaries" / "default.yaml"
+        from subtap.core.user_resources import default_glossary_path
+
+        hotwords_path = default_glossary_path()
         hotwords_list = []
         if hotwords_path.exists():
             for line in hotwords_path.read_text(encoding="utf-8").strip().splitlines():
@@ -525,11 +527,18 @@ class TuiApp:
 
     def _view_glossary_page(self) -> str:
         from .views.glossary_page import GlossaryPage
-        from subtap.glossary.hotword import load_glossary, save_glossary
+        from subtap.core.user_resources import ensure_default_glossary
+        from subtap.glossary.hotword import load_glossary
+        from subtap.schemas.glossary import (
+            GlossaryTerm,
+            remove_plain_glossary_entry,
+            replace_plain_glossary_term,
+            upsert_plain_glossary_terms,
+        )
 
         t = self.theme
         page = GlossaryPage()
-        glossary_path = Path.home() / ".subtap" / "glossaries" / "default.yaml"
+        glossary_path = ensure_default_glossary()
         glossary = load_glossary(glossary_path, "zh")
         items = page.build_glossary_items(glossary.hotwords)
 
@@ -570,10 +579,11 @@ class TuiApp:
                     if word in existing:
                         sys.stderr.write(f"\n{t.YELLOW}热词 '{word}' 已存在{t.NC}\n")
                     else:
-                        from subtap.glossary.hotword import Hotword
-
-                        glossary.add(Hotword(word=word, aliases=aliases))
-                        save_glossary(glossary, glossary_path)
+                        upsert_plain_glossary_terms(
+                            glossary_path,
+                            [GlossaryTerm(canonical=word, aliases=aliases)],
+                        )
+                        glossary = load_glossary(glossary_path, "zh")
                         items = page.build_glossary_items(glossary.hotwords)
                         menu = Menu(
                             title="热词库",
@@ -589,8 +599,8 @@ class TuiApp:
                     sys.stderr.write(f"\n{t.YELLOW}确认删除 '{hw.word}'？(Y/N){t.NC} ")
                     confirm = input().strip().upper()
                     if confirm == "Y":
-                        glossary.remove(hw.word)
-                        save_glossary(glossary, glossary_path)
+                        remove_plain_glossary_entry(glossary_path, hw.word)
+                        glossary = load_glossary(glossary_path, "zh")
                         items = page.build_glossary_items(glossary.hotwords)
                         menu = Menu(
                             title="热词库",
@@ -610,7 +620,11 @@ class TuiApp:
                         hw.aliases = [
                             a.strip() for a in aliases_raw.split(",") if a.strip()
                         ]
-                        save_glossary(glossary, glossary_path)
+                        replace_plain_glossary_term(
+                            glossary_path,
+                            GlossaryTerm(canonical=hw.word, aliases=hw.aliases),
+                        )
+                        glossary = load_glossary(glossary_path, "zh")
                         items = page.build_glossary_items(glossary.hotwords)
                         menu = Menu(
                             title="热词库",
