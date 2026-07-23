@@ -21,6 +21,7 @@ def test_command_deck_uses_task_oriented_menu_and_compact_chrome():
         "Batch",
         "Observe",
         "Models",
+        "Glossary",
         "Setup",
         "Doctor",
     ]
@@ -29,10 +30,13 @@ def test_command_deck_uses_task_oriented_menu_and_compact_chrome():
         "batch",
         "observe",
         "models",
+        "glossary",
         "setup",
         "doctor",
     ]
     assert "➤ 1. Transcribe" in rendered
+    assert "subtap" in rendered
+    assert "█" in rendered
     assert "单个音频或视频生成字幕" in rendered
     assert "本地离线字幕生成" in rendered
     assert FOOTER_KEYS == "↑↓  移动   Enter  选择   Q  退出"
@@ -63,13 +67,19 @@ async def test_command_deck_moves_selection_marker_without_full_row_prompt(
         assert menu.get_option_at_index(1).prompt.plain.startswith("➤ 2.")
 
 
+def test_command_deck_uses_lowercase_product_title():
+    from subtap.ui.command_deck import CommandDeckApp
+
+    assert CommandDeckApp.TITLE == "subtap"
+
+
 def test_number_bindings_are_derived_from_menu_options():
     from subtap.ui.command_deck import CommandDeckApp, OPTIONS
 
-    number_bindings = CommandDeckApp.BINDINGS[5:11]
+    number_bindings = CommandDeckApp.BINDINGS[5 : 5 + len(OPTIONS)]
 
     assert [binding[0] for binding in number_bindings] == [
-        str(index) for index in range(1, 7)
+        str(index) for index in range(1, len(OPTIONS) + 1)
     ]
     assert [binding[2] for binding in number_bindings] == [
         option.label for option in OPTIONS
@@ -100,3 +110,20 @@ async def test_command_deck_keeps_selection_visible_in_compact_terminal(
         assert menu.highlighted == 5
         assert menu.region.height > 0
         assert app.size == (30, 10)
+
+
+def test_command_deck_glossary_action_opens_glossary_library(tmp_path, monkeypatch):
+    from subtap.cli import _handle_command_deck_action
+
+    opened = []
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    monkeypatch.setattr(
+        "subtap.cli.hotword_cli._open_file_cross_platform",
+        lambda path: opened.append(path),
+    )
+
+    _handle_command_deck_action("glossary")
+
+    glossary_dir = tmp_path / ".subtap" / "glossaries"
+    assert opened == [glossary_dir]
+    assert (glossary_dir / "default.yaml").is_file()

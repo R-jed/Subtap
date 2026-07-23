@@ -122,6 +122,11 @@ def _handle_command_deck_action(action: str | None) -> None:
         _run_subtap_command("doctor")
     elif action == "models":
         _run_subtap_command("models", "status")
+    elif action == "glossary":
+        from subtap.cli.hotword_cli import _open_file_cross_platform
+        from subtap.core.user_resources import ensure_default_glossary
+
+        _open_file_cross_platform(ensure_default_glossary().parent)
     elif action == "setup":
         _run_subtap_command("setup")
     elif action is not None:

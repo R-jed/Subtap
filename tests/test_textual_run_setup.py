@@ -95,6 +95,86 @@ async def test_run_setup_defaults_to_configured_asr_model(tmp_path, monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_run_setup_explains_and_selects_local_resources(tmp_path, monkeypatch):
+    from textual.widgets import Button, Input, Select, Static
+
+    from subtap.ui.textual_run_setup import RunSetupApp
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    glossary_dir = tmp_path / ".subtap" / "glossaries"
+    glossary_dir.mkdir(parents=True)
+    (glossary_dir / "default.yaml").write_text("", encoding="utf-8")
+    (glossary_dir / "learned.yaml").write_text("", encoding="utf-8")
+    external_glossary = tmp_path / "camera.yaml"
+    external_glossary.write_text("", encoding="utf-8")
+    external_manuscript = tmp_path / "draft.txt"
+    external_manuscript.write_text("参考文稿", encoding="utf-8")
+    output_dir = tmp_path / "exports"
+    audio = tmp_path / "voice.wav"
+    audio.write_bytes(b"audio")
+
+    monkeypatch.setattr(
+        "subtap.ui.textual_run_setup._choose_native_file",
+        lambda prompt: external_glossary if "热词" in prompt else external_manuscript,
+    )
+    monkeypatch.setattr(
+        "subtap.ui.textual_run_setup._choose_native_folder",
+        lambda _prompt: output_dir,
+    )
+
+    app = RunSetupApp(audio)
+    async with app.run_test() as pilot:
+        help_text = str(app.query_one("#glossary-help", Static).render())
+        assert str(glossary_dir) in help_text
+        assert "default.yaml" in help_text
+        assert "learned.yaml" in help_text
+
+        app.query_one("#choose-glossary", Button).press()
+        app.query_one("#choose-manuscript", Button).press()
+        app.query_one("#choose-output", Button).press()
+        await pilot.pause()
+
+        assert app.query_one("#glossary", Select).value == str(external_glossary)
+        assert app.query_one("#manuscript", Select).value == str(external_manuscript)
+        assert app.query_one("#output", Input).value == str(output_dir)
+
+
+@pytest.mark.asyncio
+async def test_run_setup_can_open_owned_and_learned_glossaries(tmp_path, monkeypatch):
+    from textual.widgets import Button, Static
+
+    from subtap.ui.textual_run_setup import RunSetupApp
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    glossary_dir = tmp_path / ".subtap" / "glossaries"
+    glossary_dir.mkdir(parents=True)
+    default = glossary_dir / "default.yaml"
+    learned = glossary_dir / "learned.yaml"
+    default.write_text("", encoding="utf-8")
+    learned.write_text("", encoding="utf-8")
+    audio = tmp_path / "voice.wav"
+    audio.write_bytes(b"audio")
+    opened = []
+    monkeypatch.setattr(
+        "subtap.cli.hotword_cli._open_file_cross_platform",
+        lambda path: opened.append(path),
+    )
+
+    app = RunSetupApp(audio)
+    async with app.run_test() as pilot:
+        assert str(app.query_one("#choose-glossary", Button).label) == (
+            "从文件选择热词表…"
+        )
+        assert "建议 25" in str(app.query_one("#max-chars-help", Static).render())
+
+        app.query_one("#edit-default-glossary", Button).press()
+        app.query_one("#view-learned-glossary", Button).press()
+        await pilot.pause()
+
+    assert opened == [default, learned]
+
+
+@pytest.mark.asyncio
 async def test_run_setup_rejects_blank_output(tmp_path, monkeypatch):
     from textual.widgets import Button, Input, Static
 

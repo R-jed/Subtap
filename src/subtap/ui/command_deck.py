@@ -22,6 +22,7 @@ OPTIONS = [
     CommandDeckOption("Batch", "批量转录多个媒体文件", "batch"),
     CommandDeckOption("Observe", "查看正在运行或历史任务", "observe"),
     CommandDeckOption("Models", "查看本地模型状态", "models"),
+    CommandDeckOption("Glossary", "维护默认热词和查看学习结果", "glossary"),
     CommandDeckOption("Setup", "更改默认模型和服务配置", "setup"),
     CommandDeckOption("Doctor", "检查安装和运行环境", "doctor"),
 ]
@@ -40,6 +41,7 @@ FOOTER_KEYS = "↑↓  移动   Enter  选择   Q  退出"
 def _build_header_renderable() -> Text:
     """Render a compact product header without network work."""
     side_lines = [
+        ("subtap", STYLE_TEXT),
         (PROJECT_URL, STYLE_LINK),
         ("本地离线字幕生成", STYLE_MUTED),
         (f"v{__version__}", STYLE_MUTED),
@@ -47,9 +49,10 @@ def _build_header_renderable() -> Text:
     text = Text()
     logo_lines = SUBTAP_ASCII.strip("\n").splitlines()
     logo_width = max(len(line) for line in logo_lines)
-    for index, line in enumerate(logo_lines):
+    for index in range(max(len(logo_lines), len(side_lines))):
         if index:
             text.append("\n")
+        line = logo_lines[index] if index < len(logo_lines) else ""
         text.append(line.ljust(logo_width), style=STYLE_LOGO)
         if index < len(side_lines):
             value, style = side_lines[index]
@@ -105,7 +108,7 @@ try:
     class CommandDeckApp(App[str]):
         """Keyboard-first local subtitle command deck."""
 
-        TITLE = "Subtap"
+        TITLE = "subtap"
 
         CSS = """
         Screen {
