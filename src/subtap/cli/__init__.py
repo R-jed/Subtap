@@ -44,7 +44,7 @@ app = typer.Typer(
     no_args_is_help=False,
     rich_markup_mode="rich",
 )
-app.add_typer(glossary_app, name="glossary")
+app.add_typer(glossary_app, name="glossary", rich_help_panel="本地资源")
 
 
 def _build_observer_child_command(argv: list[str]) -> list[str]:
@@ -120,6 +120,8 @@ def _handle_command_deck_action(action: str | None) -> None:
         return
     if action == "doctor":
         _run_subtap_command("doctor")
+    elif action == "models":
+        _run_subtap_command("models", "status")
     elif action == "setup":
         _run_subtap_command("setup")
     elif action is not None:
@@ -142,15 +144,15 @@ learn_app = typer.Typer(help="学习人工修正")
 profile_app = typer.Typer(help="本地学习档案")
 
 glossary_app.add_typer(hotword_app, name="hotword")
-app.add_typer(script_app, name="script")
-app.add_typer(learn_app, name="learn")
-app.add_typer(profile_app, name="profile")
+app.add_typer(script_app, name="script", rich_help_panel="字幕工作流")
+app.add_typer(learn_app, name="learn", rich_help_panel="本地资源")
+app.add_typer(profile_app, name="profile", rich_help_panel="本地资源")
 
 
 # ── 基础命令 ──────────────────────────────────────────────
 
 
-@app.command()
+@app.command(rich_help_panel="帮助与检查")
 def version() -> None:
     """显示版本信息"""
     typer.echo(f"subtap v{__version__}")
@@ -246,13 +248,13 @@ def profile_export(
     typer.echo(f"✓ 已导出：{path}")
 
 
-app.command("doctor")(doctor)
+app.command("doctor", rich_help_panel="帮助与检查")(doctor)
 
 
-app.command("setup")(setup)
+app.command("setup", rich_help_panel="本地资源")(setup)
 
 
-@app.command("observe")
+@app.command("observe", rich_help_panel="字幕工作流")
 def observe(
     log_path: Path = typer.Argument(..., help="pipeline 事件日志 run.log.jsonl"),
 ) -> None:
@@ -266,7 +268,7 @@ def observe(
     typer.echo(build_command_deck_text(state))
 
 
-@app.command()
+@app.command(rich_help_panel="帮助与检查")
 def tui() -> None:
     """启动交互式终端界面"""
     from subtap.ui.command_deck import CommandDeckApp
@@ -274,25 +276,29 @@ def tui() -> None:
     _handle_command_deck_action(CommandDeckApp().run())
 
 
-app.command("batch-transcribe")(batch_transcribe)
-app.command("compose")(compose_subtitle)
-app.command("batch-compose")(batch_compose_subtitle)
+app.command("batch-transcribe", rich_help_panel="字幕工作流")(batch_transcribe)
+app.command("compose", rich_help_panel="字幕工作流")(compose_subtitle)
+app.command("batch-compose", rich_help_panel="字幕工作流")(batch_compose_subtitle)
 
 
-app.command("run")(run_cmd)
-app.command("prepare")(prepare_cmd)
-app.command("transcribe")(transcribe_cmd)
-app.command("clean")(clean_cmd)
-app.command("segment")(segment_cmd)
-app.command("align")(align_cmd)
-app.command("export")(export_cmd)
-app.command("resume")(resume_cmd)
-app.command("retry")(retry_cmd)
-app.command("demo", help="运行演示：默认本地不联网，输出 demo final.srt")(demo_cmd)
-app.command("cleanup")(clean_workspace_cmd)
+app.command("run", rich_help_panel="字幕工作流")(run_cmd)
+app.command("prepare", hidden=True)(prepare_cmd)
+app.command("transcribe", hidden=True)(transcribe_cmd)
+app.command("clean", hidden=True)(clean_cmd)
+app.command("segment", hidden=True)(segment_cmd)
+app.command("align", hidden=True)(align_cmd)
+app.command("export", hidden=True)(export_cmd)
+app.command("resume", rich_help_panel="任务维护")(resume_cmd)
+app.command("retry", rich_help_panel="任务维护")(retry_cmd)
+app.command(
+    "demo",
+    help="运行演示：默认本地不联网，输出 demo final.srt",
+    rich_help_panel="帮助与检查",
+)(demo_cmd)
+app.command("cleanup", rich_help_panel="任务维护")(clean_workspace_cmd)
 
 
-app.add_typer(models_app, name="models")
+app.add_typer(models_app, name="models", rich_help_panel="本地资源")
 
 
 if __name__ == "__main__":
