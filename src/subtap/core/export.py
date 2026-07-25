@@ -169,20 +169,26 @@ _TRAILING_WORDS = {
 def _fmt_srt_time(seconds: float) -> str:
     """Format seconds to SRT timestamp HH:MM:SS,mmm."""
     seconds = max(0.0, seconds)
-    h = int(seconds // 3600)
-    m = int((seconds % 3600) // 60)
-    s = int(seconds % 60)
-    ms = int(round((seconds - int(seconds)) * 1000))
+    total_ms = round(seconds * 1000)
+    ms = total_ms % 1000
+    total_s = total_ms // 1000
+    s = total_s % 60
+    total_m = total_s // 60
+    m = total_m % 60
+    h = total_m // 60
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
 def _fmt_ass_time(seconds: float) -> str:
     """Format seconds to ASS timestamp H:MM:SS.cc."""
     seconds = max(0.0, seconds)
-    h = int(seconds // 3600)
-    m = int((seconds % 3600) // 60)
-    s = int(seconds % 60)
-    cs = int(round((seconds - int(seconds)) * 100))
+    total_cs = round(seconds * 100)
+    cs = total_cs % 100
+    total_s = total_cs // 100
+    s = total_s % 60
+    total_m = total_s // 60
+    m = total_m % 60
+    h = total_m // 60
     return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
 
 
