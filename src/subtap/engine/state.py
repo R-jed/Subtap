@@ -18,6 +18,17 @@ logger = logging.getLogger(__name__)
 STATE_VERSION = 2
 
 
+class CheckpointPersistenceError(RuntimeError):
+    """Pipeline checkpoint could not be persisted.
+
+    Raised when a state save fails.  Unlike business-level stage errors,
+    checkpoint failures must NEVER trigger automatic retry -- the persisted
+    state is unreliable after a failed write, so retrying would corrupt it.
+    """
+
+    pass
+
+
 class StageStatus(enum.Enum):
     """State of a single pipeline stage."""
 

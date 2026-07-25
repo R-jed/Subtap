@@ -6,7 +6,11 @@ import logging
 from pathlib import Path
 
 from subtap.core.pipeline import Pipeline
-from subtap.engine.state import PipelineRunContext, PipelineState
+from subtap.engine.state import (
+    CheckpointPersistenceError,
+    PipelineRunContext,
+    PipelineState,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,10 +50,16 @@ class TrackedPipeline(Pipeline):
     def save_state(self) -> None:
         """Atomically persist current state to disk.
 
-        Raises on failure — a checkpoint write failure means execution
-        state is no longer reliable, so the stage must not continue.
+        Raises CheckpointPersistenceError on failure -- a checkpoint write
+        failure means execution state is no longer reliable, so the stage
+        must not continue.
         """
-        self.state.save(self._state_path)
+        try:
+            self.state.save(self._state_path)
+        except Exception as exc:
+            raise CheckpointPersistenceError(
+                "failed to persist pipeline checkpoint"
+            ) from exc
 
     def set_stage_plan(
         self,
@@ -71,19 +81,26 @@ class TrackedPipeline(Pipeline):
         Only stages present in PipelineState (the core pipeline stages)
         are tracked.  Optional stages (hotword, learn, script_match,
         translate) run without persistence.
+
+        SUCCESS checkpoint is persisted OUTSIDE the business exception
+        handler so that a checkpoint failure raises CheckpointPersistenceError
+        rather than being mistaken for a stage failure.
         """
         tracked = stage in self.state.stages
         if tracked:
             self.state.mark_running(stage)
             self.save_state()
+
         try:
             result = super().run_stage(stage, **kwargs)
-            if tracked:
-                self.state.mark_success(stage, result, 0.0)
-                self.save_state()
-            return result
         except Exception as e:
             if tracked:
                 self.state.mark_failed(stage, str(e))
                 self.save_state()
             raise
+
+        if tracked:
+            self.state.mark_success(stage, result, 0.0)
+            self.save_state()
+
+        return result

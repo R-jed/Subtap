@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from subtap.engine.state import (
+    CheckpointPersistenceError,
     PipelineRunContext,
     PipelineState,
     StageState,
@@ -2073,7 +2074,7 @@ def test_p0_tracked_pipeline_checkpoint_failure_prevents_execution(tmp_path: Pat
     pipeline.state.save = lambda path: (_ for _ in ()).throw(OSError("disk full"))
 
     try:
-        with pytest.raises(OSError, match="disk full"):
+        with pytest.raises(CheckpointPersistenceError):
             pipeline.run_stage("prepare", input_path=Path("/tmp/in.mp3"))
     finally:
         pipeline.__class__.__bases__[0].run_stage = original_run_stage
@@ -2101,7 +2102,7 @@ def test_p0_controller_checkpoint_failure_prevents_execution(tmp_path: Path):
 
     ctrl.state.save = MagicMock(side_effect=PermissionError("permission denied"))
 
-    with pytest.raises(PermissionError, match="permission denied"):
+    with pytest.raises(CheckpointPersistenceError):
         ctrl.run_pipeline(
             input_path=tmp_path / "in.mp3",
             output_dir=tmp_path / "out",
@@ -2136,7 +2137,7 @@ def test_p0_success_checkpoint_failure_propagates(tmp_path: Path):
     }
 
     try:
-        with pytest.raises(OSError, match="disk full on success write"):
+        with pytest.raises(CheckpointPersistenceError):
             pipeline.run_stage("prepare", input_path=Path("/tmp/in.mp3"))
     finally:
         pipeline.__class__.__bases__[0].run_stage = original_run_stage
@@ -2175,5 +2176,237 @@ def test_p0_retry_checkpoint_failure_propagates(tmp_path: Path):
 
     ctrl2.state.save = failing_on_retry
 
-    with pytest.raises(OSError, match="disk full on retry"):
+    with pytest.raises(CheckpointPersistenceError):
         ctrl2.retry_stage("asr")
+
+
+# ── CP: Checkpoint fail-closed semantics ─────────────────────────────
+
+
+def test_cp_nested_prestage_checkpoint_not_retried(tmp_path: Path):
+    """CP-A: TrackedPipeline pre-stage checkpoint failure propagates immediately.
+
+    Controller -> TrackedPipeline: RUNNING save succeeds at controller level,
+    TrackedPipeline RUNNING save raises OSError. Controller must NOT retry.
+    """
+    from subtap.engine.controller import PipelineController
+
+    config = SubtapConfig()
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+
+    ctrl = PipelineController(config, work_dir)
+    ctrl._run_context = PipelineRunContext(
+        input_path=str(tmp_path / "in.mp3"),
+        output_dir=str(tmp_path / "out"),
+    )
+    ctrl.state.context = ctrl._run_context
+
+    # Create a real TrackedPipeline so controller delegates to it
+    from subtap.core.tracked_pipeline import TrackedPipeline
+
+    pipeline = TrackedPipeline(config, work_dir=work_dir, state=ctrl.state)
+    pipeline.set_stage_plan(
+        ctrl.state.stage_order,
+        PipelineRunContext(
+            input_path=str(tmp_path / "in.mp3"), output_dir=str(tmp_path / "out")
+        ),
+    )
+    ctrl._pipeline = pipeline
+
+    # Make TrackedPipeline's state.save fail so save_state() raises CheckpointPersistenceError
+    # Override AFTER set_stage_plan (which replaces pipeline.state)
+    def failing_state_save(path):
+        raise OSError("disk full")
+
+    pipeline.state.save = failing_state_save
+
+    with pytest.raises(CheckpointPersistenceError):
+        ctrl.run_pipeline(
+            input_path=tmp_path / "in.mp3",
+            output_dir=tmp_path / "out",
+            stages=["prepare"],
+        )
+
+    # Stage handler should NOT have been called
+    assert ctrl.state.get("prepare").retry_count == 0
+
+
+def test_cp_success_checkpoint_not_retried(tmp_path: Path):
+    """CP-B: SUCCESS checkpoint failure does not retry completed stage."""
+    from subtap.core.tracked_pipeline import TrackedPipeline
+
+    config = SubtapConfig()
+    pipeline = TrackedPipeline(config, work_dir=tmp_path)
+    pipeline.set_stage_plan(
+        ["prepare", "chunk", "asr", "clean", "segment", "align", "export"],
+        PipelineRunContext(input_path="/tmp/in.mp3", output_dir="/tmp/out"),
+    )
+
+    original_run_stage = pipeline.__class__.__bases__[0].run_stage
+
+    save_calls = [0]
+    stage_handler_calls = [0]
+
+    def counting_save(path):
+        save_calls[0] += 1
+        if save_calls[0] >= 2:  # 1=RUNNING, 2=SUCCESS -> fail
+            raise OSError("disk full on success write")
+        PipelineState.save(pipeline.state, path)
+
+    def mock_handler(self, stage, **kw):
+        stage_handler_calls[0] += 1
+        return {"media_info": {"duration": 10, "sample_rate": 16000}}
+
+    pipeline.state.save = counting_save
+    pipeline.__class__.__bases__[0].run_stage = mock_handler
+
+    try:
+        with pytest.raises(CheckpointPersistenceError):
+            pipeline.run_stage("prepare", input_path=Path("/tmp/in.mp3"))
+    finally:
+        pipeline.__class__.__bases__[0].run_stage = original_run_stage
+
+    # Most important assertion: handler called exactly once, not retried
+    assert stage_handler_calls[0] == 1
+
+
+def test_cp_success_checkpoint_failure_not_marked_failed(tmp_path: Path):
+    """CP-C: SUCCESS checkpoint failure does NOT mark stage FAILED."""
+    from subtap.core.tracked_pipeline import TrackedPipeline
+
+    config = SubtapConfig()
+    pipeline = TrackedPipeline(config, work_dir=tmp_path)
+    pipeline.set_stage_plan(
+        ["prepare", "chunk", "asr", "clean", "segment", "align", "export"],
+        PipelineRunContext(input_path="/tmp/in.mp3", output_dir="/tmp/out"),
+    )
+
+    original_run_stage = pipeline.__class__.__bases__[0].run_stage
+
+    save_calls = [0]
+
+    def counting_save(path):
+        save_calls[0] += 1
+        if save_calls[0] >= 2:
+            raise OSError("disk full on success write")
+        PipelineState.save(pipeline.state, path)
+
+    pipeline.state.save = counting_save
+    pipeline.__class__.__bases__[0].run_stage = lambda self, stage, **kw: {
+        "media_info": {"duration": 10, "sample_rate": 16000}
+    }
+
+    try:
+        with pytest.raises(CheckpointPersistenceError):
+            pipeline.run_stage("prepare", input_path=Path("/tmp/in.mp3"))
+    finally:
+        pipeline.__class__.__bases__[0].run_stage = original_run_stage
+
+    # Stage should be SUCCESS (in-memory), NOT FAILED
+    assert pipeline.state.get("prepare").status == StageStatus.SUCCESS
+
+
+def test_cp_business_exception_still_retries(tmp_path: Path):
+    """CP-D: Normal business exceptions still trigger automatic retry."""
+    from subtap.engine.controller import PipelineController
+
+    config = SubtapConfig()
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+
+    ctrl = PipelineController(config, work_dir)
+    ctrl._run_context = PipelineRunContext(
+        input_path=str(tmp_path / "in.mp3"),
+        output_dir=str(tmp_path / "out"),
+    )
+    ctrl.state.context = ctrl._run_context
+
+    call_count = [0]
+
+    def mock_run_stage(stage_name):
+        call_count[0] += 1
+        if call_count[0] < 3:  # fail first 2 attempts
+            raise RuntimeError("business error")
+        return {"segment_count": 1}
+
+    ctrl._pipeline = MagicMock()
+    ctrl._pipeline.run_stage = mock_run_stage
+    # Make _run_stage delegate to mock
+    ctrl._run_stage = mock_run_stage
+
+    # Should succeed on 3rd attempt (no CheckpointPersistenceError)
+    ctrl.run_pipeline(
+        input_path=tmp_path / "in.mp3",
+        output_dir=tmp_path / "out",
+        stages=["prepare"],
+    )
+
+    assert call_count[0] == 3
+    assert ctrl.state.get("prepare").status == StageStatus.SUCCESS
+
+
+def test_cp_retrying_checkpoint_failure_stops_immediately(tmp_path: Path):
+    """CP-E: Persistence error during RETRYING checkpoint stops immediately."""
+    from subtap.engine.controller import PipelineController
+
+    config = SubtapConfig()
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+
+    ctrl = PipelineController(config, work_dir)
+    ctrl._run_context = PipelineRunContext(
+        input_path=str(tmp_path / "in.mp3"),
+        output_dir=str(tmp_path / "out"),
+    )
+    ctrl.state.context = ctrl._run_context
+
+    save_calls = [0]
+    business_attempts = [0]
+
+    def mock_run_stage(stage_name):
+        business_attempts[0] += 1
+        raise RuntimeError("business failure")
+
+    ctrl._run_stage = mock_run_stage
+
+    original_state_save = ctrl.state.save
+
+    def counting_state_save(path):
+        save_calls[0] += 1
+        if (
+            save_calls[0] > 2
+        ):  # 1=RUNNING, 2=business fail mark_failed, then RETRYING save fails
+            raise OSError("disk full on retrying")
+        original_state_save(path)
+
+    ctrl.state.save = counting_state_save
+
+    with pytest.raises(CheckpointPersistenceError):
+        ctrl.run_pipeline(
+            input_path=tmp_path / "in.mp3",
+            output_dir=tmp_path / "out",
+            stages=["prepare"],
+        )
+
+    # Only 1 business attempt, no second attempt
+    assert business_attempts[0] == 1
+
+
+def test_cp_preserves_cause(tmp_path: Path):
+    """CP-F: CheckpointPersistenceError preserves original exception as __cause__."""
+    from subtap.core.tracked_pipeline import TrackedPipeline
+
+    config = SubtapConfig()
+    pipeline = TrackedPipeline(config, work_dir=tmp_path)
+    pipeline.set_stage_plan(
+        ["prepare", "chunk", "asr", "clean", "segment", "align", "export"],
+        PipelineRunContext(input_path="/tmp/in.mp3", output_dir="/tmp/out"),
+    )
+
+    pipeline.state.save = lambda path: (_ for _ in ()).throw(OSError("disk full"))
+
+    with pytest.raises(CheckpointPersistenceError) as exc_info:
+        pipeline.run_stage("prepare", input_path=Path("/tmp/in.mp3"))
+
+    assert isinstance(exc_info.value.__cause__, OSError)

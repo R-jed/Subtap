@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from subtap.engine.state import (
+    CheckpointPersistenceError,
     PipelineState,
     PipelineRunContext,
     StageStatus,
@@ -142,10 +143,16 @@ class PipelineController:
     def _save_state(self) -> None:
         """Persist current state to disk.
 
-        Raises on failure — a checkpoint write failure means execution
-        state is no longer reliable, so the pipeline must not continue.
+        Raises CheckpointPersistenceError on failure -- a checkpoint write
+        failure means execution state is no longer reliable, so the pipeline
+        must not continue.
         """
-        self.state.save(self._state_path)
+        try:
+            self.state.save(self._state_path)
+        except Exception as exc:
+            raise CheckpointPersistenceError(
+                "failed to persist pipeline checkpoint"
+            ) from exc
 
     def _run_stage(self, stage_name: str) -> dict:
         """Execute a single stage through the unified Pipeline executor.
@@ -325,6 +332,8 @@ class PipelineController:
                     workspace_clean=self._workspace_clean,
                 )
                 return
+            except CheckpointPersistenceError:
+                raise
             except Exception as e:
                 stage = self.state.get(stage_name)
                 stage.error_msg = str(e)
@@ -372,6 +381,8 @@ class PipelineController:
             self._save_state()
             self.event_log.log_stage_success(stage_name, duration, result)
             return result
+        except CheckpointPersistenceError:
+            raise
         except Exception as e:
             duration = time.time() - start
             self.state.mark_failed(stage_name, str(e))
