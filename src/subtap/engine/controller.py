@@ -6,25 +6,39 @@ import time
 from pathlib import Path
 from typing import Callable, Optional
 
-from subtap.engine.state import PipelineState, StageStatus, STAGE_ORDER
+from subtap.engine.state import (
+    PipelineState,
+    PipelineRunContext,
+    StageStatus,
+    STAGE_ORDER,
+)
 from subtap.engine.policy import ExecutionPolicy
 from subtap.engine.events import EventLogger
 from subtap.schemas.config import SubtapConfig
 from subtap.core.workspace import Workspace
+
+# State file name
+STATE_FILE = "pipeline-state.json"
 
 
 class PipelineController:
     """State-machine driven pipeline execution.
 
     Supports: run, retry, skip, resume, rollback.
-    All state transitions are tracked and logged.
+    All state transitions are tracked and persisted.
     """
 
-    def __init__(self, config: SubtapConfig, work_dir: Path, policy: str = "local"):
+    def __init__(
+        self,
+        config: SubtapConfig,
+        work_dir: Path,
+        policy: str = "local",
+        state: PipelineState | None = None,
+    ):
         self.config = config
         self.workspace = Workspace(config, base_dir=work_dir)
         self.policy = ExecutionPolicy(policy)
-        self.state = PipelineState()
+        self.state = state or PipelineState()
         self.event_log = EventLogger(self.workspace.logs_dir)
         self._stage_handlers: dict[str, Callable] = {
             "prepare": self._run_prepare,
@@ -39,6 +53,10 @@ class PipelineController:
         # Pre-flight state (set by CLI before run)
         self._git_commit_hash: str = ""
         self._workspace_clean: bool = True
+        # Run context (set before run, persisted with state)
+        self._run_context: Optional[PipelineRunContext] = None
+        # State file path
+        self._state_path = self.workspace.root / STATE_FILE
 
     def set_preflight_state(
         self, git_commit_hash: str = "", workspace_clean: bool = True
@@ -51,6 +69,16 @@ class PipelineController:
         """Register callback for stage state changes (for TUI integration)."""
         self._on_stage_change = callback
         self.state.on_change(lambda s, st: callback(s, st))
+
+    def _save_state(self) -> None:
+        """Persist current state to disk."""
+        try:
+            self.state.save(self._state_path)
+        except Exception as e:
+            # Log but don't fail pipeline on state save error
+            import logging
+
+            logging.getLogger(__name__).warning("Failed to save pipeline state: %s", e)
 
     def run_pipeline(
         self,
@@ -71,6 +99,13 @@ class PipelineController:
             Summary dict with timings and results.
         """
         self.workspace.ensure_dirs()
+        # Save run context
+        self._run_context = PipelineRunContext(
+            input_path=str(input_path),
+            output_dir=str(output_dir),
+            fmt=fmt,
+        )
+        self._save_state()
         target_stages = stages or STAGE_ORDER
         timings: dict[str, float] = {}
 
@@ -119,8 +154,19 @@ class PipelineController:
             )
 
         self.state.mark_retrying(stage_name)
+        self._save_state()
         self.event_log.log_stage_retry(stage_name, stage.retry_count)
         stage.error_msg = ""
+
+        # Reset all downstream stages to PENDING
+        found = False
+        for name in STAGE_ORDER:
+            if name == stage_name:
+                found = True
+                continue
+            if found:
+                self.state.reset(name)
+        self._save_state()
 
         return self.run_stage(stage_name)
 
@@ -166,6 +212,7 @@ class PipelineController:
     def _execute_stage_with_retry(self, stage_name: str, timings: dict) -> None:
         """Execute a stage with automatic retry on failure."""
         self.state.mark_running(stage_name)
+        self._save_state()
         self.event_log.log(
             stage_name,
             "start",
@@ -185,6 +232,7 @@ class PipelineController:
                 duration = time.time() - start
                 timings[stage_name] = duration
                 self.state.mark_success(stage_name, result, duration)
+                self._save_state()
                 self.event_log.log(
                     stage_name,
                     "success",
@@ -201,6 +249,7 @@ class PipelineController:
                 if attempt < max_retries:
                     stage.retry_count = attempt + 1
                     self.state.mark_retrying(stage_name)
+                    self._save_state()
                     self.event_log.log(
                         stage_name,
                         "retrying",
@@ -212,6 +261,7 @@ class PipelineController:
                     duration = time.time() - start
                     timings[stage_name] = duration
                     self.state.mark_failed(stage_name, str(e))
+                    self._save_state()
                     self.event_log.log(
                         stage_name,
                         "failed",
@@ -283,8 +333,18 @@ class PipelineController:
     def _run_align(self, **_) -> dict:
         from subtap.core.align import run_align
 
+        # Explicitly decide input based on current config, not disk state
+        sentences_path = (
+            self.workspace.script_matched_jsonl
+            if self.config.output.script_path
+            else self.workspace.sentences_jsonl
+        )
+
         result = run_align(
-            self.workspace, self.config, backend_name=self.policy.align_backend
+            self.workspace,
+            self.config,
+            backend_name=self.policy.align_backend,
+            sentences_path=sentences_path,
         )
         return {
             "aligned_count": result["aligned_count"],

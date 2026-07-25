@@ -236,12 +236,20 @@ class Pipeline:
     def _stage_align(self, backend_name: str | None = None, **_) -> dict:
         from subtap.core.align import run_align
 
+        # Explicitly decide input based on current config, not disk state
+        sentences_path = (
+            self.workspace.script_matched_jsonl
+            if self.config.output.script_path
+            else self.workspace.sentences_jsonl
+        )
+
         result = run_align(
             self.workspace,
             self.config,
             backend_name=backend_name,
             event_bus=self.event_bus,
             task_id=self.task_id,
+            sentences_path=sentences_path,
         )
         return {
             "aligned_count": result["aligned_count"],
