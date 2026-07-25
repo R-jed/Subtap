@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 import enum
+import json
 import logging
+import os
+import tempfile
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+
+# Persisted state schema version
+STATE_VERSION = 1
 
 
 class StageStatus(enum.Enum):
@@ -80,6 +88,15 @@ STAGE_CN: dict[str, str] = {
 }
 
 STAGE_ORDER = ["prepare", "chunk", "asr", "clean", "segment", "align", "export"]
+
+
+@dataclass(frozen=True)
+class PipelineRunContext:
+    """Immutable context for a pipeline run."""
+
+    input_path: str
+    output_dir: str
+    fmt: str = "srt"
 
 
 class PipelineState:
@@ -159,3 +176,55 @@ class PipelineState:
             name_cn=STAGE_CN.get(stage, stage),
         )
         self._notify(stage)
+
+    def to_dict(self) -> dict:
+        """Serialize state to dict."""
+        return {
+            "version": STATE_VERSION,
+            "stages": {
+                name: {
+                    "status": s.status.value,
+                    "retry_count": s.retry_count,
+                    "max_retries": s.max_retries,
+                    "error_msg": s.error_msg,
+                    "result": s.result,
+                    "duration_sec": s.duration_sec,
+                }
+                for name, s in self.stages.items()
+            },
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "PipelineState":
+        """Deserialize state from dict."""
+        state = cls()
+        stages_data = data.get("stages", {})
+        for name, stage_data in stages_data.items():
+            if name in state.stages:
+                s = state.stages[name]
+                s.status = StageStatus(stage_data["status"])
+                s.retry_count = stage_data.get("retry_count", 0)
+                s.max_retries = stage_data.get("max_retries", 3)
+                s.error_msg = stage_data.get("error_msg", "")
+                s.result = stage_data.get("result", {})
+                s.duration_sec = stage_data.get("duration_sec", 0.0)
+        return state
+
+    def save(self, path: Path) -> None:
+        """Atomically save state to file."""
+        data = self.to_dict()
+        fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            os.replace(tmp_path, path)
+        except Exception:
+            os.unlink(tmp_path)
+            raise
+
+    @classmethod
+    def load(cls, path: Path) -> "PipelineState":
+        """Load state from file."""
+        with open(path) as f:
+            data = json.load(f)
+        return cls.from_dict(data)
