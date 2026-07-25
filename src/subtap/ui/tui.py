@@ -11,6 +11,19 @@ from typing import Any, Callable
 from subtap.ui.progress import PipelineProgress
 from subtap.ui.state import STAGE_CN, reset_state
 
+# ── helpers ─────────────────────────────────────────────────────────
+
+
+def _canonicalize_optional_path(value: str) -> str:
+    """Canonicalize an optional path value.
+
+    Empty strings stay empty. Non-empty paths are resolved to absolute.
+    """
+    if not value:
+        return ""
+    return str(Path(value).expanduser().resolve())
+
+
 # ── BaseRunner ──────────────────────────────────────────────────────
 
 
@@ -31,20 +44,16 @@ class BaseRunner(ABC):
     def _build_stages(config: Any, translate_to: str | None) -> list[dict]:
         """Build the stage list dynamically from config.
 
-        Returns a list of dicts with keys: key, name, kwargs (or None).
-        Optional stages (script_match, translate, learn) are appended
-        only when their conditions are met.
+        Returns a list of dicts with keys: key, name.
+        Stage kwargs are NOT injected here — they come from
+        build_stage_kwargs() which is the single source of truth
+        for both normal run and resume/retry.
         """
-        # Pass the exact user-selected glossary file to downstream stages.
-        clean_cfg = getattr(config, "clean", None)
-        glossary_path = getattr(clean_cfg, "glossary_path", None) if clean_cfg else None
-        hw_kwargs = {"glossary_path": glossary_path} if glossary_path else None
-
         stages: list[dict] = [
             {"key": "prepare", "name": "音频标准化"},
             {"key": "chunk", "name": "音频切段"},
             {"key": "asr", "name": "语音识别"},
-            {"key": "clean", "name": "文本清洗", "kwargs": None},
+            {"key": "clean", "name": "文本清洗"},
             {"key": "segment", "name": "智能断句"},
         ]
 
@@ -55,23 +64,17 @@ class BaseRunner(ABC):
         stages.extend(
             [
                 {"key": "align", "name": "时间轴对齐"},
-                {"key": "hotword", "name": "热词替换", "kwargs": hw_kwargs},
+                {"key": "hotword", "name": "热词替换"},
             ]
         )
 
         # learn always runs (discovers hotwords from LLM results)
         # Must run before translate so learned hotwords can be applied
-        stages.append({"key": "learn", "name": "热词学习", "kwargs": hw_kwargs})
+        stages.append({"key": "learn", "name": "热词学习"})
 
         # Optional: translate
         if translate_to:
-            stages.append(
-                {
-                    "key": "translate",
-                    "name": "字幕翻译",
-                    "kwargs": {"target_language": translate_to},
-                }
-            )
+            stages.append({"key": "translate", "name": "字幕翻译"})
 
         stages.append({"key": "export", "name": "字幕导出"})
         return stages
@@ -114,13 +117,15 @@ class BaseRunner(ABC):
         self,
         pipeline: Any,
         stages: list[dict],
-        enhance: str,
+        ctx: Any,  # PipelineRunContext
     ) -> None:
         """Execute all stages with timing and callbacks.
 
-        Calls _before_stage / _after_stage around each stage.
+        All stage kwargs come from build_stage_kwargs(ctx).
         The 'export' stage is skipped here — it is handled by _run_export().
         """
+        from subtap.engine.state import build_stage_kwargs
+
         for i, stage in enumerate(stages):
             # Export is handled separately by _run_export()
             if stage["key"] == "export":
@@ -131,10 +136,7 @@ class BaseRunner(ABC):
 
             self._before_stage(stage, step_num, total_steps)
 
-            # Build kwargs for this stage
-            kwargs = dict(stage.get("kwargs") or {})
-            if stage["key"] == "clean":
-                kwargs["enhance_mode"] = enhance
+            kwargs = build_stage_kwargs(stage["key"], ctx)
 
             t = time.monotonic()
             result = pipeline.run_stage(stage["key"], **kwargs)
@@ -153,81 +155,83 @@ class BaseRunner(ABC):
         translate_to: str | None,
         bilingual: str,
     ) -> dict:
-        """Core pipeline execution: build stages, run loop, export, save meta."""
+        """Core pipeline execution: build stages, run loop, export, save meta.
+
+        All stage kwargs come from build_stage_kwargs(ctx) — the single source
+        of truth shared with resume/retry via PipelineController.
+        """
         stages = self._build_stages(pipeline.config, translate_to)
+
+        # Build effective context — single source of truth for stage kwargs
+        from subtap.engine.state import PipelineRunContext, build_stage_kwargs
+
+        glossary = ""
+        clean_cfg = getattr(pipeline.config, "clean", None)
+        if clean_cfg:
+            glossary = getattr(clean_cfg, "glossary_path", "") or ""
+
+        # Resolve effective LLM flags for persistence
+        from subtap.core.clean import resolve_llm_flags
+
+        llm_proofread, llm_hotword = resolve_llm_flags(
+            config_llm_proofread=getattr(pipeline.config, "llm_proofread", None),
+            config_llm_hotword=getattr(pipeline.config, "llm_hotword", False),
+            enhance_mode=enhance,
+        )
+
+        ctx = PipelineRunContext(
+            input_path=str(Path(input_path).expanduser().resolve()),
+            output_dir=str(Path(output_dir).expanduser().resolve()),
+            fmt=fmt,
+            enhance=enhance,
+            translate_to=translate_to or "",
+            bilingual=bilingual,
+            script_path=_canonicalize_optional_path(
+                getattr(pipeline.config.output, "script_path", "") or ""
+            ),
+            script_mode=getattr(pipeline.config.output, "script_mode", "") or "",
+            subtitle_language=getattr(
+                pipeline.config.output, "subtitle_language", "zh"
+            ),
+            subtitle_punctuation=getattr(
+                pipeline.config.output, "subtitle_punctuation", False
+            ),
+            max_chars=getattr(pipeline.config.output, "max_chars", 24),
+            glossary_path=_canonicalize_optional_path(glossary),
+            llm_proofread=llm_proofread,
+            llm_hotword=llm_hotword,
+            asr_backend=getattr(
+                getattr(pipeline.config, "asr", None), "backend", "mlx-qwen-asr"
+            ),
+            asr_model=getattr(
+                getattr(pipeline.config, "asr", None), "model", "asr_0.6b"
+            ),
+            asr_hotwords=",".join(
+                getattr(getattr(pipeline.config, "asr", None), "hotwords", []) or []
+            ),
+            subtitle_stem=getattr(pipeline.config.output, "subtitle_stem", "final"),
+            policy_mode=getattr(pipeline, "_policy_mode", "local"),
+            local_only=getattr(pipeline, "_local_only", False),
+        )
 
         # Persist stage plan and context for crash recovery
         stage_keys = [s["key"] for s in stages]
         set_plan = getattr(pipeline, "set_stage_plan", None)
         if callable(set_plan):
-            from subtap.engine.state import PipelineRunContext
-
-            glossary = ""
-            clean_cfg = getattr(pipeline.config, "clean", None)
-            if clean_cfg:
-                glossary = getattr(clean_cfg, "glossary_path", "") or ""
-
-            # Resolve effective LLM flags for persistence
-            from subtap.core.clean import resolve_llm_flags
-
-            llm_proofread, llm_hotword = resolve_llm_flags(
-                config_llm_proofread=getattr(pipeline.config, "llm_proofread", None),
-                config_llm_hotword=getattr(pipeline.config, "llm_hotword", False),
-                enhance_mode=enhance,
-            )
-
-            ctx = PipelineRunContext(
-                input_path=str(input_path),
-                output_dir=str(output_dir),
-                fmt=fmt,
-                enhance=enhance,
-                translate_to=translate_to or "",
-                bilingual=bilingual,
-                script_path=getattr(pipeline.config.output, "script_path", "") or "",
-                script_mode=getattr(pipeline.config.output, "script_mode", "") or "",
-                subtitle_language=getattr(
-                    pipeline.config.output, "subtitle_language", "zh"
-                ),
-                subtitle_punctuation=getattr(
-                    pipeline.config.output, "subtitle_punctuation", False
-                ),
-                max_chars=getattr(pipeline.config.output, "max_chars", 24),
-                glossary_path=glossary,
-                llm_proofread=llm_proofread,
-                llm_hotword=llm_hotword,
-                asr_backend=getattr(
-                    getattr(pipeline.config, "asr", None), "backend", "mlx-qwen-asr"
-                ),
-                asr_model=getattr(
-                    getattr(pipeline.config, "asr", None), "model", "asr_0.6b"
-                ),
-                asr_hotwords=",".join(
-                    getattr(getattr(pipeline.config, "asr", None), "hotwords", []) or []
-                ),
-                subtitle_stem=getattr(pipeline.config.output, "subtitle_stem", "final"),
-                policy_mode=getattr(pipeline, "_policy_mode", "local"),
-                local_only=getattr(pipeline, "_local_only", False),
-            )
             set_plan(stage_keys, ctx)
 
         publish_plan = getattr(pipeline, "publish_plan", None)
         if callable(publish_plan):
             publish_plan(stage_keys)
-        # Inject input_path into prepare stage kwargs
-        for stage in stages:
-            if stage["key"] == "prepare":
-                stage["kwargs"] = {"input_path": input_path}
-                break
-        self._run_loop(pipeline, stages, enhance)
+
+        self._run_loop(pipeline, stages, ctx)
 
         # Export stage (with UI callbacks)
         export_stage = {"key": "export", "name": "字幕导出"}
         export_idx = len(stages) - 1  # export is always last
         self._before_stage(export_stage, export_idx + 1, len(stages))
         t = time.monotonic()
-        export_result = self._run_export(
-            pipeline, output_dir, fmt, translate_to, bilingual
-        )
+        export_result = self._run_export(pipeline, ctx)
         elapsed = time.monotonic() - t
         self.timings["export"] = elapsed
         self._after_stage(
@@ -241,22 +245,12 @@ class BaseRunner(ABC):
     # ── export ──────────────────────────────────────────────────────
 
     @staticmethod
-    def _run_export(
-        pipeline: Any,
-        output_dir: Path,
-        fmt: str,
-        translate_to: str | None,
-        bilingual: str,
-    ) -> dict:
-        """Run final exports with consistent parameters from config."""
-        return pipeline.run_stage(
-            "export",
-            fmt=fmt,
-            output_dir=str(output_dir),
-            stem=pipeline.config.output.subtitle_stem,
-            translate_to=translate_to,
-            bilingual=bilingual,
-        )
+    def _run_export(pipeline: Any, ctx: Any) -> dict:
+        """Run final exports using build_stage_kwargs (single source of truth)."""
+        from subtap.engine.state import build_stage_kwargs
+
+        kwargs = build_stage_kwargs("export", ctx)
+        return pipeline.run_stage("export", **kwargs)
 
     # ── metadata ────────────────────────────────────────────────────
 

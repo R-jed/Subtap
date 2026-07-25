@@ -203,7 +203,7 @@ def build_stage_kwargs(
             kwargs["backend_name"] = ctx.asr_backend
         return kwargs
     elif stage_name == "clean":
-        return {"enhance_mode": ctx.enhance}
+        return {"enhance_mode": ctx.enhance, "glossary_path": ctx.glossary_path or None}
     elif stage_name == "segment":
         return {}
     elif stage_name == "script_match":
