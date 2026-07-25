@@ -345,3 +345,202 @@ def test_cli_resume_command_exists():
     result = runner.invoke(app, ["resume", "--help"])
     assert result.exit_code == 0
     assert "恢复" in result.output
+
+
+# ── C3: Cross-process resume/retry regression tests ──
+
+
+def test_resume_skips_persisted_successful_stages(tmp_path: Path):
+    """C3-1: Resume skips SUCCESS stages and runs only remaining."""
+    from subtap.engine.controller import PipelineController
+
+    config = SubtapConfig()
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+
+    # Lifecycle A: complete prepare/chunk/asr, fail at clean
+    ctrl = PipelineController(config, work_dir)
+    ctrl.state.mark_success("prepare", {}, 0.1)
+    ctrl.state.mark_success("chunk", {}, 0.1)
+    ctrl.state.mark_success("asr", {}, 0.1)
+    ctrl.state.mark_failed("clean", "test error")
+    ctrl._save_state()
+
+    # Lifecycle B: new controller, load state, resume
+    ctrl2 = PipelineController(config, work_dir)
+    ctrl2.load_state()
+
+    # Monkeypatch handlers to track calls
+    calls = []
+    fake_result = {"segment_count": 1, "cleaned_jsonl": "x"}
+    for name in ["clean", "segment", "align", "export"]:
+        ctrl2._stage_handlers[name] = lambda n=name, **kw: (
+            calls.append(n),
+            fake_result,
+        )[1]
+
+    ctrl2.resume_pipeline(
+        tmp_path / "input.mp3",
+        tmp_path / "output",
+        fmt="srt",
+    )
+
+    assert calls == ["clean", "segment", "align", "export"]
+    # Verify SUCCESS stages were NOT called
+    assert "prepare" not in calls
+    assert "chunk" not in calls
+    assert "asr" not in calls
+
+
+def test_resume_restarts_stage_left_running_after_crash(tmp_path: Path):
+    """C3-2: Resume restarts a stage left in RUNNING state (crash recovery)."""
+    from subtap.engine.controller import PipelineController
+
+    config = SubtapConfig()
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+
+    # Lifecycle A: prepare/chunk SUCCESS, asr RUNNING (process died)
+    ctrl = PipelineController(config, work_dir)
+    ctrl.state.mark_success("prepare", {}, 0.1)
+    ctrl.state.mark_success("chunk", {}, 0.1)
+    ctrl.state.mark_running("asr")
+    ctrl._save_state()
+
+    # Lifecycle B: new controller, load state, resume
+    ctrl2 = PipelineController(config, work_dir)
+    ctrl2.load_state()
+
+    calls = []
+    fake_result = {"segment_count": 1, "asr_jsonl": "x", "chunks_jsonl": "x"}
+    for name in ["asr", "clean", "segment", "align", "export"]:
+        ctrl2._stage_handlers[name] = lambda n=name, **kw: (
+            calls.append(n),
+            fake_result,
+        )[1]
+
+    ctrl2.resume_pipeline(
+        tmp_path / "input.mp3",
+        tmp_path / "output",
+        fmt="srt",
+    )
+
+    assert calls == ["asr", "clean", "segment", "align", "export"]
+    # No stage should be RUNNING or RETRYING in final state
+    for name in STAGE_ORDER:
+        status = ctrl2.state.get(name).status
+        assert status not in (StageStatus.RUNNING, StageStatus.RETRYING)
+
+
+def test_retry_loads_failed_stage_from_persisted_state(tmp_path: Path):
+    """C3-3: Retry loads FAILED stage from persisted state and re-runs it."""
+    from subtap.engine.controller import PipelineController
+
+    config = SubtapConfig()
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+
+    # Lifecycle A: prepare/chunk SUCCESS, asr FAILED
+    ctrl = PipelineController(config, work_dir)
+    ctrl.state.mark_success("prepare", {}, 0.1)
+    ctrl.state.mark_success("chunk", {}, 0.1)
+    ctrl.state.mark_failed("asr", "test error")
+    ctrl._save_state()
+
+    # Lifecycle B: new controller, load state, retry asr
+    ctrl2 = PipelineController(config, work_dir)
+    ctrl2.load_state()
+
+    calls = []
+    fake_result = {"segment_count": 1, "asr_jsonl": "x"}
+
+    def fake_asr(**kw):
+        calls.append("asr")
+        return fake_result
+
+    ctrl2._stage_handlers["asr"] = fake_asr
+
+    ctrl2.retry_stage("asr")
+
+    assert calls == ["asr"]
+    assert ctrl2.state.get("asr").status == StageStatus.SUCCESS
+    # Downstream stages should be reset to PENDING
+    assert ctrl2.state.get("clean").status == StageStatus.PENDING
+    assert ctrl2.state.get("segment").status == StageStatus.PENDING
+
+    # Verify state persisted on disk
+    ctrl3 = PipelineController(config, work_dir)
+    ctrl3.load_state()
+    assert ctrl3.state.get("asr").status == StageStatus.SUCCESS
+
+
+def test_retry_failure_is_persisted(tmp_path: Path):
+    """C3-4: When retry handler fails again, final state is FAILED not RETRYING."""
+    from subtap.engine.controller import PipelineController
+
+    config = SubtapConfig()
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+
+    # Set up FAILED stage
+    ctrl = PipelineController(config, work_dir)
+    ctrl.state.mark_failed("asr", "original error")
+    ctrl._save_state()
+
+    # Retry with a handler that raises
+    def failing_handler(**kw):
+        raise RuntimeError("still broken")
+
+    ctrl._stage_handlers["asr"] = failing_handler
+
+    try:
+        ctrl.retry_stage("asr")
+    except RuntimeError:
+        pass
+
+    # Final state should be FAILED, not RETRYING or RUNNING
+    assert ctrl.state.get("asr").status == StageStatus.FAILED
+    assert ctrl.state.get("asr").retry_count >= 1
+
+    # Verify persisted state matches
+    ctrl2 = PipelineController(config, work_dir)
+    ctrl2.load_state()
+    assert ctrl2.state.get("asr").status == StageStatus.FAILED
+
+
+def test_corrupt_pipeline_state_fails_explicitly(tmp_path: Path):
+    """C3-5: Corrupt pipeline-state.json causes explicit failure."""
+    from subtap.engine.state import PipelineState
+
+    state_file = tmp_path / "pipeline-state.json"
+
+    # Write corrupt JSON
+    state_file.write_text('{"stages":', encoding="utf-8")
+
+    try:
+        PipelineState.load(state_file)
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert "无法读取或格式无效" in str(e)
+
+    # Original corrupt file should be untouched
+    assert state_file.read_text(encoding="utf-8") == '{"stages":'
+
+    # Test missing stages field
+    state_file.write_text('{"version": 1}', encoding="utf-8")
+    try:
+        PipelineState.load(state_file)
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert "无法读取或格式无效" in str(e)
+
+    # Test missing status in stage data
+    state_file.write_text(
+        '{"version": 1, "stages": {"asr": {"retry_count": 0}}}',
+        encoding="utf-8",
+    )
+    try:
+        PipelineState.load(state_file)
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert "无法读取或格式无效" in str(e)

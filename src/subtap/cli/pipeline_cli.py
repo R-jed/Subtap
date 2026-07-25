@@ -910,16 +910,15 @@ def _resume(
     """从中断点恢复执行（跳过已完成的阶段）"""
     from subtap.schemas.config import load_config
     from subtap.engine.controller import PipelineController
-    from subtap.engine.state import PipelineState
 
     config = load_config(Path.home() / ".subtap" / "config.yaml")
     ctrl = PipelineController(config, work_dir)
 
-    # Load persisted state if available
-    state_file = work_dir / "pipeline-state.json"
-    if state_file.exists():
-        ctrl.state = PipelineState.load(state_file)
-        typer.echo(f"  ✓ 已加载持久化状态: {state_file}")
+    # Load persisted state
+    try:
+        ctrl.load_state()
+    except (FileNotFoundError, ValueError) as e:
+        _handle_error(f"恢复失败：{e}")
 
     typer.echo("▸ 恢复执行...")
     try:
@@ -942,6 +941,12 @@ def _retry(
 
     config = load_config(Path.home() / ".subtap" / "config.yaml")
     ctrl = PipelineController(config, work_dir)
+
+    # Load persisted state
+    try:
+        ctrl.load_state()
+    except (FileNotFoundError, ValueError) as e:
+        _handle_error(f"重试失败：{e}")
 
     typer.echo(f"▸ 重试 {stage_name}...")
     try:

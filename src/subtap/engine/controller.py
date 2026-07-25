@@ -58,6 +58,15 @@ class PipelineController:
         # State file path
         self._state_path = self.workspace.root / STATE_FILE
 
+    def load_state(self) -> None:
+        """Load persisted state from _state_path.
+
+        Raises:
+            FileNotFoundError: if state file does not exist.
+            ValueError: if state file is corrupt or has invalid schema.
+        """
+        self.state = PipelineState.load(self._state_path)
+
     def set_preflight_state(
         self, git_commit_hash: str = "", workspace_clean: bool = True
     ) -> None:
@@ -125,6 +134,7 @@ class PipelineController:
         """Run a single stage with state tracking."""
         self.workspace.ensure_dirs()
         self.state.mark_running(stage_name)
+        self._save_state()
         self.event_log.log_stage_start(stage_name)
 
         start = time.time()
@@ -135,11 +145,13 @@ class PipelineController:
             result = handler(**kwargs)
             duration = time.time() - start
             self.state.mark_success(stage_name, result, duration)
+            self._save_state()
             self.event_log.log_stage_success(stage_name, duration, result)
             return result
         except Exception as e:
             duration = time.time() - start
             self.state.mark_failed(stage_name, str(e))
+            self._save_state()
             self.event_log.log_stage_failed(stage_name, str(e))
             raise
 
@@ -196,17 +208,13 @@ class PipelineController:
 
         remaining = STAGE_ORDER[start_idx:]
         if not remaining:
-            typer.echo("所有阶段已完成，无需恢复")
             return {}
 
-        from subtap.ui.tui import PlainRunner
-
-        runner = PlainRunner()
-        return runner.run_pipeline(
-            type(self)(self.config, self.workspace.root, self.policy.mode.value),
+        return self.run_pipeline(
             input_path,
             output_dir,
             fmt=fmt,
+            stages=remaining,
         )
 
     def _execute_stage_with_retry(self, stage_name: str, timings: dict) -> None:

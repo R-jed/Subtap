@@ -224,7 +224,24 @@ class PipelineState:
 
     @classmethod
     def load(cls, path: Path) -> "PipelineState":
-        """Load state from file."""
-        with open(path) as f:
-            data = json.load(f)
-        return cls.from_dict(data)
+        """Load state from file.
+
+        Raises:
+            FileNotFoundError: if state file does not exist.
+            ValueError: if state file is corrupt or has invalid schema.
+        """
+        try:
+            with open(path) as f:
+                data = json.load(f)
+        except FileNotFoundError:
+            raise FileNotFoundError(f"状态文件不存在：{path}")
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"pipeline-state.json 无法读取或格式无效：{exc}") from exc
+
+        if not isinstance(data, dict) or "stages" not in data:
+            raise ValueError("pipeline-state.json 无法读取或格式无效：缺少 stages 字段")
+
+        try:
+            return cls.from_dict(data)
+        except (KeyError, ValueError, TypeError) as exc:
+            raise ValueError(f"pipeline-state.json 无法读取或格式无效：{exc}") from exc
