@@ -582,10 +582,11 @@ def test_run_clean_both_enabled(workspace):
 
 
 def test_run_clean_enhance_mode_local_forces_llm_off(workspace):
-    """enhance_mode='local' 强制禁用所有 LLM 功能，忽略显式 config 设置"""
+    """enhance_mode='local' disables LLM when not explicitly enabled; preserves explicit True."""
     config = SubtapConfig()
-    config.llm_proofread = True
-    config.llm_hotword = True
+    # When config values are None/unset, local mode disables
+    config.llm_proofread = None
+    config.llm_hotword = False
 
     def fail_get_backend(*_a, **_k):
         raise AssertionError("local 模式不应创建 LLM backend")
@@ -593,7 +594,7 @@ def test_run_clean_enhance_mode_local_forces_llm_off(workspace):
     with patch("subtap.core.clean.get_llm_backend", side_effect=fail_get_backend):
         result = run_clean(workspace, config, enhance_mode="local")
 
-    # local 模式强制禁用 LLM，不创建 backend
+    # local 模式禁用未显式开启的 LLM，不创建 backend
     assert result["segment_count"] > 0
 
 

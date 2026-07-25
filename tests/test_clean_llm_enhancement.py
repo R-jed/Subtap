@@ -167,7 +167,9 @@ def test_enhance_api_selects_and_repairs_only_suspicious_segments(
     llm = FakeLLM(suspicious=[1], repairs={1: "理光 GR4"}, hotwords={})
     monkeypatch.setattr("subtap.core.clean.get_llm_backend", lambda *_a, **_k: llm)
 
-    run_clean(workspace, SubtapConfig(), enhance_mode="api")
+    config = SubtapConfig()
+    config.llm_hotword = None  # unset → api mode enables
+    run_clean(workspace, config, enhance_mode="api")
 
     assert llm.calls == ["select", "repair", "hotword"]
     payload = workspace.cleaned_jsonl.read_text(encoding="utf-8")
@@ -180,7 +182,9 @@ def test_enhance_api_skips_repair_when_qc_returns_empty(tmp_path, monkeypatch):
     llm = FakeLLM(suspicious=[], repairs={}, hotwords={})
     monkeypatch.setattr("subtap.core.clean.get_llm_backend", lambda *_a, **_k: llm)
 
-    run_clean(workspace, SubtapConfig(), enhance_mode="api")
+    config = SubtapConfig()
+    config.llm_hotword = None  # unset → api mode enables
+    run_clean(workspace, config, enhance_mode="api")
 
     assert llm.calls == ["select", "hotword"]
 
@@ -191,7 +195,9 @@ def test_enhance_api_runs_hotwords_when_glossary_empty(tmp_path, monkeypatch):
     llm = FakeLLM(suspicious=[], repairs={}, hotwords={1: "理光 GR4"})
     monkeypatch.setattr("subtap.core.clean.get_llm_backend", lambda *_a, **_k: llm)
 
-    run_clean(workspace, SubtapConfig(), enhance_mode="api")
+    config = SubtapConfig()
+    config.llm_hotword = None  # unset → api mode enables
+    run_clean(workspace, config, enhance_mode="api")
 
     assert llm.calls == ["select", "hotword"]
 
@@ -213,9 +219,11 @@ replacements:
     llm = FakeLLM(suspicious=[], repairs={}, hotwords={1: "理光 GR4"})
     monkeypatch.setattr("subtap.core.clean.get_llm_backend", lambda *_a, **_k: llm)
 
+    config = SubtapConfig()
+    config.llm_hotword = None  # unset → api mode enables
     run_clean(
         workspace,
-        SubtapConfig(),
+        config,
         glossary_path=str(glossary_path),
         enhance_mode="api",
     )

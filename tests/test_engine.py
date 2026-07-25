@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock
 
 from subtap.engine.state import (
     PipelineState,
@@ -372,14 +373,15 @@ def test_resume_skips_persisted_successful_stages(tmp_path: Path):
     ctrl2 = PipelineController(config, work_dir)
     ctrl2.load_state()
 
-    # Monkeypatch handlers to track calls
+    # Mock pipeline.run_stage to track calls
     calls = []
-    fake_result = {"segment_count": 1, "cleaned_jsonl": "x"}
-    for name in ["clean", "segment", "align", "export"]:
-        ctrl2._stage_handlers[name] = lambda n=name, **kw: (
-            calls.append(n),
-            fake_result,
-        )[1]
+
+    def mock_run(stage, **kw):
+        calls.append(stage)
+        return {"segment_count": 1, "cleaned_jsonl": "x"}
+
+    ctrl2._pipeline = MagicMock()
+    ctrl2._pipeline.run_stage = mock_run
 
     ctrl2.resume_pipeline(
         tmp_path / "input.mp3",
@@ -414,12 +416,13 @@ def test_resume_restarts_stage_left_running_after_crash(tmp_path: Path):
     ctrl2.load_state()
 
     calls = []
-    fake_result = {"segment_count": 1, "asr_jsonl": "x", "chunks_jsonl": "x"}
-    for name in ["asr", "clean", "segment", "align", "export"]:
-        ctrl2._stage_handlers[name] = lambda n=name, **kw: (
-            calls.append(n),
-            fake_result,
-        )[1]
+
+    def mock_run2(stage, **kw):
+        calls.append(stage)
+        return {"segment_count": 1, "asr_jsonl": "x", "chunks_jsonl": "x"}
+
+    ctrl2._pipeline = MagicMock()
+    ctrl2._pipeline.run_stage = mock_run2
 
     ctrl2.resume_pipeline(
         tmp_path / "input.mp3",
@@ -454,13 +457,13 @@ def test_retry_loads_failed_stage_from_persisted_state(tmp_path: Path):
     ctrl2.load_state()
 
     calls = []
-    fake_result = {"segment_count": 1, "asr_jsonl": "x"}
 
-    def fake_asr(**kw):
-        calls.append("asr")
-        return fake_result
+    def mock_run3(stage, **kw):
+        calls.append(stage)
+        return {"segment_count": 1, "asr_jsonl": "x"}
 
-    ctrl2._stage_handlers["asr"] = fake_asr
+    ctrl2._pipeline = MagicMock()
+    ctrl2._pipeline.run_stage = mock_run3
 
     ctrl2.retry_stage("asr")
 
@@ -489,11 +492,9 @@ def test_retry_failure_is_persisted(tmp_path: Path):
     ctrl.state.mark_failed("asr", "original error")
     ctrl._save_state()
 
-    # Retry with a handler that raises
-    def failing_handler(**kw):
-        raise RuntimeError("still broken")
-
-    ctrl._stage_handlers["asr"] = failing_handler
+    # Mock pipeline to raise on run_stage
+    ctrl._pipeline = MagicMock()
+    ctrl._pipeline.run_stage = MagicMock(side_effect=RuntimeError("still broken"))
 
     try:
         ctrl.retry_stage("asr")
@@ -670,8 +671,13 @@ def test_resume_after_hard_crash_skips_completed_stages(tmp_path: Path):
         "aligned_count": 1,
         "aligned_jsonl": "x",
     }
-    for name in ["asr", "clean", "segment", "align", "export"]:
-        ctrl2._stage_handlers[name] = lambda n=name, **kw: (calls.append(n), fake)[1]
+
+    def mock_run_resume(stage, **kw):
+        calls.append(stage)
+        return fake
+
+    ctrl2._pipeline = MagicMock()
+    ctrl2._pipeline.run_stage = mock_run_resume
 
     ctrl2.resume_pipeline(tmp_path / "input.mp3", tmp_path / "output", fmt="srt")
 
@@ -1112,12 +1118,13 @@ def test_script_match_crash_and_resume(tmp_path: Path):
     ctrl.load_state()
 
     calls = []
-    fake_result = {"segment_count": 1, "aligned_count": 1}
-    for name in ["script_match", "align", "hotword", "learn", "export"]:
-        ctrl._stage_handlers[name] = lambda n=name, **kw: (
-            calls.append(n),
-            fake_result,
-        )[1]
+
+    def mock_run_e1(stage, **kw):
+        calls.append(stage)
+        return {"segment_count": 1, "aligned_count": 1}
+
+    ctrl._pipeline = MagicMock()
+    ctrl._pipeline.run_stage = mock_run_e1
 
     ctrl.resume_pipeline(tmp_path / "input.mp3", tmp_path / "output", fmt="srt")
 
@@ -1167,12 +1174,13 @@ def test_translate_crash_and_resume(tmp_path: Path):
     ctrl.load_state()
 
     calls = []
-    fake_result = {"translated_count": 1, "output_path": "x.srt", "segment_count": 1}
-    for name in ["translate", "export"]:
-        ctrl._stage_handlers[name] = lambda n=name, **kw: (
-            calls.append(n),
-            fake_result,
-        )[1]
+
+    def mock_run_e2(stage, **kw):
+        calls.append(stage)
+        return {"translated_count": 1, "output_path": "x.srt", "segment_count": 1}
+
+    ctrl._pipeline = MagicMock()
+    ctrl._pipeline.run_stage = mock_run_e2
 
     ctrl.resume_pipeline(tmp_path / "input.mp3", tmp_path / "output", fmt="srt")
 
@@ -1225,12 +1233,13 @@ def test_resume_restores_original_context(tmp_path: Path):
     ctrl.load_state()
 
     calls = []
-    fake_result = {"segment_count": 1}
-    for name in ["asr", "clean", "segment", "align", "export"]:
-        ctrl._stage_handlers[name] = lambda n=name, **kw: (
-            calls.append(n),
-            fake_result,
-        )[1]
+
+    def mock_run_e3(stage, **kw):
+        calls.append(stage)
+        return {"segment_count": 1}
+
+    ctrl._pipeline = MagicMock()
+    ctrl._pipeline.run_stage = mock_run_e3
 
     # Pass different input_path/output_dir — persisted context should override
     ctrl.resume_pipeline(

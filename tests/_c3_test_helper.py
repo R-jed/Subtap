@@ -5,11 +5,18 @@ with mocked underlying functions.  Never called directly from pytest.
 
 Environment variables:
     C3_TEST_MODE: "normal" | "crash_at_asr" | "crash_at_script_match" |
-                  "crash_at_translate"
+                  "crash_at_translate" | "crash_at_export" |
+                  "crash_before_clean"
     C3_INPUT_PATH, C3_WORK_DIR, C3_OUTPUT_DIR: required paths
     C3_SCRIPT_PATH: optional, enables script_match stage
     C3_TRANSLATE_TO: optional, enables translate stage
     C3_GLOSSARY_PATH: optional, passed to hotword/learn stages
+    C3_ENHANCE: optional, enhance mode (default "local")
+    C3_FMT: optional, export format (default "srt")
+    C3_BILINGUAL: optional, bilingual mode (default "off")
+    C3_MAX_CHARS: optional, max chars (default 24)
+    C3_STEM: optional, output stem (default "final")
+    C3_PUNCTUATION: optional, "1" to enable punctuation
 """
 
 import os
@@ -76,6 +83,22 @@ def main():
 
         translate_mod.run_translate = _crash_translate
 
+    if mode == "crash_at_export":
+        import subtap.core.export as export_mod
+
+        def _crash_export(*a, **kw):
+            os._exit(95)
+
+        export_mod.run_final_exports = _crash_export
+
+    if mode == "crash_before_clean":
+        import subtap.core.clean as clean_mod
+
+        def _crash_clean(*a, **kw):
+            os._exit(94)
+
+        clean_mod.run_clean = _crash_clean
+
     input_path = Path(os.environ["C3_INPUT_PATH"])
     work_dir = Path(os.environ["C3_WORK_DIR"])
     output_dir = Path(os.environ["C3_OUTPUT_DIR"])
@@ -83,6 +106,12 @@ def main():
     script_path = os.environ.get("C3_SCRIPT_PATH", "")
     translate_to = os.environ.get("C3_TRANSLATE_TO", "")
     glossary_path = os.environ.get("C3_GLOSSARY_PATH", "")
+    enhance = os.environ.get("C3_ENHANCE", "local")
+    fmt = os.environ.get("C3_FMT", "srt")
+    bilingual = os.environ.get("C3_BILINGUAL", "off")
+    max_chars = int(os.environ.get("C3_MAX_CHARS", "24"))
+    stem = os.environ.get("C3_STEM", "final")
+    punctuation = os.environ.get("C3_PUNCTUATION", "") == "1"
 
     from subtap.schemas.config import SubtapConfig
     from subtap.core.tracked_pipeline import TrackedPipeline
@@ -93,6 +122,9 @@ def main():
         config.output.script_path = script_path
     if glossary_path:
         config.clean.glossary_path = glossary_path
+    config.output.subtitle_punctuation = punctuation
+    config.output.max_chars = max_chars
+    config.output.subtitle_stem = stem
 
     pipeline = TrackedPipeline(config, work_dir=work_dir)
     pipeline.workspace.ensure_dirs()
@@ -109,9 +141,10 @@ def main():
         pipeline,
         input_path,
         output_dir,
-        fmt="srt",
-        enhance="local",
+        fmt=fmt,
+        enhance=enhance,
         translate_to=translate_to or None,
+        bilingual=bilingual,
     )
 
 
