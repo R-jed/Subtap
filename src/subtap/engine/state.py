@@ -124,10 +124,12 @@ class PipelineRunContext:
     llm_proofread: bool = False
     llm_hotword: bool = False
     asr_backend: str = "mlx-qwen-asr"
+    asr_model: str = "asr_0.6b"
     asr_hotwords: str = ""  # comma-separated
     subtitle_stem: str = "final"
     # Policy
     policy_mode: str = "local"
+    local_only: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -146,9 +148,11 @@ class PipelineRunContext:
             "llm_proofread": self.llm_proofread,
             "llm_hotword": self.llm_hotword,
             "asr_backend": self.asr_backend,
+            "asr_model": self.asr_model,
             "asr_hotwords": self.asr_hotwords,
             "subtitle_stem": self.subtitle_stem,
             "policy_mode": self.policy_mode,
+            "local_only": self.local_only,
         }
 
     @classmethod
@@ -169,9 +173,11 @@ class PipelineRunContext:
             llm_proofread=data.get("llm_proofread", False),
             llm_hotword=data.get("llm_hotword", False),
             asr_backend=data.get("asr_backend", "mlx-qwen-asr"),
+            asr_model=data.get("asr_model", "asr_0.6b"),
             asr_hotwords=data.get("asr_hotwords", ""),
             subtitle_stem=data.get("subtitle_stem", "final"),
             policy_mode=data.get("policy_mode", "local"),
+            local_only=data.get("local_only", False),
         )
 
 

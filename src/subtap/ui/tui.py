@@ -198,11 +198,15 @@ class BaseRunner(ABC):
                 asr_backend=getattr(
                     getattr(pipeline.config, "asr", None), "backend", "mlx-qwen-asr"
                 ),
+                asr_model=getattr(
+                    getattr(pipeline.config, "asr", None), "model", "asr_0.6b"
+                ),
                 asr_hotwords=",".join(
                     getattr(getattr(pipeline.config, "asr", None), "hotwords", []) or []
                 ),
                 subtitle_stem=getattr(pipeline.config.output, "subtitle_stem", "final"),
                 policy_mode=getattr(pipeline, "_policy_mode", "local"),
+                local_only=getattr(pipeline, "_local_only", False),
             )
             set_plan(stage_keys, ctx)
 

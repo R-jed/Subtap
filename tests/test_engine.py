@@ -1360,3 +1360,190 @@ def test_align_uses_production_path_for_sentences(tmp_path: Path):
         assert captured["sentences_path"] == ws_b.script_matched_jsonl
     finally:
         align_mod.run_align = original
+
+
+# ── Config restoration regression tests ──
+
+
+def test_no_script_override_survives_resume(tmp_path: Path):
+    """CR-1: --no-script override (script_path=None) survives resume.
+
+    Global config has script_path=old.txt, but original run used --no-script.
+    After restore, config.output.script_path must be None.
+    """
+    from subtap.engine.controller import PipelineController
+    from subtap.engine.state import PipelineRunContext
+
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+
+    # Config starts with script_path set (simulates global config)
+    config = SubtapConfig()
+    config.output.script_path = "old.txt"
+
+    # Persisted context from --no-script run: script_path is empty
+    ctx = PipelineRunContext(
+        input_path=str(tmp_path / "test.mp3"),
+        output_dir=str(tmp_path / "out"),
+        script_path="",  # --no-script
+    )
+    state = PipelineState.new(
+        stage_order=["prepare", "chunk", "asr", "clean", "segment", "align", "export"],
+        context=ctx,
+    )
+    state.mark_success("prepare", {}, 0.1)
+    state.mark_success("chunk", {}, 0.1)
+    state.mark_running("asr")
+    state.save(work_dir / "pipeline-state.json")
+
+    # Resume
+    ctrl = PipelineController(config, work_dir)
+    ctrl.load_state()
+
+    # script_path must be None (not "old.txt")
+    assert config.output.script_path is None
+
+
+def test_quality_mode_survives_resume(tmp_path: Path):
+    """CR-2: Quality ASR model survives resume."""
+    from subtap.engine.controller import PipelineController
+    from subtap.engine.state import PipelineRunContext
+
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+
+    config = SubtapConfig()
+    config.asr.model = "asr_0.6b"  # Default
+
+    ctx = PipelineRunContext(
+        input_path=str(tmp_path / "test.mp3"),
+        output_dir=str(tmp_path / "out"),
+        asr_model="asr_1.7b",  # Quality mode
+    )
+    state = PipelineState.new(
+        stage_order=["prepare", "chunk", "asr", "clean", "segment", "align", "export"],
+        context=ctx,
+    )
+    state.mark_success("prepare", {}, 0.1)
+    state.mark_running("chunk")
+    state.save(work_dir / "pipeline-state.json")
+
+    ctrl = PipelineController(config, work_dir)
+    ctrl.load_state()
+
+    assert config.asr.model == "asr_1.7b"
+
+
+def test_asr_hotwords_survive_resume(tmp_path: Path):
+    """CR-3: ASR hotwords survive resume."""
+    from subtap.engine.controller import PipelineController
+    from subtap.engine.state import PipelineRunContext
+
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+
+    config = SubtapConfig()
+    config.asr.hotwords = []
+
+    ctx = PipelineRunContext(
+        input_path=str(tmp_path / "test.mp3"),
+        output_dir=str(tmp_path / "out"),
+        asr_hotwords="Foo,Bar",
+    )
+    state = PipelineState.new(
+        stage_order=["prepare", "chunk", "asr", "clean", "segment", "align", "export"],
+        context=ctx,
+    )
+    state.mark_success("prepare", {}, 0.1)
+    state.mark_running("chunk")
+    state.save(work_dir / "pipeline-state.json")
+
+    ctrl = PipelineController(config, work_dir)
+    ctrl.load_state()
+
+    assert config.asr.hotwords == ["Foo", "Bar"]
+
+
+def test_llm_flags_survive_resume(tmp_path: Path):
+    """CR-4: LLM flags (proofread=False, hotword=True) survive resume."""
+    from subtap.engine.controller import PipelineController
+    from subtap.engine.state import PipelineRunContext
+
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+
+    config = SubtapConfig()
+    config.llm_proofread = True  # Opposite of what was persisted
+    config.llm_hotword = False
+
+    ctx = PipelineRunContext(
+        input_path=str(tmp_path / "test.mp3"),
+        output_dir=str(tmp_path / "out"),
+        llm_proofread=False,
+        llm_hotword=True,
+    )
+    state = PipelineState.new(
+        stage_order=["prepare", "chunk", "asr", "clean", "segment", "align", "export"],
+        context=ctx,
+    )
+    state.mark_success("prepare", {}, 0.1)
+    state.mark_running("chunk")
+    state.save(work_dir / "pipeline-state.json")
+
+    ctrl = PipelineController(config, work_dir)
+    ctrl.load_state()
+
+    assert config.llm_proofread is False
+    assert config.llm_hotword is True
+
+
+def test_context_roundtrip_preserves_all_fields(tmp_path: Path):
+    """CR-5: PipelineRunContext roundtrip preserves all fields."""
+    from subtap.engine.state import PipelineRunContext
+
+    ctx = PipelineRunContext(
+        input_path="/tmp/test.mp3",
+        output_dir="/tmp/out",
+        fmt="ass",
+        enhance="api",
+        translate_to="en",
+        bilingual="source-first",
+        script_path="",
+        script_mode="correct_only",
+        subtitle_language="en",
+        subtitle_punctuation=True,
+        max_chars=40,
+        glossary_path="",
+        llm_proofread=False,
+        llm_hotword=True,
+        asr_backend="http-asr",
+        asr_model="asr_1.7b",
+        asr_hotwords="Foo,Bar",
+        subtitle_stem="custom",
+        policy_mode="local",
+        local_only=True,
+    )
+
+    data = ctx.to_dict()
+    restored = PipelineRunContext.from_dict(data)
+
+    assert restored.input_path == "/tmp/test.mp3"
+    assert restored.output_dir == "/tmp/out"
+    assert restored.fmt == "ass"
+    assert restored.enhance == "api"
+    assert restored.translate_to == "en"
+    assert restored.bilingual == "source-first"
+    assert restored.script_path == ""
+    assert restored.script_mode == "correct_only"
+    assert restored.subtitle_language == "en"
+    assert restored.subtitle_punctuation is True
+    assert restored.max_chars == 40
+    assert restored.glossary_path == ""
+    assert restored.llm_proofread is False
+    assert restored.llm_hotword is True
+    assert restored.asr_backend == "http-asr"
+    assert restored.asr_model == "asr_1.7b"
+    assert restored.asr_hotwords == "Foo,Bar"
+    assert restored.subtitle_stem == "custom"
+    assert restored.policy_mode == "local"
+    assert restored.local_only is True

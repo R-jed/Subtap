@@ -561,6 +561,8 @@ def _run(
     from subtap.core.tracked_pipeline import TrackedPipeline
 
     pipeline = TrackedPipeline(config, work_dir=work_dir)
+    pipeline._local_only = local_only
+    pipeline._policy_mode = "local" if local_only else "fast"
     pipeline.workspace.ensure_dirs()
 
     # Part P: Clean stale llm_hotword_ops.jsonl from previous runs
@@ -662,6 +664,11 @@ def _run(
     profiler.wrap_pipeline(pipeline)
 
     _apply_cli_overrides(config, llm_proofread, llm_hotword)
+
+    # Enforce local-only security boundary: no remote LLM calls
+    if local_only:
+        config.llm_proofread = False
+        config.llm_hotword = False
 
     timings = _execute_pipeline(
         pipeline,

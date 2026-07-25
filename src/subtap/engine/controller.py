@@ -74,6 +74,9 @@ class PipelineController:
     def load_state(self) -> None:
         """Load persisted state from _state_path.
 
+        Also restores run context from persisted state so that config
+        reflects the original effective run configuration.
+
         Raises:
             FileNotFoundError: if state file does not exist.
             ValueError: if state file is corrupt or has invalid schema.
@@ -81,6 +84,8 @@ class PipelineController:
         self.state = PipelineState.load(self._state_path)
         # Reset pipeline so it gets the new state
         self._pipeline = None
+        # Restore context so config reflects original run
+        self._restore_context_from_state()
 
     def set_preflight_state(
         self, git_commit_hash: str = "", workspace_clean: bool = True
@@ -93,22 +98,36 @@ class PipelineController:
         """Restore run context from persisted state for resume/retry.
 
         Updates config so Pipeline._stage_* methods use persisted values.
+        Uses identity check (is not None) for values where False/""/0
+        are intentional overrides, not truthy guards.
         """
         self._run_context = ctx
-        # Update config so stage handlers use persisted values
-        if ctx.script_path:
-            self.config.output.script_path = ctx.script_path
-        if ctx.script_mode:
-            self.config.output.script_mode = ctx.script_mode
-        if ctx.subtitle_language:
-            self.config.output.subtitle_language = ctx.subtitle_language
-        if ctx.max_chars:
-            self.config.output.max_chars = ctx.max_chars
+        # Output config — falsy values are intentional overrides
+        self.config.output.script_path = ctx.script_path if ctx.script_path else None
+        self.config.output.script_mode = ctx.script_mode
+        self.config.output.subtitle_language = ctx.subtitle_language
+        self.config.output.max_chars = ctx.max_chars
         self.config.output.subtitle_punctuation = ctx.subtitle_punctuation
-        if ctx.subtitle_stem:
-            self.config.output.subtitle_stem = ctx.subtitle_stem
-        if ctx.glossary_path:
-            self.config.clean.glossary_path = ctx.glossary_path
+        self.config.output.subtitle_stem = ctx.subtitle_stem
+        # Clean config
+        self.config.clean.glossary_path = (
+            ctx.glossary_path if ctx.glossary_path else None
+        )
+        # LLM flags — False is an intentional override
+        self.config.llm_proofread = ctx.llm_proofread
+        self.config.llm_hotword = ctx.llm_hotword
+        # ASR config
+        self.config.asr.backend = ctx.asr_backend
+        self.config.asr.model = ctx.asr_model
+        self.config.asr.hotwords = (
+            [w.strip() for w in ctx.asr_hotwords.split(",") if w.strip()]
+            if ctx.asr_hotwords
+            else []
+        )
+        # Local-only security boundary — always restore
+        if ctx.local_only:
+            self.config.llm_proofread = False
+            self.config.llm_hotword = False
 
     def _restore_context_from_state(self) -> None:
         """Restore context from persisted state if available."""

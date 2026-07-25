@@ -39,6 +39,9 @@ class TrackedPipeline(Pipeline):
         else:
             self.state = PipelineState()
         self._state_path = self.workspace.root / STATE_FILE
+        # Runtime attributes set by CLI before run
+        self._local_only: bool = False
+        self._policy_mode: str = "local"
 
     def save_state(self) -> None:
         """Atomically persist current state to disk."""
