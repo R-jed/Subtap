@@ -618,6 +618,7 @@ def test_run_full_pipeline_with_align(
         workspace=SimpleNamespace(root="./work"),
     )
     monkeypatch.setattr("subtap.core.pipeline.Pipeline", FakePipeline)
+    monkeypatch.setattr("subtap.core.tracked_pipeline.TrackedPipeline", FakePipeline)
     monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
 
     input_path = tmp_path / "input.wav"
@@ -735,6 +736,7 @@ def test_run_enhance_local_passes_clean_local_to_pipeline(
         workspace=SimpleNamespace(root="./work"),
     )
     monkeypatch.setattr("subtap.core.pipeline.Pipeline", FakePipeline)
+    monkeypatch.setattr("subtap.core.tracked_pipeline.TrackedPipeline", FakePipeline)
     monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
 
     input_path = tmp_path / "input.wav"

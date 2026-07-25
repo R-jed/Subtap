@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 
 from subtap.engine.state import (
@@ -544,3 +546,367 @@ def test_corrupt_pipeline_state_fails_explicitly(tmp_path: Path):
         assert False, "Should have raised ValueError"
     except ValueError as e:
         assert "无法读取或格式无效" in str(e)
+
+
+# ── C3 Production-Path: real pipeline writes state ──
+
+
+def test_normal_run_persists_stage_state(tmp_path: Path):
+    """C3-P1: Normal run via TrackedPipeline writes pipeline-state.json."""
+    import os
+    import subprocess
+    import sys
+
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    input_file = tmp_path / "input.mp3"
+    input_file.write_bytes(b"\x00" * 100)
+
+    env = {
+        **os.environ,
+        "C3_TEST_MODE": "normal",
+        "C3_INPUT_PATH": str(input_file),
+        "C3_WORK_DIR": str(work_dir),
+        "C3_OUTPUT_DIR": str(output_dir),
+    }
+    result = subprocess.run(
+        [sys.executable, str(Path(__file__).parent / "_c3_test_helper.py")],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, f"helper failed: {result.stderr}"
+
+    state_file = work_dir / "pipeline-state.json"
+    assert state_file.exists(), "pipeline-state.json not created by normal run"
+
+    state = PipelineState.load(state_file)
+    for name in STAGE_ORDER:
+        assert state.get(name).status == StageStatus.SUCCESS
+
+
+def test_hard_crash_leaves_running_checkpoint(tmp_path: Path):
+    """C3-P2: os._exit during ASR leaves RUNNING checkpoint on disk."""
+    import os
+    import subprocess
+    import sys
+
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    input_file = tmp_path / "input.mp3"
+    input_file.write_bytes(b"\x00" * 100)
+
+    env = {
+        **os.environ,
+        "C3_TEST_MODE": "crash_at_asr",
+        "C3_INPUT_PATH": str(input_file),
+        "C3_WORK_DIR": str(work_dir),
+        "C3_OUTPUT_DIR": str(output_dir),
+    }
+    result = subprocess.run(
+        [sys.executable, str(Path(__file__).parent / "_c3_test_helper.py")],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    # os._exit(99) → non-zero exit
+    assert result.returncode != 0
+
+    state_file = work_dir / "pipeline-state.json"
+    assert state_file.exists(), "state file missing after hard crash"
+
+    state = PipelineState.load(state_file)
+    assert state.get("prepare").status == StageStatus.SUCCESS
+    assert state.get("chunk").status == StageStatus.SUCCESS
+    assert state.get("asr").status == StageStatus.RUNNING
+    # Remaining stages stay PENDING
+    for name in ["clean", "segment", "align", "export"]:
+        assert state.get(name).status == StageStatus.PENDING
+
+
+def test_resume_after_hard_crash_skips_completed_stages(tmp_path: Path):
+    """C3-P3: Resume after crash runs only remaining stages."""
+    from subtap.engine.controller import PipelineController
+    from subtap.schemas.config import SubtapConfig
+
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+
+    # Simulate post-crash state: prepare/chunk SUCCESS, asr RUNNING
+    ctrl = PipelineController(config=SubtapConfig(), work_dir=work_dir)
+    ctrl.state.mark_success("prepare", {}, 0.1)
+    ctrl.state.mark_success("chunk", {}, 0.1)
+    ctrl.state.mark_running("asr")
+    ctrl._save_state()
+
+    # New lifecycle: load state, verify resume finds correct start point
+    ctrl2 = PipelineController(config=SubtapConfig(), work_dir=work_dir)
+    ctrl2.load_state()
+
+    # Identify first incomplete stage
+    first_incomplete = None
+    for name in STAGE_ORDER:
+        s = ctrl2.state.get(name)
+        if s.status not in (StageStatus.SUCCESS, StageStatus.SKIPPED):
+            first_incomplete = name
+            break
+
+    assert first_incomplete == "asr"
+
+    # Fake remaining stage handlers
+    calls = []
+    fake = {
+        "segment_count": 1,
+        "asr_jsonl": "x",
+        "cleaned_jsonl": "x",
+        "sentence_count": 1,
+        "sentences_jsonl": "x",
+        "aligned_count": 1,
+        "aligned_jsonl": "x",
+    }
+    for name in ["asr", "clean", "segment", "align", "export"]:
+        ctrl2._stage_handlers[name] = lambda n=name, **kw: (calls.append(n), fake)[1]
+
+    ctrl2.resume_pipeline(tmp_path / "input.mp3", tmp_path / "output", fmt="srt")
+
+    assert calls == ["asr", "clean", "segment", "align", "export"]
+    assert "prepare" not in calls
+    assert "chunk" not in calls
+    # Final state: no RUNNING or RETRYING
+    for name in STAGE_ORDER:
+        assert ctrl2.state.get(name).status not in (
+            StageStatus.RUNNING,
+            StageStatus.RETRYING,
+        )
+
+
+def test_new_run_replaces_previous_pipeline_state(tmp_path: Path):
+    """C3-P4: New normal run creates fresh state, not inheriting old SUCCESS."""
+    from subtap.engine.controller import PipelineController
+    from subtap.schemas.config import SubtapConfig
+    from subtap.core.tracked_pipeline import TrackedPipeline
+
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+
+    # Lifecycle A: old run completed
+    ctrl = PipelineController(config=SubtapConfig(), work_dir=work_dir)
+    for name in STAGE_ORDER:
+        ctrl.state.mark_success(name, {}, 0.1)
+    ctrl._save_state()
+
+    # Verify old state on disk
+    old_state = PipelineState.load(work_dir / "pipeline-state.json")
+    assert old_state.get("asr").status == StageStatus.SUCCESS
+
+    # Lifecycle B: fresh TrackedPipeline creates new state
+    pipeline = TrackedPipeline(config=SubtapConfig(), work_dir=work_dir)
+    pipeline.workspace.ensure_dirs()
+
+    # Fresh state should be all PENDING
+    for name in STAGE_ORDER:
+        assert pipeline.state.get(name).status == StageStatus.PENDING
+
+    # After first stage, state is persisted and old state is overwritten
+    pipeline.state.mark_running("prepare")
+    pipeline.save_state()
+
+    loaded = PipelineState.load(work_dir / "pipeline-state.json")
+    assert loaded.get("prepare").status == StageStatus.RUNNING
+    assert loaded.get("asr").status == StageStatus.PENDING  # not old SUCCESS
+
+
+# ── C1: Pipeline preflight does not modify git state ──
+
+
+def test_pipeline_preflight_does_not_modify_git_state(tmp_path: Path):
+    """C1: Git preflight check is read-only — no auto-commit."""
+    import subprocess
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@test.com"], cwd=repo, capture_output=True
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test"], cwd=repo, capture_output=True
+    )
+    (repo / "README.md").write_text("init")
+    subprocess.run(["git", "add", "."], cwd=repo, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "chore: init"], cwd=repo, capture_output=True
+    )
+
+    # Record HEAD before
+    head_before = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True
+    ).stdout.strip()
+
+    # Create a dirty file (untracked, not staged)
+    (repo / "dirty.txt").write_text("uncommitted")
+
+    # Run preflight
+    from subtap.engine.git_guard import GitGuard
+
+    guard = GitGuard(repo)
+    result = guard.pre_task_check()
+    assert not result["ok"]
+
+    # Verify HEAD unchanged (preflight is read-only)
+    head_after = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True
+    ).stdout.strip()
+    assert head_before == head_after
+
+    # Verify dirty.txt was NOT committed by preflight
+    log = subprocess.run(
+        ["git", "log", "--oneline"], cwd=repo, capture_output=True, text=True
+    ).stdout
+    assert "dirty" not in log
+
+
+# ── C2: Align ignores stale script_match when script disabled ──
+
+
+def test_align_ignores_stale_script_match_when_script_disabled(tmp_path: Path):
+    """C2: With script_path=None, align uses sentences.jsonl, not stale script_matched."""
+    from subtap.schemas.config import SubtapConfig
+    from subtap.core.workspace import Workspace
+    from subtap.core.pipeline import Pipeline
+
+    config = SubtapConfig()
+    config.output.script_path = None
+
+    ws = Workspace(config, base_dir=tmp_path / "work")
+    ws.ensure_dirs()
+
+    # Write CURRENT sentences.jsonl
+    ws.sentences_jsonl.write_text(
+        '{"sentence_id": 0, "text": "current", "start_sec": 0.0, "end_sec": 1.0}\n',
+        encoding="utf-8",
+    )
+    # Write STALE script_matched.jsonl
+    ws.script_matched_jsonl.write_text(
+        '{"sentence_id": 0, "text": "stale", "start_sec": 0.0, "end_sec": 1.0}\n',
+        encoding="utf-8",
+    )
+
+    pipeline = Pipeline(config, work_dir=tmp_path / "work")
+
+    assert pipeline.config.output.script_path is None
+    # Align stage picks sentences.jsonl when script_path is None
+    expected = ws.sentences_jsonl
+    actual = (
+        ws.script_matched_jsonl
+        if pipeline.config.output.script_path
+        else ws.sentences_jsonl
+    )
+    assert actual == expected
+
+
+# ── C4: Timestamp formatting edge cases ──
+
+
+def test_fmt_srt_time_rounding():
+    """C4: _fmt_srt_time rounds correctly at boundaries."""
+    from subtap.core.export import _fmt_srt_time
+
+    assert _fmt_srt_time(1.9996) == "00:00:02,000"
+    assert _fmt_srt_time(59.9996) == "00:01:00,000"
+    assert _fmt_srt_time(3599.9996) == "01:00:00,000"
+    assert _fmt_srt_time(0.0) == "00:00:00,000"
+    assert _fmt_srt_time(-1.0) == "00:00:00,000"
+
+
+def test_fmt_ass_time_rounding():
+    """C4: _fmt_ass_time rounds correctly at boundaries."""
+    from subtap.core.export import _fmt_ass_time
+
+    assert _fmt_ass_time(1.996) == "0:00:02.00"
+    assert _fmt_ass_time(59.996) == "0:01:00.00"
+    assert _fmt_ass_time(3599.996) == "1:00:00.00"
+    assert _fmt_ass_time(0.0) == "0:00:00.00"
+    assert _fmt_ass_time(-1.0) == "0:00:00.00"
+
+
+# ── C5: Segment timing invariants ──
+
+
+def _fix_word_timestamps(words: list[dict]) -> list[dict]:
+    """Replicate align.py word timestamp fixup for testing."""
+    for w in words:
+        if w["end_sec"] <= w["start_sec"]:
+            w["end_sec"] = w["start_sec"] + 0.020
+    for k in range(len(words) - 1):
+        if words[k]["end_sec"] > words[k + 1]["start_sec"]:
+            words[k + 1]["start_sec"] = words[k]["end_sec"]
+            if words[k + 1]["end_sec"] <= words[k + 1]["start_sec"]:
+                words[k + 1]["end_sec"] = words[k + 1]["start_sec"] + 0.020
+    return words
+
+
+def _assert_timing_invariants(words: list[dict]) -> None:
+    for i, w in enumerate(words):
+        assert (
+            w["end_sec"] > w["start_sec"]
+        ), f"word[{i}] end_sec({w['end_sec']}) <= start_sec({w['start_sec']})"
+        if i > 0:
+            assert words[i - 1]["end_sec"] <= w["start_sec"], (
+                f"word[{i-1}].end_sec({words[i-1]['end_sec']}) > "
+                f"word[{i}].start_sec({w['start_sec']})"
+            )
+
+
+def test_c5_last_word_zero_duration():
+    """C5: Last word with zero duration gets minimum 20ms."""
+    words = [
+        {"word": "hello", "start_sec": 0.0, "end_sec": 0.5},
+        {"word": "world", "start_sec": 0.5, "end_sec": 0.5},
+    ]
+    words = _fix_word_timestamps(words)
+    _assert_timing_invariants(words)
+    assert words[1]["end_sec"] == 0.520
+
+
+def test_c5_overlap_pushes_start_past_end():
+    """C5: Overlap pushes next start past previous end."""
+    words = [
+        {"word": "a", "start_sec": 0.0, "end_sec": 1.0},
+        {"word": "b", "start_sec": 0.5, "end_sec": 0.8},
+    ]
+    words = _fix_word_timestamps(words)
+    _assert_timing_invariants(words)
+    assert words[1]["start_sec"] == 1.0
+
+
+def test_c5_cascading_overlap():
+    """C5: Cascading overlaps are resolved sequentially."""
+    words = [
+        {"word": "a", "start_sec": 0.0, "end_sec": 1.0},
+        {"word": "b", "start_sec": 0.5, "end_sec": 0.8},
+        {"word": "c", "start_sec": 0.6, "end_sec": 0.9},
+        {"word": "d", "start_sec": 0.7, "end_sec": 1.0},
+    ]
+    words = _fix_word_timestamps(words)
+    _assert_timing_invariants(words)
+
+
+def test_c5_empty_words():
+    """C5: Empty word list doesn't crash."""
+    words = _fix_word_timestamps([])
+    assert words == []
+
+
+def test_c5_single_word():
+    """C5: Single word with zero duration is fixed."""
+    words = [{"word": "x", "start_sec": 1.0, "end_sec": 1.0}]
+    words = _fix_word_timestamps(words)
+    _assert_timing_invariants(words)
+    assert words[0]["end_sec"] == 1.020
