@@ -634,10 +634,7 @@ def _run(
                 typer.echo("▸ Git 状态检查...")
                 for issue in gg_result["issues"]:
                     typer.echo(f"  ⚠ {issue}")
-                # Auto-commit dirty state
-                commit_result = git_guard.auto_commit_if_needed()
-                if commit_result["committed"]:
-                    typer.echo(f"  ✓ 已自动提交: {commit_result['commit_hash']}")
+                typer.echo("  ℹ 工作区有未提交的更改，建议在 pipeline 完成后手动提交")
 
     # ── Pipeline execution ──────────────────────────────────
     from subtap.metrics.events import EventBus
@@ -913,9 +910,16 @@ def _resume(
     """从中断点恢复执行（跳过已完成的阶段）"""
     from subtap.schemas.config import load_config
     from subtap.engine.controller import PipelineController
+    from subtap.engine.state import PipelineState
 
     config = load_config(Path.home() / ".subtap" / "config.yaml")
     ctrl = PipelineController(config, work_dir)
+
+    # Load persisted state if available
+    state_file = work_dir / "pipeline-state.json"
+    if state_file.exists():
+        ctrl.state = PipelineState.load(state_file)
+        typer.echo(f"  ✓ 已加载持久化状态: {state_file}")
 
     typer.echo("▸ 恢复执行...")
     try:
