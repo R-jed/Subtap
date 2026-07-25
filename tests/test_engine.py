@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from subtap.engine.state import (
+    PipelineRunContext,
     PipelineState,
     StageState,
     StageStatus,
@@ -365,6 +366,10 @@ def test_resume_skips_persisted_successful_stages(tmp_path: Path):
 
     # Lifecycle A: complete prepare/chunk/asr, fail at clean
     ctrl = PipelineController(config, work_dir)
+    ctrl.state.context = PipelineRunContext(
+        input_path=str(tmp_path / "input.mp3"),
+        output_dir=str(tmp_path / "output"),
+    )
     ctrl.state.mark_success("prepare", {}, 0.1)
     ctrl.state.mark_success("chunk", {}, 0.1)
     ctrl.state.mark_success("asr", {}, 0.1)
@@ -408,6 +413,10 @@ def test_resume_restarts_stage_left_running_after_crash(tmp_path: Path):
 
     # Lifecycle A: prepare/chunk SUCCESS, asr RUNNING (process died)
     ctrl = PipelineController(config, work_dir)
+    ctrl.state.context = PipelineRunContext(
+        input_path=str(tmp_path / "input.mp3"),
+        output_dir=str(tmp_path / "output"),
+    )
     ctrl.state.mark_success("prepare", {}, 0.1)
     ctrl.state.mark_success("chunk", {}, 0.1)
     ctrl.state.mark_running("asr")
@@ -449,6 +458,10 @@ def test_retry_loads_failed_stage_from_persisted_state(tmp_path: Path):
 
     # Lifecycle A: prepare/chunk SUCCESS, asr FAILED
     ctrl = PipelineController(config, work_dir)
+    ctrl.state.context = PipelineRunContext(
+        input_path=str(tmp_path / "input.mp3"),
+        output_dir=str(tmp_path / "output"),
+    )
     ctrl.state.mark_success("prepare", {}, 0.1)
     ctrl.state.mark_success("chunk", {}, 0.1)
     ctrl.state.mark_failed("asr", "test error")
@@ -491,6 +504,10 @@ def test_retry_failure_is_persisted(tmp_path: Path):
 
     # Set up FAILED stage
     ctrl = PipelineController(config, work_dir)
+    ctrl.state.context = PipelineRunContext(
+        input_path=str(tmp_path / "input.mp3"),
+        output_dir=str(tmp_path / "output"),
+    )
     ctrl.state.mark_failed("asr", "original error")
     ctrl._save_state()
 
@@ -643,6 +660,10 @@ def test_resume_after_hard_crash_skips_completed_stages(tmp_path: Path):
 
     # Simulate post-crash state: prepare/chunk SUCCESS, asr RUNNING
     ctrl = PipelineController(config=SubtapConfig(), work_dir=work_dir)
+    ctrl.state.context = PipelineRunContext(
+        input_path=str(tmp_path / "input.mp3"),
+        output_dir=str(tmp_path / "output"),
+    )
     ctrl.state.mark_success("prepare", {}, 0.1)
     ctrl.state.mark_success("chunk", {}, 0.1)
     ctrl.state.mark_running("asr")
@@ -1949,3 +1970,210 @@ def test_v2_invalid_preserves_file_bytes(tmp_path: Path):
         PipelineState.load(state_file)
 
     assert state_file.read_text(encoding="utf-8") == original_content
+
+
+# ── P0-1: No fake context ──────────────────────────────────────────
+
+
+def test_p0_controller_constructor_no_fake_context():
+    """P0-A: PipelineController constructor does not fabricate context."""
+    from subtap.engine.controller import PipelineController
+
+    ctrl = PipelineController(config=SubtapConfig(), work_dir=Path("/tmp/test"))
+    assert ctrl.state.context is None
+
+
+def test_p0_tracked_pipeline_constructor_no_fake_context():
+    """P0-B: TrackedPipeline constructor does not fabricate context."""
+    from subtap.core.tracked_pipeline import TrackedPipeline
+
+    pipeline = TrackedPipeline(SubtapConfig(), work_dir=Path("/tmp/test"))
+    assert pipeline.state.context is None
+
+
+def test_p0_controller_run_persists_real_context(tmp_path: Path):
+    """P0-C: run_pipeline persists REAL context to pipeline-state.json."""
+    from subtap.engine.controller import PipelineController
+
+    config = SubtapConfig()
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+
+    ctrl = PipelineController(config, work_dir)
+    ctrl._pipeline = MagicMock()
+    ctrl._pipeline.run_stage = MagicMock(return_value={"segment_count": 1})
+    ctrl._pipeline.set_stage_plan = MagicMock()
+    ctrl._pipeline.publish_plan = MagicMock()
+
+    ctrl.run_pipeline(
+        input_path=tmp_path / "input.mp3",
+        output_dir=tmp_path / "output",
+        fmt="srt",
+        stages=["prepare"],
+    )
+
+    loaded = PipelineState.load(work_dir / "pipeline-state.json")
+    assert loaded.context is not None
+    assert loaded.context.input_path == str(tmp_path / "input.mp3")
+    assert loaded.context.output_dir == str(tmp_path / "output")
+    assert loaded.context.input_path != ""
+    assert loaded.context.output_dir != ""
+
+
+def test_p0_resume_context_not_overwritten(tmp_path: Path):
+    """P0-D: existing persisted/resume context is not overwritten."""
+    from subtap.engine.controller import PipelineController
+
+    config = SubtapConfig()
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+
+    original_ctx = PipelineRunContext(
+        input_path="/original/input.mp3",
+        output_dir="/original/output",
+        fmt="vtt",
+        enhance="api",
+    )
+    state = PipelineState.new(
+        ["prepare", "chunk", "asr", "clean", "segment", "align", "export"],
+        context=original_ctx,
+    )
+    state.save(work_dir / "pipeline-state.json")
+
+    ctrl = PipelineController(config, work_dir)
+    ctrl.load_state()
+    assert ctrl.state.context.input_path == "/original/input.mp3"
+    assert ctrl.state.context.fmt == "vtt"
+    assert ctrl.state.context.enhance == "api"
+
+
+# ── P0-2: Checkpoint persistence fails closed ──────────────────────
+
+
+def test_p0_tracked_pipeline_checkpoint_failure_prevents_execution(tmp_path: Path):
+    """P0-E: TrackedPipeline save failure raises, stage not executed."""
+    from subtap.core.tracked_pipeline import TrackedPipeline
+
+    config = SubtapConfig()
+    pipeline = TrackedPipeline(config, work_dir=tmp_path)
+    pipeline.set_stage_plan(
+        ["prepare", "chunk", "asr", "clean", "segment", "align", "export"],
+        PipelineRunContext(input_path="/tmp/in.mp3", output_dir="/tmp/out"),
+    )
+
+    stage_called = []
+
+    def mock_run_stage_inner(stage, **kw):
+        stage_called.append(stage)
+        return {}
+
+    original_run_stage = pipeline.__class__.__bases__[0].run_stage
+    pipeline.__class__.__bases__[0].run_stage = mock_run_stage_inner
+
+    pipeline.state.save = lambda path: (_ for _ in ()).throw(OSError("disk full"))
+
+    try:
+        with pytest.raises(OSError, match="disk full"):
+            pipeline.run_stage("prepare", input_path=Path("/tmp/in.mp3"))
+    finally:
+        pipeline.__class__.__bases__[0].run_stage = original_run_stage
+
+    assert len(stage_called) == 0
+
+
+def test_p0_controller_checkpoint_failure_prevents_execution(tmp_path: Path):
+    """P0-F: Controller save failure raises, stage not executed."""
+    from subtap.engine.controller import PipelineController
+
+    config = SubtapConfig()
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+
+    ctrl = PipelineController(config, work_dir)
+    ctrl._run_context = PipelineRunContext(
+        input_path=str(tmp_path / "in.mp3"),
+        output_dir=str(tmp_path / "out"),
+    )
+    ctrl.state.context = ctrl._run_context
+
+    ctrl._pipeline = MagicMock()
+    ctrl._pipeline.run_stage = MagicMock(return_value={"segment_count": 1})
+
+    ctrl.state.save = MagicMock(side_effect=PermissionError("permission denied"))
+
+    with pytest.raises(PermissionError, match="permission denied"):
+        ctrl.run_pipeline(
+            input_path=tmp_path / "in.mp3",
+            output_dir=tmp_path / "out",
+            stages=["prepare"],
+        )
+
+
+def test_p0_success_checkpoint_failure_propagates(tmp_path: Path):
+    """P0-G: SUCCESS checkpoint failure propagates."""
+    from subtap.core.tracked_pipeline import TrackedPipeline
+
+    config = SubtapConfig()
+    pipeline = TrackedPipeline(config, work_dir=tmp_path)
+    pipeline.set_stage_plan(
+        ["prepare", "chunk", "asr", "clean", "segment", "align", "export"],
+        PipelineRunContext(input_path="/tmp/in.mp3", output_dir="/tmp/out"),
+    )
+
+    original_run_stage = pipeline.__class__.__bases__[0].run_stage
+
+    save_calls = [0]
+
+    def counting_save(path):
+        save_calls[0] += 1
+        if save_calls[0] >= 2:
+            raise OSError("disk full on success write")
+        PipelineState.save(pipeline.state, path)
+
+    pipeline.state.save = counting_save
+    pipeline.__class__.__bases__[0].run_stage = lambda self, stage, **kw: {
+        "media_info": {"duration": 10, "sample_rate": 16000}
+    }
+
+    try:
+        with pytest.raises(OSError, match="disk full on success write"):
+            pipeline.run_stage("prepare", input_path=Path("/tmp/in.mp3"))
+    finally:
+        pipeline.__class__.__bases__[0].run_stage = original_run_stage
+
+
+def test_p0_retry_checkpoint_failure_propagates(tmp_path: Path):
+    """P0-H: retry checkpoint failure propagates, downstream not executed."""
+    from subtap.engine.controller import PipelineController
+
+    config = SubtapConfig()
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+
+    ctrl = PipelineController(config, work_dir)
+    ctrl.state.context = PipelineRunContext(
+        input_path=str(tmp_path / "in.mp3"),
+        output_dir=str(tmp_path / "out"),
+    )
+    ctrl.state.mark_success("prepare", {}, 0.1)
+    ctrl.state.mark_success("chunk", {}, 0.1)
+    ctrl.state.mark_failed("asr", "original error")
+    ctrl._save_state()
+
+    ctrl2 = PipelineController(config, work_dir)
+    ctrl2.load_state()
+    ctrl2._pipeline = MagicMock()
+    ctrl2._pipeline.run_stage = MagicMock(return_value={"segment_count": 1})
+
+    save_calls = [0]
+
+    def failing_on_retry(path):
+        save_calls[0] += 1
+        if save_calls[0] > 1:
+            raise OSError("disk full on retry")
+        PipelineState.save(ctrl2.state, path)
+
+    ctrl2.state.save = failing_on_retry
+
+    with pytest.raises(OSError, match="disk full on retry"):
+        ctrl2.retry_stage("asr")

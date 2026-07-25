@@ -47,9 +47,6 @@ class PipelineController:
         self.workspace = Workspace(config, base_dir=work_dir)
         self.policy = ExecutionPolicy(policy)
         self.state = state or PipelineState()
-        # v2 state requires context; ensure it's always present
-        if self.state.context is None:
-            self.state.context = PipelineRunContext(input_path="", output_dir="")
         self.event_log = EventLogger(self.workspace.logs_dir)
         self._on_stage_change: Optional[Callable] = None
         # Pre-flight state (set by CLI before run)
@@ -143,12 +140,12 @@ class PipelineController:
         self.state.on_change(lambda s, st: callback(s, st))
 
     def _save_state(self) -> None:
-        """Persist current state to disk."""
-        try:
-            self.state.save(self._state_path)
-        except Exception as e:
-            # Log but don't fail pipeline on state save error
-            logging.getLogger(__name__).warning("Failed to save pipeline state: %s", e)
+        """Persist current state to disk.
+
+        Raises on failure — a checkpoint write failure means execution
+        state is no longer reliable, so the pipeline must not continue.
+        """
+        self.state.save(self._state_path)
 
     def _run_stage(self, stage_name: str) -> dict:
         """Execute a single stage through the unified Pipeline executor.
@@ -186,6 +183,8 @@ class PipelineController:
                 output_dir=str(output_dir),
                 fmt=fmt,
             )
+        # Ensure persisted state carries real context, not None or stale values
+        self.state.context = self._run_context
         self._save_state()
         target_stages = stages or self.state.stage_order
         timings: dict[str, float] = {}

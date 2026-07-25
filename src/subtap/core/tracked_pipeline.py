@@ -38,20 +38,18 @@ class TrackedPipeline(Pipeline):
             self.state = PipelineState.new(stage_order)
         else:
             self.state = PipelineState()
-        # v2 state requires context; ensure it's always present
-        if self.state.context is None:
-            self.state.context = PipelineRunContext(input_path="", output_dir="")
         self._state_path = self.workspace.root / STATE_FILE
         # Runtime attributes set by CLI before run
         self._local_only: bool = False
         self._policy_mode: str = "local"
 
     def save_state(self) -> None:
-        """Atomically persist current state to disk."""
-        try:
-            self.state.save(self._state_path)
-        except Exception as e:
-            logger.warning("Failed to save pipeline state: %s", e)
+        """Atomically persist current state to disk.
+
+        Raises on failure — a checkpoint write failure means execution
+        state is no longer reliable, so the stage must not continue.
+        """
+        self.state.save(self._state_path)
 
     def set_stage_plan(
         self,
