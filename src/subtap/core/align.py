@@ -90,6 +90,7 @@ def run_align(
     backend_name: str | None = None,
     event_bus: EventBus | None = None,
     task_id: str = "local",
+    sentences_path: Path | None = None,
 ) -> dict:
     """Run align stage: load sentences → forced alignment → aligned.jsonl.
 
@@ -97,14 +98,13 @@ def run_align(
         workspace: Workspace instance with paths.
         config: Subtap config.
         backend_name: Override aligner backend name.
+        sentences_path: Explicit path to sentences JSONL (overrides implicit selection).
 
     Returns:
         Dict with aligned_count.
     """
-    # Load sentences (prefer script-matched output if available)
-    input_path = workspace.script_matched_jsonl
-    if not input_path.exists():
-        input_path = workspace.sentences_jsonl
+    # Use explicit path if provided, otherwise fall back to workspace default
+    input_path = sentences_path or workspace.sentences_jsonl
     sentences = load_sentences(input_path)
     if not sentences:
         raise ValueError(f"No sentences found in {input_path}")
@@ -173,13 +173,19 @@ def run_align(
     # Fix word timestamp quality for all aligners
     for seg in aligned:
         words = seg.words
+        if not words:
+            continue
+        # Pass 1: fix zero/negative duration for all words
+        for w in words:
+            if w["end_sec"] <= w["start_sec"]:
+                w["end_sec"] = w["start_sec"] + 0.020
+        # Pass 2: fix monotonicity between consecutive words
         for k in range(len(words) - 1):
-            # Step 1: fix zero/negative duration
-            if words[k]["end_sec"] <= words[k]["start_sec"]:
-                words[k]["end_sec"] = words[k]["start_sec"] + 0.020
-            # Step 2: fix monotonicity (may cascade)
             if words[k]["end_sec"] > words[k + 1]["start_sec"]:
                 words[k + 1]["start_sec"] = words[k]["end_sec"]
+                # Re-check duration after monotonicity fix
+                if words[k + 1]["end_sec"] <= words[k + 1]["start_sec"]:
+                    words[k + 1]["end_sec"] = words[k + 1]["start_sec"] + 0.020
 
     # Write aligned.jsonl
     write_aligned(aligned, workspace.aligned_jsonl)
