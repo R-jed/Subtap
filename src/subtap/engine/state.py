@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 # Persisted state schema version
-STATE_VERSION = 1
+STATE_VERSION = 2
 
 
 class StageStatus(enum.Enum):
@@ -76,14 +76,18 @@ class StageState:
         }
 
 
-# Stage name → Chinese mapping
+# Stage name → Chinese mapping (core + optional)
 STAGE_CN: dict[str, str] = {
     "prepare": "音频标准化",
     "chunk": "音频切段",
     "asr": "语音识别",
     "clean": "文本清洗",
     "segment": "智能断句",
+    "script_match": "文稿匹配",
     "align": "时间轴对齐",
+    "hotword": "热词替换",
+    "learn": "热词学习",
+    "translate": "字幕翻译",
     "export": "字幕导出",
 }
 
@@ -92,29 +96,86 @@ STAGE_ORDER = ["prepare", "chunk", "asr", "clean", "segment", "align", "export"]
 
 @dataclass(frozen=True)
 class PipelineRunContext:
-    """Immutable context for a pipeline run."""
+    """Immutable context for a pipeline run.
+
+    Persisted so resume can reconstruct the exact run configuration
+    without relying on CLI arguments matching the original run.
+    """
 
     input_path: str
     output_dir: str
     fmt: str = "srt"
+    enhance: str = "local"
+    translate_to: str = ""
+    bilingual: str = "off"
+    script_path: str = ""
+    script_mode: str = "follow_script"
+    subtitle_language: str = "zh"
+    max_chars: int = 24
+    glossary_path: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "input_path": self.input_path,
+            "output_dir": self.output_dir,
+            "fmt": self.fmt,
+            "enhance": self.enhance,
+            "translate_to": self.translate_to,
+            "bilingual": self.bilingual,
+            "script_path": self.script_path,
+            "script_mode": self.script_mode,
+            "subtitle_language": self.subtitle_language,
+            "max_chars": self.max_chars,
+            "glossary_path": self.glossary_path,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "PipelineRunContext":
+        return cls(
+            input_path=data["input_path"],
+            output_dir=data["output_dir"],
+            fmt=data.get("fmt", "srt"),
+            enhance=data.get("enhance", "local"),
+            translate_to=data.get("translate_to", ""),
+            bilingual=data.get("bilingual", "off"),
+            script_path=data.get("script_path", ""),
+            script_mode=data.get("script_mode", "follow_script"),
+            subtitle_language=data.get("subtitle_language", "zh"),
+            max_chars=data.get("max_chars", 24),
+            glossary_path=data.get("glossary_path", ""),
+        )
 
 
 class PipelineState:
     """Tracks the state of all stages in a pipeline run."""
 
-    def __init__(self):
+    def __init__(self, stage_order: list[str] | None = None):
+        order = stage_order or STAGE_ORDER
+        self.stage_order: list[str] = list(order)
         self.stages: dict[str, StageState] = {
             name: StageState(name=name, name_cn=STAGE_CN.get(name, name))
-            for name in STAGE_ORDER
+            for name in self.stage_order
         }
+        self.context: PipelineRunContext | None = None
         self._listeners: list = []
+
+    @classmethod
+    def new(
+        cls,
+        stage_order: list[str],
+        context: PipelineRunContext | None = None,
+    ) -> "PipelineState":
+        """Create a fresh state with a dynamic stage plan."""
+        state = cls(stage_order=stage_order)
+        state.context = context
+        return state
 
     def get(self, stage: str) -> StageState:
         return self.stages[stage]
 
     @property
     def current_stage(self) -> Optional[str]:
-        for name in STAGE_ORDER:
+        for name in self.stage_order:
             s = self.stages[name]
             if s.status in (StageStatus.RUNNING, StageStatus.RETRYING):
                 return name
@@ -179,8 +240,9 @@ class PipelineState:
 
     def to_dict(self) -> dict:
         """Serialize state to dict."""
-        return {
+        data: dict = {
             "version": STATE_VERSION,
+            "stage_order": self.stage_order,
             "stages": {
                 name: {
                     "status": s.status.value,
@@ -193,11 +255,27 @@ class PipelineState:
                 for name, s in self.stages.items()
             },
         }
+        if self.context is not None:
+            data["context"] = self.context.to_dict()
+        return data
 
     @classmethod
     def from_dict(cls, data: dict) -> "PipelineState":
-        """Deserialize state from dict."""
-        state = cls()
+        """Deserialize state from dict.
+
+        Supports both v1 (fixed 7-stage) and v2 (dynamic stage_order) formats.
+        """
+        version = data.get("version", 1)
+        if version >= 2:
+            stage_order = data.get("stage_order", STAGE_ORDER)
+            state = cls(stage_order=stage_order)
+            ctx_data = data.get("context")
+            if ctx_data:
+                state.context = PipelineRunContext.from_dict(ctx_data)
+        else:
+            # v1: fixed 7-stage order, no context
+            state = cls()
+
         stages_data = data.get("stages", {})
         for name, stage_data in stages_data.items():
             if name in state.stages:

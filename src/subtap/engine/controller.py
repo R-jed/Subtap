@@ -46,7 +46,11 @@ class PipelineController:
             "asr": self._run_asr,
             "clean": self._run_clean,
             "segment": self._run_segment,
+            "script_match": self._run_script_match,
             "align": self._run_align,
+            "hotword": self._run_hotword,
+            "learn": self._run_learn,
+            "translate": self._run_translate,
             "export": self._run_export,
         }
         self._on_stage_change: Optional[Callable] = None
@@ -73,6 +77,19 @@ class PipelineController:
         """Set pre-flight state for event logging."""
         self._git_commit_hash = git_commit_hash
         self._workspace_clean = workspace_clean
+
+    def set_context(self, ctx: PipelineRunContext) -> None:
+        """Restore run context from persisted state for resume."""
+        self._run_context = ctx
+        # Update config so stage handlers use persisted values
+        if ctx.script_path:
+            self.config.output.script_path = ctx.script_path
+        if ctx.script_mode:
+            self.config.output.script_mode = ctx.script_mode
+        if ctx.subtitle_language:
+            self.config.output.subtitle_language = ctx.subtitle_language
+        if ctx.max_chars:
+            self.config.output.max_chars = ctx.max_chars
 
     def on_stage_change(self, callback: Callable) -> None:
         """Register callback for stage state changes (for TUI integration)."""
@@ -108,14 +125,15 @@ class PipelineController:
             Summary dict with timings and results.
         """
         self.workspace.ensure_dirs()
-        # Save run context
-        self._run_context = PipelineRunContext(
-            input_path=str(input_path),
-            output_dir=str(output_dir),
-            fmt=fmt,
-        )
+        # Save run context (preserve full context if already set by resume)
+        if self._run_context is None:
+            self._run_context = PipelineRunContext(
+                input_path=str(input_path),
+                output_dir=str(output_dir),
+                fmt=fmt,
+            )
         self._save_state()
-        target_stages = stages or STAGE_ORDER
+        target_stages = stages or self.state.stage_order
         timings: dict[str, float] = {}
 
         for stage_name in target_stages:
@@ -198,15 +216,30 @@ class PipelineController:
         output_dir: Path,
         fmt: str = "srt",
     ) -> dict:
-        """Resume pipeline from the first non-success stage."""
+        """Resume pipeline from the first non-success stage.
+
+        Uses persisted stage_order (not hardcoded STAGE_ORDER) so that
+        optional stages (script_match, hotword, learn, translate) are
+        included in the resume plan when they were part of the original run.
+        """
+        stage_order = self.state.stage_order
+
+        # Restore context from persisted state if available
+        if self.state.context:
+            self.set_context(self.state.context)
+            # Override args with persisted context values
+            input_path = Path(self.state.context.input_path)
+            output_dir = Path(self.state.context.output_dir)
+            fmt = self.state.context.fmt
+
         start_idx = 0
-        for i, name in enumerate(STAGE_ORDER):
+        for i, name in enumerate(stage_order):
             stage = self.state.get(name)
             if stage.status not in (StageStatus.SUCCESS, StageStatus.SKIPPED):
                 start_idx = i
                 break
 
-        remaining = STAGE_ORDER[start_idx:]
+        remaining = stage_order[start_idx:]
         if not remaining:
             return {}
 
@@ -369,6 +402,35 @@ class PipelineController:
             "format": result["format"],
             "segment_count": result["segment_count"],
         }
+
+    # ── Optional stage handlers ──
+
+    def _run_script_match(self, **_) -> dict:
+        from subtap.core.pipeline import Pipeline
+
+        p = Pipeline(self.config, self.workspace.root)
+        return p.run_stage("script_match")
+
+    def _run_hotword(self, **_) -> dict:
+        from subtap.core.pipeline import Pipeline
+
+        p = Pipeline(self.config, self.workspace.root)
+        glossary = self.state.context.glossary_path if self.state.context else ""
+        return p.run_stage("hotword", glossary_path=glossary or None)
+
+    def _run_learn(self, **_) -> dict:
+        from subtap.core.pipeline import Pipeline
+
+        p = Pipeline(self.config, self.workspace.root)
+        glossary = self.state.context.glossary_path if self.state.context else ""
+        return p.run_stage("learn", glossary_path=glossary or None)
+
+    def _run_translate(self, **_) -> dict:
+        from subtap.core.pipeline import Pipeline
+
+        p = Pipeline(self.config, self.workspace.root)
+        target = self.state.context.translate_to if self.state.context else ""
+        return p.run_stage("translate", target_language=target)
 
 
 # Avoid circular import at module level

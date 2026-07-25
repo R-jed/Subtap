@@ -776,7 +776,7 @@ def test_pipeline_preflight_does_not_modify_git_state(tmp_path: Path):
 
 
 def test_align_ignores_stale_script_match_when_script_disabled(tmp_path: Path):
-    """C2: With script_path=None, align uses sentences.jsonl, not stale script_matched."""
+    """C2: With script_path=None, _stage_align passes sentences.jsonl to run_align."""
     from subtap.schemas.config import SubtapConfig
     from subtap.core.workspace import Workspace
     from subtap.core.pipeline import Pipeline
@@ -787,28 +787,22 @@ def test_align_ignores_stale_script_match_when_script_disabled(tmp_path: Path):
     ws = Workspace(config, base_dir=tmp_path / "work")
     ws.ensure_dirs()
 
-    # Write CURRENT sentences.jsonl
-    ws.sentences_jsonl.write_text(
-        '{"sentence_id": 0, "text": "current", "start_sec": 0.0, "end_sec": 1.0}\n',
-        encoding="utf-8",
-    )
-    # Write STALE script_matched.jsonl
-    ws.script_matched_jsonl.write_text(
-        '{"sentence_id": 0, "text": "stale", "start_sec": 0.0, "end_sec": 1.0}\n',
-        encoding="utf-8",
-    )
+    captured = {}
 
-    pipeline = Pipeline(config, work_dir=tmp_path / "work")
+    def fake_run_align(workspace, config, **kwargs):
+        captured["sentences_path"] = kwargs.get("sentences_path")
+        return {"aligned_count": 0}
 
-    assert pipeline.config.output.script_path is None
-    # Align stage picks sentences.jsonl when script_path is None
-    expected = ws.sentences_jsonl
-    actual = (
-        ws.script_matched_jsonl
-        if pipeline.config.output.script_path
-        else ws.sentences_jsonl
-    )
-    assert actual == expected
+    import subtap.core.align as align_mod
+
+    original = align_mod.run_align
+    align_mod.run_align = fake_run_align
+    try:
+        pipeline = Pipeline(config, work_dir=tmp_path / "work")
+        pipeline._stage_align()
+        assert captured["sentences_path"] == ws.sentences_jsonl
+    finally:
+        align_mod.run_align = original
 
 
 # ── C4: Timestamp formatting edge cases ──
@@ -910,3 +904,450 @@ def test_c5_single_word():
     words = _fix_word_timestamps(words)
     _assert_timing_invariants(words)
     assert words[0]["end_sec"] == 1.020
+
+
+# ── C3-E: Dynamic stage plan & context persistence ──
+
+
+def test_pipeline_state_v2_dynamic_stage_order():
+    """PipelineState.new() creates state with custom stage_order."""
+    from subtap.engine.state import PipelineRunContext
+
+    order = [
+        "prepare",
+        "chunk",
+        "asr",
+        "clean",
+        "segment",
+        "script_match",
+        "align",
+        "export",
+    ]
+    ctx = PipelineRunContext(
+        input_path="/tmp/test.mp3",
+        output_dir="/tmp/out",
+        script_path="/tmp/script.txt",
+    )
+    ps = PipelineState.new(stage_order=order, context=ctx)
+
+    assert ps.stage_order == order
+    assert len(ps.stages) == 8
+    assert "script_match" in ps.stages
+    assert ps.context is not None
+    assert ps.context.script_path == "/tmp/script.txt"
+
+
+def test_pipeline_state_v2_roundtrip():
+    """V2 state with stage_order and context survives save/load."""
+    from subtap.engine.state import PipelineRunContext
+
+    order = [
+        "prepare",
+        "chunk",
+        "asr",
+        "clean",
+        "segment",
+        "align",
+        "hotword",
+        "learn",
+        "export",
+    ]
+    ctx = PipelineRunContext(
+        input_path="/tmp/in.mp3",
+        output_dir="/tmp/out",
+        translate_to="en",
+        bilingual="source-first",
+        glossary_path="/tmp/glossary.json",
+    )
+    ps = PipelineState.new(stage_order=order, context=ctx)
+    ps.mark_success("prepare", {}, 0.1)
+    ps.mark_success("chunk", {}, 0.2)
+    ps.mark_running("asr")
+
+    data = ps.to_dict()
+    assert data["version"] == 2
+    assert data["stage_order"] == order
+    assert data["context"]["translate_to"] == "en"
+    assert data["context"]["bilingual"] == "source-first"
+
+    restored = PipelineState.from_dict(data)
+    assert restored.stage_order == order
+    assert "hotword" in restored.stages
+    assert "learn" in restored.stages
+    assert restored.get("prepare").status == StageStatus.SUCCESS
+    assert restored.get("asr").status == StageStatus.RUNNING
+    assert restored.context.translate_to == "en"
+    assert restored.context.bilingual == "source-first"
+
+
+def test_pipeline_state_v1_backward_compat():
+    """V1 state (no stage_order/context) loads with default 7-stage order."""
+    v1_data = {
+        "version": 1,
+        "stages": {
+            "prepare": {
+                "status": "success",
+                "retry_count": 0,
+                "error_msg": "",
+                "duration_sec": 0.1,
+            },
+            "chunk": {
+                "status": "success",
+                "retry_count": 0,
+                "error_msg": "",
+                "duration_sec": 0.1,
+            },
+            "asr": {
+                "status": "running",
+                "retry_count": 0,
+                "error_msg": "",
+                "duration_sec": 0.0,
+            },
+            "clean": {
+                "status": "pending",
+                "retry_count": 0,
+                "error_msg": "",
+                "duration_sec": 0.0,
+            },
+            "segment": {
+                "status": "pending",
+                "retry_count": 0,
+                "error_msg": "",
+                "duration_sec": 0.0,
+            },
+            "align": {
+                "status": "pending",
+                "retry_count": 0,
+                "error_msg": "",
+                "duration_sec": 0.0,
+            },
+            "export": {
+                "status": "pending",
+                "retry_count": 0,
+                "error_msg": "",
+                "duration_sec": 0.0,
+            },
+        },
+    }
+    ps = PipelineState.from_dict(v1_data)
+    assert ps.stage_order == STAGE_ORDER
+    assert len(ps.stages) == 7
+    assert ps.context is None
+    assert ps.get("prepare").status == StageStatus.SUCCESS
+    assert ps.get("asr").status == StageStatus.RUNNING
+
+
+def _run_helper_subprocess(
+    tmp_path, mode, script_path="", translate_to="", glossary_path=""
+):
+    """Run _c3_test_helper.py as subprocess, return (returncode, state_file_path)."""
+    import os
+    import subprocess
+    import sys
+
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    input_file = tmp_path / "input.mp3"
+    input_file.write_bytes(b"\x00" * 100)
+
+    env = {
+        **os.environ,
+        "C3_TEST_MODE": mode,
+        "C3_INPUT_PATH": str(input_file),
+        "C3_WORK_DIR": str(work_dir),
+        "C3_OUTPUT_DIR": str(output_dir),
+        "C3_SCRIPT_PATH": script_path,
+        "C3_TRANSLATE_TO": translate_to,
+        "C3_GLOSSARY_PATH": glossary_path,
+    }
+    result = subprocess.run(
+        [sys.executable, str(Path(__file__).parent / "_c3_test_helper.py")],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    return result.returncode, work_dir / "pipeline-state.json"
+
+
+# ── C3-E1: script_match hard crash → same artifact resume ──
+
+
+def test_script_match_crash_and_resume(tmp_path: Path):
+    """C3-E1: script_match crash leaves RUNNING, resume continues from script_match."""
+    script_file = tmp_path / "script.txt"
+    script_file.write_text("test script content\n", encoding="utf-8")
+
+    returncode, state_file = _run_helper_subprocess(
+        tmp_path, "crash_at_script_match", script_path=str(script_file)
+    )
+    assert returncode != 0, "Expected non-zero exit from os._exit(97)"
+    assert state_file.exists(), "state file missing after crash"
+
+    state = PipelineState.load(state_file)
+    # Core stages before script_match should be SUCCESS
+    for name in ["prepare", "chunk", "asr", "clean", "segment"]:
+        assert (
+            state.get(name).status == StageStatus.SUCCESS
+        ), f"{name} should be SUCCESS"
+    # script_match should be RUNNING (crash checkpoint)
+    assert state.get("script_match").status == StageStatus.RUNNING
+    # Remaining stages should be PENDING
+    for name in ["align", "hotword", "learn", "export"]:
+        assert (
+            state.get(name).status == StageStatus.PENDING
+        ), f"{name} should be PENDING"
+
+    # stage_order should include script_match
+    assert "script_match" in state.stage_order
+
+    # Resume using the same state file — new lifecycle
+    from subtap.engine.controller import PipelineController
+
+    config = SubtapConfig()
+    config.output.script_path = str(script_file)
+    ctrl = PipelineController(config, tmp_path / "work")
+    ctrl.load_state()
+
+    calls = []
+    fake_result = {"segment_count": 1, "aligned_count": 1}
+    for name in ["script_match", "align", "hotword", "learn", "export"]:
+        ctrl._stage_handlers[name] = lambda n=name, **kw: (
+            calls.append(n),
+            fake_result,
+        )[1]
+
+    ctrl.resume_pipeline(tmp_path / "input.mp3", tmp_path / "output", fmt="srt")
+
+    # Must resume from script_match, not skip it
+    assert (
+        calls[0] == "script_match"
+    ), f"First stage should be script_match, got {calls[0]}"
+    # Core stages must NOT be re-executed
+    for name in ["prepare", "chunk", "asr", "clean", "segment"]:
+        assert name not in calls, f"{name} should not be re-executed"
+
+
+# ── C3-E2: translate hard crash → same artifact resume ──
+
+
+def test_translate_crash_and_resume(tmp_path: Path):
+    """C3-E2: translate crash leaves RUNNING, resume continues from translate."""
+    returncode, state_file = _run_helper_subprocess(
+        tmp_path, "crash_at_translate", translate_to="en"
+    )
+    assert returncode != 0, "Expected non-zero exit from os._exit(96)"
+    assert state_file.exists(), "state file missing after crash"
+
+    state = PipelineState.load(state_file)
+    # Core stages should be SUCCESS
+    for name in ["prepare", "chunk", "asr", "clean", "segment", "align"]:
+        assert (
+            state.get(name).status == StageStatus.SUCCESS
+        ), f"{name} should be SUCCESS"
+    # hotword/learn should be SUCCESS (they run before translate)
+    for name in ["hotword", "learn"]:
+        assert (
+            state.get(name).status == StageStatus.SUCCESS
+        ), f"{name} should be SUCCESS"
+    # translate should be RUNNING
+    assert state.get("translate").status == StageStatus.RUNNING
+    # export should be PENDING
+    assert state.get("export").status == StageStatus.PENDING
+
+    assert "translate" in state.stage_order
+
+    # Resume
+    from subtap.engine.controller import PipelineController
+
+    config = SubtapConfig()
+    ctrl = PipelineController(config, tmp_path / "work")
+    ctrl.load_state()
+
+    calls = []
+    fake_result = {"translated_count": 1, "output_path": "x.srt", "segment_count": 1}
+    for name in ["translate", "export"]:
+        ctrl._stage_handlers[name] = lambda n=name, **kw: (
+            calls.append(n),
+            fake_result,
+        )[1]
+
+    ctrl.resume_pipeline(tmp_path / "input.mp3", tmp_path / "output", fmt="srt")
+
+    assert calls == ["translate", "export"]
+    # Previous stages must NOT be re-executed
+    for name in [
+        "prepare",
+        "chunk",
+        "asr",
+        "clean",
+        "segment",
+        "align",
+        "hotword",
+        "learn",
+    ]:
+        assert name not in calls
+
+
+# ── C3-E3: original CLI context survives resume ──
+
+
+def test_resume_restores_original_context(tmp_path: Path):
+    """C3-E3: Resume uses persisted context, not current config defaults."""
+    from subtap.engine.controller import PipelineController
+    from subtap.engine.state import PipelineRunContext
+
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+
+    ctx = PipelineRunContext(
+        input_path=str(tmp_path / "original.mp3"),
+        output_dir=str(tmp_path / "original_out"),
+        fmt="ass",
+        translate_to="en",
+        bilingual="source-first",
+        script_path=str(tmp_path / "original_script.txt"),
+    )
+    state = PipelineState.new(
+        stage_order=["prepare", "chunk", "asr", "clean", "segment", "align", "export"],
+        context=ctx,
+    )
+    state.mark_success("prepare", {}, 0.1)
+    state.mark_success("chunk", {}, 0.1)
+    state.mark_running("asr")
+    state.save(work_dir / "pipeline-state.json")
+
+    # Resume with DIFFERENT args — should use persisted context
+    config = SubtapConfig()
+    ctrl = PipelineController(config, work_dir)
+    ctrl.load_state()
+
+    calls = []
+    fake_result = {"segment_count": 1}
+    for name in ["asr", "clean", "segment", "align", "export"]:
+        ctrl._stage_handlers[name] = lambda n=name, **kw: (
+            calls.append(n),
+            fake_result,
+        )[1]
+
+    # Pass different input_path/output_dir — persisted context should override
+    ctrl.resume_pipeline(
+        tmp_path / "different.mp3",
+        tmp_path / "different_out",
+        fmt="srt",
+    )
+
+    # Verify context was restored
+    assert ctrl._run_context is not None
+    assert ctrl._run_context.translate_to == "en"
+    assert ctrl._run_context.bilingual == "source-first"
+    assert ctrl._run_context.script_path == str(tmp_path / "original_script.txt")
+
+
+# ── C3-E4: new normal run overwrites old plan/context ──
+
+
+def test_new_run_overwrites_old_plan_and_context(tmp_path: Path):
+    """C3-E4: New normal run creates fresh state, discarding old plan/context."""
+    from subtap.core.tracked_pipeline import TrackedPipeline
+    from subtap.engine.state import PipelineRunContext
+
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+
+    # Run A: script + translate enabled
+    old_order = [
+        "prepare",
+        "chunk",
+        "asr",
+        "clean",
+        "segment",
+        "script_match",
+        "align",
+        "hotword",
+        "learn",
+        "translate",
+        "export",
+    ]
+    old_ctx = PipelineRunContext(
+        input_path="/tmp/old.mp3",
+        output_dir="/tmp/old_out",
+        script_path="/tmp/old_script.txt",
+        translate_to="en",
+    )
+    old_state = PipelineState.new(stage_order=old_order, context=old_ctx)
+    for name in old_order:
+        old_state.mark_success(name, {}, 0.1)
+    old_state.save(work_dir / "pipeline-state.json")
+
+    # Run B: no script, no translate — fresh TrackedPipeline
+    config = SubtapConfig()
+    config.output.script_path = ""
+    pipeline = TrackedPipeline(
+        config,
+        work_dir=work_dir,
+        stage_order=["prepare", "chunk", "asr", "clean", "segment", "align", "export"],
+    )
+    pipeline.workspace.ensure_dirs()
+
+    # New state should NOT have script_match or translate
+    assert "script_match" not in pipeline.state.stage_order
+    assert "translate" not in pipeline.state.stage_order
+
+    # Save and reload
+    pipeline.save_state()
+    loaded = PipelineState.load(work_dir / "pipeline-state.json")
+    assert "script_match" not in loaded.stage_order
+    assert "translate" not in loaded.stage_order
+    # All stages should be PENDING (fresh run)
+    for name in loaded.stage_order:
+        assert loaded.get(name).status == StageStatus.PENDING
+
+
+# ── C2 fix: align uses production path for sentences_path ──
+
+
+def test_align_uses_production_path_for_sentences(tmp_path: Path):
+    """C2: Pipeline._stage_align passes correct sentences_path to run_align."""
+    from subtap.core.pipeline import Pipeline
+    from subtap.core.workspace import Workspace
+
+    # Case A: script_path=None → should use sentences.jsonl
+    config_a = SubtapConfig()
+    config_a.output.script_path = None
+    ws_a = Workspace(config_a, base_dir=tmp_path / "work_a")
+    ws_a.ensure_dirs()
+
+    captured = {}
+
+    def fake_run_align(workspace, config, **kwargs):
+        captured["sentences_path"] = kwargs.get("sentences_path")
+        return {"aligned_count": 0}
+
+    import subtap.core.align as align_mod
+
+    original = align_mod.run_align
+    align_mod.run_align = fake_run_align
+    try:
+        p = Pipeline(config_a, work_dir=tmp_path / "work_a")
+        p._stage_align()
+        assert captured["sentences_path"] == ws_a.sentences_jsonl
+    finally:
+        align_mod.run_align = original
+
+    # Case B: script_path set → should use script_matched.jsonl
+    config_b = SubtapConfig()
+    config_b.output.script_path = str(tmp_path / "script.txt")
+    ws_b = Workspace(config_b, base_dir=tmp_path / "work_b")
+    ws_b.ensure_dirs()
+
+    captured.clear()
+    align_mod.run_align = fake_run_align
+    try:
+        p = Pipeline(config_b, work_dir=tmp_path / "work_b")
+        p._stage_align()
+        assert captured["sentences_path"] == ws_b.script_matched_jsonl
+    finally:
+        align_mod.run_align = original

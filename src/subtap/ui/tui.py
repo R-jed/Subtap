@@ -155,9 +155,37 @@ class BaseRunner(ABC):
     ) -> dict:
         """Core pipeline execution: build stages, run loop, export, save meta."""
         stages = self._build_stages(pipeline.config, translate_to)
+
+        # Persist stage plan and context for crash recovery
+        stage_keys = [s["key"] for s in stages]
+        set_plan = getattr(pipeline, "set_stage_plan", None)
+        if callable(set_plan):
+            from subtap.engine.state import PipelineRunContext
+
+            glossary = ""
+            clean_cfg = getattr(pipeline.config, "clean", None)
+            if clean_cfg:
+                glossary = getattr(clean_cfg, "glossary_path", "") or ""
+            ctx = PipelineRunContext(
+                input_path=str(input_path),
+                output_dir=str(output_dir),
+                fmt=fmt,
+                enhance=enhance,
+                translate_to=translate_to or "",
+                bilingual=bilingual,
+                script_path=getattr(pipeline.config.output, "script_path", "") or "",
+                script_mode=getattr(pipeline.config.output, "script_mode", "") or "",
+                subtitle_language=getattr(
+                    pipeline.config.output, "subtitle_language", "zh"
+                ),
+                max_chars=getattr(pipeline.config.output, "max_chars", 24),
+                glossary_path=glossary,
+            )
+            set_plan(stage_keys, ctx)
+
         publish_plan = getattr(pipeline, "publish_plan", None)
         if callable(publish_plan):
-            publish_plan([stage["key"] for stage in stages])
+            publish_plan(stage_keys)
         # Inject input_path into prepare stage kwargs
         for stage in stages:
             if stage["key"] == "prepare":

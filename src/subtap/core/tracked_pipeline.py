@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 
 from subtap.core.pipeline import Pipeline
-from subtap.engine.state import PipelineState
+from subtap.engine.state import PipelineRunContext, PipelineState
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +29,15 @@ class TrackedPipeline(Pipeline):
         event_bus=None,
         task_id: str = "local",
         state: PipelineState | None = None,
+        stage_order: list[str] | None = None,
     ):
         super().__init__(config, work_dir, event_bus=event_bus, task_id=task_id)
-        self.state = state or PipelineState()
+        if state is not None:
+            self.state = state
+        elif stage_order is not None:
+            self.state = PipelineState.new(stage_order)
+        else:
+            self.state = PipelineState()
         self._state_path = self.workspace.root / STATE_FILE
 
     def save_state(self) -> None:
@@ -40,6 +46,20 @@ class TrackedPipeline(Pipeline):
             self.state.save(self._state_path)
         except Exception as e:
             logger.warning("Failed to save pipeline state: %s", e)
+
+    def set_stage_plan(
+        self,
+        stage_keys: list[str],
+        context: PipelineRunContext | None = None,
+    ) -> None:
+        """Set the dynamic stage plan from the runner.
+
+        Creates a fresh PipelineState with the exact stage list for this run,
+        so that pipeline-state.json reflects the real execution plan.
+        """
+        self.state = PipelineState.new(stage_order=stage_keys, context=context)
+        self._state_path = self.workspace.root / STATE_FILE
+        self.save_state()
 
     def run_stage(self, stage: str, **kwargs) -> dict:
         """Run stage with state persistence.
