@@ -166,6 +166,16 @@ class BaseRunner(ABC):
             clean_cfg = getattr(pipeline.config, "clean", None)
             if clean_cfg:
                 glossary = getattr(clean_cfg, "glossary_path", "") or ""
+
+            # Resolve effective LLM flags for persistence
+            from subtap.core.clean import resolve_llm_flags
+
+            llm_proofread, llm_hotword = resolve_llm_flags(
+                config_llm_proofread=getattr(pipeline.config, "llm_proofread", None),
+                config_llm_hotword=getattr(pipeline.config, "llm_hotword", False),
+                enhance_mode=enhance,
+            )
+
             ctx = PipelineRunContext(
                 input_path=str(input_path),
                 output_dir=str(output_dir),
@@ -178,8 +188,21 @@ class BaseRunner(ABC):
                 subtitle_language=getattr(
                     pipeline.config.output, "subtitle_language", "zh"
                 ),
+                subtitle_punctuation=getattr(
+                    pipeline.config.output, "subtitle_punctuation", False
+                ),
                 max_chars=getattr(pipeline.config.output, "max_chars", 24),
                 glossary_path=glossary,
+                llm_proofread=llm_proofread,
+                llm_hotword=llm_hotword,
+                asr_backend=getattr(
+                    getattr(pipeline.config, "asr", None), "backend", "mlx-qwen-asr"
+                ),
+                asr_hotwords=",".join(
+                    getattr(getattr(pipeline.config, "asr", None), "hotwords", []) or []
+                ),
+                subtitle_stem=getattr(pipeline.config.output, "subtitle_stem", "final"),
+                policy_mode=getattr(pipeline, "_policy_mode", "local"),
             )
             set_plan(stage_keys, ctx)
 

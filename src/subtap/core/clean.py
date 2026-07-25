@@ -169,10 +169,25 @@ def resolve_llm_flags(
 ) -> tuple[bool, bool]:
     """Resolve LLM feature flags from multiple overlapping sources.
 
-    Priority:
-    1. llm_backend_name off/none/false → disable all
-    2. enhance_mode=api → enable all (unless user explicitly disabled)
-    3. enhance_mode=local → disable unless user explicitly enabled
+    Truth table:
+    ┌─────────────────────┬──────────────┬───────────────┬───────────────┐
+    │ enhance_mode        │ user value   │ llm_proofread │ llm_hotword   │
+    ├─────────────────────┼──────────────┼───────────────┼───────────────┤
+    │ backend=off/none    │ (any)        │ False         │ False         │
+    │ api                 │ None         │ True          │ True          │
+    │ api                 │ explicit F   │ False         │ False         │
+    │ api                 │ explicit T   │ True          │ True          │
+    │ local               │ None         │ False         │ False         │
+    │ local               │ explicit F   │ False         │ False         │
+    │ local               │ explicit T   │ True          │ True          │
+    │ (unset)             │ None         │ True          │ False         │
+    │ (unset)             │ explicit     │ as-set        │ as-set        │
+    └─────────────────────┴──────────────┴───────────────┴───────────────┘
+
+    Rules:
+    1. explicit backend off → disable all
+    2. enhance=api → None→enable, explicit False→keep False, explicit True→keep True
+    3. enhance=local → None→disable, explicit False→False, explicit True→True
     4. config values → use as-is
     5. Default → proofread=True, hotword=False
     """
@@ -183,14 +198,18 @@ def resolve_llm_flags(
         llm_proofread = False
         llm_hotword = False
     elif enhance_mode == "api":
+        # None → enable; explicit value → keep
         if llm_proofread is None:
             llm_proofread = True
-        if not llm_hotword:
+        if llm_hotword is None:
             llm_hotword = True
     elif enhance_mode == "local":
-        # local 模式强制禁用所有 LLM 功能，无需 API key
-        llm_proofread = False
-        llm_hotword = False
+        # local: disable unless user explicitly enabled
+        if llm_proofread is None:
+            llm_proofread = False
+        if llm_hotword is None:
+            llm_hotword = False
+    # else: no enhance_mode override, use config values as-is
 
     # Default: proofread on, hotword off
     if llm_proofread is None:

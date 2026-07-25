@@ -93,6 +93,9 @@ STAGE_CN: dict[str, str] = {
 
 STAGE_ORDER = ["prepare", "chunk", "asr", "clean", "segment", "align", "export"]
 
+# Valid statuses for schema validation
+_VALID_STATUSES = {s.value for s in StageStatus}
+
 
 @dataclass(frozen=True)
 class PipelineRunContext:
@@ -100,6 +103,9 @@ class PipelineRunContext:
 
     Persisted so resume can reconstruct the exact run configuration
     without relying on CLI arguments matching the original run.
+
+    Contains ALL effective values that influence stage behavior:
+    CLI overrides + loaded config + defaults → final effective values.
     """
 
     input_path: str
@@ -111,8 +117,17 @@ class PipelineRunContext:
     script_path: str = ""
     script_mode: str = "follow_script"
     subtitle_language: str = "zh"
+    subtitle_punctuation: bool = False
     max_chars: int = 24
     glossary_path: str = ""
+    # Effective config values that influence stage behavior
+    llm_proofread: bool = False
+    llm_hotword: bool = False
+    asr_backend: str = "mlx-qwen-asr"
+    asr_hotwords: str = ""  # comma-separated
+    subtitle_stem: str = "final"
+    # Policy
+    policy_mode: str = "local"
 
     def to_dict(self) -> dict:
         return {
@@ -125,8 +140,15 @@ class PipelineRunContext:
             "script_path": self.script_path,
             "script_mode": self.script_mode,
             "subtitle_language": self.subtitle_language,
+            "subtitle_punctuation": self.subtitle_punctuation,
             "max_chars": self.max_chars,
             "glossary_path": self.glossary_path,
+            "llm_proofread": self.llm_proofread,
+            "llm_hotword": self.llm_hotword,
+            "asr_backend": self.asr_backend,
+            "asr_hotwords": self.asr_hotwords,
+            "subtitle_stem": self.subtitle_stem,
+            "policy_mode": self.policy_mode,
         }
 
     @classmethod
@@ -141,9 +163,65 @@ class PipelineRunContext:
             script_path=data.get("script_path", ""),
             script_mode=data.get("script_mode", "follow_script"),
             subtitle_language=data.get("subtitle_language", "zh"),
+            subtitle_punctuation=data.get("subtitle_punctuation", False),
             max_chars=data.get("max_chars", 24),
             glossary_path=data.get("glossary_path", ""),
+            llm_proofread=data.get("llm_proofread", False),
+            llm_hotword=data.get("llm_hotword", False),
+            asr_backend=data.get("asr_backend", "mlx-qwen-asr"),
+            asr_hotwords=data.get("asr_hotwords", ""),
+            subtitle_stem=data.get("subtitle_stem", "final"),
+            policy_mode=data.get("policy_mode", "local"),
         )
+
+
+def build_stage_kwargs(
+    stage_name: str,
+    ctx: PipelineRunContext | None,
+    config: object | None = None,
+) -> dict:
+    """Build deterministic kwargs for a stage from persisted context.
+
+    Used by both normal run and resume/retry to ensure identical parameters.
+    Returns empty dict when ctx is None (legacy state without context).
+    """
+    if ctx is None:
+        return {}
+    if stage_name == "prepare":
+        return {"input_path": Path(ctx.input_path)}
+    elif stage_name == "chunk":
+        return {}
+    elif stage_name == "asr":
+        kwargs: dict = {}
+        if ctx.asr_backend:
+            kwargs["backend_name"] = ctx.asr_backend
+        return kwargs
+    elif stage_name == "clean":
+        return {"enhance_mode": ctx.enhance}
+    elif stage_name == "segment":
+        return {}
+    elif stage_name == "script_match":
+        return {}
+    elif stage_name == "align":
+        kwargs = {}
+        if ctx.asr_backend:
+            kwargs["backend_name"] = None  # align uses its own backend
+        return kwargs
+    elif stage_name == "hotword":
+        return {"glossary_path": ctx.glossary_path or None}
+    elif stage_name == "learn":
+        return {"glossary_path": ctx.glossary_path or None}
+    elif stage_name == "translate":
+        return {"target_language": ctx.translate_to}
+    elif stage_name == "export":
+        return {
+            "fmt": ctx.fmt,
+            "output_dir": ctx.output_dir,
+            "stem": ctx.subtitle_stem,
+            "translate_to": ctx.translate_to or None,
+            "bilingual": ctx.bilingual,
+        }
+    return {}
 
 
 class PipelineState:
@@ -222,7 +300,6 @@ class PipelineState:
 
     def mark_retrying(self, stage: str) -> None:
         s = self.stages[stage]
-        s.retry_count += 1
         s.transition(StageStatus.RETRYING)
         self._notify(stage)
 
@@ -263,29 +340,64 @@ class PipelineState:
     def from_dict(cls, data: dict) -> "PipelineState":
         """Deserialize state from dict.
 
-        Supports both v1 (fixed 7-stage) and v2 (dynamic stage_order) formats.
+        Supports v1 (fixed 7-stage) and v2 (dynamic stage_order) formats.
+        Unknown versions raise ValueError.
         """
         version = data.get("version", 1)
-        if version >= 2:
-            stage_order = data.get("stage_order", STAGE_ORDER)
-            state = cls(stage_order=stage_order)
-            ctx_data = data.get("context")
-            if ctx_data:
-                state.context = PipelineRunContext.from_dict(ctx_data)
-        else:
+        if version == 1:
             # v1: fixed 7-stage order, no context
             state = cls()
+        elif version == 2:
+            if "stage_order" not in data:
+                raise ValueError("v2 state missing required 'stage_order' field")
+            stage_order = data["stage_order"]
+            if not isinstance(stage_order, list) or not stage_order:
+                raise ValueError("v2 state 'stage_order' must be a non-empty list")
+            if not all(isinstance(s, str) for s in stage_order):
+                raise ValueError("v2 state 'stage_order' must contain only strings")
+            if len(stage_order) != len(set(stage_order)):
+                raise ValueError("v2 state 'stage_order' contains duplicates")
+            state = cls(stage_order=stage_order)
+            ctx_data = data.get("context")
+            if ctx_data is not None:
+                if not isinstance(ctx_data, dict):
+                    raise ValueError("v2 state 'context' must be a dict")
+                state.context = PipelineRunContext.from_dict(ctx_data)
+        else:
+            raise ValueError(f"unsupported pipeline-state version: {version}")
 
         stages_data = data.get("stages", {})
+        if not isinstance(stages_data, dict):
+            raise ValueError("pipeline-state.json 'stages' must be a dict")
+
         for name, stage_data in stages_data.items():
             if name in state.stages:
+                if not isinstance(stage_data, dict):
+                    raise ValueError(f"stage '{name}' data must be a dict")
+                status_val = stage_data.get("status")
+                if status_val not in _VALID_STATUSES:
+                    raise ValueError(
+                        f"stage '{name}' has invalid status: {status_val!r}"
+                    )
                 s = state.stages[name]
-                s.status = StageStatus(stage_data["status"])
+                s.status = StageStatus(status_val)
                 s.retry_count = stage_data.get("retry_count", 0)
                 s.max_retries = stage_data.get("max_retries", 3)
                 s.error_msg = stage_data.get("error_msg", "")
                 s.result = stage_data.get("result", {})
                 s.duration_sec = stage_data.get("duration_sec", 0.0)
+
+        # Validate stages keys match stage_order
+        if version == 2:
+            expected = set(state.stage_order)
+            actual = set(stages_data.keys())
+            if actual and actual != expected:
+                logger.warning(
+                    "stages keys %s don't match stage_order %s",
+                    actual,
+                    expected,
+                )
+
         return state
 
     def save(self, path: Path) -> None:

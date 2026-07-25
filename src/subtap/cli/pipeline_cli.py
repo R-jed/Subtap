@@ -563,6 +563,13 @@ def _run(
     pipeline = TrackedPipeline(config, work_dir=work_dir)
     pipeline.workspace.ensure_dirs()
 
+    # Part P: Clean stale llm_hotword_ops.jsonl from previous runs
+    # Resume must NOT delete (it needs to continue the same run).
+    # New normal run always starts fresh.
+    _stale_ops = work_dir / "llm_hotword_ops.jsonl"
+    if _stale_ops.exists():
+        _stale_ops.unlink()
+
     # ── Run Log ────────────────────────────────────────────
     from subtap.metrics.run_log import RunLog
 
