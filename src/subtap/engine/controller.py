@@ -47,6 +47,9 @@ class PipelineController:
         self.workspace = Workspace(config, base_dir=work_dir)
         self.policy = ExecutionPolicy(policy)
         self.state = state or PipelineState()
+        # v2 state requires context; ensure it's always present
+        if self.state.context is None:
+            self.state.context = PipelineRunContext(input_path="", output_dir="")
         self.event_log = EventLogger(self.workspace.logs_dir)
         self._on_stage_change: Optional[Callable] = None
         # Pre-flight state (set by CLI before run)

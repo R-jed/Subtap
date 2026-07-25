@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from subtap.engine.state import (
     PipelineState,
     StageState,
@@ -695,6 +697,7 @@ def test_resume_after_hard_crash_skips_completed_stages(tmp_path: Path):
 def test_new_run_replaces_previous_pipeline_state(tmp_path: Path):
     """C3-P4: New normal run creates fresh state, not inheriting old SUCCESS."""
     from subtap.engine.controller import PipelineController
+    from subtap.engine.state import PipelineRunContext
     from subtap.schemas.config import SubtapConfig
     from subtap.core.tracked_pipeline import TrackedPipeline
 
@@ -703,6 +706,9 @@ def test_new_run_replaces_previous_pipeline_state(tmp_path: Path):
 
     # Lifecycle A: old run completed
     ctrl = PipelineController(config=SubtapConfig(), work_dir=work_dir)
+    ctrl.state.context = PipelineRunContext(
+        input_path="/tmp/test.mp3", output_dir="/tmp/out"
+    )
     for name in STAGE_ORDER:
         ctrl.state.mark_success(name, {}, 0.1)
     ctrl._save_state()
@@ -714,6 +720,12 @@ def test_new_run_replaces_previous_pipeline_state(tmp_path: Path):
     # Lifecycle B: fresh TrackedPipeline creates new state
     pipeline = TrackedPipeline(config=SubtapConfig(), work_dir=work_dir)
     pipeline.workspace.ensure_dirs()
+
+    # Simulate normal run: context must be set before save
+    pipeline.set_stage_plan(
+        pipeline.state.stage_order,
+        PipelineRunContext(input_path="/tmp/new.mp3", output_dir="/tmp/new_out"),
+    )
 
     # Fresh state should be all PENDING
     for name in STAGE_ORDER:
@@ -1301,6 +1313,15 @@ def test_new_run_overwrites_old_plan_and_context(tmp_path: Path):
     )
     pipeline.workspace.ensure_dirs()
 
+    # Simulate normal run creating context before save
+    pipeline.set_stage_plan(
+        pipeline.state.stage_order,
+        PipelineRunContext(
+            input_path="/tmp/new.mp3",
+            output_dir="/tmp/new_out",
+        ),
+    )
+
     # New state should NOT have script_match or translate
     assert "script_match" not in pipeline.state.stage_order
     assert "translate" not in pipeline.state.stage_order
@@ -1553,11 +1574,27 @@ def test_context_roundtrip_preserves_all_fields(tmp_path: Path):
 
 
 def _make_v2_context_data(**overrides) -> dict:
-    """Build a minimal valid v2 context dict, with optional field removal."""
+    """Build a complete valid v2 context dict matching PipelineRunContext schema."""
     base = {
         "input_path": "/tmp/test.mp3",
         "output_dir": "/tmp/out",
-        "asr_model": "asr_1.7b",
+        "fmt": "srt",
+        "enhance": "local",
+        "translate_to": "",
+        "bilingual": "off",
+        "script_path": "",
+        "script_mode": "follow_script",
+        "subtitle_language": "zh",
+        "subtitle_punctuation": False,
+        "max_chars": 24,
+        "glossary_path": "",
+        "llm_proofread": False,
+        "llm_hotword": False,
+        "asr_backend": "mlx-qwen-asr",
+        "asr_model": "asr_0.6b",
+        "asr_hotwords": "",
+        "subtitle_stem": "final",
+        "policy_mode": "local",
         "local_only": False,
     }
     base.update(overrides)
@@ -1565,7 +1602,7 @@ def _make_v2_context_data(**overrides) -> dict:
 
 
 def _make_v2_state_dict(context: dict | None = None) -> dict:
-    """Build a minimal valid v2 state dict."""
+    """Build a minimal valid v2 state dict. Includes a complete context by default."""
     data: dict = {
         "version": 2,
         "stage_order": [
@@ -1578,7 +1615,14 @@ def _make_v2_state_dict(context: dict | None = None) -> dict:
             "export",
         ],
         "stages": {
-            name: {"status": "pending", "retry_count": 0}
+            name: {
+                "status": "pending",
+                "retry_count": 0,
+                "max_retries": 3,
+                "error_msg": "",
+                "result": {},
+                "duration_sec": 0.0,
+            }
             for name in [
                 "prepare",
                 "chunk",
@@ -1590,53 +1634,44 @@ def _make_v2_state_dict(context: dict | None = None) -> dict:
             ]
         },
     }
-    if context is not None:
-        data["context"] = context
+    # v2 requires context; default to a complete valid one
+    data["context"] = context if context is not None else _make_v2_context_data()
     return data
 
 
 def test_v2_legacy_missing_both_fields_rejected():
-    """LV2-1: v2 state missing both asr_model and local_only raises ValueError."""
+    """LV2-1: v2 context missing asr_model and local_only raises ValueError."""
     ctx = _make_v2_context_data()
     del ctx["asr_model"]
     del ctx["local_only"]
     data = _make_v2_state_dict(context=ctx)
 
-    try:
+    with pytest.raises(ValueError, match="missing required fields"):
         PipelineState.from_dict(data)
-        assert False, "Should have raised ValueError"
-    except ValueError as e:
-        assert "safety-critical" in str(e).lower() or "asr_model" in str(e)
 
 
 def test_v2_legacy_missing_local_only_rejected():
-    """LV2-2: v2 state missing only local_only raises ValueError."""
+    """LV2-2: v2 context missing only local_only raises ValueError."""
     ctx = _make_v2_context_data()
     del ctx["local_only"]
     data = _make_v2_state_dict(context=ctx)
 
-    try:
+    with pytest.raises(ValueError, match="local_only"):
         PipelineState.from_dict(data)
-        assert False, "Should have raised ValueError"
-    except ValueError as e:
-        assert "local_only" in str(e)
 
 
 def test_v2_legacy_missing_asr_model_rejected():
-    """LV2-3: v2 state missing only asr_model raises ValueError."""
+    """LV2-3: v2 context missing only asr_model raises ValueError."""
     ctx = _make_v2_context_data()
     del ctx["asr_model"]
     data = _make_v2_state_dict(context=ctx)
 
-    try:
+    with pytest.raises(ValueError, match="asr_model"):
         PipelineState.from_dict(data)
-        assert False, "Should have raised ValueError"
-    except ValueError as e:
-        assert "asr_model" in str(e)
 
 
 def test_v2_valid_with_safety_fields_loads():
-    """LV2-4: v2 state with both safety fields loads successfully."""
+    """LV2-4: v2 state with complete context loads successfully."""
     ctx = _make_v2_context_data(asr_model="asr_1.7b", local_only=True)
     data = _make_v2_state_dict(context=ctx)
 
@@ -1659,11 +1694,258 @@ def test_v2_legacy_invalid_preserves_file(tmp_path: Path):
     state_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
     original_content = state_file.read_text(encoding="utf-8")
 
-    try:
+    with pytest.raises(ValueError):
         PipelineState.load(state_file)
-        assert False, "Should have raised ValueError"
-    except ValueError:
-        pass
 
     # File must be exactly unchanged
+    assert state_file.read_text(encoding="utf-8") == original_content
+
+
+# ── Phase 2B: strict v2 schema validation ──────────────────────────
+
+
+def test_v2_missing_context_rejected():
+    """SV2-A: v2 state without context field raises ValueError."""
+    data = _make_v2_state_dict()
+    # _make_v2_state_dict includes context=None by default; remove it
+    data.pop("context", None)
+
+    with pytest.raises(ValueError, match="missing required 'context'"):
+        PipelineState.from_dict(data)
+
+
+def test_v2_null_context_rejected():
+    """SV2-B: v2 state with context=null raises ValueError."""
+    data = _make_v2_state_dict()
+    data["context"] = None  # explicitly set to null
+
+    with pytest.raises(ValueError, match="context.*must be a dict"):
+        PipelineState.from_dict(data)
+
+
+def test_v2_missing_stage_in_stages_rejected():
+    """SV2-C: stage_order has key missing from stages raises ValueError."""
+    ctx = _make_v2_context_data()
+    data = _make_v2_state_dict(context=ctx)
+    # stage_order includes all stages, but remove 'asr' from stages
+    del data["stages"]["asr"]
+
+    with pytest.raises(ValueError, match="missing keys"):
+        PipelineState.from_dict(data)
+
+
+def test_v2_extra_stage_in_stages_rejected():
+    """SV2-D: stages has extra key not in stage_order raises ValueError."""
+    ctx = _make_v2_context_data()
+    data = _make_v2_state_dict(context=ctx)
+    data["stages"]["phantom"] = {
+        "status": "pending",
+        "retry_count": 0,
+        "max_retries": 3,
+        "error_msg": "",
+        "result": {},
+        "duration_sec": 0.0,
+    }
+
+    with pytest.raises(ValueError, match="extra keys"):
+        PipelineState.from_dict(data)
+
+
+def test_v2_unknown_stage_name_rejected():
+    """SV2-E: stage_order with unknown stage name raises ValueError."""
+    ctx = _make_v2_context_data()
+    data = _make_v2_state_dict(context=ctx)
+    data["stage_order"] = ["prepare", "chunk", "mystery_stage"]
+    data["stages"] = {
+        "prepare": {
+            "status": "pending",
+            "retry_count": 0,
+            "max_retries": 3,
+            "error_msg": "",
+            "result": {},
+            "duration_sec": 0.0,
+        },
+        "chunk": {
+            "status": "pending",
+            "retry_count": 0,
+            "max_retries": 3,
+            "error_msg": "",
+            "result": {},
+            "duration_sec": 0.0,
+        },
+        "mystery_stage": {
+            "status": "pending",
+            "retry_count": 0,
+            "max_retries": 3,
+            "error_msg": "",
+            "result": {},
+            "duration_sec": 0.0,
+        },
+    }
+
+    with pytest.raises(ValueError, match="unknown stages"):
+        PipelineState.from_dict(data)
+
+
+def test_v2_missing_non_safety_context_field_rejected():
+    """SV2-F: context missing a non-safety field (fmt) raises ValueError."""
+    ctx = _make_v2_context_data()
+    del ctx["fmt"]
+    data = _make_v2_state_dict(context=ctx)
+
+    with pytest.raises(ValueError, match="missing required fields.*fmt"):
+        PipelineState.from_dict(data)
+
+
+def test_v2_extra_context_field_rejected():
+    """SV2-G: context with unknown extra field raises ValueError."""
+    ctx = _make_v2_context_data(future_magic=True)
+    data = _make_v2_state_dict(context=ctx)
+
+    with pytest.raises(ValueError, match="unknown fields.*future_magic"):
+        PipelineState.from_dict(data)
+
+
+def test_v2_valid_roundtrip_preserves_all_fields():
+    """SV2-H: valid v2 roundtrip preserves all PipelineRunContext fields."""
+    from subtap.engine.state import PipelineRunContext
+
+    ctx = PipelineRunContext(
+        input_path="/media/input.mp3",
+        output_dir="/out",
+        fmt="vtt",
+        enhance="api",
+        translate_to="en",
+        bilingual="source-first",
+        script_path="/script.txt",
+        script_mode="follow_script",
+        subtitle_language="en",
+        subtitle_punctuation=True,
+        max_chars=30,
+        glossary_path="/glossary.yaml",
+        llm_proofread=True,
+        llm_hotword=True,
+        asr_backend="mlx-qwen-asr",
+        asr_model="asr_1.7b",
+        asr_hotwords="hello,world",
+        subtitle_stem="custom",
+        policy_mode="fast",
+        local_only=True,
+    )
+    state = PipelineState.new(["prepare", "chunk", "asr"], context=ctx)
+    data = state.to_dict()
+
+    loaded = PipelineState.from_dict(data)
+    assert loaded.context is not None
+    assert loaded.context.input_path == "/media/input.mp3"
+    assert loaded.context.fmt == "vtt"
+    assert loaded.context.enhance == "api"
+    assert loaded.context.translate_to == "en"
+    assert loaded.context.bilingual == "source-first"
+    assert loaded.context.script_path == "/script.txt"
+    assert loaded.context.subtitle_punctuation is True
+    assert loaded.context.max_chars == 30
+    assert loaded.context.glossary_path == "/glossary.yaml"
+    assert loaded.context.llm_proofread is True
+    assert loaded.context.llm_hotword is True
+    assert loaded.context.asr_backend == "mlx-qwen-asr"
+    assert loaded.context.asr_model == "asr_1.7b"
+    assert loaded.context.asr_hotwords == "hello,world"
+    assert loaded.context.subtitle_stem == "custom"
+    assert loaded.context.policy_mode == "fast"
+    assert loaded.context.local_only is True
+
+
+def test_v1_remains_supported():
+    """SV2-I: v1 state format still loads correctly."""
+    data = {
+        "version": 1,
+        "stages": {
+            "prepare": {
+                "status": "success",
+                "retry_count": 0,
+                "max_retries": 3,
+                "error_msg": "",
+                "result": {},
+                "duration_sec": 1.0,
+            },
+            "chunk": {
+                "status": "success",
+                "retry_count": 0,
+                "max_retries": 3,
+                "error_msg": "",
+                "result": {},
+                "duration_sec": 2.0,
+            },
+            "asr": {
+                "status": "pending",
+                "retry_count": 0,
+                "max_retries": 3,
+                "error_msg": "",
+                "result": {},
+                "duration_sec": 0.0,
+            },
+            "clean": {
+                "status": "pending",
+                "retry_count": 0,
+                "max_retries": 3,
+                "error_msg": "",
+                "result": {},
+                "duration_sec": 0.0,
+            },
+            "segment": {
+                "status": "pending",
+                "retry_count": 0,
+                "max_retries": 3,
+                "error_msg": "",
+                "result": {},
+                "duration_sec": 0.0,
+            },
+            "align": {
+                "status": "pending",
+                "retry_count": 0,
+                "max_retries": 3,
+                "error_msg": "",
+                "result": {},
+                "duration_sec": 0.0,
+            },
+            "export": {
+                "status": "pending",
+                "retry_count": 0,
+                "max_retries": 3,
+                "error_msg": "",
+                "result": {},
+                "duration_sec": 0.0,
+            },
+        },
+    }
+    state = PipelineState.from_dict(data)
+    assert state.context is None
+    assert state.stage_order == [
+        "prepare",
+        "chunk",
+        "asr",
+        "clean",
+        "segment",
+        "align",
+        "export",
+    ]
+    assert state.stages["prepare"].status.value == "success"
+
+
+def test_v2_invalid_preserves_file_bytes(tmp_path: Path):
+    """SV2-J: loading structurally-invalid v2 state does not modify file."""
+    ctx = _make_v2_context_data()
+    del ctx["fmt"]  # missing required field
+    data = _make_v2_state_dict(context=ctx)
+
+    state_file = tmp_path / "pipeline-state.json"
+    import json
+
+    state_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    original_content = state_file.read_text(encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        PipelineState.load(state_file)
+
     assert state_file.read_text(encoding="utf-8") == original_content

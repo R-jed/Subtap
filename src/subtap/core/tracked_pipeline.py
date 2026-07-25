@@ -38,6 +38,9 @@ class TrackedPipeline(Pipeline):
             self.state = PipelineState.new(stage_order)
         else:
             self.state = PipelineState()
+        # v2 state requires context; ensure it's always present
+        if self.state.context is None:
+            self.state.context = PipelineRunContext(input_path="", output_dir="")
         self._state_path = self.workspace.root / STATE_FILE
         # Runtime attributes set by CLI before run
         self._local_only: bool = False

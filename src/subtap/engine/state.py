@@ -7,7 +7,7 @@ import json
 import logging
 import os
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Optional
 
@@ -92,6 +92,9 @@ STAGE_CN: dict[str, str] = {
 }
 
 STAGE_ORDER = ["prepare", "chunk", "asr", "clean", "segment", "align", "export"]
+
+# All known production stage names (source of truth for v2 validation)
+_KNOWN_STAGES: set[str] = set(STAGE_CN.keys())
 
 # Valid statuses for schema validation
 _VALID_STATUSES = {s.value for s in StageStatus}
@@ -179,6 +182,10 @@ class PipelineRunContext:
             policy_mode=data.get("policy_mode", "local"),
             local_only=data.get("local_only", False),
         )
+
+
+# Complete PipelineRunContext field set — derived from dataclass, never hand-maintained
+_CONTEXT_REQUIRED_FIELDS: set[str] = {f.name for f in fields(PipelineRunContext)}
 
 
 def build_stage_kwargs(
@@ -354,6 +361,7 @@ class PipelineState:
             # v1: fixed 7-stage order, no context
             state = cls()
         elif version == 2:
+            # ── stage_order ──────────────────────────────────────────
             if "stage_order" not in data:
                 raise ValueError("v2 state missing required 'stage_order' field")
             stage_order = data["stage_order"]
@@ -363,24 +371,83 @@ class PipelineState:
                 raise ValueError("v2 state 'stage_order' must contain only strings")
             if len(stage_order) != len(set(stage_order)):
                 raise ValueError("v2 state 'stage_order' contains duplicates")
+            unknown_stages = set(stage_order) - _KNOWN_STAGES
+            if unknown_stages:
+                raise ValueError(
+                    f"v2 state 'stage_order' contains unknown stages: "
+                    f"{', '.join(sorted(unknown_stages))}"
+                )
+
+            # ── stages ───────────────────────────────────────────────
+            if "stages" not in data:
+                raise ValueError("v2 state missing required 'stages' field")
+            stages_data = data["stages"]
+            if not isinstance(stages_data, dict):
+                raise ValueError("v2 state 'stages' must be a dict")
+            expected_stages = set(stage_order)
+            actual_stages = set(stages_data.keys())
+            missing_stages = expected_stages - actual_stages
+            extra_stages = actual_stages - expected_stages
+            if missing_stages:
+                raise ValueError(
+                    f"v2 state 'stages' missing keys for stage_order entries: "
+                    f"{', '.join(sorted(missing_stages))}"
+                )
+            if extra_stages:
+                raise ValueError(
+                    f"v2 state 'stages' has extra keys not in stage_order: "
+                    f"{', '.join(sorted(extra_stages))}"
+                )
+
             state = cls(stage_order=stage_order)
-            ctx_data = data.get("context")
-            if ctx_data is not None:
-                if not isinstance(ctx_data, dict):
-                    raise ValueError("v2 state 'context' must be a dict")
-                # Reject legacy v2 states missing safety-critical resume fields.
-                # These fields control ASR model selection and local-only privacy;
-                # guessing defaults could silently change transcription quality
-                # or leak data to remote APIs.
-                _REQUIRED_RESUME_FIELDS = {"asr_model", "local_only"}
-                missing = _REQUIRED_RESUME_FIELDS - ctx_data.keys()
-                if missing:
+
+            # ── context (mandatory for v2) ───────────────────────────
+            if "context" not in data:
+                raise ValueError(
+                    "v2 state missing required 'context' field — "
+                    "v2 resume depends on persisted effective run context"
+                )
+            ctx_data = data["context"]
+            if not isinstance(ctx_data, dict):
+                raise ValueError("v2 state 'context' must be a dict")
+
+            # Validate context schema completeness against dataclass definition.
+            # PipelineRunContext.from_dict() has defaults for internal usage,
+            # but persisted state must carry every field explicitly.
+            actual_ctx = set(ctx_data.keys())
+            missing_ctx = _CONTEXT_REQUIRED_FIELDS - actual_ctx
+            extra_ctx = actual_ctx - _CONTEXT_REQUIRED_FIELDS
+            if missing_ctx:
+                raise ValueError(
+                    f"v2 state context missing required fields: "
+                    f"{', '.join(sorted(missing_ctx))}"
+                )
+            if extra_ctx:
+                raise ValueError(
+                    f"v2 state context has unknown fields: "
+                    f"{', '.join(sorted(extra_ctx))}"
+                )
+
+            state.context = PipelineRunContext.from_dict(ctx_data)
+
+            # ── stage data (validated after context) ─────────────────
+            for name, stage_data in stages_data.items():
+                if not isinstance(stage_data, dict):
+                    raise ValueError(f"stage '{name}' data must be a dict")
+                status_val = stage_data.get("status")
+                if status_val not in _VALID_STATUSES:
                     raise ValueError(
-                        "v2 state context missing safety-critical resume fields: "
-                        f"{', '.join(sorted(missing))}. "
-                        "旧版 pipeline state 缺少可靠恢复所需字段，请重新运行任务"
+                        f"stage '{name}' has invalid status: {status_val!r}"
                     )
-                state.context = PipelineRunContext.from_dict(ctx_data)
+                s = state.stages[name]
+                s.status = StageStatus(status_val)
+                s.retry_count = stage_data.get("retry_count", 0)
+                s.max_retries = stage_data.get("max_retries", 3)
+                s.error_msg = stage_data.get("error_msg", "")
+                s.result = stage_data.get("result", {})
+                s.duration_sec = stage_data.get("duration_sec", 0.0)
+
+            return state
         else:
             raise ValueError(f"unsupported pipeline-state version: {version}")
 
@@ -404,17 +471,6 @@ class PipelineState:
                 s.error_msg = stage_data.get("error_msg", "")
                 s.result = stage_data.get("result", {})
                 s.duration_sec = stage_data.get("duration_sec", 0.0)
-
-        # Validate stages keys match stage_order
-        if version == 2:
-            expected = set(state.stage_order)
-            actual = set(stages_data.keys())
-            if actual and actual != expected:
-                logger.warning(
-                    "stages keys %s don't match stage_order %s",
-                    actual,
-                    expected,
-                )
 
         return state
 
