@@ -1547,3 +1547,123 @@ def test_context_roundtrip_preserves_all_fields(tmp_path: Path):
     assert restored.subtitle_stem == "custom"
     assert restored.policy_mode == "local"
     assert restored.local_only is True
+
+
+# ── Legacy v2 state rejection tests ──
+
+
+def _make_v2_context_data(**overrides) -> dict:
+    """Build a minimal valid v2 context dict, with optional field removal."""
+    base = {
+        "input_path": "/tmp/test.mp3",
+        "output_dir": "/tmp/out",
+        "asr_model": "asr_1.7b",
+        "local_only": False,
+    }
+    base.update(overrides)
+    return base
+
+
+def _make_v2_state_dict(context: dict | None = None) -> dict:
+    """Build a minimal valid v2 state dict."""
+    data: dict = {
+        "version": 2,
+        "stage_order": [
+            "prepare",
+            "chunk",
+            "asr",
+            "clean",
+            "segment",
+            "align",
+            "export",
+        ],
+        "stages": {
+            name: {"status": "pending", "retry_count": 0}
+            for name in [
+                "prepare",
+                "chunk",
+                "asr",
+                "clean",
+                "segment",
+                "align",
+                "export",
+            ]
+        },
+    }
+    if context is not None:
+        data["context"] = context
+    return data
+
+
+def test_v2_legacy_missing_both_fields_rejected():
+    """LV2-1: v2 state missing both asr_model and local_only raises ValueError."""
+    ctx = _make_v2_context_data()
+    del ctx["asr_model"]
+    del ctx["local_only"]
+    data = _make_v2_state_dict(context=ctx)
+
+    try:
+        PipelineState.from_dict(data)
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert "safety-critical" in str(e).lower() or "asr_model" in str(e)
+
+
+def test_v2_legacy_missing_local_only_rejected():
+    """LV2-2: v2 state missing only local_only raises ValueError."""
+    ctx = _make_v2_context_data()
+    del ctx["local_only"]
+    data = _make_v2_state_dict(context=ctx)
+
+    try:
+        PipelineState.from_dict(data)
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert "local_only" in str(e)
+
+
+def test_v2_legacy_missing_asr_model_rejected():
+    """LV2-3: v2 state missing only asr_model raises ValueError."""
+    ctx = _make_v2_context_data()
+    del ctx["asr_model"]
+    data = _make_v2_state_dict(context=ctx)
+
+    try:
+        PipelineState.from_dict(data)
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert "asr_model" in str(e)
+
+
+def test_v2_valid_with_safety_fields_loads():
+    """LV2-4: v2 state with both safety fields loads successfully."""
+    ctx = _make_v2_context_data(asr_model="asr_1.7b", local_only=True)
+    data = _make_v2_state_dict(context=ctx)
+
+    state = PipelineState.from_dict(data)
+    assert state.context is not None
+    assert state.context.asr_model == "asr_1.7b"
+    assert state.context.local_only is True
+
+
+def test_v2_legacy_invalid_preserves_file(tmp_path: Path):
+    """LV2-5: Loading invalid legacy v2 state does not modify the file."""
+    ctx = _make_v2_context_data()
+    del ctx["asr_model"]
+    del ctx["local_only"]
+    data = _make_v2_state_dict(context=ctx)
+
+    state_file = tmp_path / "pipeline-state.json"
+    import json
+
+    state_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    original_content = state_file.read_text(encoding="utf-8")
+
+    try:
+        PipelineState.load(state_file)
+        assert False, "Should have raised ValueError"
+    except ValueError:
+        pass
+
+    # File must be exactly unchanged
+    assert state_file.read_text(encoding="utf-8") == original_content

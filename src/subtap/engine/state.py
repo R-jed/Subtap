@@ -368,6 +368,18 @@ class PipelineState:
             if ctx_data is not None:
                 if not isinstance(ctx_data, dict):
                     raise ValueError("v2 state 'context' must be a dict")
+                # Reject legacy v2 states missing safety-critical resume fields.
+                # These fields control ASR model selection and local-only privacy;
+                # guessing defaults could silently change transcription quality
+                # or leak data to remote APIs.
+                _REQUIRED_RESUME_FIELDS = {"asr_model", "local_only"}
+                missing = _REQUIRED_RESUME_FIELDS - ctx_data.keys()
+                if missing:
+                    raise ValueError(
+                        "v2 state context missing safety-critical resume fields: "
+                        f"{', '.join(sorted(missing))}. "
+                        "旧版 pipeline state 缺少可靠恢复所需字段，请重新运行任务"
+                    )
                 state.context = PipelineRunContext.from_dict(ctx_data)
         else:
             raise ValueError(f"unsupported pipeline-state version: {version}")
