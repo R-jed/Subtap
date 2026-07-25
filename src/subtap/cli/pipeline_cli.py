@@ -558,7 +558,9 @@ def _run(
             raise typer.Exit(1)
         return
 
-    pipeline = Pipeline(config, work_dir=work_dir)
+    from subtap.core.tracked_pipeline import TrackedPipeline
+
+    pipeline = TrackedPipeline(config, work_dir=work_dir)
     pipeline.workspace.ensure_dirs()
 
     # ── Run Log ────────────────────────────────────────────
