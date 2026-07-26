@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import sys
 
 from rich.text import Text
 
@@ -231,11 +232,51 @@ try:
             if action == "run":
                 from subtap.ui.textual_run_setup import RunSetupScreen
 
-                self.push_screen(RunSetupScreen(), self._finish_run_setup)
+                self.push_screen(RunSetupScreen(), self._finish_command)
                 return
-            self.exit(action)
+            from subtap.ui.textual_command_pages import (
+                CommandOutputPage,
+                GlossaryPage,
+                LaunchCommandPage,
+                batch_page,
+                observe_page,
+            )
 
-        def _finish_run_setup(self, command: list[str] | None) -> None:
+            if action == "batch":
+                self.push_screen(batch_page(), self._finish_command)
+            elif action == "observe":
+                self.push_screen(observe_page(), self._finish_command)
+            elif action == "models":
+                self.push_screen(
+                    CommandOutputPage(
+                        "模型",
+                        "查看当前任务所需模型的本地状态。",
+                        [sys.executable, "-m", "subtap.cli", "models", "status"],
+                    )
+                )
+            elif action == "glossary":
+                self.push_screen(GlossaryPage())
+            elif action == "setup":
+                self.push_screen(
+                    LaunchCommandPage(
+                        "设置",
+                        "打开默认模型与服务配置向导；完成后返回终端。",
+                        [sys.executable, "-m", "subtap.cli", "setup"],
+                    ),
+                    self._finish_command,
+                )
+            elif action == "doctor":
+                self.push_screen(
+                    CommandOutputPage(
+                        "环境检查",
+                        "检查安装、模型与运行环境。",
+                        [sys.executable, "-m", "subtap.cli", "doctor"],
+                    )
+                )
+            else:
+                self.exit(action)
+
+        def _finish_command(self, command: list[str] | None) -> None:
             if command is not None:
                 self.exit(command)
 
@@ -243,7 +284,7 @@ try:
             self.exit("output")
 
         def action_doctor(self) -> None:
-            self.exit("doctor")
+            self._select_action("doctor")
 
         def action_version(self) -> None:
             self.exit("version")

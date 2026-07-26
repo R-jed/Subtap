@@ -8,7 +8,8 @@ import subprocess
 from typing import Any, Callable, TYPE_CHECKING
 
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal, VerticalScroll
+from textual.containers import Grid, Horizontal, VerticalScroll
+from textual.events import Resize
 from textual.screen import Screen
 from textual.widgets import Button, Input, Select, Static
 
@@ -66,14 +67,27 @@ class _RunSetupForm:
     #form { height: 1fr; }
     .section-label { color: #56d4dd; text-style: bold; margin-top: 1; }
     Select, Input { margin-bottom: 1; }
-    #input-row, #glossary-actions, #footer-actions {
+    #input-row, #footer-actions {
         height: 3;
         margin-bottom: 1;
     }
     #input-path { width: 1fr; padding: 1 1; color: #f2f2f2; }
     #choose-input { width: 16; }
-    #glossary-actions Button { width: 1fr; margin-right: 1; }
-    #glossary-actions Button:last-child { margin-right: 0; }
+    #glossary-actions {
+        grid-size: 3 1;
+        grid-columns: 1fr 1fr 1fr;
+        grid-rows: 3;
+        grid-gutter: 1;
+        height: 3;
+        margin-bottom: 1;
+    }
+    #glossary-actions Button { width: 100%; }
+    RunSetupScreen.-narrow #glossary-actions {
+        grid-size: 1 3;
+        grid-columns: 1fr;
+        grid-rows: 3 3 3;
+        height: 11;
+    }
     #footer-actions Button { width: 1fr; margin-right: 1; }
     #footer-actions Button:last-child { margin-right: 0; }
     #status { color: #ffcc66; }
@@ -130,7 +144,7 @@ class _RunSetupForm:
                 id="glossary-help",
                 classes="resource-help",
             )
-            with Horizontal(id="glossary-actions"):
+            with Grid(id="glossary-actions"):
                 yield Button("编辑默认热词表", id="edit-default-glossary")
                 yield Button("查看自动学习结果", id="view-learned-glossary")
                 yield Button("选择其他热词表…", id="choose-glossary")
@@ -320,6 +334,9 @@ class RunSetupScreen(_RunSetupForm, Screen[list[str] | None]):
 
     def action_cancel(self) -> None:
         self.dismiss(None)
+
+    def on_resize(self, event: Resize) -> None:
+        self.set_class(event.size.width < 80, "-narrow")
 
     def _complete(self, command: list[str]) -> None:
         self.dismiss(command)

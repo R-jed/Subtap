@@ -109,6 +109,78 @@ async def test_command_deck_q_exits_without_action(tmp_path, monkeypatch):
     assert app.return_value is None
 
 
+@pytest.mark.asyncio
+async def test_secondary_pages_return_to_command_deck(tmp_path, monkeypatch):
+    from textual.widgets import Static
+
+    from subtap.ui.command_deck import CommandDeckApp
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    state = tmp_path / ".subtap" / "state.json"
+    state.parent.mkdir(parents=True)
+    state.write_text("{}", encoding="utf-8")
+
+    app = CommandDeckApp()
+    async with app.run_test(size=(90, 36)) as pilot:
+        await pilot.press("6")
+        await pilot.pause()
+        assert "设置" in str(app.screen.query_one("#page-title", Static).render())
+
+        await pilot.press("escape")
+        assert app.query_one("#menu").display is True
+
+
+@pytest.mark.asyncio
+async def test_batch_and_observe_choose_paths_inside_their_pages(tmp_path, monkeypatch):
+    from textual.widgets import Button
+
+    from subtap.ui.command_deck import CommandDeckApp
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    state = tmp_path / ".subtap" / "state.json"
+    state.parent.mkdir(parents=True)
+    state.write_text("{}", encoding="utf-8")
+
+    app = CommandDeckApp()
+    async with app.run_test(size=(90, 36)) as pilot:
+        await pilot.press("2")
+        await pilot.pause()
+        assert app.screen.query_one("#choose-path", Button).label == "选择媒体文件夹…"
+
+        await pilot.press("escape", "3")
+        await pilot.pause()
+        assert app.screen.query_one("#choose-path", Button).label == (
+            "选择 run.log.jsonl…"
+        )
+
+
+@pytest.mark.asyncio
+async def test_glossary_page_aligns_its_actions(tmp_path, monkeypatch):
+    from textual.widgets import Button
+
+    from subtap.ui.command_deck import CommandDeckApp
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    state = tmp_path / ".subtap" / "state.json"
+    state.parent.mkdir(parents=True)
+    state.write_text("{}", encoding="utf-8")
+
+    app = CommandDeckApp()
+    async with app.run_test(size=(100, 36)) as pilot:
+        await pilot.press("5")
+        await pilot.pause()
+        actions = list(app.screen.query("#glossary-page-actions Button"))
+
+        assert len(actions) == 3
+        assert all(isinstance(button, Button) for button in actions)
+        widths = [button.region.width for button in actions]
+        assert max(widths) - min(widths) <= 1
+
+        await pilot.resize_terminal(60, 36)
+        await pilot.pause()
+        assert len({button.region.y for button in actions}) == 3
+
+
 def test_command_deck_uses_lowercase_product_title():
     from subtap.ui.command_deck import CommandDeckApp
 
