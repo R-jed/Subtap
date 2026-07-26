@@ -77,6 +77,84 @@ async def test_run_setup_returns_selected_pipeline_command(tmp_path, monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_run_setup_selects_and_reselects_input_inside_form(tmp_path, monkeypatch):
+    from textual.widgets import Button, Static
+
+    from subtap.ui.textual_run_setup import RunSetupApp
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    first = tmp_path / "first.wav"
+    second = tmp_path / "second.mov"
+    first.write_bytes(b"audio")
+    second.write_bytes(b"video")
+    selected = iter([first, second])
+    monkeypatch.setattr(
+        "subtap.ui.textual_run_setup._choose_native_file",
+        lambda _prompt: next(selected),
+    )
+
+    app = RunSetupApp()
+    async with app.run_test() as pilot:
+        assert "尚未选择" in str(app.query_one("#input-path", Static).render())
+
+        app.query_one("#choose-input", Button).press()
+        await pilot.pause()
+        assert str(first) in str(app.query_one("#input-path", Static).render())
+
+        app.query_one("#choose-input", Button).press()
+        await pilot.pause()
+        assert str(second) in str(app.query_one("#input-path", Static).render())
+
+
+@pytest.mark.asyncio
+async def test_run_setup_picker_cancel_preserves_current_selection(
+    tmp_path, monkeypatch
+):
+    from textual.widgets import Button, Static
+
+    from subtap.ui.textual_run_setup import RunSetupApp
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    audio = tmp_path / "voice.wav"
+    audio.write_bytes(b"audio")
+    selected = iter([audio, None])
+    monkeypatch.setattr(
+        "subtap.ui.textual_run_setup._choose_native_file",
+        lambda _prompt: next(selected),
+    )
+
+    app = RunSetupApp()
+    async with app.run_test() as pilot:
+        app.query_one("#choose-input", Button).press()
+        await pilot.pause()
+        app.query_one("#choose-input", Button).press()
+        await pilot.pause()
+
+        assert str(audio) in str(app.query_one("#input-path", Static).render())
+
+
+@pytest.mark.asyncio
+async def test_glossary_actions_share_one_aligned_row(tmp_path, monkeypatch):
+    from textual.widgets import Button
+
+    from subtap.ui.textual_run_setup import RunSetupApp
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    app = RunSetupApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        await pilot.pause()
+        actions = [
+            app.query_one("#edit-default-glossary", Button),
+            app.query_one("#view-learned-glossary", Button),
+            app.query_one("#choose-glossary", Button),
+        ]
+
+        assert {button.parent.id for button in actions} == {"glossary-actions"}
+        assert len({button.region.width for button in actions}) == 1
+        assert len({button.region.height for button in actions}) == 1
+
+
+@pytest.mark.asyncio
 async def test_run_setup_defaults_to_configured_asr_model(tmp_path, monkeypatch):
     from textual.widgets import Select
 
@@ -164,7 +242,7 @@ async def test_run_setup_can_open_owned_and_learned_glossaries(tmp_path, monkeyp
     app = RunSetupApp(audio)
     async with app.run_test() as pilot:
         assert str(app.query_one("#choose-glossary", Button).label) == (
-            "从文件选择热词表…"
+            "选择其他热词表…"
         )
         assert "建议 25" in str(app.query_one("#max-chars-help", Static).render())
 

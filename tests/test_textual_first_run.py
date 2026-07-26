@@ -630,10 +630,8 @@ def test_tui_run_action_uses_selected_setup_command(monkeypatch, tmp_path):
         "--tui",
     ]
     commands = []
-    monkeypatch.setattr("subtap.ui.command_deck.CommandDeckApp.run", lambda self: "run")
-    monkeypatch.setattr("subtap.cli._choose_command_deck_path", lambda action: audio)
     monkeypatch.setattr(
-        "subtap.ui.textual_run_setup.RunSetupApp.run", lambda self: command
+        "subtap.ui.command_deck.CommandDeckApp.run", lambda self: command
     )
     monkeypatch.setattr(
         "subtap.cli.subprocess.run",
@@ -647,52 +645,22 @@ def test_tui_run_action_uses_selected_setup_command(monkeypatch, tmp_path):
     assert commands == [command]
 
 
-def test_tui_cancelled_file_picker_does_not_start_command(monkeypatch):
-    import subprocess
-
+def test_tui_cancelled_setup_does_not_start_command(monkeypatch):
     from typer.testing import CliRunner
 
     from subtap.cli import app
 
     commands = []
-    monkeypatch.setattr("subtap.ui.command_deck.CommandDeckApp.run", lambda self: "run")
+    monkeypatch.setattr("subtap.ui.command_deck.CommandDeckApp.run", lambda self: None)
     monkeypatch.setattr(
         "subtap.cli.subprocess.run",
-        lambda command, **kwargs: commands.append(command)
-        or subprocess.CompletedProcess(command, 1, "", "User canceled. (-128)"),
+        lambda command, **kwargs: commands.append(command),
     )
 
     result = CliRunner().invoke(app, ["tui"])
 
     assert result.exit_code == 0
-    assert commands == [
-        [
-            "osascript",
-            "-e",
-            'POSIX path of (choose file with prompt "选择音频或视频文件")',
-        ]
-    ]
-
-
-def test_tui_file_picker_error_is_visible(monkeypatch):
-    import subprocess
-
-    from typer.testing import CliRunner
-
-    from subtap.cli import app
-
-    monkeypatch.setattr("subtap.ui.command_deck.CommandDeckApp.run", lambda self: "run")
-    monkeypatch.setattr(
-        "subtap.cli.subprocess.run",
-        lambda command, **kwargs: subprocess.CompletedProcess(
-            command, 1, "", "AppleScript failed"
-        ),
-    )
-
-    result = CliRunner().invoke(app, ["tui"])
-
-    assert result.exit_code == 1
-    assert "无法打开文件选择器：AppleScript failed" in result.output
+    assert commands == []
 
 
 def test_tui_unknown_action_fails_fast(monkeypatch):

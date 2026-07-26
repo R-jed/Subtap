@@ -373,7 +373,7 @@ async def test_observer_refresh_parses_log_once(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_observer_dashboard_keeps_completed_task_visible(tmp_path):
-    from textual.widgets import Static
+    from textual.widgets import Header, Static
 
     from subtap.ui.observer import _make_observer_dashboard
 
@@ -388,6 +388,7 @@ async def test_observer_dashboard_keeps_completed_task_visible(tmp_path):
 
     async with dashboard.run_test() as pilot:
         await pilot.pause()
+        assert not list(dashboard.query(Header))
         rendered = str(dashboard.query_one("#status", Static).render())
         footer = str(dashboard.query_one("#keys", Static).render())
         assert "任务已完成" in rendered

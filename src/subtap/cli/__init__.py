@@ -90,8 +90,11 @@ def _run_subtap_command(*args: str) -> None:
     _run_command([sys.executable, "-m", "subtap.cli", *args])
 
 
-def _handle_command_deck_action(action: str | None) -> None:
+def _handle_command_deck_action(action: str | list[str] | None) -> None:
     """Handle a Command Deck result."""
+    if isinstance(action, list):
+        _run_command(action)
+        return
     if action == "version":
         version()
         return
@@ -102,22 +105,17 @@ def _handle_command_deck_action(action: str | None) -> None:
         if result.returncode:
             raise typer.Exit(result.returncode)
         return
-    if action in {"run", "observe", "batch"}:
+    if action in {"observe", "batch"}:
         selected = _choose_command_deck_path(action)
         if selected is None:
             return
-        if action == "run":
-            from subtap.ui.textual_run_setup import RunSetupApp
-
-            command = RunSetupApp(selected).run()
-            if command is None:
-                return
-            _run_command(command)
-        elif action == "observe":
+        if action == "observe":
             _run_subtap_command("observe", str(selected))
         else:
             _run_subtap_command("batch-transcribe", "--dir", str(selected))
         return
+    if action == "run":
+        raise RuntimeError("Transcribe 设置必须在 Command Deck 内完成")
     if action == "doctor":
         _run_subtap_command("doctor")
     elif action == "models":

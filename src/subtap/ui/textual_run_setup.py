@@ -5,11 +5,11 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 import subprocess
-from typing import Callable
+from typing import Any, Callable, TYPE_CHECKING
 
-from textual import on
 from textual.app import App, ComposeResult
-from textual.containers import VerticalScroll
+from textual.containers import Horizontal, VerticalScroll
+from textual.screen import Screen
 from textual.widgets import Button, Input, Select, Static
 
 from subtap.core.models import asr_mode_for_model
@@ -58,20 +58,36 @@ def _glossary_choices(paths: list[Path]) -> list[tuple[str, str]]:
     return choices
 
 
-class RunSetupApp(App[list[str] | None]):
+class _RunSetupForm:
     """Collect per-task options and return the real pipeline command."""
 
     CSS = """
-    Screen { background: #0b0d10; color: #f2f2f2; padding: 2 4; }
+    Screen { background: #0b0d10; color: #f2f2f2; padding: 1 3; }
     #form { height: 1fr; }
-    Static, Select, Input { margin-bottom: 1; }
-    Button { margin-right: 2; }
+    .section-label { color: #56d4dd; text-style: bold; margin-top: 1; }
+    Select, Input { margin-bottom: 1; }
+    #input-row, #glossary-actions, #footer-actions {
+        height: 3;
+        margin-bottom: 1;
+    }
+    #input-path { width: 1fr; padding: 1 1; color: #f2f2f2; }
+    #choose-input { width: 16; }
+    #glossary-actions Button { width: 1fr; margin-right: 1; }
+    #glossary-actions Button:last-child { margin-right: 0; }
+    #footer-actions Button { width: 1fr; margin-right: 1; }
+    #footer-actions Button:last-child { margin-right: 0; }
     #status { color: #ffcc66; }
     #hint, .resource-help { color: #8b8b92; }
     """
-    BINDINGS = [("escape", "cancel", "取消")]
+    if TYPE_CHECKING:
 
-    def __init__(self, input_path: Path) -> None:
+        def query_one(self, *args: Any, **kwargs: Any) -> Any: ...
+
+        def action_cancel(self) -> None: ...
+
+        def _complete(self, command: list[str]) -> None: ...
+
+    def __init__(self, input_path: Path | None = None) -> None:
         super().__init__()
         self.input_path = input_path
         config = load_config(Path.home() / ".subtap" / "config.yaml")
@@ -91,15 +107,21 @@ class RunSetupApp(App[list[str] | None]):
         glossary_dir = Path.home() / ".subtap" / "glossaries"
         manuscript_dir = Path.home() / ".subtap" / "manuscripts"
         with VerticalScroll(id="form"):
-            yield Static("[b]新建字幕[/b]")
-            yield Static(f"文件：{self.input_path}")
-            yield Static("质量")
+            yield Static("[b]新建字幕[/b]\n选择媒体并设置字幕参数。")
+            yield Static("媒体文件", classes="section-label")
+            with Horizontal(id="input-row"):
+                yield Static(
+                    str(self.input_path) if self.input_path else "尚未选择",
+                    id="input-path",
+                )
+                yield Button("选择文件…", id="choose-input")
+            yield Static("质量", classes="section-label")
             yield Select(
                 [("快速 · 0.6B", "fast"), ("高质量 · 1.7B", "quality")],
                 value=self.default_mode,
                 id="quality",
             )
-            yield Static("热词表")
+            yield Static("热词表", classes="section-label")
             yield Select(self._glossary_options, value="", id="glossary")
             yield Static(
                 f"位置：{glossary_dir}\n"
@@ -108,10 +130,11 @@ class RunSetupApp(App[list[str] | None]):
                 id="glossary-help",
                 classes="resource-help",
             )
-            yield Button("编辑默认热词表", id="edit-default-glossary")
-            yield Button("查看自动学习结果", id="view-learned-glossary")
-            yield Button("从文件选择热词表…", id="choose-glossary")
-            yield Static("参考文稿")
+            with Horizontal(id="glossary-actions"):
+                yield Button("编辑默认热词表", id="edit-default-glossary")
+                yield Button("查看自动学习结果", id="view-learned-glossary")
+                yield Button("选择其他热词表…", id="choose-glossary")
+            yield Static("参考文稿", classes="section-label")
             yield Select(
                 self._manuscript_options,
                 value="",
@@ -131,14 +154,15 @@ class RunSetupApp(App[list[str] | None]):
                 type="integer",
                 id="max-chars",
             )
-            yield Static("输出目录")
+            yield Static("输出目录", classes="section-label")
             yield Input(value=str(Path.cwd() / "output"), id="output")
             yield Button("选择输出目录…", id="choose-output")
-            yield Static("Tab 切换 · Enter 确认 · Esc 取消", id="hint")
+            yield Static("Tab 切换 · Enter 确认 · Esc 返回 · Q 退出", id="hint")
             yield Static("", id="status")
             yield Static("", id="confirmation")
-            yield Button("检查设置", id="start", variant="primary")
-            yield Button("取消", id="cancel")
+            with Horizontal(id="footer-actions"):
+                yield Button("检查设置", id="start", variant="primary")
+                yield Button("返回", id="cancel")
 
     def _set_selected_file(
         self,
@@ -167,11 +191,17 @@ class RunSetupApp(App[list[str] | None]):
             self.query_one("#status", Static).update(f"无法打开系统选择器：{error}")
             return None
 
-    @on(Button.Pressed, "#choose-glossary")
     def choose_glossary(self) -> None:
         path = self._pick_path(_choose_native_file, "选择本地热词表")
         if path is not None:
             self._set_selected_file("#glossary", self._glossary_options, path, "自定义")
+
+    def choose_input(self) -> None:
+        path = self._pick_path(_choose_native_file, "选择音频或视频文件")
+        if path is not None:
+            self.input_path = path
+            self.query_one("#input-path", Static).update(str(path))
+            self._pending_command = None
 
     def _open_glossary(self, path: Path) -> None:
         if not path.is_file():
@@ -187,19 +217,16 @@ class RunSetupApp(App[list[str] | None]):
             return
         self.query_one("#status", Static).update(f"已打开：{path.name}")
 
-    @on(Button.Pressed, "#edit-default-glossary")
     def edit_default_glossary(self) -> None:
         from subtap.core.user_resources import ensure_default_glossary
 
         self._open_glossary(ensure_default_glossary())
 
-    @on(Button.Pressed, "#view-learned-glossary")
     def view_learned_glossary(self) -> None:
         from subtap.core.user_resources import ensure_learned_glossary
 
         self._open_glossary(ensure_learned_glossary())
 
-    @on(Button.Pressed, "#choose-manuscript")
     def choose_manuscript(self) -> None:
         path = self._pick_path(_choose_native_file, "选择参考文稿")
         if path is not None:
@@ -207,15 +234,16 @@ class RunSetupApp(App[list[str] | None]):
                 "#manuscript", self._manuscript_options, path, "本地文稿"
             )
 
-    @on(Button.Pressed, "#choose-output")
     def choose_output(self) -> None:
         path = self._pick_path(_choose_native_folder, "选择字幕输出目录")
         if path is not None:
             self.query_one("#output", Input).value = str(path)
             self._pending_command = None
 
-    @on(Button.Pressed, "#start")
     def start(self) -> None:
+        if self.input_path is None:
+            self.query_one("#status", Static).update("请选择音频或视频文件")
+            return
         output = self.query_one("#output", Input).value.strip()
         if not output:
             self.query_one("#status", Static).update("请选择输出目录")
@@ -253,7 +281,7 @@ class RunSetupApp(App[list[str] | None]):
             self.query_one("#status", Static).update(str(error))
             return
         if command == self._pending_command:
-            self.exit(command)
+            self._complete(command)
             return
         self._pending_command = command
         self.query_one("#status", Static).update("")
@@ -262,9 +290,52 @@ class RunSetupApp(App[list[str] | None]):
         )
         self.query_one("#start", Button).label = "确认并开始"
 
-    @on(Button.Pressed, "#cancel")
-    def cancel_button(self) -> None:
-        self.action_cancel()
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        handlers = {
+            "choose-input": self.choose_input,
+            "choose-glossary": self.choose_glossary,
+            "edit-default-glossary": self.edit_default_glossary,
+            "view-learned-glossary": self.view_learned_glossary,
+            "choose-manuscript": self.choose_manuscript,
+            "choose-output": self.choose_output,
+            "start": self.start,
+            "cancel": self.action_cancel,
+        }
+        button_id = event.button.id
+        if button_id is None:
+            return
+        handler = handlers.get(button_id)
+        if handler is not None:
+            handler()
+
+
+class RunSetupScreen(_RunSetupForm, Screen[list[str] | None]):
+    """Setup page hosted by the main Command Deck app."""
+
+    BINDINGS = [
+        ("escape", "cancel", "返回"),
+        ("q", "app.quit", "退出"),
+    ]
+    compose = _RunSetupForm.compose
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+    def _complete(self, command: list[str]) -> None:
+        self.dismiss(command)
+
+
+class RunSetupApp(_RunSetupForm, App[list[str] | None]):
+    """Compatibility entry point for tests and direct setup use."""
+
+    BINDINGS = [
+        ("escape", "cancel", "返回"),
+        ("q", "quit", "退出"),
+    ]
+    compose = _RunSetupForm.compose
 
     def action_cancel(self) -> None:
         self.exit(None)
+
+    def _complete(self, command: list[str]) -> None:
+        self.exit(command)

@@ -35,11 +35,14 @@ def test_command_deck_uses_task_oriented_menu_and_compact_chrome():
         "doctor",
     ]
     assert "➤ 1. Transcribe" in rendered
-    assert "subtap" in rendered
+    assert "SUBTAP" in rendered
     assert "█" in rendered
     assert "单个音频或视频生成字幕" in rendered
     assert "本地离线字幕生成" in rendered
     assert FOOTER_KEYS == "↑↓  移动   Enter  选择   Q  退出"
+    logo_end = rendered.index("SUBTAP")
+    description_start = rendered.index("本地离线字幕生成")
+    assert description_start > logo_end
 
 
 @pytest.mark.asyncio
@@ -65,6 +68,45 @@ async def test_command_deck_moves_selection_marker_without_full_row_prompt(
 
         assert menu.get_option_at_index(0).prompt.plain.startswith("  1.")
         assert menu.get_option_at_index(1).prompt.plain.startswith("➤ 2.")
+
+
+@pytest.mark.asyncio
+async def test_transcribe_opens_setup_inside_command_deck(tmp_path, monkeypatch):
+    from textual.widgets import Button
+
+    from subtap.ui.command_deck import CommandDeckApp
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    state = tmp_path / ".subtap" / "state.json"
+    state.parent.mkdir(parents=True)
+    state.write_text("{}", encoding="utf-8")
+
+    app = CommandDeckApp()
+    async with app.run_test(size=(90, 40)) as pilot:
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert app.return_value is None
+        assert app.screen.query_one("#choose-input", Button).label == "选择文件…"
+
+        await pilot.press("escape")
+        assert app.query_one("#menu").display is True
+
+
+@pytest.mark.asyncio
+async def test_command_deck_q_exits_without_action(tmp_path, monkeypatch):
+    from subtap.ui.command_deck import CommandDeckApp
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    state = tmp_path / ".subtap" / "state.json"
+    state.parent.mkdir(parents=True)
+    state.write_text("{}", encoding="utf-8")
+
+    app = CommandDeckApp()
+    async with app.run_test() as pilot:
+        await pilot.press("q")
+
+    assert app.return_value is None
 
 
 def test_command_deck_uses_lowercase_product_title():

@@ -7,7 +7,14 @@ from dataclasses import dataclass
 from rich.text import Text
 
 from subtap import __version__
-from subtap.ui.observer import SUBTAP_ASCII
+
+SOLID_SUBTAP_ASCII = """
+█████ ██  ██ ████  █████  ███  ████
+██    ██  ██ ██ ██   ██  ██ ██ ██ ██
+█████ ██  ██ ████    ██  █████ ████
+   ██ ██  ██ ██ ██   ██  ██ ██ ██
+█████  ████  ████    ██  ██ ██ ██
+"""
 
 
 @dataclass(frozen=True)
@@ -39,26 +46,20 @@ FOOTER_KEYS = "↑↓  移动   Enter  选择   Q  退出"
 
 
 def _build_header_renderable() -> Text:
-    """Render a compact product header without network work."""
-    side_lines = [
-        ("subtap", STYLE_TEXT),
-        (PROJECT_URL, STYLE_LINK),
-        ("本地离线字幕生成", STYLE_MUTED),
-        (f"v{__version__}", STYLE_MUTED),
-    ]
-    text = Text()
-    logo_lines = SUBTAP_ASCII.strip("\n").splitlines()
-    logo_width = max(len(line) for line in logo_lines)
-    for index in range(max(len(logo_lines), len(side_lines))):
-        if index:
-            text.append("\n")
-        line = logo_lines[index] if index < len(logo_lines) else ""
-        text.append(line.ljust(logo_width), style=STYLE_LOGO)
-        if index < len(side_lines):
-            value, style = side_lines[index]
-            text.append("   ")
-            text.append(value, style=style)
+    """Render the product identity with its description below the logo."""
+    text = Text(SOLID_SUBTAP_ASCII.strip("\n"), style=STYLE_LOGO)
+    text.append("\nSUBTAP", style=f"bold {STYLE_TEXT}")
+    text.append("\n本地离线字幕生成", style=STYLE_MUTED)
+    text.append(f"\n{PROJECT_URL}  ·  v{__version__}", style=STYLE_LINK)
     return text
+
+
+def _build_compact_header_renderable() -> Text:
+    return Text.assemble(
+        ("SUBTAP", f"bold {STYLE_TEXT}"),
+        ("\n本地离线字幕生成", STYLE_MUTED),
+        (f"\n{PROJECT_URL}  ·  v{__version__}", STYLE_LINK),
+    )
 
 
 def _build_option_prompt(index: int, selected: bool) -> Text:
@@ -76,7 +77,8 @@ def _build_option_prompt(index: int, selected: bool) -> Text:
 def build_root_command_deck(selected_index: int = 0) -> str:
     """Render the root Command Deck menu."""
     lines: list[str] = []
-    lines.append(SUBTAP_ASCII.strip("\n"))
+    lines.append(SOLID_SUBTAP_ASCII.strip("\n"))
+    lines.append("SUBTAP")
     lines.append("本地离线字幕生成")
     lines.append(PROJECT_URL)
     lines.append("")
@@ -105,7 +107,7 @@ try:
     from textual.widgets import OptionList, Static
     from textual.widgets.option_list import Option
 
-    class CommandDeckApp(App[str]):
+    class CommandDeckApp(App[str | list[str] | None]):
         """Keyboard-first local subtitle command deck."""
 
         TITLE = "subtap"
@@ -116,7 +118,8 @@ try:
             color: #f2f2f2;
         }
 
-        #brand { height: auto; margin: 1 2 1 2; }
+        #brand-wide, #brand-compact { height: auto; margin: 1 2 1 2; }
+        #brand-compact { display: none; }
         #menu {
             height: auto;
             max-height: 8;
@@ -168,7 +171,8 @@ try:
             return OPTIONS[self.selected_index]
 
         def compose(self) -> ComposeResult:
-            yield Static(_build_header_renderable(), id="brand")
+            yield Static(_build_header_renderable(), id="brand-wide")
+            yield Static(_build_compact_header_renderable(), id="brand-compact")
             yield OptionList(
                 *[
                     Option(
@@ -182,12 +186,20 @@ try:
             yield Static(FOOTER_KEYS, id="keys")
 
         def on_mount(self) -> None:
+            self._set_brand_visibility(self.size.width)
             from subtap.ui.views.home import HomeView
 
             if HomeView().is_first_run():
                 from subtap.ui.textual_first_run import FirstRunScreen
 
                 self.push_screen(FirstRunScreen())
+
+        def on_resize(self, event) -> None:
+            self._set_brand_visibility(event.size.width)
+
+        def _set_brand_visibility(self, width: int) -> None:
+            self.query_one("#brand-wide", Static).display = width >= 60
+            self.query_one("#brand-compact", Static).display = width < 60
 
         def action_cursor_down(self) -> None:
             self.selected_index = (self.selected_index + 1) % len(OPTIONS)
@@ -198,12 +210,12 @@ try:
             self._refresh_deck()
 
         def action_select(self) -> None:
-            self.exit(self.current_option.action)
+            self._select_action(self.current_option.action)
 
         @on(OptionList.OptionSelected)
         def option_selected(self, event: OptionList.OptionSelected) -> None:
             if event.option.id is not None:
-                self.exit(event.option.id)
+                self._select_action(event.option.id)
 
         @on(OptionList.OptionHighlighted)
         def option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
@@ -213,7 +225,19 @@ try:
         def action_select_index(self, index: int) -> None:
             if 0 <= index < len(OPTIONS):
                 self.selected_index = index
-                self.exit(self.current_option.action)
+                self._select_action(self.current_option.action)
+
+        def _select_action(self, action: str) -> None:
+            if action == "run":
+                from subtap.ui.textual_run_setup import RunSetupScreen
+
+                self.push_screen(RunSetupScreen(), self._finish_run_setup)
+                return
+            self.exit(action)
+
+        def _finish_run_setup(self, command: list[str] | None) -> None:
+            if command is not None:
+                self.exit(command)
 
         def action_open_output(self) -> None:
             self.exit("output")

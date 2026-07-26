@@ -167,7 +167,7 @@ def _make_observer_dashboard(
     from textual.app import App, ComposeResult
     from textual.containers import Vertical
     from textual.screen import ModalScreen
-    from textual.widgets import Header, ProgressBar, RichLog, Static
+    from textual.widgets import ProgressBar, RichLog, Static
     from rich.text import Text
 
     class CancelTaskScreen(ModalScreen[bool]):
@@ -246,7 +246,6 @@ def _make_observer_dashboard(
         ]
 
         def compose(self) -> ComposeResult:
-            yield Header()
             with Vertical(id="task-panel"):
                 yield Static(self.build_status_text(), id="status")
                 yield ProgressBar(total=100, show_eta=False, id="progress")
