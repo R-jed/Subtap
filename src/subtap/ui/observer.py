@@ -165,6 +165,7 @@ def _make_observer_dashboard(
 ):
     """Create ObserverDashboard instance (lazy import of textual)."""
     from textual.app import App, ComposeResult
+    from textual.binding import Binding
     from textual.containers import Vertical
     from textual.screen import ModalScreen
     from textual.widgets import ProgressBar, RichLog, Static
@@ -241,7 +242,7 @@ def _make_observer_dashboard(
             ("f", "open_output_directory", "输出目录"),
             ("d", "open_diagnostics", "诊断日志"),
             ("escape", "show_overview", "返回概览"),
-            ("q", "quit_observer", "退出观察"),
+            Binding("q", "quit_observer", "退出观察", priority=True),
             ("x", "cancel_task", "停止任务"),
         ]
 

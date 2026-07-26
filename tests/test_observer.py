@@ -487,7 +487,11 @@ async def test_completed_task_can_open_output_directory(tmp_path, monkeypatch):
         await pilot.press("q")
 
     assert opened == [["open", str(output_path.parent)]]
-    assert all(binding[0] != "o" for binding in dashboard.BINDINGS)
+    keys = [
+        binding.key if hasattr(binding, "key") else binding[0]
+        for binding in dashboard.BINDINGS
+    ]
+    assert "o" not in keys
 
 
 @pytest.mark.asyncio

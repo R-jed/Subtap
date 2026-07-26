@@ -155,6 +155,26 @@ async def test_glossary_actions_share_one_aligned_row(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_resource_pickers_share_rows_with_their_fields(tmp_path, monkeypatch):
+    from textual.widgets import Button, Input, Select
+
+    from subtap.ui.textual_run_setup import RunSetupApp
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    app = RunSetupApp()
+    async with app.run_test(size=(100, 40)):
+        manuscript = app.query_one("#manuscript", Select)
+        manuscript_button = app.query_one("#choose-manuscript", Button)
+        output = app.query_one("#output", Input)
+        output_button = app.query_one("#choose-output", Button)
+
+        assert manuscript.parent is manuscript_button.parent
+        assert manuscript.parent.id == "manuscript-row"
+        assert output.parent is output_button.parent
+        assert output.parent.id == "output-row"
+
+
+@pytest.mark.asyncio
 async def test_run_setup_defaults_to_configured_asr_model(tmp_path, monkeypatch):
     from textual.widgets import Select
 

@@ -245,7 +245,7 @@ try:
             if action == "batch":
                 self.push_screen(batch_page(), self._finish_command)
             elif action == "observe":
-                self.push_screen(observe_page(), self._finish_command)
+                self.push_screen(observe_page())
             elif action == "models":
                 self.push_screen(
                     CommandOutputPage(

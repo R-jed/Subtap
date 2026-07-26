@@ -8,6 +8,7 @@ import subprocess
 from typing import Any, Callable, TYPE_CHECKING
 
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Grid, Horizontal, VerticalScroll
 from textual.events import Resize
 from textual.screen import Screen
@@ -67,10 +68,12 @@ class _RunSetupForm:
     #form { height: 1fr; }
     .section-label { color: $accent; text-style: bold; margin-top: 1; }
     Select, Input { margin-bottom: 1; }
-    #input-row, #footer-actions {
+    #input-row, #manuscript-row, #output-row, #footer-actions {
         height: 3;
         margin-bottom: 1;
     }
+    #manuscript-row Select, #output-row Input { width: 1fr; }
+    #choose-manuscript, #choose-output { width: 24; }
     #input-path { width: 1fr; padding: 1 1; color: $foreground; }
     #choose-input { width: 16; }
     #glossary-actions {
@@ -149,16 +152,17 @@ class _RunSetupForm:
                 yield Button("查看自动学习结果", id="view-learned-glossary")
                 yield Button("选择其他热词表…", id="choose-glossary")
             yield Static("参考文稿", classes="section-label")
-            yield Select(
-                self._manuscript_options,
-                value="",
-                id="manuscript",
-            )
+            with Horizontal(id="manuscript-row"):
+                yield Select(
+                    self._manuscript_options,
+                    value="",
+                    id="manuscript",
+                )
+                yield Button("选择参考文稿…", id="choose-manuscript")
             yield Static(
                 f"可选。常用文稿可放在：{manuscript_dir}",
                 classes="resource-help",
             )
-            yield Button("选择参考文稿…", id="choose-manuscript")
             yield Static(
                 "字幕目标最大字数（建议 25；范围 10–60；完整英文单词可能超出）",
                 id="max-chars-help",
@@ -169,8 +173,9 @@ class _RunSetupForm:
                 id="max-chars",
             )
             yield Static("输出目录", classes="section-label")
-            yield Input(value=str(Path.cwd() / "output"), id="output")
-            yield Button("选择输出目录…", id="choose-output")
+            with Horizontal(id="output-row"):
+                yield Input(value=str(Path.cwd() / "output"), id="output")
+                yield Button("选择输出目录…", id="choose-output")
             yield Static("Tab 切换 · Enter 确认 · Esc 返回 · Q 退出", id="hint")
             yield Static("", id="status")
             yield Static("", id="confirmation")
@@ -329,8 +334,8 @@ class RunSetupScreen(_RunSetupForm, Screen[list[str] | None]):
     """Setup page hosted by the main Command Deck app."""
 
     BINDINGS = [
-        ("escape", "cancel", "返回"),
-        ("q", "app.quit", "退出"),
+        Binding("escape", "cancel", "返回"),
+        Binding("q", "app.quit", "退出", priority=True),
     ]
     compose = _RunSetupForm.compose
 
@@ -348,8 +353,8 @@ class RunSetupApp(_RunSetupForm, App[list[str] | None]):
     """Compatibility entry point for tests and direct setup use."""
 
     BINDINGS = [
-        ("escape", "cancel", "返回"),
-        ("q", "quit", "退出"),
+        Binding("escape", "cancel", "返回"),
+        Binding("q", "quit", "退出", priority=True),
     ]
     compose = _RunSetupForm.compose
 

@@ -10,6 +10,7 @@ from typing import Callable
 
 from textual import on, work
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.containers import Grid, Horizontal, VerticalScroll
 from textual.events import Resize
 from textual.screen import Screen
@@ -38,8 +39,8 @@ class CommandPage(Screen[list[str] | None]):
     #page-actions Button:last-child { margin-right: 0; }
     """
     BINDINGS = [
-        ("escape", "back", "返回"),
-        ("q", "quit_tool", "退出"),
+        Binding("escape", "back", "返回"),
+        Binding("q", "quit_tool", "退出", priority=True),
     ]
 
     def action_back(self) -> None:
@@ -275,6 +276,68 @@ class GlossaryPage(CommandPage):
         self._open(ensure_default_glossary().parent)
 
 
+class ObservePage(CommandPage):
+    """Observe one current or historical run log without leaving the app."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.log_path: Path | None = None
+
+    def compose(self) -> ComposeResult:
+        with VerticalScroll(id="page-body"):
+            yield Static("观察任务", id="page-title")
+            yield Static(
+                "选择任务的 run.log.jsonl；当前任务会自动刷新。",
+                id="page-description",
+            )
+            yield Static("尚未选择", id="selected-path")
+            yield Static("", id="observe-output", markup=False)
+            with Horizontal(id="page-actions"):
+                yield Button("选择 run.log.jsonl…", id="choose-observe-log")
+                yield Button("重新读取", id="reload-observe-log")
+                yield Button("返回", id="back")
+            yield Static("", id="page-status")
+            yield Static("Esc 返回 · Q 退出", id="page-hint")
+
+    @on(Button.Pressed, "#choose-observe-log")
+    def choose_log(self) -> None:
+        try:
+            selected = _choose_native_file("选择 run.log.jsonl")
+        except RuntimeError as error:
+            logger.exception("无法打开任务日志选择器")
+            self.query_one("#page-status", Static).update(
+                f"无法打开系统选择器：{error}"
+            )
+            return
+        if selected is not None:
+            self.log_path = selected
+            self.query_one("#selected-path", Static).update(str(selected))
+            self.refresh_log()
+
+    def on_mount(self) -> None:
+        self.set_interval(1.0, self.refresh_log)
+
+    def refresh_log(self) -> None:
+        if self.log_path is None:
+            return
+        from subtap.ui.observer import build_command_deck_text, summarize_event_log
+
+        state = summarize_event_log(self.log_path)
+        self.query_one("#observe-output", Static).update(build_command_deck_text(state))
+        self.query_one("#page-status", Static).update("")
+
+    @on(Button.Pressed, "#reload-observe-log")
+    def reload(self) -> None:
+        if self.log_path is None:
+            self.query_one("#page-status", Static).update("请先选择 run.log.jsonl")
+            return
+        self.refresh_log()
+
+    @on(Button.Pressed, "#back")
+    def back_button(self) -> None:
+        self.action_back()
+
+
 def batch_page() -> PickerCommandPage:
     return PickerCommandPage(
         title="批量转录",
@@ -293,18 +356,5 @@ def batch_page() -> PickerCommandPage:
     )
 
 
-def observe_page() -> PickerCommandPage:
-    return PickerCommandPage(
-        title="观察任务",
-        description="选择任务的 run.log.jsonl 查看当前或历史状态。",
-        choose_label="选择 run.log.jsonl…",
-        prompt="选择 run.log.jsonl",
-        chooser=_choose_native_file,
-        build_command=lambda path: [
-            sys.executable,
-            "-m",
-            "subtap.cli",
-            "observe",
-            str(path),
-        ],
-    )
+def observe_page() -> ObservePage:
+    return ObservePage()

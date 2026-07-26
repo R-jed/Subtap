@@ -157,9 +157,53 @@ async def test_batch_and_observe_choose_paths_inside_their_pages(tmp_path, monke
 
         await pilot.press("escape", "3")
         await pilot.pause()
-        assert app.screen.query_one("#choose-path", Button).label == (
+        assert app.screen.query_one("#choose-observe-log", Button).label == (
             "选择 run.log.jsonl…"
         )
+
+
+@pytest.mark.asyncio
+async def test_observe_log_stays_inside_command_deck(tmp_path, monkeypatch):
+    import json
+
+    from textual.widgets import Button, Static
+
+    from subtap.ui.command_deck import CommandDeckApp
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    state = tmp_path / ".subtap" / "state.json"
+    state.parent.mkdir(parents=True)
+    state.write_text("{}", encoding="utf-8")
+    log_path = tmp_path / "run.log.jsonl"
+    log_path.write_text(
+        json.dumps(
+            {
+                "event_type": "asr_draft_ready",
+                "timestamp": 1.0,
+                "data": {"stage": "asr", "progress": 50, "text": "识别草稿"},
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "subtap.ui.textual_command_pages._choose_native_file",
+        lambda _prompt: log_path,
+    )
+
+    app = CommandDeckApp()
+    async with app.run_test(size=(90, 36)) as pilot:
+        await pilot.press("3")
+        app.screen.query_one("#choose-observe-log", Button).press()
+        await pilot.pause()
+
+        output = str(app.screen.query_one("#observe-output", Static).render())
+        assert "ASR 草稿：1" in output
+        assert app.return_value is None
+
+        await pilot.press("escape")
+        assert app.query_one("#menu").display is True
 
 
 @pytest.mark.asyncio
@@ -233,6 +277,26 @@ async def test_q_from_secondary_page_exits_tool(tmp_path, monkeypatch):
     app = CommandDeckApp()
     async with app.run_test() as pilot:
         await pilot.press("6", "q")
+
+    assert app.return_value is None
+
+
+@pytest.mark.asyncio
+async def test_q_exits_when_run_setup_input_has_focus(tmp_path, monkeypatch):
+    from textual.widgets import Input
+
+    from subtap.ui.command_deck import CommandDeckApp
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    state = tmp_path / ".subtap" / "state.json"
+    state.parent.mkdir(parents=True)
+    state.write_text("{}", encoding="utf-8")
+
+    app = CommandDeckApp()
+    async with app.run_test() as pilot:
+        await pilot.press("1")
+        app.screen.query_one("#output", Input).focus()
+        await pilot.press("q")
 
     assert app.return_value is None
 
