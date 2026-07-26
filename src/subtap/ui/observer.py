@@ -232,8 +232,8 @@ def _make_observer_dashboard(
             dock: bottom;
             height: 1;
             padding: 0 2;
-            color: #8b8b92;
-            background: #111820;
+            color: $text-muted;
+            background: $surface;
         }
         """
         BINDINGS = [

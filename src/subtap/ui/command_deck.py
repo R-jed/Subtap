@@ -115,8 +115,8 @@ try:
 
         CSS = """
         Screen {
-            background: #0b0d10;
-            color: #f2f2f2;
+            background: $background;
+            color: $foreground;
         }
 
         #brand-wide, #brand-compact { height: auto; margin: 1 2 1 2; }
@@ -126,25 +126,25 @@ try:
             max-height: 8;
             margin: 0 2;
             padding: 0;
-            background: #0b0d10;
+            background: $background;
             border: none;
         }
         #menu > .option-list--option-highlighted {
-            background: #0b0d10;
-            color: #f2f2f2;
+            background: $background;
+            color: $foreground;
             text-style: none;
         }
         #menu:focus {
             border: none;
-            background: #0b0d10;
+            background: $background;
             background-tint: transparent;
         }
         #menu:focus > .option-list--option-highlighted {
-            background: #0b0d10;
-            color: #f2f2f2;
+            background: $background;
+            color: $foreground;
             text-style: none;
         }
-        #keys { color: #66666d; height: auto; margin: 1 2 0 2; }
+        #keys { color: $text-muted; height: auto; margin: 1 2 0 2; }
         """
 
         BINDINGS = [

@@ -63,15 +63,15 @@ class _RunSetupForm:
     """Collect per-task options and return the real pipeline command."""
 
     CSS = """
-    Screen { background: #0b0d10; color: #f2f2f2; padding: 1 3; }
+    Screen { background: $background; color: $foreground; padding: 1 3; }
     #form { height: 1fr; }
-    .section-label { color: #56d4dd; text-style: bold; margin-top: 1; }
+    .section-label { color: $accent; text-style: bold; margin-top: 1; }
     Select, Input { margin-bottom: 1; }
     #input-row, #footer-actions {
         height: 3;
         margin-bottom: 1;
     }
-    #input-path { width: 1fr; padding: 1 1; color: #f2f2f2; }
+    #input-path { width: 1fr; padding: 1 1; color: $foreground; }
     #choose-input { width: 16; }
     #glossary-actions {
         grid-size: 3 1;
@@ -90,8 +90,8 @@ class _RunSetupForm:
     }
     #footer-actions Button { width: 1fr; margin-right: 1; }
     #footer-actions Button:last-child { margin-right: 0; }
-    #status { color: #ffcc66; }
-    #hint, .resource-help { color: #8b8b92; }
+    #status { color: $warning; }
+    #hint, .resource-help { color: $text-muted; }
     """
     if TYPE_CHECKING:
 
