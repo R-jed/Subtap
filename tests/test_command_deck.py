@@ -11,6 +11,7 @@ def test_command_deck_uses_task_oriented_menu_and_compact_chrome():
     from subtap.ui.command_deck import (
         FOOTER_KEYS,
         OPTIONS,
+        SOLID_SUBTAP_ASCII,
         build_root_command_deck_renderable,
     )
 
@@ -43,6 +44,13 @@ def test_command_deck_uses_task_oriented_menu_and_compact_chrome():
     logo_end = rendered.index("SUBTAP")
     description_start = rendered.index("本地离线字幕生成")
     assert description_start > logo_end
+    assert SOLID_SUBTAP_ASCII == """
+█████ ██  ██ ████  █████  ███  ████
+██    ██  ██ ██ ██   ██  ██ ██ ██ ██
+█████ ██  ██ ████    ██  █████ ████
+   ██ ██  ██ ██ ██   ██  ██ ██ ██
+█████  ████  ████    ██  ██ ██ ██
+"""
 
 
 @pytest.mark.asyncio
@@ -204,7 +212,7 @@ def test_number_bindings_are_derived_from_menu_options():
 async def test_command_deck_keeps_selection_visible_in_compact_terminal(
     tmp_path, monkeypatch
 ):
-    from textual.widgets import OptionList
+    from textual.widgets import OptionList, Static
 
     from subtap.ui.command_deck import CommandDeckApp
 
@@ -224,6 +232,11 @@ async def test_command_deck_keeps_selection_visible_in_compact_terminal(
         assert menu.highlighted == 5
         assert menu.region.height > 0
         assert app.size == (30, 10)
+        assert app.query_one("#brand-wide", Static).display is False
+        assert app.query_one("#brand-compact", Static).display is True
+        assert str(app.query_one("#brand-compact", Static).render()).startswith(
+            "SUBTAP"
+        )
 
 
 def test_command_deck_glossary_action_opens_glossary_library(tmp_path, monkeypatch):
