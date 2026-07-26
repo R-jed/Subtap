@@ -139,6 +139,26 @@ async def test_secondary_pages_return_to_command_deck(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_home_shortcuts_do_not_escape_secondary_pages(tmp_path, monkeypatch):
+    from subtap.ui.command_deck import CommandDeckApp
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    state = tmp_path / ".subtap" / "state.json"
+    state.parent.mkdir(parents=True)
+    state.write_text("{}", encoding="utf-8")
+
+    app = CommandDeckApp()
+    async with app.run_test(size=(90, 36)) as pilot:
+        await pilot.press("1")
+        setup_screen = app.screen
+
+        await pilot.press("o", "d")
+
+        assert app.screen is setup_screen
+        assert app.return_value is None
+
+
+@pytest.mark.asyncio
 async def test_batch_and_observe_choose_paths_inside_their_pages(tmp_path, monkeypatch):
     from textual.widgets import Button
 
@@ -198,8 +218,9 @@ async def test_observe_log_stays_inside_command_deck(tmp_path, monkeypatch):
         app.screen.query_one("#choose-observe-log", Button).press()
         await pilot.pause()
 
-        output = str(app.screen.query_one("#observe-output", Static).render())
+        output = str(app.screen.query_one("#observe-status", Static).render())
         assert "ASR 草稿：1" in output
+        assert len(list(app.screen.query("#observe-layout"))) == 1
         assert app.return_value is None
 
         await pilot.press("escape")
@@ -312,10 +333,10 @@ def test_number_bindings_are_derived_from_menu_options():
 
     number_bindings = CommandDeckApp.BINDINGS[5 : 5 + len(OPTIONS)]
 
-    assert [binding[0] for binding in number_bindings] == [
+    assert [binding.key for binding in number_bindings] == [
         str(index) for index in range(1, len(OPTIONS) + 1)
     ]
-    assert [binding[2] for binding in number_bindings] == [
+    assert [binding.description for binding in number_bindings] == [
         option.label for option in OPTIONS
     ]
 
@@ -366,3 +387,49 @@ def test_command_deck_glossary_action_opens_glossary_library(tmp_path, monkeypat
     glossary_dir = tmp_path / ".subtap" / "glossaries"
     assert opened == [glossary_dir]
     assert (glossary_dir / "default.txt").is_file()
+
+
+@pytest.mark.asyncio
+async def test_command_deck_uses_native_footer_and_wide_brand_only_when_wide(
+    tmp_path, monkeypatch
+):
+    from textual.widgets import Footer, Static
+
+    from subtap.ui.command_deck import CommandDeckApp
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    state = tmp_path / ".subtap" / "state.json"
+    state.parent.mkdir(parents=True)
+    state.write_text("{}", encoding="utf-8")
+
+    app = CommandDeckApp()
+    async with app.run_test(size=(90, 40)) as pilot:
+        assert len(list(app.query(Footer))) == 1
+        assert app.query_one("#brand-wide", Static).display is False
+        assert app.query_one("#brand-compact", Static).display is True
+
+        await pilot.resize_terminal(120, 40)
+        assert app.query_one("#brand-wide", Static).display is True
+        assert app.query_one("#brand-compact", Static).display is False
+
+
+@pytest.mark.asyncio
+async def test_secondary_page_uses_native_footer_without_manual_key_hint(
+    tmp_path, monkeypatch
+):
+    from textual.widgets import Footer
+
+    from subtap.ui.command_deck import CommandDeckApp
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    state = tmp_path / ".subtap" / "state.json"
+    state.parent.mkdir(parents=True)
+    state.write_text("{}", encoding="utf-8")
+
+    app = CommandDeckApp()
+    async with app.run_test(size=(90, 40)) as pilot:
+        await pilot.press("6")
+        await pilot.pause()
+
+        assert len(list(app.screen.query(Footer))) == 1
+        assert len(list(app.screen.query("#page-hint"))) == 0

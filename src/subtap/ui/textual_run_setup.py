@@ -5,17 +5,17 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 import subprocess
-from typing import Any, Callable, TYPE_CHECKING
+from typing import Any, Callable, ClassVar, TYPE_CHECKING
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Grid, Horizontal, VerticalScroll
-from textual.events import Resize
-from textual.screen import Screen
-from textual.widgets import Button, Input, Select, Static
+from textual.containers import Grid, Horizontal, Vertical, VerticalScroll
+from textual.screen import ModalScreen, Screen
+from textual.widgets import Button, Footer, Input, Select, Static
 
 from subtap.core.models import asr_mode_for_model
 from subtap.schemas.config import load_config
+from subtap.ui.theme import CALM_WORKBENCH_BREAKPOINTS, CALM_WORKBENCH_CSS
 from subtap.ui.views.wizard import WizardView
 
 logger = logging.getLogger(__name__)
@@ -60,12 +60,77 @@ def _glossary_choices(paths: list[Path]) -> list[tuple[str, str]]:
     return choices
 
 
+class ReviewTaskScreen(ModalScreen[bool]):
+    """Show the final task settings before starting transcription."""
+
+    CSS = """
+    ReviewTaskScreen {
+        align: center middle;
+        background: $background 70%;
+    }
+    #review-dialog {
+        width: 64;
+        max-width: 92%;
+        height: auto;
+        padding: 1 2;
+        background: $surface;
+        border: round $accent;
+    }
+    #review-title { text-style: bold; color: $accent; }
+    #review-summary { height: auto; margin: 1 0; }
+    #review-actions { height: 3; }
+    #review-actions Button { width: 1fr; margin-right: 1; }
+    #review-actions Button:last-child { margin-right: 0; }
+    """
+    BINDINGS = [
+        Binding("y", "confirm", "开始转录"),
+        Binding("n", "cancel", "返回修改"),
+        Binding("escape", "cancel", "返回修改"),
+    ]
+
+    def __init__(self, confirm_items: list[str]) -> None:
+        super().__init__()
+        self.confirm_items = confirm_items
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="review-dialog"):
+            yield Static("复核任务", id="review-title")
+            yield Static("\n".join(self.confirm_items), id="review-summary")
+            with Horizontal(id="review-actions"):
+                yield Button("返回修改", id="review-back")
+                yield Button("开始转录", id="confirm-start", variant="primary")
+
+    def action_confirm(self) -> None:
+        self.dismiss(True)
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "confirm-start":
+            self.action_confirm()
+        elif event.button.id == "review-back":
+            self.action_cancel()
+        else:
+            raise RuntimeError(f"任务复核未处理按钮：{event.button.id}")
+
+
 class _RunSetupForm:
     """Collect per-task options and return the real pipeline command."""
 
-    CSS = """
-    Screen { background: $background; color: $foreground; padding: 1 3; }
-    #form { height: 1fr; }
+    HORIZONTAL_BREAKPOINTS: ClassVar[list[tuple[int, str]] | None] = (
+        CALM_WORKBENCH_BREAKPOINTS
+    )
+    CSS = CALM_WORKBENCH_CSS + """
+    Screen {
+        align: center top;
+    }
+    #form {
+        width: 100%;
+        max-width: 104;
+        height: 1fr;
+        padding: 1 3 0 3;
+    }
     .section-label { color: $accent; text-style: bold; margin-top: 1; }
     Select, Input { margin-bottom: 1; }
     #input-row, #manuscript-row, #output-row, #footer-actions {
@@ -85,7 +150,7 @@ class _RunSetupForm:
         margin-bottom: 1;
     }
     #glossary-actions Button { width: 100%; }
-    RunSetupScreen.-narrow #glossary-actions {
+    .-compact #glossary-actions {
         grid-size: 1 3;
         grid-columns: 1fr;
         grid-rows: 3 3 3;
@@ -94,9 +159,10 @@ class _RunSetupForm:
     #footer-actions Button { width: 1fr; margin-right: 1; }
     #footer-actions Button:last-child { margin-right: 0; }
     #status { color: $warning; }
-    #hint, .resource-help { color: $text-muted; }
+    .resource-help { color: $text-muted; }
     """
     if TYPE_CHECKING:
+        app: App[Any]
 
         def query_one(self, *args: Any, **kwargs: Any) -> Any: ...
 
@@ -110,7 +176,6 @@ class _RunSetupForm:
         config = load_config(Path.home() / ".subtap" / "config.yaml")
         self.default_mode = asr_mode_for_model(config.asr.model)
         self.default_max_chars = config.output.max_chars
-        self._pending_command: list[str] | None = None
         self._glossary_options = _glossary_choices(WizardView.list_glossaries())
         self._manuscript_options = [
             ("不使用参考文稿", ""),
@@ -176,12 +241,11 @@ class _RunSetupForm:
             with Horizontal(id="output-row"):
                 yield Input(value=str(Path.cwd() / "output"), id="output")
                 yield Button("选择输出目录…", id="choose-output")
-            yield Static("Tab 切换 · Enter 确认 · Esc 返回 · Q 退出", id="hint")
             yield Static("", id="status")
-            yield Static("", id="confirmation")
             with Horizontal(id="footer-actions"):
                 yield Button("检查设置", id="start", variant="primary")
                 yield Button("返回", id="cancel")
+        yield Footer()
 
     def _set_selected_file(
         self,
@@ -196,7 +260,6 @@ class _RunSetupForm:
         select = self.query_one(select_id, Select)
         select.set_options(options)
         select.value = value
-        self._pending_command = None
 
     def _pick_path(
         self,
@@ -220,7 +283,6 @@ class _RunSetupForm:
         if path is not None:
             self.input_path = path
             self.query_one("#input-path", Static).update(str(path))
-            self._pending_command = None
 
     def _open_glossary(self, path: Path) -> None:
         if not path.is_file():
@@ -257,7 +319,6 @@ class _RunSetupForm:
         path = self._pick_path(_choose_native_folder, "选择字幕输出目录")
         if path is not None:
             self.query_one("#output", Input).value = str(path)
-            self._pending_command = None
 
     def start(self) -> None:
         if self.input_path is None:
@@ -299,15 +360,11 @@ class _RunSetupForm:
         except ValueError as error:
             self.query_one("#status", Static).update(str(error))
             return
-        if command == self._pending_command:
-            self._complete(command)
-            return
-        self._pending_command = command
         self.query_one("#status", Static).update("")
-        self.query_one("#confirmation", Static).update(
-            "[b]请确认[/b]\n" + "\n".join(wizard.get_confirm_items())
+        self.app.push_screen(
+            ReviewTaskScreen(wizard.get_confirm_items()),
+            lambda confirmed: self._complete(command) if confirmed else None,
         )
-        self.query_one("#start", Button).label = "确认并开始"
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         handlers = {
@@ -341,9 +398,6 @@ class RunSetupScreen(_RunSetupForm, Screen[list[str] | None]):
 
     def action_cancel(self) -> None:
         self.dismiss(None)
-
-    def on_resize(self, event: Resize) -> None:
-        self.set_class(event.size.width < 80, "-narrow")
 
     def _complete(self, command: list[str]) -> None:
         self.dismiss(command)

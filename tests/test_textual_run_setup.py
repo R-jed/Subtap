@@ -21,7 +21,7 @@ def _create_default_glossary(home):
 async def test_run_setup_returns_selected_pipeline_command(tmp_path, monkeypatch):
     from textual.widgets import Button, Input, Select, Static
 
-    from subtap.ui.textual_run_setup import RunSetupApp
+    from subtap.ui.textual_run_setup import ReviewTaskScreen, RunSetupApp
 
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
     audio = tmp_path / "voice.wav"
@@ -44,10 +44,12 @@ async def test_run_setup_returns_selected_pipeline_command(tmp_path, monkeypatch
         app.query_one("#start", Button).press()
         await pilot.pause()
         assert app.return_value is None
-        confirmation = str(app.query_one("#confirmation", Static).render())
+        assert isinstance(app.screen, ReviewTaskScreen)
+        confirmation = str(app.screen.query_one("#review-summary", Static).render())
         assert "高质量" in confirmation
         assert "camera.yaml" in confirmation
-        app.query_one("#start", Button).press()
+        assert app.screen.query_one("#confirm-start", Button).label == "开始转录"
+        await pilot.press("y")
         await pilot.pause()
 
     assert app.return_value == [
@@ -330,7 +332,7 @@ async def test_run_setup_explicitly_resets_optional_resources(tmp_path, monkeypa
         app.query_one("#start", Button).press()
         await pilot.pause()
         assert app.return_value is None
-        app.query_one("#start", Button).press()
+        await pilot.press("y")
         await pilot.pause()
 
     assert "--default-glossary" in app.return_value
@@ -383,3 +385,24 @@ def test_default_glossary_selection_fails_when_default_file_is_missing(
 
     with pytest.raises(ValueError, match="默认热词表不存在"):
         request.validate()
+
+
+@pytest.mark.asyncio
+async def test_run_setup_uses_native_footer_and_responsive_glossary_actions(
+    tmp_path, monkeypatch
+):
+    from textual.widgets import Footer
+
+    from subtap.ui.textual_run_setup import RunSetupApp
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    app = RunSetupApp()
+
+    async with app.run_test(size=(60, 40)) as pilot:
+        assert len(list(app.query(Footer))) == 1
+        assert "-compact" in app.screen.classes
+        assert len(list(app.query("#hint"))) == 0
+        assert len(list(app.query("#confirmation"))) == 0
+
+        await pilot.resize_terminal(90, 40)
+        assert "-regular" in app.screen.classes

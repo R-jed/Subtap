@@ -6,6 +6,29 @@
 import os
 import unicodedata
 
+CALM_WORKBENCH_BREAKPOINTS = [
+    (0, "-compact"),
+    (80, "-regular"),
+    (104, "-wide"),
+]
+
+CALM_WORKBENCH_CSS = """
+Screen {
+    background: $background;
+    color: $foreground;
+}
+Footer {
+    background: $surface;
+    color: $text-muted;
+}
+"""
+
+RICH_LOGO = "#8a8a8a"
+RICH_TEXT = "#f2f2f2"
+RICH_MUTED = "#8b8b92"
+RICH_ACCENT = "#56d4dd"
+RICH_LINK = "#78a9ff"
+
 
 class Theme:
     """8 色语义映射，遵守 no-color.org 规范。"""

@@ -8,6 +8,15 @@ import sys
 from rich.text import Text
 
 from subtap import __version__
+from subtap.ui.theme import (
+    CALM_WORKBENCH_BREAKPOINTS,
+    CALM_WORKBENCH_CSS,
+    RICH_ACCENT,
+    RICH_LINK,
+    RICH_LOGO,
+    RICH_MUTED,
+    RICH_TEXT,
+)
 
 SOLID_SUBTAP_ASCII = """
 █████ ██  ██ ████  █████  ███  ████
@@ -37,11 +46,11 @@ OPTIONS = [
 
 PROJECT_URL = "https://github.com/R-jed/Subtap"
 
-STYLE_LOGO = "#8a8a8a"
-STYLE_TEXT = "#f2f2f2"
-STYLE_MUTED = "#8b8b92"
-STYLE_ACCENT = "#56d4dd"
-STYLE_LINK = "#78a9ff"
+STYLE_LOGO = RICH_LOGO
+STYLE_TEXT = RICH_TEXT
+STYLE_MUTED = RICH_MUTED
+STYLE_ACCENT = RICH_ACCENT
+STYLE_LINK = RICH_LINK
 
 FOOTER_KEYS = "↑↓  移动   Enter  选择   Q  退出"
 
@@ -105,26 +114,35 @@ def build_root_command_deck_renderable(selected_index: int = 0) -> Text:
 try:
     from textual.app import App, ComposeResult
     from textual import on
-    from textual.widgets import OptionList, Static
+    from textual.binding import Binding
+    from textual.containers import Vertical
+    from textual.widgets import Footer, OptionList, Static
     from textual.widgets.option_list import Option
 
     class CommandDeckApp(App[str | list[str] | None]):
         """Keyboard-first local subtitle command deck."""
 
         TITLE = "subtap"
+        HORIZONTAL_BREAKPOINTS = CALM_WORKBENCH_BREAKPOINTS
 
-        CSS = """
+        CSS = CALM_WORKBENCH_CSS + """
         Screen {
-            background: $background;
-            color: $foreground;
+            align: center top;
         }
 
-        #brand-wide, #brand-compact { height: auto; margin: 1 2 1 2; }
-        #brand-compact { display: none; }
+        #home-shell {
+            width: 100%;
+            max-width: 104;
+            height: 1fr;
+            padding: 1 2 0 2;
+        }
+        #brand-wide, #brand-compact { height: auto; margin-bottom: 1; }
+        #brand-wide { display: none; }
+        Screen.-wide #brand-wide { display: block; }
+        Screen.-wide #brand-compact { display: none; }
         #menu {
             height: auto;
             max-height: 8;
-            margin: 0 2;
             padding: 0;
             background: $background;
             border: none;
@@ -144,23 +162,27 @@ try:
             color: $foreground;
             text-style: none;
         }
-        #keys { color: $text-muted; height: auto; margin: 1 2 0 2; }
         """
 
         BINDINGS = [
-            ("up", "cursor_up", "上移"),
-            ("down", "cursor_down", "下移"),
-            ("j", "cursor_down", "下移"),
-            ("enter", "select", "选择"),
-            ("k", "cursor_up", "上移"),
+            Binding("up", "cursor_up", "上移", show=False),
+            Binding("down", "cursor_down", "下移", show=False),
+            Binding("j", "cursor_down", "下移", show=False),
+            Binding("enter", "select", "选择"),
+            Binding("k", "cursor_up", "上移", show=False),
             *[
-                (str(index + 1), f"select_index({index})", option.label)
+                Binding(
+                    str(index + 1),
+                    f"select_index({index})",
+                    option.label,
+                    show=False,
+                )
                 for index, option in enumerate(OPTIONS)
             ],
-            ("o", "open_output", "输出"),
-            ("d", "doctor", "诊断"),
-            ("v", "version", "版本"),
-            ("q", "quit", "退出"),
+            Binding("o", "open_output", "输出"),
+            Binding("d", "doctor", "诊断"),
+            Binding("v", "version", "版本", show=False),
+            Binding("q", "quit", "退出"),
         ]
 
         def __init__(self) -> None:
@@ -172,35 +194,28 @@ try:
             return OPTIONS[self.selected_index]
 
         def compose(self) -> ComposeResult:
-            yield Static(_build_header_renderable(), id="brand-wide")
-            yield Static(_build_compact_header_renderable(), id="brand-compact")
-            yield OptionList(
-                *[
-                    Option(
-                        _build_option_prompt(index, index == self.selected_index),
-                        id=option.action,
-                    )
-                    for index, option in enumerate(OPTIONS)
-                ],
-                id="menu",
-            )
-            yield Static(FOOTER_KEYS, id="keys")
+            with Vertical(id="home-shell"):
+                yield Static(_build_header_renderable(), id="brand-wide")
+                yield Static(_build_compact_header_renderable(), id="brand-compact")
+                yield OptionList(
+                    *[
+                        Option(
+                            _build_option_prompt(index, index == self.selected_index),
+                            id=option.action,
+                        )
+                        for index, option in enumerate(OPTIONS)
+                    ],
+                    id="menu",
+                )
+            yield Footer()
 
         def on_mount(self) -> None:
-            self._set_brand_visibility(self.size.width)
             from subtap.ui.views.home import HomeView
 
             if HomeView().is_first_run():
                 from subtap.ui.textual_first_run import FirstRunScreen
 
                 self.push_screen(FirstRunScreen())
-
-        def on_resize(self, event) -> None:
-            self._set_brand_visibility(event.size.width)
-
-        def _set_brand_visibility(self, width: int) -> None:
-            self.query_one("#brand-wide", Static).display = width >= 60
-            self.query_one("#brand-compact", Static).display = width < 60
 
         def action_cursor_down(self) -> None:
             self.selected_index = (self.selected_index + 1) % len(OPTIONS)
@@ -288,6 +303,21 @@ try:
 
         def action_version(self) -> None:
             self.exit("version")
+
+        def check_action(
+            self, action: str, parameters: tuple[object, ...]
+        ) -> bool | None:
+            if len(self.screen_stack) > 1 and action in {
+                "cursor_up",
+                "cursor_down",
+                "select",
+                "select_index",
+                "open_output",
+                "doctor",
+                "version",
+            }:
+                return False
+            return True
 
         def _refresh_deck(self) -> None:
             self.query_one("#menu", OptionList).highlighted = self.selected_index

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 import logging
 from pathlib import Path
@@ -37,6 +38,21 @@ _OBSERVED_STAGE_CN = {
     "learn": "热词学习",
     "translate": "字幕翻译",
 }
+
+
+@dataclass(frozen=True)
+class TaskPresentation:
+    """Stable task view consumed by live and historical observer screens."""
+
+    status: str
+    stage: str
+    progress: int | None
+    model: str
+    counts: str
+    current_work: str
+    stage_lines: tuple[str, ...]
+    recent_texts: tuple[str, ...]
+    output_text: str
 
 
 def iter_event_log(log_path: Path) -> list[dict[str, Any]]:
@@ -144,17 +160,94 @@ def summarize_event_log(log_path: Path) -> dict[str, Any]:
     return _summarize_event_rows(iter_event_log(log_path))
 
 
+def build_task_presentation(
+    state: dict[str, Any],
+    *,
+    returncode: int | None | object = _UNSET,
+    output_path: Path | None = None,
+    now: float | None = None,
+) -> TaskPresentation:
+    """Translate reducer state into one shared task presentation."""
+    if returncode is _UNSET:
+        status = "任务记录"
+    elif returncode is None:
+        status = "任务运行中"
+    elif returncode == 0:
+        status = (
+            "任务已完成"
+            if output_path is None or output_path.is_file()
+            else "任务异常：未找到字幕文件"
+        )
+    else:
+        status = f"任务失败（退出码 {returncode}）"
+
+    completed = set(state["completed_stages"])
+    current = state["stage"]
+    stage_lines = tuple(
+        f"{'✓' if stage in completed else '▶' if stage == current else '·'} "
+        f"{_OBSERVED_STAGE_CN.get(stage, stage)}"
+        for stage in state["stage_order"]
+    )
+    item_index = state["item_index"]
+    total_items = state["total_items"]
+    item_text = (
+        f"当前项目：{item_index}/{total_items}"
+        if item_index is not None and total_items is not None
+        else f"当前 Chunk：{state['chunk_id']}"
+    )
+    elapsed = 0
+    if state["started_at"] is not None:
+        end_time = (
+            now if returncode is None and now is not None else state["last_event_at"]
+        )
+        if end_time is None:
+            end_time = state["started_at"]
+        elapsed = max(0, int(end_time - state["started_at"]))
+    current_work = f"{item_text}  已用时：{elapsed // 60:02d}:{elapsed % 60:02d}"
+
+    if returncode is _UNSET:
+        output_text = f"[b]输出[/b]  {output_path or '未记录'}"
+    elif returncode is None:
+        output_text = f"[b]输出[/b]  {output_path or '任务完成后显示'}"
+    elif returncode == 0 and output_path is not None and output_path.is_file():
+        output_text = f"[green]✓ 字幕已生成[/green]\n{output_path}"
+    elif returncode == 0 and output_path is not None:
+        output_text = f"[red]未找到字幕文件[/red]\n{output_path}"
+    else:
+        output_text = "[red]未生成可交付字幕[/red]"
+
+    return TaskPresentation(
+        status=status,
+        stage=str(state["stage"]),
+        progress=state["progress"],
+        model=str(state["model"]),
+        counts=f"ASR 草稿：{state['asr_drafts']}  已对齐：{state['aligned']}",
+        current_work=current_work,
+        stage_lines=stage_lines,
+        recent_texts=tuple(state["recent_texts"]),
+        output_text=output_text,
+    )
+
+
+def build_task_status_text(presentation: TaskPresentation) -> str:
+    progress_text = (
+        f"{presentation.progress}%" if presentation.progress is not None else "计算中"
+    )
+    return (
+        f"[b]{presentation.status}[/b]\n"
+        f"当前阶段：{presentation.stage}\n"
+        f"进度：{progress_text}\n"
+        f"当前模型：{presentation.model}\n"
+        f"{presentation.counts}\n"
+        f"{presentation.current_work}\n"
+        "隐私：观察者只读取本地日志，不接触音频和模型推理\n"
+        f"{presentation.output_text}"
+    )
+
+
 def build_command_deck_text(state: dict[str, Any]) -> str:
     """Format pipeline state as human-readable text for CLI output."""
-    progress = state["progress"]
-    progress_text = f"{progress}%" if progress is not None else "计算中"
-    return (
-        f"当前阶段：{state['stage']}\n"
-        f"进度：{progress_text}\n"
-        f"当前 Chunk：{state['chunk_id']}\n"
-        f"当前模型：{state['model']}\n"
-        f"ASR 草稿：{state['asr_drafts']}  已对齐：{state['aligned']}"
-    )
+    return build_task_status_text(build_task_presentation(state))
 
 
 def _make_observer_dashboard(
@@ -166,10 +259,11 @@ def _make_observer_dashboard(
     """Create ObserverDashboard instance (lazy import of textual)."""
     from textual.app import App, ComposeResult
     from textual.binding import Binding
-    from textual.containers import Vertical
+    from textual.containers import Grid, Vertical, VerticalScroll
     from textual.screen import ModalScreen
-    from textual.widgets import ProgressBar, RichLog, Static
+    from textual.widgets import Footer, ProgressBar, RichLog, Static
     from rich.text import Text
+    from subtap.ui.theme import CALM_WORKBENCH_BREAKPOINTS, CALM_WORKBENCH_CSS
 
     class CancelTaskScreen(ModalScreen[bool]):
         """Require an explicit answer before stopping the pipeline."""
@@ -210,31 +304,50 @@ def _make_observer_dashboard(
     class ObserverDashboard(App):
         """Textual 观察者：只读 run.log.jsonl，不执行 pipeline。"""
 
-        CSS = """
+        HORIZONTAL_BREAKPOINTS = CALM_WORKBENCH_BREAKPOINTS
+        CSS = CALM_WORKBENCH_CSS + """
         Screen {
             layout: vertical;
+            align: center top;
         }
         #task-panel {
-            margin: 1 2;
-            padding: 1 2;
-            border: round $accent;
+            width: 100%;
+            max-width: 104;
+            height: 1fr;
+            padding: 1 2 0 2;
+        }
+        #status {
+            height: auto;
+            padding-bottom: 1;
+        }
+        #progress { margin-bottom: 1; }
+        #task-layout {
+            grid-size: 2 1;
+            grid-columns: 2fr 3fr;
+            grid-rows: auto;
+            grid-gutter: 1 2;
             height: auto;
         }
-        #stage-map, #current-work, #recent, #output {
+        #pipeline-pane, #activity-pane {
+            height: auto;
+            padding: 1 2;
+            background: $surface;
+        }
+        .-compact #task-layout {
+            grid-size: 1 2;
+            grid-columns: 1fr;
+            grid-rows: auto auto;
+        }
+        #stage-map, #recent, #output {
             margin-top: 1;
         }
         #details {
-            margin: 0 2 1 2;
+            width: 100%;
+            max-width: 104;
+            margin-bottom: 1;
             border: round $secondary;
             height: 1fr;
             display: none;
-        }
-        #keys {
-            dock: bottom;
-            height: 1;
-            padding: 0 2;
-            color: $text-muted;
-            background: $surface;
         }
         """
         BINDINGS = [
@@ -246,17 +359,24 @@ def _make_observer_dashboard(
             ("x", "cancel_task", "停止任务"),
         ]
 
+        def __init__(self) -> None:
+            super().__init__()
+            self._task_running = True
+
         def compose(self) -> ComposeResult:
-            with Vertical(id="task-panel"):
+            with VerticalScroll(id="task-panel"):
                 yield Static(self.build_status_text(), id="status")
                 yield ProgressBar(total=100, show_eta=False, id="progress")
-                yield Static("", id="stage-map")
                 yield Static("", id="current-work")
-                yield Static("", id="recent")
-                yield Static("", id="output")
-                yield Static("", id="action-status")
+                with Grid(id="task-layout"):
+                    with Vertical(id="pipeline-pane"):
+                        yield Static("", id="stage-map")
+                    with Vertical(id="activity-pane"):
+                        yield Static("", id="recent")
+                        yield Static("", id="output")
+                        yield Static("", id="action-status")
             yield RichLog(max_lines=200, auto_scroll=True, id="details")
-            yield Static("", id="keys")
+            yield Footer()
 
         async def on_mount(self) -> None:
             self.set_interval(refresh_interval, self.refresh_from_log)
@@ -271,102 +391,45 @@ def _make_observer_dashboard(
                 state = summarize_event_log(log_path)
             if returncode is _UNSET:
                 returncode = process.poll()
-            if returncode is None:
-                task_status = "任务运行中"
-            elif returncode == 0:
-                task_status = (
-                    "任务已完成"
-                    if output_path is None or output_path.is_file()
-                    else "任务异常：未找到字幕文件"
-                )
-            else:
-                task_status = f"任务失败（退出码 {returncode}）"
-            progress = state["progress"]
-            progress_text = f"{progress}%" if progress is not None else "计算中"
-            output_text = f"\n输出文件：{output_path}" if output_path else ""
-            return (
-                f"[b]{task_status}[/b]\n"
-                f"当前阶段：{state['stage']}\n"
-                f"进度：{progress_text}\n"
-                f"当前 Chunk：{state['chunk_id']}\n"
-                f"当前模型：{state['model']}\n"
-                f"ASR 草稿：{state['asr_drafts']}  已对齐：{state['aligned']}\n"
-                "隐私：观察者只读取本地日志，不接触音频和模型推理"
-                f"{output_text}"
+            presentation = build_task_presentation(
+                state,
+                returncode=returncode,
+                output_path=output_path,
+                now=time.time(),
             )
+            return build_task_status_text(presentation)
 
         def refresh_from_log(self) -> None:
             rows = iter_event_log(log_path)
             state = _summarize_event_rows(rows)
             returncode = process.poll()
+            presentation = build_task_presentation(
+                state,
+                returncode=returncode,
+                output_path=output_path,
+                now=time.time(),
+            )
+            self._task_running = returncode is None
+            self.refresh_bindings()
             self.query_one("#status", Static).update(
-                self.build_status_text(state, returncode)
+                build_task_status_text(presentation)
             )
 
-            progress = state["progress"]
             bar = self.query_one("#progress", ProgressBar)
-            if progress is None:
+            if presentation.progress is None:
                 bar.update(total=None)
             else:
-                bar.update(total=100, progress=progress)
-
-            completed = set(state["completed_stages"])
-            current = state["stage"]
-            stages = []
-            for stage in state["stage_order"]:
-                marker = "✓" if stage in completed else "▶" if stage == current else "·"
-                stages.append(f"{marker} {_OBSERVED_STAGE_CN.get(stage, stage)}")
-            self.query_one("#stage-map", Static).update("  ".join(stages))
-
-            item_index = state["item_index"]
-            total_items = state["total_items"]
-            item_text = (
-                f"当前项目：{item_index}/{total_items}"
-                if item_index is not None and total_items is not None
-                else f"当前 Chunk：{state['chunk_id']}"
+                bar.update(total=100, progress=presentation.progress)
+            self.query_one("#stage-map", Static).update(
+                "[b]处理流程[/b]\n" + "\n".join(presentation.stage_lines)
             )
-            elapsed = 0
-            if state["started_at"] is not None:
-                end_time = (
-                    time.time()
-                    if returncode is None
-                    else state["last_event_at"] or state["started_at"]
-                )
-                elapsed = max(0, int(end_time - state["started_at"]))
-            self.query_one("#current-work", Static).update(
-                f"{item_text}  已用时：{elapsed // 60:02d}:{elapsed % 60:02d}"
-            )
+            self.query_one("#current-work", Static).update(presentation.current_work)
 
-            recent = state["recent_texts"]
-            recent_text = "\n".join(f"  {text}" for text in recent)
+            recent_text = "\n".join(f"  {text}" for text in presentation.recent_texts)
             self.query_one("#recent", Static).update(
                 f"[b]最近字幕[/b]\n{recent_text or '  暂无'}"
             )
-            if returncode is None:
-                output_text = f"[b]输出[/b]  {output_path or '任务完成后显示'}"
-            elif returncode == 0 and output_path is not None and output_path.is_file():
-                output_text = (
-                    f"[green]✓ 字幕已生成[/green]  {output_path}\n"
-                    "F 打开输出目录  Q 返回"
-                )
-            elif returncode == 0 and output_path is not None:
-                output_text = (
-                    f"[red]未找到字幕文件[/red]  {output_path}\n"
-                    "D 打开诊断日志  Q 返回"
-                )
-            else:
-                output_text = "[red]未生成可交付字幕[/red]\nD 打开诊断日志  Q 返回"
-            self.query_one("#output", Static).update(output_text)
-            if returncode is None:
-                keys = (
-                    "L 详情   F 输出目录   D 诊断日志   Esc 返回概览   "
-                    "Q 退出观察   X 停止任务"
-                )
-            elif returncode == 0 and output_path is not None and output_path.is_file():
-                keys = "F 输出目录   Q 返回"
-            else:
-                keys = "D 诊断日志   Q 返回"
-            self.query_one("#keys", Static).update(keys)
+            self.query_one("#output", Static).update(presentation.output_text)
 
             details = self.query_one("#details", RichLog)
             details.clear()
@@ -378,6 +441,7 @@ def _make_observer_dashboard(
         def action_toggle_details(self) -> None:
             details = self.query_one("#details", RichLog)
             details.display = not details.display
+            self.query_one("#task-panel").display = not details.display
 
         def _open_path(self, target: Path, label: str) -> None:
             status = self.query_one("#action-status", Static)
@@ -432,9 +496,15 @@ def _make_observer_dashboard(
 
         def action_show_overview(self) -> None:
             self.query_one("#details", RichLog).display = False
+            self.query_one("#task-panel").display = True
 
         def action_quit_observer(self) -> None:
             self.exit("quit")
+
+        def check_action(self, action: str, parameters: tuple[object, ...]) -> bool:
+            if action == "cancel_task":
+                return self._task_running
+            return True
 
         def action_cancel_task(self) -> None:
             if process.poll() is None:

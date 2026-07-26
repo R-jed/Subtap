@@ -11,11 +11,11 @@ from typing import Callable
 from textual import on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Grid, Horizontal, VerticalScroll
-from textual.events import Resize
+from textual.containers import Grid, Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Button, Static
+from textual.widgets import Button, Footer, ProgressBar, Static
 
+from subtap.ui.theme import CALM_WORKBENCH_BREAKPOINTS, CALM_WORKBENCH_CSS
 from subtap.ui.textual_run_setup import _choose_native_file, _choose_native_folder
 
 logger = logging.getLogger(__name__)
@@ -24,19 +24,39 @@ logger = logging.getLogger(__name__)
 class CommandPage(Screen[list[str] | None]):
     """Shared navigation and visual rhythm for a secondary page."""
 
-    CSS = """
+    HORIZONTAL_BREAKPOINTS = CALM_WORKBENCH_BREAKPOINTS
+    CSS = CALM_WORKBENCH_CSS + """
     CommandPage {
-        background: $background;
-        color: $foreground;
-        padding: 1 3;
+        align: center top;
     }
-    #page-body { height: 1fr; max-width: 100; }
+    #page-body {
+        width: 100%;
+        max-width: 104;
+        height: 1fr;
+        padding: 1 3 0 3;
+    }
     #page-title { height: auto; color: $accent; text-style: bold; }
-    #page-description, #page-hint { height: auto; color: $text-muted; }
+    #page-description { height: auto; color: $text-muted; }
     #page-status { height: auto; color: $warning; }
     #page-actions { height: 3; margin-top: 1; }
     #page-actions Button { width: 1fr; margin-right: 1; }
     #page-actions Button:last-child { margin-right: 0; }
+    #observe-progress { margin: 1 0; }
+    #observe-layout {
+        grid-size: 2 1;
+        grid-columns: 2fr 3fr;
+        grid-gutter: 1 2;
+        height: auto;
+    }
+    #observe-pipeline-pane, #observe-activity-pane {
+        height: auto;
+        padding: 1 2;
+        background: $surface;
+    }
+    CommandPage.-compact #observe-layout {
+        grid-size: 1 2;
+        grid-columns: 1fr;
+    }
     """
     BINDINGS = [
         Binding("escape", "back", "返回"),
@@ -82,7 +102,7 @@ class PickerCommandPage(CommandPage):
                 yield Button("开始", id="start-path-command", variant="primary")
                 yield Button("返回", id="back")
             yield Static("", id="page-status")
-            yield Static("Esc 返回 · Q 退出", id="page-hint")
+        yield Footer()
 
     @on(Button.Pressed, "#choose-path")
     def choose_path(self) -> None:
@@ -127,7 +147,7 @@ class LaunchCommandPage(CommandPage):
             with Horizontal(id="page-actions"):
                 yield Button("打开", id="launch-command", variant="primary")
                 yield Button("返回", id="back")
-            yield Static("Esc 返回 · Q 退出", id="page-hint")
+        yield Footer()
 
     @on(Button.Pressed, "#launch-command")
     def launch(self) -> None:
@@ -156,7 +176,7 @@ class CommandOutputPage(CommandPage):
             with Horizontal(id="page-actions"):
                 yield Button("重新读取", id="reload-command")
                 yield Button("返回", id="back")
-            yield Static("Esc 返回 · Q 退出", id="page-hint")
+        yield Footer()
 
     def on_mount(self) -> None:
         self.load_output()
@@ -215,16 +235,13 @@ class GlossaryPage(CommandPage):
         margin-top: 1;
     }
     #glossary-page-actions Button { width: 100%; }
-    GlossaryPage.-narrow #glossary-page-actions {
+    GlossaryPage.-compact #glossary-page-actions {
         grid-size: 1 3;
         grid-columns: 1fr;
         grid-rows: 3 3 3;
         height: 11;
     }
     """
-
-    def on_resize(self, event: Resize) -> None:
-        self.set_class(event.size.width < 80, "-narrow")
 
     def compose(self) -> ComposeResult:
         glossary_dir = Path.home() / ".subtap" / "glossaries"
@@ -240,7 +257,7 @@ class GlossaryPage(CommandPage):
                 yield Button("查看学习结果", id="view-learned")
                 yield Button("打开热词表目录", id="open-glossary-dir")
             yield Static("", id="page-status")
-            yield Static("Esc 返回 · Q 退出", id="page-hint")
+        yield Footer()
 
     def _open(self, path: Path) -> None:
         try:
@@ -291,13 +308,24 @@ class ObservePage(CommandPage):
                 id="page-description",
             )
             yield Static("尚未选择", id="selected-path")
-            yield Static("", id="observe-output", markup=False)
+            yield Static("", id="observe-status")
+            yield ProgressBar(
+                total=100,
+                show_eta=False,
+                id="observe-progress",
+            )
+            with Grid(id="observe-layout"):
+                with Vertical(id="observe-pipeline-pane"):
+                    yield Static("", id="observe-stage-map")
+                with Vertical(id="observe-activity-pane"):
+                    yield Static("", id="observe-recent")
+                    yield Static("", id="observe-result")
             with Horizontal(id="page-actions"):
                 yield Button("选择 run.log.jsonl…", id="choose-observe-log")
                 yield Button("重新读取", id="reload-observe-log")
                 yield Button("返回", id="back")
             yield Static("", id="page-status")
-            yield Static("Esc 返回 · Q 退出", id="page-hint")
+        yield Footer()
 
     @on(Button.Pressed, "#choose-observe-log")
     def choose_log(self) -> None:
@@ -320,10 +348,30 @@ class ObservePage(CommandPage):
     def refresh_log(self) -> None:
         if self.log_path is None:
             return
-        from subtap.ui.observer import build_command_deck_text, summarize_event_log
+        from subtap.ui.observer import (
+            build_task_presentation,
+            build_task_status_text,
+            summarize_event_log,
+        )
 
         state = summarize_event_log(self.log_path)
-        self.query_one("#observe-output", Static).update(build_command_deck_text(state))
+        presentation = build_task_presentation(state)
+        self.query_one("#observe-status", Static).update(
+            build_task_status_text(presentation)
+        )
+        progress = self.query_one("#observe-progress", ProgressBar)
+        if presentation.progress is None:
+            progress.update(total=None)
+        else:
+            progress.update(total=100, progress=presentation.progress)
+        self.query_one("#observe-stage-map", Static).update(
+            "[b]处理流程[/b]\n" + "\n".join(presentation.stage_lines)
+        )
+        recent = "\n".join(f"  {text}" for text in presentation.recent_texts)
+        self.query_one("#observe-recent", Static).update(
+            f"[b]最近字幕[/b]\n{recent or '  暂无'}"
+        )
+        self.query_one("#observe-result", Static).update(presentation.output_text)
         self.query_one("#page-status", Static).update("")
 
     @on(Button.Pressed, "#reload-observe-log")

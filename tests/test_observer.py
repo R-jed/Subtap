@@ -9,7 +9,7 @@ import pytest
 
 pytest.importorskip("textual", reason="textual is optional UI dependency")
 
-from subtap.ui.observer import summarize_event_log
+from subtap.ui.observer import build_task_presentation, summarize_event_log
 
 
 def test_summarize_event_log_restores_latest_status(tmp_path):
@@ -78,6 +78,49 @@ def test_summarize_event_log_restores_latest_status(tmp_path):
     assert state["recent_texts"] == ["最终字幕"]
     assert state["started_at"] == 0.5
     assert state["last_event_at"] == 3.0
+
+
+def test_task_presentation_covers_running_completed_and_failed_states(tmp_path):
+    log_path = tmp_path / "run.log.jsonl"
+    log_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "event_type": "pipeline_plan",
+                        "timestamp": 10.0,
+                        "data": {"stages": ["prepare", "asr", "export"]},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "event_type": "stage_start",
+                        "timestamp": 12.0,
+                        "data": {"stage": "asr"},
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    state = summarize_event_log(log_path)
+    output_path = tmp_path / "result.srt"
+    output_path.write_text("subtitle", encoding="utf-8")
+
+    running = build_task_presentation(
+        state, returncode=None, output_path=output_path, now=42.0
+    )
+    completed = build_task_presentation(state, returncode=0, output_path=output_path)
+    failed = build_task_presentation(state, returncode=2)
+
+    assert running.status == "任务运行中"
+    assert running.current_work.endswith("已用时：00:32")
+    assert running.stage_lines == ("· 音频标准化", "▶ 语音识别", "· 字幕导出")
+    assert completed.status == "任务已完成"
+    assert "字幕已生成" in completed.output_text
+    assert failed.status == "任务失败（退出码 2）"
+    assert "未生成可交付字幕" in failed.output_text
 
 
 def test_observer_reports_monotonic_overall_pipeline_progress(tmp_path):
@@ -306,6 +349,7 @@ async def test_observer_dashboard_confirms_task_cancellation(tmp_path):
     dashboard = _make_observer_dashboard(tmp_path / "run.log.jsonl", process)
 
     async with dashboard.run_test() as pilot:
+        assert dashboard.check_action("cancel_task", ()) is True
         await pilot.press("x")
         await pilot.press("y")
         await pilot.pause()
@@ -373,7 +417,7 @@ async def test_observer_refresh_parses_log_once(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_observer_dashboard_keeps_completed_task_visible(tmp_path):
-    from textual.widgets import Header, Static
+    from textual.widgets import Footer, Header, Static
 
     from subtap.ui.observer import _make_observer_dashboard
 
@@ -389,11 +433,13 @@ async def test_observer_dashboard_keeps_completed_task_visible(tmp_path):
     async with dashboard.run_test() as pilot:
         await pilot.pause()
         assert not list(dashboard.query(Header))
+        assert len(list(dashboard.query(Footer))) == 1
+        assert len(list(dashboard.query("#keys"))) == 0
+        assert len(list(dashboard.query("#task-layout"))) == 1
+        assert dashboard.check_action("cancel_task", ()) is False
         rendered = str(dashboard.query_one("#status", Static).render())
-        footer = str(dashboard.query_one("#keys", Static).render())
         assert "任务已完成" in rendered
         assert "result.srt" in rendered
-        assert footer == "F 输出目录   Q 返回"
         assert dashboard.return_value is None
         await pilot.press("q")
 
