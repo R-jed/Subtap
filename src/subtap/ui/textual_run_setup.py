@@ -317,10 +317,12 @@ class _RunSetupForm:
         }
         button_id = event.button.id
         if button_id is None:
-            return
-        handler = handlers.get(button_id)
-        if handler is not None:
-            handler()
+            raise RuntimeError("Run Setup 按钮缺少 id")
+        try:
+            handler = handlers[button_id]
+        except KeyError as error:
+            raise RuntimeError(f"Run Setup 未处理按钮：{button_id}") from error
+        handler()
 
 
 class RunSetupScreen(_RunSetupForm, Screen[list[str] | None]):
