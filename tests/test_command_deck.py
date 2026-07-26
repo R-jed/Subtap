@@ -189,6 +189,54 @@ async def test_glossary_page_aligns_its_actions(tmp_path, monkeypatch):
         assert len({button.region.y for button in actions}) == 3
 
 
+@pytest.mark.asyncio
+async def test_doctor_output_stays_inside_tui(tmp_path, monkeypatch):
+    import subprocess
+
+    from textual.widgets import Static
+
+    from subtap.ui.command_deck import CommandDeckApp
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    state = tmp_path / ".subtap" / "state.json"
+    state.parent.mkdir(parents=True)
+    state.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(
+        "subtap.ui.textual_command_pages.subprocess.run",
+        lambda command, **kwargs: subprocess.CompletedProcess(
+            command, 0, "环境检查通过", ""
+        ),
+    )
+
+    app = CommandDeckApp()
+    async with app.run_test(size=(90, 36)) as pilot:
+        await pilot.press("7")
+        await pilot.pause(0.1)
+
+        output = str(app.screen.query_one("#command-output", Static).render())
+        assert "环境检查通过" in output
+        assert app.return_value is None
+
+        await pilot.press("escape")
+        assert app.query_one("#menu").display is True
+
+
+@pytest.mark.asyncio
+async def test_q_from_secondary_page_exits_tool(tmp_path, monkeypatch):
+    from subtap.ui.command_deck import CommandDeckApp
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    state = tmp_path / ".subtap" / "state.json"
+    state.parent.mkdir(parents=True)
+    state.write_text("{}", encoding="utf-8")
+
+    app = CommandDeckApp()
+    async with app.run_test() as pilot:
+        await pilot.press("6", "q")
+
+    assert app.return_value is None
+
+
 def test_command_deck_uses_lowercase_product_title():
     from subtap.ui.command_deck import CommandDeckApp
 
