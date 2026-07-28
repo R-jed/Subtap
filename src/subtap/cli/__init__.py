@@ -49,7 +49,8 @@ app.add_typer(glossary_app, name="glossary", rich_help_panel="本地资源")
 
 def _build_observer_child_command(argv: list[str]) -> list[str]:
     """Build child run command for observer-parent mode."""
-    args = [arg for arg in argv[1:] if arg != "--tui"]
+    observer_flags = {"--tui", "--tui-v2", "--observer-child", "--no-tui"}
+    args = [arg for arg in argv[1:] if arg not in observer_flags]
     return [sys.executable, "-m", "subtap.cli", *args, "--observer-child", "--no-tui"]
 
 
@@ -272,8 +273,17 @@ def observe(
 
 
 @app.command(rich_help_panel="帮助与检查")
-def tui() -> None:
+def tui(
+    v2: bool = typer.Option(False, "--v2", help="预览新版终端界面"),
+) -> None:
     """启动交互式终端界面"""
+    if v2:
+        from subtap.ui.v2 import SubtapV2App
+
+        action = SubtapV2App().run()
+        _handle_command_deck_action(action)
+        return
+
     from subtap.ui.command_deck import CommandDeckApp
 
     _handle_command_deck_action(CommandDeckApp().run())

@@ -15,8 +15,11 @@ from textual.containers import Grid, Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Button, Footer, ProgressBar, Static
 
+from subtap.ui.native_picker import (
+    choose_file as _choose_native_file,
+    choose_folder as _choose_native_folder,
+)
 from subtap.ui.theme import CALM_WORKBENCH_BREAKPOINTS, CALM_WORKBENCH_CSS
-from subtap.ui.textual_run_setup import _choose_native_file, _choose_native_folder
 
 logger = logging.getLogger(__name__)
 

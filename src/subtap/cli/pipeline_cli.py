@@ -434,6 +434,9 @@ def _run(
         False, "--reset-hotwords", hidden=True, help="内部参数：清除配置中的额外热词"
     ),
     tui: bool = typer.Option(False, "--tui", help="使用 TUI 观察者运行"),
+    tui_v2: bool = typer.Option(
+        False, "--tui-v2", hidden=True, help="使用新版 TUI 观察者运行"
+    ),
     observer_child: bool = typer.Option(
         False, "--observer-child", hidden=True, help="内部参数：观察者子进程"
     ),
@@ -463,7 +466,6 @@ def _run(
       subtap run input.mp3 --mode quality -o ./subtitles
     """
     from subtap.schemas.config import load_config
-    from subtap.core.pipeline import Pipeline
 
     if reset_hotwords and hotwords:
         _handle_error("错误：不能同时使用 --reset-hotwords 和 --hotwords")
@@ -478,7 +480,7 @@ def _run(
         reset_hotwords=reset_hotwords,
         subtitle_format=fmt,
         subtitle_language=subtitle_language,
-        show_observer=tui,
+        show_observer=tui or tui_v2,
     )
     try:
         request.validate()
@@ -535,10 +537,17 @@ def _run(
                 stdout=child_log,
                 stderr=subprocess.STDOUT,
             )
-        from subtap.ui.observer import _make_observer_dashboard
+        if tui_v2:
+            from subtap.ui.v2.observer import (
+                _make_v2_observer_dashboard as make_observer_dashboard,
+            )
+        else:
+            from subtap.ui.observer import (
+                _make_observer_dashboard as make_observer_dashboard,
+            )
 
         output_path = output_dir / f"{input_path.stem}.{fmt}"
-        result = _make_observer_dashboard(
+        result = make_observer_dashboard(
             work_dir / "run.log.jsonl",
             process,
             output_path=output_path,

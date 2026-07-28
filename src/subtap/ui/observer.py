@@ -78,8 +78,12 @@ def iter_event_log(log_path: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def _summarize_event_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def _summarize_event_rows(
+    rows: list[dict[str, Any]], *, recent_limit: int = 4
+) -> dict[str, Any]:
     """Reduce validated event rows into the latest pipeline state."""
+    if recent_limit < 1:
+        raise ValueError("recent_limit must be at least 1")
     state: dict[str, Any] = {
         "stage": "等待中",
         "progress": None,
@@ -151,7 +155,7 @@ def _summarize_event_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         if state["has_pipeline_plan"]
         else state["stage_progress"]
     )
-    state["recent_texts"] = (aligned_texts or draft_texts)[-4:]
+    state["recent_texts"] = (aligned_texts or draft_texts)[-recent_limit:]
     return state
 
 

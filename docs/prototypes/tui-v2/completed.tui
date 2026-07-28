@@ -1,0 +1,31 @@
+{
+  "version": "1",
+  "meta": { "name": "Subtap Completed", "theme": "dracula", "savedAt": "2026-07-26T00:00:00.000Z" },
+  "tree": {
+    "id": "root", "type": "Screen", "name": "Subtap Completed",
+    "props": { "width": "fill", "height": "fill", "theme": "dracula" },
+    "layout": { "type": "absolute", "padding": 0 },
+    "style": { "color": "#d8dee9", "backgroundColor": "#0f1115", "border": true, "borderStyle": "single", "borderColor": "#303744" },
+    "events": {},
+    "children": [
+      { "id": "header", "type": "Text", "name": "Header", "props": { "content": "SUBTAP // CALM WORKBENCH                                      F1 HELP  F2 NEW  Q QUIT", "width": "fill", "height": 1 }, "layout": { "type": "absolute", "x": 2, "y": 1 }, "style": { "color": "#69d2e7", "bold": true }, "events": {}, "children": [], "locked": false, "hidden": false, "collapsed": false },
+      {
+        "id": "body", "type": "Box", "name": "Completed Workbench", "props": { "width": "fill", "height": 19 }, "layout": { "type": "absolute", "x": 2, "y": 3, "padding": 1 }, "style": { "color": "#d8dee9", "backgroundColor": "#171b22", "border": true, "borderStyle": "single", "borderColor": "#303744" }, "events": {}, "children": [
+          { "id": "rail", "type": "Box", "name": "History Rail", "props": { "width": 18, "height": "fill" }, "layout": { "type": "absolute", "x": 0, "y": 0, "padding": 1 }, "style": { "color": "#7d8795", "backgroundColor": "#14181e", "border": true, "borderStyle": "single", "borderColor": "#303744" }, "events": {}, "children": [
+            { "id": "rail-title", "type": "Text", "name": "Rail Title", "props": { "content": "HISTORY", "width": "fill", "height": 1 }, "layout": { "type": "absolute", "x": 1, "y": 1 }, "style": { "color": "#d8dee9", "bold": true }, "events": {}, "children": [], "locked": false, "hidden": false, "collapsed": false },
+            { "id": "history", "type": "List", "name": "History List", "props": { "items": [">  meeting-041", "  session-039", "  demo-038", "", "10 COMPLETED", "2 FAILED"], "width": "fill", "height": 8 }, "layout": { "type": "absolute", "x": 1, "y": 3 }, "style": { "color": "#7d8795" }, "events": {}, "children": [], "locked": false, "hidden": false, "collapsed": false }
+          ], "locked": false, "hidden": false, "collapsed": false },
+          { "id": "main", "type": "Box", "name": "Completed Main", "props": { "width": "fill", "height": "fill" }, "layout": { "type": "absolute", "x": 20, "y": 0, "padding": 1 }, "style": { "color": "#d8dee9", "backgroundColor": "#171b22", "border": true, "borderStyle": "single", "borderColor": "#303744" }, "events": {}, "children": [
+            { "id": "title", "type": "Text", "name": "Title", "props": { "content": "COMPLETED / meeting-041", "width": "fill", "height": 1 }, "layout": { "type": "absolute", "x": 1, "y": 1 }, "style": { "color": "#7dd3a7", "bold": true }, "events": {}, "children": [], "locked": false, "hidden": false, "collapsed": false },
+            { "id": "summary", "type": "Text", "name": "Summary", "props": { "content": "TRANSCRIPTION COMPLETE   03:42 audio   412 words   98% confidence", "width": "fill", "height": 2 }, "layout": { "type": "absolute", "x": 1, "y": 3 }, "style": { "color": "#d8dee9" }, "events": {}, "children": [], "locked": false, "hidden": false, "collapsed": false },
+            { "id": "segments", "type": "Table", "name": "Segments", "props": { "width": "fill", "height": 8, "headers": ["TIME", "TEXT"], "rows": [["00:00", "Welcome to the meeting"], ["00:18", "We will review the agenda"], ["01:07", "The first action is ready"], ["02:41", "Closing notes and next steps"]] }, "layout": { "type": "absolute", "x": 1, "y": 6 }, "style": { "color": "#7d8795", "border": true, "borderStyle": "single", "borderColor": "#303744" }, "events": {}, "children": [], "locked": false, "hidden": false, "collapsed": false },
+            { "id": "open", "type": "Button", "name": "Open SRT", "props": { "label": "OPEN SRT", "width": 14, "height": 3, "iconLeft": ">", "iconLeftEnabled": true, "separated": true }, "layout": { "type": "absolute", "x": 1, "y": 12 }, "style": { "color": "#0f1115", "backgroundColor": "#7dd3a7", "border": true, "borderStyle": "rounded", "borderColor": "#7dd3a7", "bold": true }, "events": { "onClick": "openOutput" }, "children": [], "locked": false, "hidden": false, "collapsed": false },
+            { "id": "reveal", "type": "Text", "name": "Output Path", "props": { "content": "~/Subtap/outputs/meeting-041.srt", "width": "fill", "height": 1 }, "layout": { "type": "absolute", "x": 17, "y": 12 }, "style": { "color": "#7d8795" }, "events": {}, "children": [], "locked": false, "hidden": false, "collapsed": false }
+          ], "locked": false, "hidden": false, "collapsed": false }
+        ], "locked": false, "hidden": false, "collapsed": false
+      },
+      { "id": "footer", "type": "Text", "name": "Footer", "props": { "content": "[ENTER] OPEN   [E] EXPORT   [R] RETRY   [Q] QUIT                       COMPLETE", "width": "fill", "height": 1 }, "layout": { "type": "absolute", "x": 2, "y": 23 }, "style": { "color": "#7d8795" }, "events": {}, "children": [], "locked": false, "hidden": false, "collapsed": false }
+    ],
+    "locked": false, "hidden": false, "collapsed": false
+  }
+}

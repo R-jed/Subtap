@@ -15,35 +15,14 @@ from textual.widgets import Button, Footer, Input, Select, Static
 
 from subtap.core.models import asr_mode_for_model
 from subtap.schemas.config import load_config
+from subtap.ui.native_picker import (
+    choose_file as _choose_native_file,
+    choose_folder as _choose_native_folder,
+)
 from subtap.ui.theme import CALM_WORKBENCH_BREAKPOINTS, CALM_WORKBENCH_CSS
 from subtap.ui.views.wizard import WizardView
 
 logger = logging.getLogger(__name__)
-
-
-def _run_native_picker(script: str) -> Path | None:
-    """Run a macOS picker and distinguish cancellation from picker failure."""
-    result = subprocess.run(
-        ["osascript", "-e", script],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode == 0:
-        selected = result.stdout.strip()
-        return Path(selected) if selected else None
-    if "(-128)" in result.stderr or "User canceled" in result.stderr:
-        return None
-    raise RuntimeError(result.stderr.strip() or "系统文件选择器启动失败")
-
-
-def _choose_native_file(prompt: str) -> Path | None:
-    escaped = prompt.replace("\\", "\\\\").replace('"', '\\"')
-    return _run_native_picker(f'POSIX path of (choose file with prompt "{escaped}")')
-
-
-def _choose_native_folder(prompt: str) -> Path | None:
-    escaped = prompt.replace("\\", "\\\\").replace('"', '\\"')
-    return _run_native_picker(f'POSIX path of (choose folder with prompt "{escaped}")')
 
 
 def _glossary_choices(paths: list[Path]) -> list[tuple[str, str]]:

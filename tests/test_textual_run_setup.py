@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from types import SimpleNamespace
 
 import pytest
 from typer.main import get_command
@@ -15,6 +16,25 @@ def _create_default_glossary(home):
     default.parent.mkdir(parents=True, exist_ok=True)
     default.write_text("", encoding="utf-8")
     return default
+
+
+def test_native_picker_distinguishes_cancel_from_failure(monkeypatch):
+    from subtap.ui.native_picker import choose_file
+
+    results = iter(
+        [
+            SimpleNamespace(returncode=1, stdout="", stderr="User canceled (-128)"),
+            SimpleNamespace(returncode=1, stdout="", stderr="picker unavailable"),
+        ]
+    )
+    monkeypatch.setattr(
+        "subtap.ui.native_picker.subprocess.run",
+        lambda *_args, **_kwargs: next(results),
+    )
+
+    assert choose_file("Choose media") is None
+    with pytest.raises(RuntimeError, match="picker unavailable"):
+        choose_file("Choose media")
 
 
 @pytest.mark.asyncio

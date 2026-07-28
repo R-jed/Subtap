@@ -1,0 +1,32 @@
+{
+  "version": "1",
+  "meta": { "name": "Subtap New Transcription", "theme": "dracula", "savedAt": "2026-07-26T00:00:00.000Z" },
+  "tree": {
+    "id": "root", "type": "Screen", "name": "Subtap New Transcription",
+    "props": { "width": "fill", "height": "fill", "theme": "dracula" },
+    "layout": { "type": "absolute", "padding": 0 },
+    "style": { "color": "#d8dee9", "backgroundColor": "#0f1115", "border": true, "borderStyle": "single", "borderColor": "#303744" },
+    "events": {},
+    "children": [
+      { "id": "header", "type": "Text", "name": "Header", "props": { "content": "SUBTAP // CALM WORKBENCH                                      F1 HELP  F2 NEW  Q QUIT", "width": "fill", "height": 1 }, "layout": { "type": "absolute", "x": 2, "y": 1 }, "style": { "color": "#69d2e7", "bold": true }, "events": {}, "children": [], "locked": false, "hidden": false, "collapsed": false },
+      {
+        "id": "body", "type": "Box", "name": "New Workbench", "props": { "width": "fill", "height": 19 }, "layout": { "type": "absolute", "x": 2, "y": 3, "padding": 1 }, "style": { "color": "#d8dee9", "backgroundColor": "#171b22", "border": true, "borderStyle": "single", "borderColor": "#303744" }, "events": {}, "children": [
+          { "id": "rail", "type": "Box", "name": "Step Rail", "props": { "width": 18, "height": "fill" }, "layout": { "type": "absolute", "x": 0, "y": 0, "padding": 1 }, "style": { "color": "#7d8795", "backgroundColor": "#14181e", "border": true, "borderStyle": "single", "borderColor": "#303744" }, "events": {}, "children": [
+            { "id": "rail-title", "type": "Text", "name": "Rail Title", "props": { "content": "NEW RUN", "width": "fill", "height": 1 }, "layout": { "type": "absolute", "x": 1, "y": 1 }, "style": { "color": "#d8dee9", "bold": true }, "events": {}, "children": [], "locked": false, "hidden": false, "collapsed": false },
+            { "id": "steps", "type": "List", "name": "Steps", "props": { "items": [">  1  INPUT", "   2  OPTIONS", "   3  REVIEW", "", "READY"], "width": "fill", "height": 7 }, "layout": { "type": "absolute", "x": 1, "y": 3 }, "style": { "color": "#7d8795" }, "events": {}, "children": [], "locked": false, "hidden": false, "collapsed": false }
+          ], "locked": false, "hidden": false, "collapsed": false },
+          { "id": "main", "type": "Box", "name": "Input Main", "props": { "width": "fill", "height": "fill" }, "layout": { "type": "absolute", "x": 20, "y": 0, "padding": 1 }, "style": { "color": "#d8dee9", "backgroundColor": "#171b22", "border": true, "borderStyle": "single", "borderColor": "#303744" }, "events": {}, "children": [
+            { "id": "title", "type": "Text", "name": "Title", "props": { "content": "NEW TRANSCRIPTION", "width": "fill", "height": 1 }, "layout": { "type": "absolute", "x": 1, "y": 1 }, "style": { "color": "#69d2e7", "bold": true }, "events": {}, "children": [], "locked": false, "hidden": false, "collapsed": false },
+            { "id": "hint", "type": "Text", "name": "Hint", "props": { "content": "Choose an audio source. The run stays local until you start it.", "width": "fill", "height": 2 }, "layout": { "type": "absolute", "x": 1, "y": 3 }, "style": { "color": "#7d8795" }, "events": {}, "children": [], "locked": false, "hidden": false, "collapsed": false },
+            { "id": "source-label", "type": "Text", "name": "Source Label", "props": { "content": "AUDIO FILE", "width": "fill", "height": 1 }, "layout": { "type": "absolute", "x": 1, "y": 6 }, "style": { "color": "#d8dee9", "bold": true }, "events": {}, "children": [], "locked": false, "hidden": false, "collapsed": false },
+            { "id": "source", "type": "TextInput", "name": "Audio Source", "props": { "placeholder": "~/Downloads/sample.wav", "value": "", "width": "fill", "height": 3 }, "layout": { "type": "absolute", "x": 1, "y": 7 }, "style": { "color": "#d8dee9", "backgroundColor": "#0f1115", "border": true, "borderStyle": "single", "borderColor": "#69d2e7" }, "events": { "onChange": "setAudioSource" }, "children": [], "locked": false, "hidden": false, "collapsed": false },
+            { "id": "language", "type": "Text", "name": "Language", "props": { "content": "LANGUAGE   auto     MODEL      mlx-small", "width": "fill", "height": 1 }, "layout": { "type": "absolute", "x": 1, "y": 11 }, "style": { "color": "#7d8795" }, "events": {}, "children": [], "locked": false, "hidden": false, "collapsed": false },
+            { "id": "start", "type": "Button", "name": "Start Button", "props": { "label": "START TRANSCRIPTION", "width": 25, "height": 3, "iconLeft": ">", "iconLeftEnabled": true, "separated": true }, "layout": { "type": "absolute", "x": 1, "y": 12 }, "style": { "color": "#0f1115", "backgroundColor": "#69d2e7", "border": true, "borderStyle": "rounded", "borderColor": "#69d2e7", "bold": true }, "events": { "onClick": "startTranscription" }, "children": [], "locked": false, "hidden": false, "collapsed": false }
+          ], "locked": false, "hidden": false, "collapsed": false }
+        ], "locked": false, "hidden": false, "collapsed": false
+      },
+      { "id": "footer", "type": "Text", "name": "Footer", "props": { "content": "[ENTER] START   [ESC] BACK   [TAB] NEXT FIELD                                      READY", "width": "fill", "height": 1 }, "layout": { "type": "absolute", "x": 2, "y": 23 }, "style": { "color": "#7d8795" }, "events": {}, "children": [], "locked": false, "hidden": false, "collapsed": false }
+    ],
+    "locked": false, "hidden": false, "collapsed": false
+  }
+}
