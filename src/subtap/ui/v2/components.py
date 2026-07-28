@@ -12,10 +12,10 @@ class TaskStatus(Static):
 
     def __init__(self, presentation: TaskPresentation, kind: str) -> None:
         label = {
-            "running": "RUNNING",
-            "completed": "COMPLETED",
-            "failed": "FAILED",
-            "interrupted": "INTERRUPTED",
+            "running": "运行中",
+            "completed": "已完成",
+            "failed": "失败",
+            "interrupted": "已中断",
         }[kind]
         super().__init__(f"状态：{label} · {presentation.status}", id="task-status")
 
@@ -24,7 +24,7 @@ class TaskPipeline(Static):
     """Pipeline navigation rendered from the reducer presentation."""
 
     def __init__(self, presentation: TaskPresentation) -> None:
-        content = "[b]Pipeline[/b]\n" + "\n".join(presentation.stage_lines)
+        content = "[b]处理流程[/b]\n" + "\n".join(presentation.stage_lines)
         super().__init__(content, id="task-pipeline")
 
 
@@ -43,7 +43,7 @@ class TaskDetails(Collapsible):
         )
         super().__init__(
             Static(content),
-            title="Details",
+            title="详情",
             collapsed=True,
             id="task-details",
         )

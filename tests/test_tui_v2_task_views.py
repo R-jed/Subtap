@@ -13,7 +13,7 @@ def presentation(**overrides: object) -> TaskPresentation:
         "progress": 42,
         "model": "small",
         "counts": "ASR 草稿：2  已对齐：1",
-        "current_work": "当前 Chunk：3  已用时：00:12",
+        "current_work": "当前分块：3  已用时：00:12",
         "stage_lines": ("✓ 准备", "▶ 语音识别", "· 导出"),
         "recent_texts": ("第一句字幕", "第二句字幕"),
         "output_text": "[red]未生成可交付字幕[/red]",
@@ -40,6 +40,8 @@ async def test_running_task_shows_progress_and_live_subtitles() -> None:
             str(widget.render()) for widget in pilot.app.screen.query(Static)
         )
         assert "任务运行中" in visible
+        assert "处理流程" in visible
+        assert "详情" in visible
         subtitles = "\n".join(
             str(line) for line in pilot.app.screen.query_one(RichLog).lines
         )
@@ -91,7 +93,7 @@ async def test_interrupted_task_does_not_promise_unverified_resume() -> None:
         visible = "\n".join(
             str(widget.render()) for widget in pilot.app.screen.query(Static)
         )
-        assert "INTERRUPTED" in visible
+        assert "已中断" in visible
         assert "任务未完成" in visible
         assert "Resume" not in visible
         assert "重新运行" in visible

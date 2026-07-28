@@ -8,13 +8,13 @@ from textual.widgets import Footer, OptionList, Static
 from textual.widgets.option_list import Option
 
 HOME_OPTIONS = (
-    ("New transcription  ·  单个音频或视频生成字幕", "run"),
-    ("Batch              ·  批量处理媒体目录", "batch"),
-    ("Observe / History  ·  查看运行中与历史任务", "observe"),
-    ("Models             ·  查看本地模型状态", "models"),
-    ("Glossary           ·  维护热词和学习结果", "glossary"),
-    ("Setup              ·  更改模型与服务配置", "setup"),
-    ("Doctor             ·  检查安装和运行环境", "doctor"),
+    ("新建字幕  ·  单个音频或视频生成字幕", "run"),
+    ("批量转录  ·  批量处理媒体目录", "batch"),
+    ("任务记录  ·  查看运行中与历史任务", "observe"),
+    ("模型管理  ·  查看本地模型状态", "models"),
+    ("热词管理  ·  维护热词和学习结果", "glossary"),
+    ("偏好设置  ·  更改模型与服务配置", "setup"),
+    ("环境检查  ·  检查安装和运行环境", "doctor"),
 )
 HOME_ACTIONS = frozenset(action for _, action in HOME_OPTIONS)
 
@@ -80,11 +80,11 @@ class HomeScreen(Screen[None]):
             )
             yield Static("SUBTAP", id="brand-compact")
             yield Static(
-                "Local-first subtitle production\n"
-                "Private on-device transcription for Apple silicon",
+                "本地优先的字幕工作台\n"
+                "专为 Apple 芯片设计，音视频与模型推理均留在本机",
                 id="product-copy",
             )
-            yield Static("WORKSPACE", id="workspace-label")
+            yield Static("工作台", id="workspace-label")
             yield OptionList(
                 *(
                     Option(

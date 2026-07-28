@@ -296,7 +296,7 @@ def test_observer_dashboard_is_textual_log_reader(tmp_path):
     text = dashboard.build_status_text()
     assert "当前阶段：asr" in text
     assert "进度：60%" in text
-    assert "当前 Chunk：2" in text
+    assert "当前分块：2" in text
     assert "当前模型：asr_0.6b-q8" in text
     assert "隐私：观察者只读取本地日志，不接触音频和模型推理" in text
 

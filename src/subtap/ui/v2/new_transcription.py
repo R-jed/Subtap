@@ -26,7 +26,7 @@ class ReviewTranscriptionScreen(ModalScreen[bool]):
     """Confirm the expensive task without discarding the configured form."""
 
     BINDINGS = [
-        Binding("escape", "cancel", "Back", priority=True),
+        Binding("escape", "cancel", "返回", priority=True),
     ]
     CSS = """
     ReviewTranscriptionScreen {
@@ -68,13 +68,11 @@ class ReviewTranscriptionScreen(ModalScreen[bool]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="review-dialog"):
-            yield Static("Review transcription", id="review-title")
+            yield Static("复核转录设置", id="review-title")
             yield Static(self.summary, id="review-summary")
             with Horizontal(id="review-actions"):
-                yield Button("Back", id="review-cancel")
-                yield Button(
-                    "Start transcription", id="review-confirm", variant="primary"
-                )
+                yield Button("返回修改", id="review-cancel")
+                yield Button("开始转录", id="review-confirm", variant="primary")
 
     @on(Button.Pressed, "#review-cancel")
     def cancel(self) -> None:
@@ -205,10 +203,10 @@ class NewTranscriptionScreen(Screen[list[str] | None]):
         self.default_mode = asr_mode_for_model(config.asr.model)
         self.default_max_chars = config.output.max_chars
         self._glossary_options = [
-            ("Default · default.txt", ""),
+            ("默认热词表 · default.txt", ""),
             *[
                 (
-                    f"{'Learned' if path.name == 'learned.txt' else 'Custom'}"
+                    f"{'自动学习' if path.name == 'learned.txt' else '本地热词表'}"
                     f" · {path.name}",
                     str(path),
                 )
@@ -217,69 +215,72 @@ class NewTranscriptionScreen(Screen[list[str] | None]):
             ],
         ]
         self._manuscript_options = [
-            ("None", ""),
+            ("不使用参考文稿", ""),
             *[
-                (f"Local · {path.name}", str(path))
+                (f"本地文稿 · {path.name}", str(path))
                 for path in WizardView.list_manuscripts()
             ],
         ]
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="new-shell"):
-            yield Static("New transcription", id="screen-title")
-            yield Static("Media", classes="field-label")
+            yield Static("新建字幕", id="screen-title")
+            yield Static("媒体文件", classes="field-label")
             with Horizontal(id="media-row"):
                 yield Static(
-                    str(self.input_path) if self.input_path else "No media selected",
+                    str(self.input_path) if self.input_path else "尚未选择媒体文件",
                     id="media-path",
                 )
-                yield Button("Choose…", id="choose-media")
+                yield Button("选择…", id="choose-media")
             with Grid(id="workbench"):
                 with Vertical(id="settings"):
-                    yield Static("Task settings", id="settings-title")
-                    yield Static("Quality", classes="field-label")
+                    yield Static("任务设置", id="settings-title")
+                    yield Static("转录质量", classes="field-label")
                     yield Select(
                         [
-                            ("Fast · 0.6B", "fast"),
-                            ("High quality · 1.7B", "quality"),
+                            ("快速 · 0.6B", "fast"),
+                            ("高质量 · 1.7B", "quality"),
                         ],
                         value=self.default_mode,
                         id="quality",
                     )
-                    yield Static("Glossary", classes="field-label")
+                    yield Static("热词表", classes="field-label")
                     with Horizontal(classes="resource-row"):
                         yield Select(
                             self._glossary_options,
                             value="",
                             id="glossary",
                         )
-                        yield Button("Choose…", id="choose-glossary")
-                    yield Static("Manuscript", classes="field-label")
+                        yield Button("选择…", id="choose-glossary")
+                    yield Static("参考文稿", classes="field-label")
                     with Horizontal(classes="resource-row"):
                         yield Select(
                             self._manuscript_options,
                             value="",
                             id="manuscript",
                         )
-                        yield Button("Choose…", id="choose-manuscript")
-                    yield Static("Subtitle maximum characters", classes="field-label")
+                        yield Button("选择…", id="choose-manuscript")
+                    yield Static(
+                        "字幕目标最大字数（建议 25；范围 10–60）",
+                        classes="field-label",
+                    )
                     yield Input(
                         value=str(self.default_max_chars),
                         type="integer",
                         id="max-chars",
                     )
-                    yield Static("Output directory", classes="field-label")
+                    yield Static("输出目录", classes="field-label")
                     with Horizontal(classes="resource-row"):
                         yield Input(value=str(Path.cwd() / "output"), id="output")
-                        yield Button("Choose…", id="choose-output")
+                        yield Button("选择…", id="choose-output")
                 with Vertical(id="summary-pane"):
-                    yield Static("Summary", id="summary-title")
+                    yield Static("设置摘要", id="summary-title")
                     yield Static("", id="summary")
             yield Static("", id="status")
             with Horizontal(id="action-row"):
-                yield Button("Back", id="back")
+                yield Button("返回", id="back")
                 yield Button(
-                    "Start transcription",
+                    "开始转录",
                     id="start",
                     variant="primary",
                 )
@@ -329,14 +330,16 @@ class NewTranscriptionScreen(Screen[list[str] | None]):
     def choose_glossary(self) -> None:
         path = self._pick(choose_file, "选择本地热词表")
         if path is not None:
-            self._set_select_path("#glossary", self._glossary_options, path, "Custom")
+            self._set_select_path(
+                "#glossary", self._glossary_options, path, "本地热词表"
+            )
 
     @on(Button.Pressed, "#choose-manuscript")
     def choose_manuscript(self) -> None:
         path = self._pick(choose_file, "选择参考文稿")
         if path is not None:
             self._set_select_path(
-                "#manuscript", self._manuscript_options, path, "Local"
+                "#manuscript", self._manuscript_options, path, "本地文稿"
             )
 
     @on(Button.Pressed, "#choose-output")
@@ -356,19 +359,19 @@ class NewTranscriptionScreen(Screen[list[str] | None]):
         manuscript = self.query_one("#manuscript", Select).value
         output = self.query_one("#output", Input).value.strip()
         summary = [
-            self.input_path.name if self.input_path else "No media selected",
-            "High quality" if quality == "quality" else "Fast",
+            self.input_path.name if self.input_path else "尚未选择媒体文件",
+            "高质量" if quality == "quality" else "快速",
             (
                 Path(glossary).name
                 if isinstance(glossary, str) and glossary
-                else "Default glossary"
+                else "默认热词表"
             ),
             (
                 Path(manuscript).name
                 if isinstance(manuscript, str) and manuscript
-                else "No manuscript"
+                else "不使用参考文稿"
             ),
-            output or "No output directory",
+            output or "尚未选择输出目录",
         ]
         self.query_one("#summary", Static).update("\n".join(summary))
 
@@ -417,10 +420,10 @@ class NewTranscriptionScreen(Screen[list[str] | None]):
         command[-1] = "--tui-v2"
         status.update("")
         summary = (
-            f"Media\n{self.input_path}\n\n"
-            f"Output\n{Path(output).expanduser()}\n\n"
-            f"Quality\n{'High quality · 1.7B' if quality == 'quality' else 'Fast · 0.6B'}\n\n"
-            f"Subtitle target\n{max_chars} characters"
+            f"媒体文件\n{self.input_path}\n\n"
+            f"输出目录\n{Path(output).expanduser()}\n\n"
+            f"转录质量\n{'高质量 · 1.7B' if quality == 'quality' else '快速 · 0.6B'}\n\n"
+            f"字幕目标\n最多 {max_chars} 字"
         )
         self.app.push_screen(
             ReviewTranscriptionScreen(summary),

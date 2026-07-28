@@ -11,6 +11,7 @@ from typer.main import get_command
 pytest.importorskip("textual")
 
 from textual.app import App
+from textual.widgets import Button, Static
 
 from subtap.ui.v2.new_transcription import NewTranscriptionScreen
 
@@ -19,6 +20,47 @@ class _ScreenApp(App[list[str] | None]):
     def __init__(self, screen: NewTranscriptionScreen) -> None:
         super().__init__()
         self.target_screen = screen
+
+
+@pytest.mark.asyncio
+async def test_new_transcription_and_review_use_simplified_chinese(
+    tmp_path, monkeypatch
+):
+    from textual.widgets import Input
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    audio = tmp_path / "voice.wav"
+    audio.write_bytes(b"audio")
+    default_glossary = tmp_path / ".subtap" / "glossaries" / "default.txt"
+    default_glossary.parent.mkdir(parents=True)
+    default_glossary.write_text("Subtap\n", encoding="utf-8")
+    screen = NewTranscriptionScreen(audio)
+    app = _ScreenApp(screen)
+
+    async with app.run_test(size=(90, 56)) as pilot:
+        await app.push_screen(screen, app.exit)
+        await pilot.pause()
+        visible = "\n".join(str(widget.render()) for widget in screen.query(Static))
+
+        assert "新建字幕" in visible
+        assert "媒体文件" in visible
+        assert "任务设置" in visible
+        assert "设置摘要" in visible
+        assert screen.query_one("#choose-media", Button).label.plain == "选择…"
+        assert screen.query_one("#start", Button).label.plain == "开始转录"
+
+        screen.query_one("#output", Input).value = str(tmp_path / "exports")
+        screen.query_one("#start", Button).press()
+        await pilot.pause()
+
+        review = "\n".join(str(widget.render()) for widget in app.screen.query(Static))
+        assert "复核转录设置" in review
+        assert "媒体文件" in review
+        assert "输出目录" in review
+        assert "转录质量" in review
+        assert "字幕目标" in review
+        assert app.screen.query_one("#review-cancel", Button).label.plain == "返回修改"
+        assert app.screen.query_one("#review-confirm", Button).label.plain == "开始转录"
 
 
 @pytest.mark.asyncio

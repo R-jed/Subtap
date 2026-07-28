@@ -120,9 +120,9 @@ class TaskView(Widget):
         self.query_one(TaskDetails).collapsed = details_collapsed
         self._sync_progress()
         if self.kind == "running" and not follow_subtitles:
-            self.call_after_refresh(self._restore_subtitle_scroll, subtitle_scroll_y)
+            self._restore_subtitle_scroll(subtitle_scroll_y)
 
-    def _restore_subtitle_scroll(self, scroll_y: int) -> None:
+    def _restore_subtitle_scroll(self, scroll_y: float | int) -> None:
         log = self.query_one("#task-subtitles", RichLog)
         log.auto_scroll = False
         log.scroll_to(y=scroll_y, animate=False, force=True)

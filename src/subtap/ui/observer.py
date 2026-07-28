@@ -197,7 +197,7 @@ def build_task_presentation(
     item_text = (
         f"当前项目：{item_index}/{total_items}"
         if item_index is not None and total_items is not None
-        else f"当前 Chunk：{state['chunk_id']}"
+        else f"当前分块：{state['chunk_id']}"
     )
     elapsed = 0
     if state["started_at"] is not None:

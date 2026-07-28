@@ -20,7 +20,7 @@ def _presentation(**overrides: object) -> TaskPresentation:
         "progress": 42,
         "model": "small",
         "counts": "ASR 草稿：2  已对齐：1",
-        "current_work": "当前 Chunk：3  已用时：00:12",
+        "current_work": "当前分块：3  已用时：00:12",
         "stage_lines": ("✓ 准备", "▶ 语音识别", "· 导出"),
         "recent_texts": ("第一句字幕",),
         "output_text": "[red]未生成可交付字幕[/red]",
@@ -236,7 +236,7 @@ async def test_v2_observer_confirms_interrupt_and_keeps_interrupted_view(
         visible = "\n".join(
             str(widget.render()) for widget in task_screen.query(Static)
         )
-        assert "INTERRUPTED" in visible
+        assert "已中断" in visible
         assert "任务未完成" in visible
 
         await pilot.press("q")

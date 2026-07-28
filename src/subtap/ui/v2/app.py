@@ -16,8 +16,8 @@ class SubtapV2App(App[str | list[str] | None]):
     HORIZONTAL_BREAKPOINTS = HORIZONTAL_BREAKPOINTS
     CSS = SIGNAL_DESK_CSS + HOME_CSS
     BINDINGS = [
-        Binding("escape", "back", "Back", priority=True),
-        Binding("q", "quit", "Quit", priority=True),
+        Binding("escape", "back", "返回", priority=True),
+        Binding("q", "quit", "退出", priority=True),
     ]
 
     def __init__(self) -> None:

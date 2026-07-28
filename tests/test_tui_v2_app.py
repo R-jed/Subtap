@@ -32,7 +32,7 @@ async def test_home_navigation_returns_stable_selected_action():
 
         assert menu.highlighted == 0
         assert menu.get_option_at_index(0).id == "run"
-        assert "New transcription" in str(menu.get_option_at_index(0).prompt)
+        assert "新建字幕" in str(menu.get_option_at_index(0).prompt)
 
         await pilot.press("down")
         assert menu.highlighted == 1
@@ -43,6 +43,33 @@ async def test_home_navigation_returns_stable_selected_action():
         await pilot.press("down", "enter")
 
     assert app.return_value == "batch"
+
+
+@pytest.mark.asyncio
+async def test_v2_home_uses_simplified_chinese_product_copy():
+    app = SubtapV2App()
+
+    async with app.run_test(size=(90, 40)):
+        visible = "\n".join(str(widget.render()) for widget in app.screen.query(Static))
+        menu = app.screen.query_one(OptionList)
+        prompts = "\n".join(
+            str(menu.get_option_at_index(index).prompt)
+            for index in range(menu.option_count)
+        )
+
+        assert "本地优先的字幕工作台" in visible
+        assert "音视频与模型推理均留在本机" in visible
+        assert "工作台" in visible
+        for label in (
+            "新建字幕",
+            "批量转录",
+            "任务记录",
+            "模型管理",
+            "热词管理",
+            "偏好设置",
+            "环境检查",
+        ):
+            assert label in prompts
 
 
 @pytest.mark.asyncio
