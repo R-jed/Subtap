@@ -701,6 +701,29 @@ class TasksScreen(DeskScreen):
             from .home import _is_live_task
 
             if not _is_live_task(task):
+                # PID dead — attempt log-driven terminal state reconciliation.
+                if log.is_file():
+                    try:
+                        presentation = build_task_presentation_from_log(
+                            log,
+                            output_path=output,
+                        )
+                    except (OSError, ValueError):
+                        pass
+                    else:
+                        terminal = {
+                            TaskState.COMPLETED: "completed",
+                            TaskState.FAILED: "failed",
+                            TaskState.INTERRUPTED: "interrupted",
+                        }.get(presentation.state)
+                        if terminal is not None:
+                            StateStore(
+                                Path.home() / ".subtap" / "state.json"
+                            ).update_recent_task_status(
+                                str(task["task_id"]),
+                                terminal,
+                            )
+                            return labels[terminal]
                 return "状态未知"
             return labels[status]
 
@@ -887,6 +910,23 @@ class RecordedTaskScreen(TaskScreen):
             previous = getattr(self, "presentation", None)
             return build_observation_error_presentation(error, previous)
 
+        # Pipeline terminal event wins over PID/process identity.
+        pipeline_status = state.get("pipeline_status")
+        if pipeline_status:
+            self.pid = None
+            if pipeline_status == "completed":
+                returncode = 0
+            elif pipeline_status == "interrupted":
+                returncode = _UNSET
+            else:
+                returncode = 1
+            return build_task_presentation(
+                state,
+                returncode=returncode,
+                output_path=self.output_path,
+                now=time.time(),
+            )
+
         if self.pid is not None:
             if persisted_process_matches_task(self.pid, self.task_id):
                 return build_task_presentation(
@@ -926,7 +966,7 @@ class RecordedTaskScreen(TaskScreen):
         yield Footer(compact=True, show_command_palette=False)
 
     def on_mount(self) -> None:
-        if self._event_cursor is not None:
+        if self._event_cursor is not None and self.presentation.state is TaskState.RUNNING:
             self._refresh_timer = self.set_interval(1.0, self.refresh_task)
 
     async def refresh_task(self) -> None:

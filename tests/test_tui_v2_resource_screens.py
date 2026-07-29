@@ -22,6 +22,7 @@ from subtap.ui.v2.screens import (
     TasksScreen,
     SystemCheckScreen,
 )
+from subtap.ui.observer import TaskState
 
 
 class ScreenApp(App[None]):
@@ -1463,3 +1464,209 @@ async def test_consecutive_terminal_to_new_task_stack_stays_bounded(
         assert (
             len(app.screen_stack) == initial_depth
         ), f"Stack depth after full navigation: {len(app.screen_stack)} vs {initial_depth}"
+
+
+@pytest.mark.asyncio
+async def test_cold_read_dead_pid_completed_log_shows_terminal(tmp_path, monkeypatch):
+    """RecordedTaskScreen cold read: dead PID + completed log → COMPLETED (not ERR)."""
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    log_path = tmp_path / "run.log.jsonl"
+    log_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "run_id": "task-a",
+                "event_type": "pipeline_end",
+                "timestamp": 10.0,
+                "data": {
+                    "stage": "export",
+                    "status": "success",
+                    "total_duration_sec": 9.0,
+                    "output_ready": True,
+                    "subtitle_count": 42,
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "out.srt").write_text("SRT content", encoding="utf-8")
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli._observer_process_matches_run_id",
+        lambda _pid, _run_id: False,
+    )
+    app = ScreenApp()
+
+    async with app.run_test() as pilot:
+        await app.push_screen(
+            RecordedTaskScreen(
+                log_path,
+                output_path=tmp_path / "out.srt",
+                pid=os.getpid(),
+                task_id="task-a",
+            )
+        )
+        await pilot.pause()
+
+        visible = "\n".join(str(widget.render()) for widget in app.screen.query(Static))
+        assert "已完成" in visible
+        assert "状态未知" not in visible
+        rts = app.screen
+        assert isinstance(rts, RecordedTaskScreen)
+        assert rts.presentation.state is TaskState.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_cold_read_dead_pid_interrupted_log_shows_terminal(tmp_path, monkeypatch):
+    """RecordedTaskScreen cold read: dead PID + interrupted log → INTERRUPTED (not ERR)."""
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    log_path = tmp_path / "run.log.jsonl"
+    log_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "run_id": "task-a",
+                "event_type": "pipeline_end",
+                "timestamp": 10.0,
+                "data": {
+                    "stage": "export",
+                    "status": "interrupted",
+                    "total_duration_sec": 9.0,
+                    "output_ready": False,
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli._observer_process_matches_run_id",
+        lambda _pid, _run_id: False,
+    )
+    app = ScreenApp()
+
+    async with app.run_test() as pilot:
+        await app.push_screen(
+            RecordedTaskScreen(
+                log_path,
+                output_path=tmp_path / "out.srt",
+                pid=os.getpid(),
+                task_id="task-a",
+            )
+        )
+        await pilot.pause()
+
+        visible = "\n".join(str(widget.render()) for widget in app.screen.query(Static))
+        assert "已中断" in visible
+        assert "状态未知" not in visible
+        rts = app.screen
+        assert isinstance(rts, RecordedTaskScreen)
+        assert rts.presentation.state is TaskState.INTERRUPTED
+
+
+@pytest.mark.asyncio
+async def test_terminal_presentation_never_starts_timer(tmp_path, monkeypatch):
+    """RecordedTaskScreen with terminal log: timer never started on mount."""
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    log_path = tmp_path / "run.log.jsonl"
+    log_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "run_id": "task-a",
+                "event_type": "pipeline_end",
+                "timestamp": 10.0,
+                "data": {
+                    "stage": "export",
+                    "status": "success",
+                    "total_duration_sec": 9.0,
+                    "output_ready": True,
+                    "subtitle_count": 42,
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "out.srt").write_text("SRT content", encoding="utf-8")
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli._observer_process_matches_run_id",
+        lambda _pid, _run_id: False,
+    )
+    app = ScreenApp()
+
+    async with app.run_test() as pilot:
+        await app.push_screen(
+            RecordedTaskScreen(
+                log_path,
+                output_path=tmp_path / "out.srt",
+                pid=os.getpid(),
+                task_id="task-a",
+            )
+        )
+        await pilot.pause()
+
+        rts = app.screen
+        assert isinstance(rts, RecordedTaskScreen)
+        # Terminal presentation → timer must be None (never started)
+        assert rts._refresh_timer is None, (
+            f"Expected no timer for terminal state {rts.presentation.state}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_tasks_stale_running_reconciled_via_log(tmp_path, monkeypatch):
+    """TasksScreen stale-running + completed log → '已完成' + StateStore reconciled."""
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    log_path = tmp_path / "run.log.jsonl"
+    log_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "run_id": "stale-task",
+                "event_type": "pipeline_end",
+                "timestamp": 10.0,
+                "data": {
+                    "stage": "export",
+                    "status": "success",
+                    "total_duration_sec": 9.0,
+                    "output_ready": True,
+                    "subtitle_count": 42,
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "out.srt"
+    output_path.write_text("SRT content", encoding="utf-8")
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    store = StateStore(tmp_path / ".subtap" / "state.json")
+    store.add_recent_task(
+        "stale-task",
+        "stale.wav",
+        str(output_path),
+        log_path=str(log_path),
+        status="running",
+        pid=999_999_999,
+    )
+
+    app = ScreenApp()
+
+    async with app.run_test() as pilot:
+        await app.push_screen(TasksScreen())
+        await pilot.pause()
+
+        task_list = app.screen.query_one("#task-list", OptionList)
+        assert task_list.option_count >= 1, "Expected at least one task in the list"
+        first_option = task_list.get_option_at_index(0)
+        assert first_option is not None
+        option_text = str(first_option.prompt)
+        assert "已完成" in option_text, f"Expected '已完成' in option, got: {option_text}"
+        assert "状态未知" not in option_text
+
+        # StateStore should be reconciled
+        reloaded = StateStore(tmp_path / ".subtap" / "state.json").load()
+        assert len(reloaded.recent_tasks) == 1
+        assert reloaded.recent_tasks[0]["status"] == "completed"
