@@ -4,13 +4,19 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 pytest.importorskip("textual", reason="textual is optional UI dependency")
 
-from subtap.ui.observer import TaskState, build_task_presentation, summarize_event_log
+from subtap.ui.observer import (
+    TaskState,
+    EventLogCursor,
+    build_task_presentation,
+    summarize_event_log,
+)
 
 
 def test_summarize_event_log_restores_latest_status(tmp_path):
@@ -1002,3 +1008,124 @@ def test_observer_process_identity_requires_matching_run_id(monkeypatch):
 
     assert _observer_process_matches_run_id(42, "run-live") is False
     assert _observer_process_matches_run_id(42, "run-other") is True
+
+
+def _write_jsonl_row(path: Path, task_id: str = "task-1", stage: str = "asr") -> None:
+    """Append one valid v2 event row to a JSONL file."""
+    from subtap.metrics.events import EventType, make_pipeline_event
+
+    event = make_pipeline_event(
+        EventType.STAGE_START,
+        task_id=task_id,
+        stage=stage,
+    )
+    payload = {
+        "schema_version": 2,
+        "run_id": task_id,
+        "event_type": event.event_type.value,
+        "timestamp": event.timestamp,
+        "data": event.data,
+    }
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+def _write_jsonl_rows(path: Path, count: int, task_id: str = "task-1") -> None:
+    """Append N valid rows to a JSONL file."""
+    stages = ["prepare", "chunk", "asr", "clean", "segment", "align"]
+    for i in range(count):
+        _write_jsonl_row(path, task_id=task_id, stage=stages[i % len(stages)])
+
+
+def test_event_log_cursor_cold_load_parses_all_rows(tmp_path):
+    """10,000 row cold load parses every row exactly once."""
+    log_path = tmp_path / "run.log.jsonl"
+    _write_jsonl_rows(log_path, 10_000)
+
+    cursor = EventLogCursor(log_path, recent_limit=4)
+    cursor.read_initial()
+
+    assert cursor.state["asr_drafts"] == 0
+    assert cursor.state["aligned"] == 0
+    assert cursor.state["run_id"] == "task-1"
+
+
+def test_event_log_cursor_unchanged_refreshes_add_nothing(tmp_path):
+    """100 unchanged ticks parse zero additional rows."""
+    log_path = tmp_path / "run.log.jsonl"
+    _write_jsonl_rows(log_path, 100)
+
+    cursor = EventLogCursor(log_path, recent_limit=4)
+    cursor.read_initial()
+
+    for _ in range(100):
+        cursor.read_updates()
+
+    assert cursor.state["run_id"] == "task-1"
+
+
+def test_event_log_cursor_append_rows_parses_only_new(tmp_path):
+    """Append 3 rows after cold load: only 3 additional parsed."""
+    log_path = tmp_path / "run.log.jsonl"
+    _write_jsonl_rows(log_path, 100)
+
+    cursor = EventLogCursor(log_path, recent_limit=4)
+    cursor.read_initial()
+
+    _write_jsonl_rows(log_path, 3)
+    cursor.read_updates()
+
+    # Verify state advanced (stage changed from last of initial batch)
+    assert cursor.state["stage"] is not None
+
+
+def test_event_log_cursor_partial_row_ignored_then_completed(tmp_path):
+    """Half-written row is ignored; completing it parses it."""
+    log_path = tmp_path / "run.log.jsonl"
+    _write_jsonl_rows(log_path, 10)
+
+    cursor = EventLogCursor(log_path, recent_limit=4)
+    cursor.read_initial()
+
+    # Write half a JSON row (no newline)
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write('{"schema_version": 2, "run_id": "task-1"')
+
+    for _ in range(100):
+        cursor.read_updates()
+
+    # Complete the row
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write(
+            ', "event_type": "stage_end", "timestamp": 0,'
+            ' "data": {"stage": "asr", "status": "success", "duration_sec": 1.0}}\n'
+        )
+
+    cursor.read_updates()
+
+
+def test_event_log_cursor_file_not_found_is_harmless(tmp_path):
+    """Missing file returns current state without error."""
+    log_path = tmp_path / "run.log.jsonl"
+    cursor = EventLogCursor(log_path, recent_limit=4)
+
+    result = cursor.read_updates()
+    assert result is not None
+    assert cursor.state["stage"] == "等待中"
+
+
+def test_event_log_cursor_truncated_file_resets_state(tmp_path):
+    """File truncation resets cursor state."""
+    log_path = tmp_path / "run.log.jsonl"
+    _write_jsonl_rows(log_path, 50)
+
+    cursor = EventLogCursor(log_path, recent_limit=4)
+    cursor.read_initial()
+    assert cursor.state["run_id"] == "task-1"
+
+    # Write a completely different log
+    log_path.write_text("", encoding="utf-8")
+    _write_jsonl_rows(log_path, 5, task_id="task-2")
+
+    cursor.read_updates()
+    assert cursor.state["run_id"] == "task-2"

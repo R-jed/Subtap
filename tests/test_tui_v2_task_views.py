@@ -69,7 +69,8 @@ async def test_running_task_does_not_invent_unknown_progress_or_pipeline() -> No
     async with TaskApp(task).run_test(size=(90, 56)) as pilot:
         await pilot.pause()
 
-        assert not list(pilot.app.screen.query(ProgressBar))
+        bar = pilot.app.screen.query_one(ProgressBar)
+        assert bar.display is False
         visible = "\n".join(
             str(widget.render()) for widget in pilot.app.screen.query(Static)
         )
@@ -181,3 +182,94 @@ async def test_interrupted_task_does_not_promise_unverified_resume() -> None:
 def test_unknown_task_status_fails_fast() -> None:
     with pytest.raises(ValueError, match="Unknown task status"):
         TaskScreen(presentation(status="任务状态未知", state="unknown"))
+
+
+async def test_running_update_does_not_recompose(monkeypatch) -> None:
+    """RUNNING → RUNNING updates must not call recompose."""
+    from subtap.ui.v2.task_views import TaskView
+
+    calls: list[int] = []
+    original = TaskView.recompose
+
+    async def spy(self):
+        calls.append(1)
+        await original(self)
+
+    monkeypatch.setattr(TaskView, "recompose", spy)
+
+    task = presentation(state=TaskState.RUNNING)
+    async with TaskApp(task).run_test(size=(90, 56)) as pilot:
+        await pilot.pause()
+        screen = pilot.app.screen
+
+        for i in range(100):
+            next_task = presentation(
+                state=TaskState.RUNNING,
+                stage="chunk" if i % 2 == 0 else "asr",
+            )
+            await screen.update_presentation(next_task)
+            await pilot.pause()
+
+    assert len(calls) == 0, f"Expected 0 recompose calls, got {len(calls)}"
+
+
+async def test_recompose_fires_on_terminal_transition(monkeypatch) -> None:
+    """RUNNING → terminal must call recompose exactly once."""
+    from subtap.ui.v2.task_views import TaskView
+
+    calls: list[int] = []
+    original = TaskView.recompose
+
+    async def spy(self):
+        calls.append(1)
+        await original(self)
+
+    monkeypatch.setattr(TaskView, "recompose", spy)
+
+    task = presentation(state=TaskState.RUNNING)
+    async with TaskApp(task).run_test(size=(90, 56)) as pilot:
+        await pilot.pause()
+        screen = pilot.app.screen
+
+        terminal = presentation(state=TaskState.COMPLETED)
+        await screen.update_presentation(terminal)
+        await pilot.pause()
+
+    assert len(calls) == 1, f"Expected 1 recompose call, got {len(calls)}"
+
+
+async def test_progress_none_50_none_no_recompose(monkeypatch) -> None:
+    """Progress changes without state change must not trigger recompose."""
+    from subtap.ui.v2.task_views import TaskView
+
+    calls: list[int] = []
+    original = TaskView.recompose
+
+    async def spy(self):
+        calls.append(1)
+        await original(self)
+
+    monkeypatch.setattr(TaskView, "recompose", spy)
+
+    task = presentation(state=TaskState.RUNNING, progress=None)
+    async with TaskApp(task).run_test(size=(90, 56)) as pilot:
+        await pilot.pause()
+        screen = pilot.app.screen
+        bar = screen.query_one(ProgressBar)
+
+        # None → 42
+        await screen.update_presentation(
+            presentation(state=TaskState.RUNNING, progress=42)
+        )
+        await pilot.pause()
+        assert len(calls) == 0
+        assert bar.progress == 42
+        assert bar.display is True
+
+        # 42 → None
+        await screen.update_presentation(
+            presentation(state=TaskState.RUNNING, progress=None)
+        )
+        await pilot.pause()
+        assert len(calls) == 0
+        assert bar.display is False
