@@ -436,6 +436,10 @@ async def test_consecutive_tasks_receive_distinct_persistent_logs(
         "subtap.ui.v2.app.subprocess.Popen",
         lambda *_args, **_kwargs: FinishedProcess(),
     )
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli._observer_process_matches_run_id",
+        lambda _pid, _run_id: False,
+    )
     app = SubtapV2App()
 
     async with app.run_test() as pilot:
