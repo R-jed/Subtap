@@ -52,8 +52,12 @@ from subtap.ui.native_picker import choose_file, choose_folder
 from subtap.ui.views.wizard import WizardView
 from subtap.ui.observer import (
     TaskState,
+    EventLogCursor,
+    _pid_is_alive,
     _summarize_event_rows,
+    _UNSET,
     build_observation_error_presentation,
+    build_task_presentation,
     build_task_presentation_from_log,
     iter_event_log,
 )
@@ -279,7 +283,9 @@ class BatchTaskScreen(DeskScreen):
         self._items: list[dict] = []
         self._interrupted = False
         self._refresh_timer: Timer | None = None
-        self._manifest_signature: tuple[int, int] | None = None
+        self._manifest_signature: tuple[int, int, int] | None = None
+        self._cached_summary: str | None = None
+        self._cached_manifest_status: str | None = None
         self._previous_batch_status: str | None = None
         self._persisted_status = (
             "running" if process is not None or persisted_live else "observation_error"
@@ -304,12 +310,12 @@ class BatchTaskScreen(DeskScreen):
         if self._persisted_status in {"starting", "running", "stopping"}:
             self._refresh_timer = self.set_interval(1.0, self.refresh_batch)
 
-    def _manifest_signature_for_current_file(self) -> tuple[int, int] | None:
+    def _manifest_signature_for_current_file(self) -> tuple[int, int, int] | None:
         try:
             stat = self.manifest_path.stat()
         except FileNotFoundError:
             return None
-        return stat.st_mtime_ns, stat.st_size
+        return stat.st_ino, stat.st_mtime_ns, stat.st_size
 
     def _refresh_manifest_items(self) -> tuple[str, str | None]:
         """Load manifest and rebuild OptionList. Returns (summary, batch_status)."""
@@ -333,6 +339,8 @@ class BatchTaskScreen(DeskScreen):
             f"成功 {manifest['succeeded']} · 失败 {manifest['failed']}"
             f" · 已停止 {manifest['interrupted']}"
         )
+        self._cached_summary = summary
+        self._cached_manifest_status = batch_status
         return summary, batch_status
 
     def refresh_batch(self) -> None:
@@ -342,8 +350,13 @@ class BatchTaskScreen(DeskScreen):
 
         if self.manifest_path.is_file():
             signature = self._manifest_signature_for_current_file()
-            if signature is not None and signature == self._manifest_signature:
-                summary = self._summarize_items()
+            if (
+                signature is not None
+                and signature == self._manifest_signature
+                and self._cached_summary is not None
+            ):
+                summary = self._cached_summary
+                batch_status = self._cached_manifest_status
             else:
                 summary, batch_status = self._refresh_manifest_items()
                 self._manifest_signature = signature
@@ -395,15 +408,6 @@ class BatchTaskScreen(DeskScreen):
         if batch_status != self._previous_batch_status:
             self.refresh_bindings()
             self._previous_batch_status = batch_status
-
-    def _summarize_items(self) -> str:
-        """Build summary from cached items without re-reading manifest."""
-        succeeded = sum(1 for item in self._items if item.get("status") == "succeeded")
-        failed = sum(1 for item in self._items if item.get("status") == "failed")
-        interrupted = sum(
-            1 for item in self._items if item.get("status") == "interrupted"
-        )
-        return f"成功 {succeeded} · 失败 {failed}" f" · 已停止 {interrupted}"
 
     @staticmethod
     def _manifest_status(manifest: dict) -> str:
@@ -525,8 +529,18 @@ class TasksScreen(DeskScreen):
     def compose(self) -> ComposeResult:
         store = StateStore(Path.home() / ".subtap" / "state.json")
         self.tasks = store.load().recent_tasks
+        terminal_batch_statuses = {
+            "completed",
+            "success",
+            "failed",
+            "partial_failure",
+            "interrupted",
+        }
         for task in self.tasks:
             if not str(task.get("task_id", "")).startswith("batch-"):
+                continue
+            status = str(task.get("status") or "")
+            if status in terminal_batch_statuses:
                 continue
             manifest_path = Path(task.get("output_path") or "__missing__")
             if not manifest_path.is_file():
@@ -785,9 +799,56 @@ class RecordedTaskScreen(TaskScreen):
         self.diagnostic_path = diagnostic_path
         self.pid = pid
         self.task_id = task_id
-        super().__init__(self._presentation())
+        self._event_cursor: EventLogCursor | None = (
+            EventLogCursor(log_path, recent_limit=12)
+            if pid is not None and _pid_is_alive(pid)
+            else None
+        )
+        self._refresh_timer: Timer | None = None
+        super().__init__(self._build_presentation())
 
-    def _presentation(self):
+    def _build_presentation(self):
+        """Build from cursor (live task) or cold read (static/historical task)."""
+        if self._event_cursor is not None:
+            try:
+                self._event_cursor.read_updates()
+                state = self._event_cursor.state
+            except ValueError as error:
+                previous = getattr(self, "presentation", None)
+                return build_observation_error_presentation(error, previous)
+
+            pipeline_status = state.get("pipeline_status")
+
+            if pipeline_status:
+                self.pid = None
+                returncode = 0 if pipeline_status == "completed" else 1
+                return build_task_presentation(
+                    state,
+                    returncode=returncode,
+                    output_path=self.output_path,
+                    now=time.time(),
+                )
+
+            if self.pid is not None and _pid_is_alive(self.pid):
+                return build_task_presentation(
+                    state,
+                    returncode=None,
+                    output_path=self.output_path,
+                    now=time.time(),
+                )
+
+            self.pid = None
+            recorded = build_task_presentation(
+                state,
+                returncode=_UNSET,
+                output_path=self.output_path,
+                now=time.time(),
+            )
+            return build_observation_error_presentation(
+                RuntimeError("无法确认任务进程仍在运行"),
+                recorded,
+            )
+
         try:
             return build_task_presentation_from_log(
                 self.log_path,
@@ -799,16 +860,29 @@ class RecordedTaskScreen(TaskScreen):
             previous = getattr(self, "presentation", None)
             return build_observation_error_presentation(error, previous)
 
+    def _stop_refresh_timer(self) -> None:
+        timer = self._refresh_timer
+        if timer is None:
+            return
+        timer.stop()
+        self._refresh_timer = None
+
     def compose(self) -> ComposeResult:
         yield TaskView(self.presentation)
         yield Footer(compact=True, show_command_palette=False)
 
     def on_mount(self) -> None:
-        if self.pid is not None:
-            self.set_interval(1.0, self.refresh_task)
+        if self._event_cursor is not None:
+            self._refresh_timer = self.set_interval(1.0, self.refresh_task)
 
     async def refresh_task(self) -> None:
-        await self.update_presentation(self._presentation())
+        presentation = self._build_presentation()
+        await self.update_presentation(presentation)
+        if presentation.state is not TaskState.RUNNING:
+            self._stop_refresh_timer()
+
+    def on_unmount(self) -> None:
+        self._stop_refresh_timer()
 
     def action_back(self) -> None:
         self.app.pop_screen()
