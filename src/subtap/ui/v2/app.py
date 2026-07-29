@@ -141,6 +141,7 @@ class SubtapV2App(ObserverHostApp):
         self._interrupted = False
         self._task_screen = ObserverTaskScreen(self._build_presentation())
         self.push_screen(self._task_screen)
+        self._event_cursor = None
         self._start_observer_timer()
 
     def register_batch_process(
