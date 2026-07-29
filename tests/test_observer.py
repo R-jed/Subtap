@@ -1128,3 +1128,67 @@ def test_event_log_cursor_truncation_resets_state_and_counter(tmp_path):
     cursor.read_updates()
     assert cursor._parsed_count == 5
     assert cursor.state["run_id"] == "task-2"
+
+
+def test_event_log_cursor_expected_run_id_matches(tmp_path):
+    """Cursor with expected_run_id accepts matching v2 rows."""
+    log_path = tmp_path / "run.log.jsonl"
+    _write_jsonl_rows(log_path, 5, task_id="task-1")
+
+    cursor = EventLogCursor(log_path, recent_limit=4, expected_run_id="task-1")
+    cursor.read_initial()
+    assert cursor._parsed_count == 5
+    assert cursor.state["run_id"] == "task-1"
+
+
+def test_event_log_cursor_expected_run_id_mismatch_raises(tmp_path):
+    """Cursor with expected_run_id raises ValueError on mismatched v2 row."""
+    log_path = tmp_path / "run.log.jsonl"
+    _write_jsonl_rows(log_path, 3, task_id="task-1")
+
+    cursor = EventLogCursor(log_path, recent_limit=4, expected_run_id="task-other")
+    with pytest.raises(ValueError, match="任务日志行任务标识不匹配"):
+        cursor.read_initial()
+
+
+def test_event_log_cursor_expected_run_id_mid_log_mismatch_raises(tmp_path):
+    """Cursor detects run_id mismatch partway through the log."""
+    log_path = tmp_path / "run.log.jsonl"
+    _write_jsonl_rows(log_path, 3, task_id="task-1")
+    _write_jsonl_row(log_path, task_id="task-2")  # different run_id mid-log
+
+    cursor = EventLogCursor(log_path, recent_limit=4, expected_run_id="task-1")
+    with pytest.raises(ValueError, match="任务日志行任务标识不匹配"):
+        cursor.read_initial()
+
+
+def test_event_log_cursor_expected_run_id_skips_legacy_v1(tmp_path):
+    """Cursor with expected_run_id skips validation for schema v1 rows."""
+    log_path = tmp_path / "run.log.jsonl"
+    with log_path.open("a", encoding="utf-8") as f:
+        for _ in range(3):
+            f.write(
+                json.dumps(
+                    {
+                        "event_type": "stage_start",
+                        "timestamp": 1.0,
+                        "data": {"stage": "asr"},
+                    }
+                )
+                + "\n"
+            )
+
+    cursor = EventLogCursor(log_path, recent_limit=4, expected_run_id="task-1")
+    cursor.read_initial()
+    assert cursor._parsed_count == 3
+
+
+def test_event_log_cursor_expected_run_id_none_skips_validation(tmp_path):
+    """Cursor with expected_run_id=None accepts any v2 rows."""
+    log_path = tmp_path / "run.log.jsonl"
+    _write_jsonl_rows(log_path, 5, task_id="task-1")
+    _write_jsonl_rows(log_path, 3, task_id="task-2")
+
+    cursor = EventLogCursor(log_path, recent_limit=4)
+    cursor.read_initial()
+    assert cursor._parsed_count == 8

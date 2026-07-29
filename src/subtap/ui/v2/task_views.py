@@ -414,4 +414,13 @@ class TaskScreen(Screen[None]):
         start_transcription = getattr(self.app, "start_transcription", None)
         if start_transcription is None:
             raise RuntimeError("当前应用无法启动转录任务")
+        # Pop this terminal screen before starting the new task,
+        # preventing screen-stack accumulation across repeated new-task cycles.
+        self.app.pop_screen()
+        # If a previous observer task screen is now on top (from an earlier cycle),
+        # pop it too so each new task starts with a clean stack.
+        from .observer import ObserverTaskScreen
+
+        if isinstance(self.app.screen, ObserverTaskScreen):
+            self.app.pop_screen()
         start_transcription(command)

@@ -1031,3 +1031,212 @@ async def test_tasks_list_cold_open_does_not_read_terminal_batch_manifests(
         await pilot.pause()
 
     assert call_count[0] == 0
+
+
+@pytest.mark.asyncio
+async def test_recorded_task_interrupted_via_pipeline_end(tmp_path, monkeypatch):
+    """RecordedTaskScreen with pipeline_end(interrupted) shows INTERRUPTED."""
+    from subtap.ui.v2.screens import RecordedTaskScreen
+
+    log_path = tmp_path / "run.log.jsonl"
+    log_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "run_id": "task-int",
+                "event_type": "stage_start",
+                "timestamp": 1.0,
+                "data": {"stage": "asr"},
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "schema_version": 2,
+                "run_id": "task-int",
+                "event_type": "pipeline_end",
+                "timestamp": 10.0,
+                "data": {
+                    "stage": "export",
+                    "status": "interrupted",
+                    "total_duration_sec": 9.0,
+                    "output_ready": False,
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    app = ScreenApp()
+
+    async with app.run_test() as pilot:
+        await app.push_screen(
+            RecordedTaskScreen(
+                log_path, output_path=tmp_path / "out.srt", task_id="task-int"
+            )
+        )
+        await pilot.pause()
+
+        visible = "\n".join(str(widget.render()) for widget in app.screen.query(Static))
+        assert "已中断" in visible
+        assert "任务未完成" in visible
+
+
+@pytest.mark.asyncio
+async def test_batch_persisted_pid_dies_yields_observation_error(tmp_path, monkeypatch):
+    """BatchTaskScreen with dead persisted PID shows observation_error."""
+    from subtap.ui.v2.screens import BatchTaskScreen
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "items": [
+                    {"input_path": str(tmp_path / "clip.mp3"), "status": "running"}
+                ],
+                "succeeded": 0,
+                "failed": 0,
+                "interrupted": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    log_path = tmp_path / "batch.log"
+    log_path.write_text("", encoding="utf-8")
+    dead_pid = 999_999_999  # extremely unlikely to exist
+
+    app = ScreenApp()
+    async with app.run_test() as pilot:
+        screen = BatchTaskScreen(
+            process=None,
+            manifest_path=manifest_path,
+            log_path=log_path,
+            task_id="batch-dead",
+            persisted_live=True,
+            persisted_pid=dead_pid,
+        )
+        await app.push_screen(screen)
+        await pilot.pause()
+
+        status = str(app.screen.query_one("#batch-run-status", Static).render())
+        assert "状态未知" in status
+
+
+@pytest.mark.asyncio
+async def test_consecutive_terminal_to_new_task_stack_stays_bounded(
+    tmp_path,
+    monkeypatch,
+):
+    """10 cycles of terminal→NewTask keep screen stack depth bounded (≤ 3)."""
+    from subtap.ui.v2.task_views import TaskScreen
+    from subtap.ui.observer import TaskState, TaskPresentation
+    from subtap.ui.v2.new_transcription import NewTranscriptionScreen
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    work_dir = tmp_path / "work"
+    work_dir.mkdir(parents=True)
+    (tmp_path / ".subtap" / "glossaries").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".subtap" / "glossaries" / "default.txt").write_text(
+        "", encoding="utf-8"
+    )
+    config_path = tmp_path / ".subtap" / "config.yaml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        f"workspace:\n  root: {work_dir}\n"
+        "output:\n  max_chars: 25\n"
+        "  directory: " + str(tmp_path / "output") + "\n"
+        "asr:\n  model: asr_0.6b\n",
+        encoding="utf-8",
+    )
+
+    class FakeProcess:
+        def __init__(self):
+            self.pid = 999_999_998
+
+        def poll(self):
+            return 0
+
+    monkeypatch.setattr(
+        "subtap.ui.v2.app.subprocess.Popen",
+        lambda *args, **kwargs: FakeProcess(),
+    )
+    monkeypatch.setattr(
+        "subtap.ui.v2.app.StateStore",
+        lambda _path: type(
+            "FakeStore",
+            (),
+            {
+                "add_recent_task": lambda *a, **kw: None,
+                "attach_recent_task_process": lambda *a, **kw: True,
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        "subtap.ui.v2.screens.StateStore",
+        lambda _path: type(
+            "FakeStore",
+            (),
+            {
+                "load": lambda: type("State", (), {"recent_tasks": []})(),
+                "add_recent_task": lambda *a, **kw: None,
+                "attach_recent_task_process": lambda *a, **kw: True,
+            },
+        )(),
+    )
+
+    pres = TaskPresentation(
+        status="任务已完成",
+        stage="export",
+        progress=100,
+        model="fast",
+        counts="ASR 草稿：1  已对齐：1",
+        current_work="完成",
+        stage_lines=(),
+        recent_texts=(),
+        output_text="[green]✓ 字幕已生成[/green]\n/test.srt",
+        state=TaskState.COMPLETED,
+        elapsed_sec=10,
+        stage_durations=(),
+    )
+
+    from subtap.ui.v2 import SubtapV2App
+
+    app = SubtapV2App()
+
+    async with app.run_test(size=(90, 56)) as pilot:
+        await pilot.pause()
+        initial_depth = len(app.screen_stack)
+        max_depth = initial_depth
+
+        for cycle in range(10):
+            screen = TaskScreen(pres)
+            await app.push_screen(screen)
+            await pilot.pause()
+
+            screen.action_new_task()
+            await pilot.pause()
+
+            # Dismiss NewTranscriptionScreen with a command to trigger callback
+            # (simulates user confirming the new task form)
+            nts = app.screen
+            assert isinstance(nts, NewTranscriptionScreen)
+            nts.dismiss(["run", str(tmp_path / f"clip_{cycle}.wav")])
+            await pilot.pause()
+
+            current_depth = len(app.screen_stack)
+            max_depth = max(max_depth, current_depth)
+
+            # After dismissal + callback, terminal screen is popped
+            # and start_transcription pushes ObserverTaskScreen
+            # Stack should be bounded
+            assert current_depth <= initial_depth + 3, (
+                f"Cycle {cycle}: stack depth {current_depth} "
+                f"exceeded {initial_depth + 3}"
+            )
+
+        final_depth = len(app.screen_stack)
+        assert (
+            final_depth <= initial_depth + 3
+        ), f"Final stack depth {final_depth} exceeded {initial_depth + 3}"

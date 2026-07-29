@@ -221,6 +221,10 @@ class BatchScreen(DeskScreen):
                     start_new_session=True,
                     stdout=log,
                     stderr=subprocess.STDOUT,
+                    env={
+                        **os.environ,
+                        "SUBTAP_RUN_ID": task_id,
+                    },
                 )
         except BaseException:
             _safe_remove_recent_task(task_id)
@@ -274,6 +278,7 @@ class BatchTaskScreen(DeskScreen):
         task_id: str | None = None,
         *,
         persisted_live: bool = False,
+        persisted_pid: int | None = None,
     ) -> None:
         super().__init__()
         self.process = process
@@ -290,6 +295,8 @@ class BatchTaskScreen(DeskScreen):
         self._persisted_status = (
             "running" if process is not None or persisted_live else "observation_error"
         )
+        self._persisted_pid = persisted_pid
+        self._persisted_live = persisted_live
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="desk-shell"):
@@ -378,6 +385,16 @@ class BatchTaskScreen(DeskScreen):
             batch_status = "observation_error"
         elif batch_status is None:
             batch_status = self._stored_status() or "observation_error"
+
+        # When no app-owned process exists but the persisted PID is dead,
+        # the task cannot still be running — demote to observation_error.
+        if (
+            self.process is None
+            and self._persisted_pid is not None
+            and batch_status in {"starting", "running", "stopping"}
+            and not _pid_is_alive(self._persisted_pid)
+        ):
+            batch_status = "observation_error"
 
         labels = {
             "starting": "准备中",
@@ -745,6 +762,9 @@ class TasksScreen(DeskScreen):
                     log_path,
                     str(task["task_id"]),
                     persisted_live=_is_live_task(task),
+                    persisted_pid=(
+                        int(task["pid"]) if isinstance(task.get("pid"), int) else None
+                    ),
                 )
             )
             return
@@ -800,7 +820,7 @@ class RecordedTaskScreen(TaskScreen):
         self.pid = pid
         self.task_id = task_id
         self._event_cursor: EventLogCursor | None = (
-            EventLogCursor(log_path, recent_limit=12)
+            EventLogCursor(log_path, recent_limit=12, expected_run_id=task_id)
             if pid is not None and _pid_is_alive(pid)
             else None
         )

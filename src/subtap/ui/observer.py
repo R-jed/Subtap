@@ -279,9 +279,16 @@ def _recent_texts_from_state(state: dict[str, Any]) -> list[str]:
 class EventLogCursor:
     """Incremental reader for run.log.jsonl that tracks offset and inode."""
 
-    def __init__(self, log_path: Path, *, recent_limit: int = 12) -> None:
+    def __init__(
+        self,
+        log_path: Path,
+        *,
+        recent_limit: int = 12,
+        expected_run_id: str | None = None,
+    ) -> None:
         self._path = log_path
         self._recent_limit = recent_limit
+        self._expected_run_id = expected_run_id
         self._offset = 0
         self._inode: int | None = None
         self._partial = b""
@@ -377,6 +384,15 @@ class EventLogCursor:
             if schema_version == 2 and not row.get("run_id"):
                 raise ValueError(
                     f"任务日志行缺少任务标识：{self._path} (offset {self._offset})"
+                )
+            if (
+                schema_version >= 2
+                and self._expected_run_id is not None
+                and row.get("run_id") != self._expected_run_id
+            ):
+                raise ValueError(
+                    f"任务日志行任务标识不匹配：{self._path} "
+                    f"(期望 {self._expected_run_id}，实际 {row.get('run_id')})"
                 )
             _apply_event_row(self._state, row, recent_limit=self._recent_limit)
             self._parsed_count += 1

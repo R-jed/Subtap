@@ -452,6 +452,134 @@ async def test_observer_lifecycle_a_complete_b_starts_fresh(
         assert app._observer_timer is not None
 
 
+@pytest.mark.asyncio
+async def test_observer_lifecycle_via_start_transcription(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    """A completes → B starts via start_transcription(): one timer, new cursor."""
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    glossary_root = tmp_path / ".subtap" / "glossaries"
+    glossary_root.mkdir(parents=True)
+    (glossary_root / "default.txt").write_text("", encoding="utf-8")
+    work_dir = tmp_path / "work"
+    work_dir.mkdir(parents=True)
+    config_path = tmp_path / ".subtap" / "config.yaml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        f"workspace:\n  root: {work_dir}\n"
+        "output:\n  directory: " + str(tmp_path / "output") + "\n"
+        "asr:\n  model: asr_0.6b\n",
+        encoding="utf-8",
+    )
+
+    import os as _os
+
+    class FakeProcess:
+        def __init__(self):
+            self.pid = _os.getpid()
+            self.returncode = None
+
+        def poll(self):
+            return self.returncode
+
+    proc_a = FakeProcess()
+    monkeypatch.setattr(
+        "subtap.ui.v2.app.subprocess.Popen",
+        lambda *args, **kwargs: proc_a,
+    )
+
+    from subtap.ui.v2 import SubtapV2App
+
+    app = SubtapV2App()
+
+    async with app.run_test(size=(90, 56)) as pilot:
+        await pilot.pause()
+
+        # ── A: start_transcription ──
+        input_a = tmp_path / "clip_a.wav"
+        input_a.write_bytes(b"audio")
+        output_dir_a = tmp_path / "output_a"
+        output_dir_a.mkdir(parents=True, exist_ok=True)
+        app.start_transcription(
+            [
+                "run",
+                str(input_a),
+                "--output-dir",
+                str(output_dir_a),
+                "--mode",
+                "fast",
+            ]
+        )
+        await pilot.pause()
+
+        assert app._task_screen is not None
+        assert app._task_screen.presentation.state is TaskState.RUNNING
+        assert app._observer_timer is not None
+        assert app._event_cursor is not None
+        cursor_a = app._event_cursor
+        assert cursor_a._expected_run_id == app._run_id
+        assert cursor_a._parsed_count == 0  # empty log
+
+        # ── A: write events and refresh ──
+        (tmp_path / "output_a" / "clip_a.srt").write_text(
+            "1\n00:00:01,000 --> 00:00:02,000\n测试\n", encoding="utf-8"
+        )
+        _write_jsonl_row(app._log_path, task_id=app._run_id)
+        proc_a.returncode = 0
+        with app._log_path.open("a", encoding="utf-8") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "run_id": app._run_id,
+                        "event_type": "pipeline_end",
+                        "timestamp": 100.0,
+                        "data": {
+                            "stage": "export",
+                            "status": "success",
+                            "total_duration_sec": 10.0,
+                            "output_ready": True,
+                        },
+                    }
+                )
+                + "\n"
+            )
+        await app.refresh_from_log()
+        await pilot.pause()
+
+        assert app._task_screen.presentation.state is TaskState.COMPLETED
+        assert app._observer_timer is None
+
+        # ── B: call start_transcription again ──
+        proc_b = FakeProcess()
+        monkeypatch.setattr(
+            "subtap.ui.v2.app.subprocess.Popen",
+            lambda *args, **kwargs: proc_b,
+        )
+
+        input_b = tmp_path / "clip_b.wav"
+        input_b.write_bytes(b"audio")
+        output_dir_b = tmp_path / "output_b"
+        output_dir_b.mkdir(parents=True, exist_ok=True)
+        app.start_transcription(
+            [
+                "run",
+                str(input_b),
+                "--output-dir",
+                str(output_dir_b),
+                "--mode",
+                "fast",
+            ]
+        )
+        await pilot.pause()
+
+        assert app._task_screen.presentation.state is TaskState.RUNNING
+        assert app._observer_timer is not None
+        assert app._event_cursor is not cursor_a  # must be new cursor
+        assert app._event_cursor._expected_run_id == app._run_id
+
+
 def _write_jsonl_row(path: Path, task_id: str = "task-1", stage: str = "asr") -> None:
     from subtap.metrics.events import EventType, make_pipeline_event
 

@@ -87,7 +87,11 @@ class ObserverHostApp(App[Any]):
     def _build_presentation(self):
         try:
             if self._event_cursor is None:
-                self._event_cursor = EventLogCursor(self._log_path, recent_limit=12)
+                self._event_cursor = EventLogCursor(
+                    self._log_path,
+                    recent_limit=12,
+                    expected_run_id=self._run_id,
+                )
                 self._event_cursor.read_initial()
             else:
                 self._event_cursor.read_updates()
