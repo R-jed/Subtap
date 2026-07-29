@@ -365,3 +365,113 @@ async def test_v2_observer_preserves_output_diagnostic_and_overview_actions(
         await pilot.pause()
 
     assert dashboard.return_value == "quit"
+
+
+async def test_observer_lifecycle_a_complete_b_starts_fresh(
+    tmp_path, monkeypatch
+) -> None:
+    """A completes → B starts: one timer, new cursor, B RUNNING."""
+    from subtap.ui.v2.observer import ObserverHostApp, ObserverTaskScreen
+
+    class FakeProcess:
+        returncode = None
+
+        def poll(self):
+            return self.returncode
+
+    log_a = tmp_path / "run_a.log.jsonl"
+    log_b = tmp_path / "run_b.log.jsonl"
+
+    _write_jsonl_rows(log_a, 10, task_id="task-a")
+    _write_jsonl_rows(log_b, 5, task_id="task-b")
+
+    process_a = FakeProcess()
+    process_b = FakeProcess()
+
+    class _TestApp(ObserverHostApp):
+        pass
+
+    app = _TestApp()
+    app._log_path = log_a
+    app._process = process_a
+    app._output_path = tmp_path / "out.srt"
+    app._run_id = "task-a"
+    app._diagnostic_path = tmp_path / "diag.log"
+    app._interrupted = False
+    app._event_cursor = None
+    app._observer_timer = None
+    app.theme = "textual-dark"
+
+    async with app.run_test(size=(90, 56)) as pilot:
+        await pilot.pause()
+
+        app._task_screen = ObserverTaskScreen(app._build_presentation())
+        app.push_screen(app._task_screen)
+        app._start_observer_timer()
+        await pilot.pause()
+        assert app._task_screen.presentation.state is TaskState.RUNNING
+
+        (tmp_path / "out.srt").write_text(
+            "1\n00:00:01,000 --> 00:00:02,000\n字幕\n", encoding="utf-8"
+        )
+        process_a.returncode = 0
+        with log_a.open("a", encoding="utf-8") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "run_id": "task-a",
+                        "event_type": "pipeline_end",
+                        "timestamp": 100.0,
+                        "data": {
+                            "stage": "export",
+                            "status": "success",
+                            "total_duration_sec": 10.0,
+                            "output_ready": True,
+                        },
+                    }
+                )
+                + "\n"
+            )
+        await app.refresh_from_log()
+        await pilot.pause()
+        assert app._task_screen.presentation.state is TaskState.COMPLETED
+        assert app._observer_timer is None
+
+        app._log_path = log_b
+        app._process = process_b
+        app._run_id = "task-b"
+        app._interrupted = False
+        app._event_cursor = None
+        app._observer_timer = None
+        app._task_screen = ObserverTaskScreen(app._build_presentation())
+        app.push_screen(app._task_screen)
+        app._start_observer_timer()
+        await pilot.pause()
+        assert app._task_screen.presentation.state is TaskState.RUNNING
+        assert app._observer_timer is not None
+
+
+def _write_jsonl_row(path: Path, task_id: str = "task-1", stage: str = "asr") -> None:
+    from subtap.metrics.events import EventType, make_pipeline_event
+
+    event = make_pipeline_event(
+        EventType.STAGE_START,
+        task_id=task_id,
+        stage=stage,
+    )
+    payload = {
+        "schema_version": 2,
+        "run_id": task_id,
+        "event_type": event.event_type.value,
+        "timestamp": event.timestamp,
+        "data": event.data,
+    }
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+def _write_jsonl_rows(path: Path, count: int, task_id: str = "task-1") -> None:
+    stages = ["prepare", "chunk", "asr", "clean", "segment", "align"]
+    for i in range(count):
+        _write_jsonl_row(path, task_id=task_id, stage=stages[i % len(stages)])

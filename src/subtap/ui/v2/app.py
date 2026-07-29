@@ -139,9 +139,9 @@ class SubtapV2App(ObserverHostApp):
             _stop_observer_child(process)
             raise RuntimeError(f"无法关联任务进程，任务不存在：{run_id}")
         self._interrupted = False
+        self._event_cursor = None
         self._task_screen = ObserverTaskScreen(self._build_presentation())
         self.push_screen(self._task_screen)
-        self._event_cursor = None
         self._start_observer_timer()
 
     def register_batch_process(

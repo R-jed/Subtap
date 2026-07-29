@@ -1037,64 +1037,62 @@ def _write_jsonl_rows(path: Path, count: int, task_id: str = "task-1") -> None:
         _write_jsonl_row(path, task_id=task_id, stage=stages[i % len(stages)])
 
 
-def test_event_log_cursor_cold_load_parses_all_rows(tmp_path):
-    """10,000 row cold load parses every row exactly once."""
+def test_event_log_cursor_cold_load_parses_every_row(tmp_path):
+    """10,000 row cold load: parsed_count == 10,000."""
     log_path = tmp_path / "run.log.jsonl"
     _write_jsonl_rows(log_path, 10_000)
 
     cursor = EventLogCursor(log_path, recent_limit=4)
     cursor.read_initial()
-
-    assert cursor.state["asr_drafts"] == 0
-    assert cursor.state["aligned"] == 0
-    assert cursor.state["run_id"] == "task-1"
+    assert cursor._parsed_count == 10_000
 
 
-def test_event_log_cursor_unchanged_refreshes_add_nothing(tmp_path):
-    """100 unchanged ticks parse zero additional rows."""
+def test_event_log_cursor_unchanged_refreshes_do_no_work(tmp_path):
+    """100 unchanged ticks: parsed_count unchanged, no IO."""
     log_path = tmp_path / "run.log.jsonl"
     _write_jsonl_rows(log_path, 100)
 
     cursor = EventLogCursor(log_path, recent_limit=4)
     cursor.read_initial()
+    initial_parsed = cursor._parsed_count
 
     for _ in range(100):
         cursor.read_updates()
 
-    assert cursor.state["run_id"] == "task-1"
+    assert cursor._parsed_count == initial_parsed
 
 
-def test_event_log_cursor_append_rows_parses_only_new(tmp_path):
-    """Append 3 rows after cold load: only 3 additional parsed."""
+def test_event_log_cursor_append_parses_only_additional(tmp_path):
+    """Append 3 rows after 100-row cold load: parsed_count += 3."""
     log_path = tmp_path / "run.log.jsonl"
     _write_jsonl_rows(log_path, 100)
 
     cursor = EventLogCursor(log_path, recent_limit=4)
     cursor.read_initial()
+    initial_parsed = cursor._parsed_count
 
     _write_jsonl_rows(log_path, 3)
     cursor.read_updates()
 
-    # Verify state advanced (stage changed from last of initial batch)
-    assert cursor.state["stage"] is not None
+    assert cursor._parsed_count == initial_parsed + 3
 
 
-def test_event_log_cursor_partial_row_ignored_then_completed(tmp_path):
-    """Half-written row is ignored; completing it parses it."""
+def test_event_log_cursor_partial_row_does_no_parse_work(tmp_path):
+    """Partial row + 100 idle ticks: parsed_count unchanged."""
     log_path = tmp_path / "run.log.jsonl"
     _write_jsonl_rows(log_path, 10)
 
     cursor = EventLogCursor(log_path, recent_limit=4)
     cursor.read_initial()
+    initial_parsed = cursor._parsed_count
 
-    # Write half a JSON row (no newline)
     with log_path.open("a", encoding="utf-8") as f:
         f.write('{"schema_version": 2, "run_id": "task-1"')
 
     for _ in range(100):
         cursor.read_updates()
+    assert cursor._parsed_count == initial_parsed
 
-    # Complete the row
     with log_path.open("a", encoding="utf-8") as f:
         f.write(
             ', "event_type": "stage_end", "timestamp": 0,'
@@ -1102,30 +1100,31 @@ def test_event_log_cursor_partial_row_ignored_then_completed(tmp_path):
         )
 
     cursor.read_updates()
+    assert cursor._parsed_count == initial_parsed + 1
 
 
-def test_event_log_cursor_file_not_found_is_harmless(tmp_path):
-    """Missing file returns current state without error."""
+def test_event_log_cursor_file_not_found_does_not_raise(tmp_path):
+    """Missing file returns state without error and does no work."""
     log_path = tmp_path / "run.log.jsonl"
     cursor = EventLogCursor(log_path, recent_limit=4)
 
     result = cursor.read_updates()
     assert result is not None
-    assert cursor.state["stage"] == "等待中"
+    assert cursor._parsed_count == 0
 
 
-def test_event_log_cursor_truncated_file_resets_state(tmp_path):
-    """File truncation resets cursor state."""
+def test_event_log_cursor_truncation_resets_state_and_counter(tmp_path):
+    """File truncation resets cursor state and parsed_count."""
     log_path = tmp_path / "run.log.jsonl"
     _write_jsonl_rows(log_path, 50)
 
     cursor = EventLogCursor(log_path, recent_limit=4)
     cursor.read_initial()
-    assert cursor.state["run_id"] == "task-1"
+    assert cursor._parsed_count == 50
 
-    # Write a completely different log
     log_path.write_text("", encoding="utf-8")
     _write_jsonl_rows(log_path, 5, task_id="task-2")
 
     cursor.read_updates()
+    assert cursor._parsed_count == 5
     assert cursor.state["run_id"] == "task-2"

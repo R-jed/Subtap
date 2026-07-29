@@ -821,7 +821,12 @@ class RecordedTaskScreen(TaskScreen):
 
             if pipeline_status:
                 self.pid = None
-                returncode = 0 if pipeline_status == "completed" else 1
+                if pipeline_status == "completed":
+                    returncode = 0
+                elif pipeline_status == "interrupted":
+                    returncode = _UNSET
+                else:
+                    returncode = 1
                 return build_task_presentation(
                     state,
                     returncode=returncode,

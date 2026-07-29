@@ -285,6 +285,7 @@ class EventLogCursor:
         self._offset = 0
         self._inode: int | None = None
         self._partial = b""
+        self._parsed_count = 0
         self._state = _new_observer_state()
         self._state["recent_draft_texts"] = deque(maxlen=recent_limit)
         self._state["recent_aligned_texts"] = deque(maxlen=recent_limit)
@@ -302,6 +303,7 @@ class EventLogCursor:
         self._offset = 0
         self._inode = None
         self._partial = b""
+        self._parsed_count = 0
         self._state = _new_observer_state()
         self._state["recent_draft_texts"] = deque(maxlen=self._recent_limit)
         self._state["recent_aligned_texts"] = deque(maxlen=self._recent_limit)
@@ -327,6 +329,7 @@ class EventLogCursor:
             self._offset = 0
             self._inode = current_inode
             self._partial = b""
+            self._parsed_count = 0
             self._state = _new_observer_state()
             self._state["recent_draft_texts"] = deque(maxlen=self._recent_limit)
             self._state["recent_aligned_texts"] = deque(maxlen=self._recent_limit)
@@ -334,11 +337,12 @@ class EventLogCursor:
         if file_size < self._offset:
             self._offset = 0
             self._partial = b""
+            self._parsed_count = 0
             self._state = _new_observer_state()
             self._state["recent_draft_texts"] = deque(maxlen=self._recent_limit)
             self._state["recent_aligned_texts"] = deque(maxlen=self._recent_limit)
 
-        if file_size == self._offset and not self._partial:
+        if file_size == self._offset:
             self._finalize()
             return self._state
 
@@ -375,6 +379,7 @@ class EventLogCursor:
                     f"任务日志行缺少任务标识：{self._path} (offset {self._offset})"
                 )
             _apply_event_row(self._state, row, recent_limit=self._recent_limit)
+            self._parsed_count += 1
 
         self._finalize()
         return self._state

@@ -78,13 +78,19 @@ class TaskView(Widget):
                 yield TaskPipeline(self.presentation)
                 with Vertical(id="task-main"):
                     yield Static("最近字幕", classes="task-label")
-                    yield RichLog(
+                    log = RichLog(
                         wrap=True,
                         markup=False,
                         auto_scroll=True,
                         min_width=0,
                         id="task-subtitles",
                     )
+                    if self.presentation.recent_texts:
+                        for line in self.presentation.recent_texts:
+                            log.write(line)
+                    else:
+                        log.write(self._waiting_text_for_stage(self.presentation.stage))
+                    yield log
                     yield TaskDetails(self.presentation)
         else:
             with Vertical(id="task-terminal"):
@@ -147,7 +153,9 @@ class TaskView(Widget):
     def on_mount(self) -> None:
         self._sync_progress()
         if self.kind == "running":
-            self._update_subtitles()
+            self._rendered_recent_texts = self.presentation.recent_texts
+            if not self.presentation.recent_texts:
+                self._placeholder_stage = self.presentation.stage
 
     def _sync_progress(self) -> None:
         if self.kind != "running":
@@ -241,6 +249,8 @@ class TaskView(Widget):
 
     def _update_subtitles(self) -> None:
         """Append only new subtitle texts to the RichLog, managing placeholder state."""
+        if not self._is_mounted:
+            return
         log = self.query_one("#task-subtitles", RichLog)
         new = self.presentation.recent_texts
         was_at_end = log.is_vertical_scroll_end

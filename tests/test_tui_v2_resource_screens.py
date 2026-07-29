@@ -928,3 +928,106 @@ def test_system_check_rejects_regular_file_as_output_directory(tmp_path, monkeyp
     output_check = next(check for check in checks if check[1] == "默认输出目录")
 
     assert output_check[3] == "blocked"
+
+
+@pytest.mark.asyncio
+async def test_batch_unchanged_ticks_do_no_manifest_work(tmp_path, monkeypatch):
+    """500 items, 100 unchanged ticks: load_manifest NOT called"""
+    from subtap.ui.v2.screens import BatchTaskScreen
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    manifest_path = tmp_path / "manifest.json"
+    items = [{"input_path": f"/audio/{i}.wav", "status": "pending"} for i in range(500)]
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "items": items,
+                "succeeded": 0,
+                "failed": 0,
+                "interrupted": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    call_count = [0]
+    import subtap.batch as batch_module
+
+    original_load = batch_module.load_manifest
+
+    def spy_load_manifest(path):
+        call_count[0] += 1
+        return original_load(path)
+
+    monkeypatch.setattr("subtap.batch.load_manifest", spy_load_manifest)
+
+    class Process:
+        def poll(self):
+            return None
+
+    app = ScreenApp()
+    async with app.run_test() as pilot:
+        screen = BatchTaskScreen(
+            process=Process(),
+            manifest_path=manifest_path,
+            log_path=tmp_path / "batch.log",
+            task_id="batch-1",
+        )
+        await app.push_screen(screen)
+        await pilot.pause()
+
+        for _ in range(100):
+            screen.refresh_batch()
+            await pilot.pause()
+
+    assert call_count[0] <= 1
+
+
+@pytest.mark.asyncio
+async def test_tasks_list_cold_open_does_not_read_terminal_batch_manifests(
+    tmp_path, monkeypatch
+):
+    """Opening TasksScreen with 20 terminal batch tasks: zero manifest reads"""
+    from subtap.ui.v2.screens import TasksScreen
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    store = StateStore(tmp_path / ".subtap" / "state.json")
+    for i in range(20):
+        store.add_recent_task(
+            f"batch-{i}",
+            f"batch_{i}",
+            str(tmp_path / f"manifest_{i}.json"),
+            status="completed",
+        )
+        (tmp_path / f"manifest_{i}.json").write_text(
+            json.dumps(
+                {
+                    "version": 2,
+                    "items": [],
+                    "succeeded": 0,
+                    "failed": 0,
+                    "interrupted": 0,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    call_count = [0]
+    import subtap.batch as batch_module
+
+    original_load = batch_module.load_manifest
+
+    def spy_load_manifest(path):
+        call_count[0] += 1
+        return original_load(path)
+
+    monkeypatch.setattr("subtap.batch.load_manifest", spy_load_manifest)
+
+    app = ScreenApp()
+    async with app.run_test() as pilot:
+        screen = TasksScreen()
+        await app.push_screen(screen)
+        await pilot.pause()
+
+    assert call_count[0] == 0
