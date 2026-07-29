@@ -344,17 +344,15 @@ class EventLogCursor:
 
         with self._path.open("rb") as f:
             f.seek(self._offset)
-            raw = f.read()
+            new_bytes = f.read()
 
-        if self._partial:
-            raw = self._partial + raw
-            self._partial = b""
+        self._offset += len(new_bytes)
+        raw = self._partial + new_bytes
+        self._partial = b""
 
         lines = raw.split(b"\n")
         if raw and not raw.endswith(b"\n"):
             self._partial = lines.pop()
-        elif raw.endswith(b"\n"):
-            self._partial = b""
 
         for line_bytes in lines:
             if not line_bytes.strip():
@@ -377,9 +375,6 @@ class EventLogCursor:
                     f"任务日志行缺少任务标识：{self._path} (offset {self._offset})"
                 )
             _apply_event_row(self._state, row, recent_limit=self._recent_limit)
-
-        bytes_read = sum(len(l) + 1 for l in lines)
-        self._offset += bytes_read
 
         self._finalize()
         return self._state
