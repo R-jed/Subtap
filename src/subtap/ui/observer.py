@@ -583,14 +583,16 @@ def build_task_presentation(
     )
 
 
-def _run_id_matches(pid: int | None, run_id: str | None) -> bool:
-    """Return True when the process at *pid* carries SUBTAP_RUN_ID=<run_id>."""
-    if run_id is None or not isinstance(pid, int):
-        return True  # nothing to verify — PID-only check is the caller's choice
+def persisted_process_matches_task(pid: int | None, task_id: str | None) -> bool:
+    """Return True only when *pid* is alive AND carries SUBTAP_RUN_ID=<task_id>."""
+    if not isinstance(pid, int) or not _pid_is_alive(pid):
+        return False
+    if task_id is None:
+        return True  # no run-id to verify — PID-only check is the caller's choice
     # Lazy import to avoid circular dependency at module level.
     from subtap.cli.pipeline_cli import _observer_process_matches_run_id
 
-    return _observer_process_matches_run_id(pid, run_id)
+    return _observer_process_matches_run_id(pid, task_id)
 
 
 def build_task_presentation_from_log(
@@ -606,7 +608,7 @@ def build_task_presentation_from_log(
     state = summarize_event_log(log_path)
     if process is None:
         if pid is not None:
-            if _pid_is_alive(pid) and _run_id_matches(pid, run_id):
+            if persisted_process_matches_task(pid, run_id):
                 return build_task_presentation(
                     state,
                     returncode=None,
@@ -640,7 +642,7 @@ def build_task_presentation_from_log(
         )
 
     pid = getattr(process, "pid", None)
-    if not _pid_is_alive(pid) or not _run_id_matches(pid, run_id):
+    if not persisted_process_matches_task(pid, run_id):
         recorded = build_task_presentation(
             state,
             returncode=_UNSET,

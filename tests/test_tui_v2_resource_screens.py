@@ -257,6 +257,10 @@ async def test_tasks_open_live_pid_as_running_in_read_only_observer(
         status="running",
         pid=os.getpid(),
     )
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli._observer_process_matches_run_id",
+        lambda _pid, _run_id: True,
+    )
     app = ScreenApp()
 
     async with app.run_test() as pilot:
@@ -292,6 +296,10 @@ async def test_reopened_live_task_q_returns_to_tasks_and_x_offers_stop(
         log_path=str(log_path),
         status="running",
         pid=os.getpid(),
+    )
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli._observer_process_matches_run_id",
+        lambda _pid, _run_id: True,
     )
     monkeypatch.setattr(
         "subtap.ui.v2.screens._observer_process_matches_run_id",
@@ -1130,7 +1138,10 @@ async def test_batch_persisted_pid_dies_yields_observation_error(tmp_path, monke
         return result
 
     monkeypatch.setattr("subtap.ui.observer._pid_is_alive", pid_dead_after_first)
-    monkeypatch.setattr("subtap.ui.v2.screens._pid_is_alive", pid_dead_after_first)
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli._observer_process_matches_run_id",
+        lambda _pid, _run_id: True,
+    )
     monkeypatch.setattr(
         "subtap.ui.v2.screens._observer_process_matches_run_id",
         lambda _pid, _run_id: True,
@@ -1163,6 +1174,160 @@ async def test_batch_persisted_pid_dies_yields_observation_error(tmp_path, monke
         status = str(app.screen.query_one("#batch-run-status", Static).render())
         assert "状态未知" in status, f"Expected observation_error, got: {status}"
         assert screen._refresh_timer is None or not screen._refresh_timer.is_running
+
+
+@pytest.mark.asyncio
+async def test_recorded_task_reused_pid_shows_observation_error(tmp_path, monkeypatch):
+    """RecordedTaskScreen with alive PID + mismatched run-id → OBSERVATION_ERROR."""
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    log_path = tmp_path / "run.log.jsonl"
+    log_path.write_text("", encoding="utf-8")
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli._observer_process_matches_run_id",
+        lambda _pid, _run_id: False,
+    )
+    app = ScreenApp()
+
+    async with app.run_test() as pilot:
+        await app.push_screen(
+            RecordedTaskScreen(
+                log_path,
+                tmp_path / "clip.srt",
+                pid=os.getpid(),
+                task_id="task-a",
+            )
+        )
+        await pilot.pause()
+
+        visible = "\n".join(str(widget.render()) for widget in app.screen.query(Static))
+        assert "状态未知" in visible
+        rts = app.screen
+        assert isinstance(rts, RecordedTaskScreen)
+        assert rts._event_cursor is None
+
+
+@pytest.mark.asyncio
+async def test_recorded_task_identity_dies_mid_lifecycle(tmp_path, monkeypatch):
+    """RecordedTaskScreen: valid at mount, identity lost mid-cycle → timer stops."""
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    log_path = tmp_path / "run.log.jsonl"
+    log_path.write_text("", encoding="utf-8")
+
+    identity_map = {"task-a": True}
+
+    def check_identity(pid, run_id):
+        return identity_map.get(run_id, False)
+
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli._observer_process_matches_run_id",
+        check_identity,
+    )
+    app = ScreenApp()
+
+    async with app.run_test() as pilot:
+        await app.push_screen(
+            RecordedTaskScreen(
+                log_path,
+                tmp_path / "clip.srt",
+                pid=os.getpid(),
+                task_id="task-a",
+            )
+        )
+        await pilot.pause()
+
+        rts = app.screen
+        assert isinstance(rts, RecordedTaskScreen)
+        # Initially valid → cursor + timer created, RUNNING status
+        assert rts._event_cursor is not None
+        assert rts._refresh_timer is not None
+        initial = str(rts.query_one(Static).render())
+        assert "状态未知" not in initial
+
+        # Break identity: run_id no longer matches
+        identity_map["task-a"] = False
+        await pilot.pause(1.1)
+
+        assert rts._refresh_timer is None or not rts._refresh_timer.is_running
+        after = str(rts.query_one(Static).render())
+        assert "状态未知" in after, f"Expected observation_error, got: {after}"
+
+
+@pytest.mark.asyncio
+async def test_historical_cold_read_mismatched_run_id(tmp_path, monkeypatch):
+    """Historical RecordedTaskScreen reads a log whose run_id differs → ERR."""
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    log_path = tmp_path / "run.log.jsonl"
+    log_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "run_id": "task-b",
+                "event_type": "stage_start",
+                "timestamp": 1.0,
+                "data": {"stage": "asr"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    app = ScreenApp()
+
+    async with app.run_test() as pilot:
+        await app.push_screen(
+            RecordedTaskScreen(
+                log_path,
+                tmp_path / "clip.srt",
+                task_id="task-a",
+            )
+        )
+        await pilot.pause()
+
+        visible = "\n".join(str(widget.render()) for widget in app.screen.query(Static))
+        assert "状态未知" in visible
+
+
+@pytest.mark.asyncio
+async def test_historical_cold_read_mixed_run_id_log(tmp_path, monkeypatch):
+    """Historical RecordedTaskScreen: log with mixed A/B run_id → ERR on B."""
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    log_path = tmp_path / "run.log.jsonl"
+    log_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "run_id": "task-a",
+                "event_type": "pipeline_plan",
+                "timestamp": 1.0,
+                "data": {"stages": ["asr"]},
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "schema_version": 2,
+                "run_id": "task-b",
+                "event_type": "stage_start",
+                "timestamp": 2.0,
+                "data": {"stage": "asr"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    app = ScreenApp()
+
+    async with app.run_test() as pilot:
+        await app.push_screen(
+            RecordedTaskScreen(
+                log_path,
+                tmp_path / "clip.srt",
+                task_id="task-a",
+            )
+        )
+        await pilot.pause()
+
+        visible = "\n".join(str(widget.render()) for widget in app.screen.query(Static))
+        assert "状态未知" in visible
 
 
 @pytest.mark.asyncio

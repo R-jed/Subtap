@@ -54,13 +54,13 @@ from subtap.ui.observer import (
     TaskState,
     LIVE_STATUSES,
     EventLogCursor,
-    _pid_is_alive,
     _summarize_event_rows,
     _UNSET,
     build_observation_error_presentation,
     build_task_presentation,
     build_task_presentation_from_log,
     iter_event_log,
+    persisted_process_matches_task,
 )
 
 from .components import PageHeader
@@ -387,23 +387,15 @@ class BatchTaskScreen(DeskScreen):
         elif batch_status is None:
             batch_status = self._stored_status() or "observation_error"
 
-        # When no app-owned process exists but the persisted PID is dead
-        # or the process behind the PID doesn't carry the expected run_id,
-        # the task cannot still be running — demote to observation_error.
+        # When no app-owned process exists, verify the persisted process identity.
+        # Dead PID or mismatched run-id → the batch cannot still be running.
         if (
             self.process is None
             and self._persisted_pid is not None
             and batch_status in LIVE_STATUSES
+            and not persisted_process_matches_task(self._persisted_pid, self.task_id)
         ):
-            pid_alive = _pid_is_alive(self._persisted_pid)
-            run_id_match = (
-                self.task_id is not None
-                and _observer_process_matches_run_id(self._persisted_pid, self.task_id)
-                if pid_alive
-                else False
-            )
-            if not pid_alive or not run_id_match:
-                batch_status = "observation_error"
+            batch_status = "observation_error"
 
         labels = {
             "starting": "准备中",
@@ -792,7 +784,7 @@ class TasksScreen(DeskScreen):
                 (
                     int(task["pid"])
                     if isinstance(task.get("pid"), int)
-                    and task.get("status") in {"starting", "running", "stopping"}
+                    and task.get("status") in LIVE_STATUSES
                     else None
                 ),
                 task_id=task_id,
@@ -827,7 +819,7 @@ class RecordedTaskScreen(TaskScreen):
         self.task_id = task_id
         self._event_cursor: EventLogCursor | None = (
             EventLogCursor(log_path, recent_limit=12, expected_run_id=task_id)
-            if pid is not None and _pid_is_alive(pid)
+            if pid is not None and persisted_process_matches_task(pid, task_id)
             else None
         )
         self._refresh_timer: Timer | None = None
@@ -860,7 +852,9 @@ class RecordedTaskScreen(TaskScreen):
                     now=time.time(),
                 )
 
-            if self.pid is not None and _pid_is_alive(self.pid):
+            if self.pid is not None and persisted_process_matches_task(
+                self.pid, self.task_id
+            ):
                 return build_task_presentation(
                     state,
                     returncode=None,
@@ -880,17 +874,45 @@ class RecordedTaskScreen(TaskScreen):
                 recorded,
             )
 
+        # Cold read: validate every schema-v2 row matches expected_run_id.
         try:
-            return build_task_presentation_from_log(
+            cold_cursor = EventLogCursor(
                 self.log_path,
-                output_path=self.output_path,
-                pid=self.pid,
-                now=time.time(),
-                run_id=self.task_id,
+                recent_limit=12,
+                expected_run_id=self.task_id,
             )
+            cold_cursor.read_initial()
+            state = cold_cursor.state
         except (OSError, ValueError) as error:
             previous = getattr(self, "presentation", None)
             return build_observation_error_presentation(error, previous)
+
+        if self.pid is not None:
+            if persisted_process_matches_task(self.pid, self.task_id):
+                return build_task_presentation(
+                    state,
+                    returncode=None,
+                    output_path=self.output_path,
+                    now=time.time(),
+                )
+            recorded = build_task_presentation(
+                state,
+                returncode=_UNSET,
+                output_path=self.output_path,
+                now=time.time(),
+            )
+            return build_observation_error_presentation(
+                RuntimeError("无法确认任务进程仍在运行"),
+                recorded,
+            )
+
+        # No PID — historical record, static presentation.
+        return build_task_presentation(
+            state,
+            returncode=_UNSET,
+            output_path=self.output_path,
+            now=time.time(),
+        )
 
     def _stop_refresh_timer(self) -> None:
         timer = self._refresh_timer

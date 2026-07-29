@@ -180,7 +180,10 @@ async def test_home_drops_continue_action_when_process_dies(tmp_path, monkeypatc
             raise ProcessLookupError
 
     monkeypatch.setattr("subtap.ui.v2.home.StateStore", lambda _path: store)
-    monkeypatch.setattr("subtap.ui.v2.home.os.kill", probe)
+    monkeypatch.setattr(
+        "subtap.ui.observer.os.kill",
+        probe,
+    )
     monkeypatch.setattr(
         "subtap.cli.pipeline_cli._observer_process_matches_run_id",
         lambda _pid, _run_id: True,

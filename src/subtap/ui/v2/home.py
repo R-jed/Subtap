@@ -1,6 +1,5 @@
 """Signal Desk home screen."""
 
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -13,7 +12,7 @@ from textual.widgets import Button, Footer, OptionList, Static
 from textual.widgets.option_list import Option
 
 from subtap.core.state_store import StateStore
-from subtap.ui.observer import LIVE_STATUSES
+from subtap.ui.observer import LIVE_STATUSES, persisted_process_matches_task
 
 if TYPE_CHECKING:
     from .app import SubtapV2App
@@ -42,21 +41,10 @@ def _is_live_task(task: dict) -> bool:
     if task.get("status") not in LIVE_STATUSES:
         return False
     pid = task.get("pid")
-    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        pass
     task_id = task.get("task_id")
-    if isinstance(task_id, str) and task_id:
-        from subtap.cli.pipeline_cli import _observer_process_matches_run_id
-
-        if not _observer_process_matches_run_id(pid, task_id):
-            return False
-    return True
+    if not isinstance(task_id, str) or not task_id:
+        return False
+    return persisted_process_matches_task(pid, task_id)
 
 
 HOME_CSS = """
