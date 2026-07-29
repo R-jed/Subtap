@@ -1609,9 +1609,9 @@ async def test_terminal_presentation_never_starts_timer(tmp_path, monkeypatch):
         rts = app.screen
         assert isinstance(rts, RecordedTaskScreen)
         # Terminal presentation → timer must be None (never started)
-        assert rts._refresh_timer is None, (
-            f"Expected no timer for terminal state {rts.presentation.state}"
-        )
+        assert (
+            rts._refresh_timer is None
+        ), f"Expected no timer for terminal state {rts.presentation.state}"
 
 
 @pytest.mark.asyncio
@@ -1663,7 +1663,9 @@ async def test_tasks_stale_running_reconciled_via_log(tmp_path, monkeypatch):
         first_option = task_list.get_option_at_index(0)
         assert first_option is not None
         option_text = str(first_option.prompt)
-        assert "已完成" in option_text, f"Expected '已完成' in option, got: {option_text}"
+        assert (
+            "已完成" in option_text
+        ), f"Expected '已完成' in option, got: {option_text}"
         assert "状态未知" not in option_text
 
         # StateStore should be reconciled

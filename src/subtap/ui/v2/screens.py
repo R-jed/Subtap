@@ -966,7 +966,10 @@ class RecordedTaskScreen(TaskScreen):
         yield Footer(compact=True, show_command_palette=False)
 
     def on_mount(self) -> None:
-        if self._event_cursor is not None and self.presentation.state is TaskState.RUNNING:
+        if (
+            self._event_cursor is not None
+            and self.presentation.state is TaskState.RUNNING
+        ):
             self._refresh_timer = self.set_interval(1.0, self.refresh_task)
 
     async def refresh_task(self) -> None:
