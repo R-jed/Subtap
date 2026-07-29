@@ -26,6 +26,10 @@ class TaskStatus(Static):
     """Status text whose label remains meaningful without color."""
 
     def __init__(self, presentation: TaskPresentation, kind: str) -> None:
+        super().__init__(id="task-status")
+        self.update_state(presentation, kind)
+
+    def update_state(self, presentation: TaskPresentation, kind: str) -> None:
         label = {
             "running": "运行中",
             "completed": "已完成",
@@ -34,25 +38,39 @@ class TaskStatus(Static):
             "recorded": "任务记录",
             "observation_error": "状态未知",
         }[kind]
-        super().__init__(f"状态：{label} · {presentation.status}", id="task-status")
+        self.update(f"状态：{label} · {presentation.status}")
 
 
 class TaskPipeline(Static):
     """Pipeline navigation rendered from the reducer presentation."""
 
     def __init__(self, presentation: TaskPresentation) -> None:
+        super().__init__(id="task-pipeline")
+        self.update_state(presentation)
+
+    def update_state(self, presentation: TaskPresentation) -> None:
         content = "[b]处理流程[/b]\n" + (
             "\n".join(presentation.stage_lines)
             if presentation.stage_lines
             else "等待任务公布处理流程…"
         )
-        super().__init__(content, id="task-pipeline")
+        self.update(content)
 
 
 class TaskDetails(Collapsible):
     """P2 task metadata kept behind an explicit Details disclosure."""
 
     def __init__(self, presentation: TaskPresentation) -> None:
+        self._static = Static("")
+        super().__init__(
+            self._static,
+            title="详情",
+            collapsed=True,
+            id="task-details",
+        )
+        self._update_content(presentation)
+
+    def _update_content(self, presentation: TaskPresentation) -> None:
         content = "\n".join(
             (
                 f"当前阶段：{presentation.stage}",
@@ -66,9 +84,4 @@ class TaskDetails(Collapsible):
                 "隐私：观察者只读取本地日志，不接触音频和模型推理",
             )
         )
-        super().__init__(
-            Static(content),
-            title="详情",
-            collapsed=True,
-            id="task-details",
-        )
+        self._static.update(content)

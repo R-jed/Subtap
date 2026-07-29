@@ -146,6 +146,10 @@ class EventBus:
     def publish_nowait(self, event: PipelineEvent) -> None:
         """Publish from synchronous code without requiring a running loop."""
         self._write_log(event)
+
+        if not self._running and not self._subscribers:
+            return
+
         if self._is_running_on_other_thread() and self._loop is not None:
             self._loop.call_soon_threadsafe(self._enqueue_nowait, event)
             return

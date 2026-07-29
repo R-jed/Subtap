@@ -46,6 +46,7 @@ class SubtapV2App(ObserverHostApp):
         self._interrupted = False
         self._task_screen: ObserverTaskScreen | None = None
         self._observer_timer: Timer | None = None
+        self._event_cursor = None
         self._batch_processes: dict[str, subprocess.Popen] = {}
         self._model_process: subprocess.Popen | None = None
         self._model_operation: str | None = None
@@ -54,6 +55,17 @@ class SubtapV2App(ObserverHostApp):
 
     def get_default_screen(self) -> Screen:
         return HomeScreen()
+
+    def _stop_observer_timer(self) -> None:
+        timer = self._observer_timer
+        if timer is None:
+            return
+        timer.stop()
+        self._observer_timer = None
+
+    def _start_observer_timer(self) -> None:
+        self._stop_observer_timer()
+        self._observer_timer = self.set_interval(1.0, self.refresh_from_log)
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         if action == "back" and len(self.screen_stack) == 1:
@@ -129,7 +141,7 @@ class SubtapV2App(ObserverHostApp):
         self._interrupted = False
         self._task_screen = ObserverTaskScreen(self._build_presentation())
         self.push_screen(self._task_screen)
-        self._observer_timer = self.set_interval(1.0, self.refresh_from_log)
+        self._start_observer_timer()
 
     def register_batch_process(
         self,
@@ -187,16 +199,14 @@ class SubtapV2App(ObserverHostApp):
             return False
         self._task_screen = ObserverTaskScreen(self._build_presentation())
         self.push_screen(self._task_screen)
-        self._observer_timer = self.set_interval(1.0, self.refresh_from_log)
+        self._start_observer_timer()
         return True
 
     def action_quit_observer(self) -> None:
         """Detach from the child without stopping the pipeline."""
         from .screens import TasksScreen
 
-        if self._observer_timer is not None:
-            self._observer_timer.stop()
-            self._observer_timer = None
+        self._stop_observer_timer()
         if len(self.screen_stack) > 1:
             self.pop_screen()
         self._task_screen = None
@@ -222,6 +232,7 @@ class SubtapV2App(ObserverHostApp):
 
     def on_unmount(self) -> None:
         """Do not leave an untracked model writer behind after app exit."""
+        self._stop_observer_timer()
         if self._model_process is not None and self._model_process.poll() is None:
             _stop_observer_child(self._model_process)
         self._model_process = None

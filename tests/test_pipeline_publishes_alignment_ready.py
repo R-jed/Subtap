@@ -40,6 +40,7 @@ def test_pipeline_publishes_alignment_ready(monkeypatch, tmp_path):
     """Align stage should publish one ALIGNMENT_READY event per aligned subtitle."""
     config = SubtapConfig()
     bus = EventBus()
+    bus.subscribe(EventType.ALIGNMENT_READY, lambda e: None)
     pipeline = Pipeline(config, tmp_path / "work", event_bus=bus, task_id="task-1")
     pipeline.workspace.ensure_dirs()
     pipeline.workspace.source_audio.write_bytes(b"fake")

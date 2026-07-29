@@ -148,6 +148,8 @@ def test_profiler_wrap_pipeline_without_running_event_loop():
             return {"stage": stage_name, "kwargs": kwargs}
 
     bus = EventBus()
+    bus.subscribe(EventType.STAGE_START, lambda e: None)
+    bus.subscribe(EventType.STAGE_END, lambda e: None)
     pipeline = FakePipeline()
     profiler = PipelineProfiler(bus)
     profiler.wrap_pipeline(pipeline)
@@ -260,13 +262,14 @@ async def test_event_bus_full_flow():
 async def test_event_bus_queue_full():
     """Test queue full behavior."""
     bus = EventBus(buffer_size=2)
+    bus.subscribe(EventType.STAGE_START, lambda e: None)
 
     # 发布超过缓冲大小的事件
     for i in range(3):
         event = PipelineEvent(event_type=EventType.STAGE_START, data={"i": i})
         await bus.publish(event)
 
-    # 队列应该满，但不会阻塞
+    # 队列应该满（有 subscriber 时正常入队），但不会阻塞
     assert bus._queue.qsize() == 2
 
 

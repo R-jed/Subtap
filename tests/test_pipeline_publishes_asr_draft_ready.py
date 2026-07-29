@@ -48,6 +48,7 @@ def test_pipeline_publishes_asr_draft_ready(monkeypatch, tmp_path):
     """ASR stage should publish one ASR_DRAFT_READY event per draft segment."""
     config = SubtapConfig()
     bus = EventBus()
+    bus.subscribe(EventType.ASR_DRAFT_READY, lambda e: None)
     pipeline = Pipeline(config, tmp_path / "work", event_bus=bus, task_id="task-1")
     pipeline.workspace.ensure_dirs()
 

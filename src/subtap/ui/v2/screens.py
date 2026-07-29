@@ -279,6 +279,8 @@ class BatchTaskScreen(DeskScreen):
         self._items: list[dict] = []
         self._interrupted = False
         self._refresh_timer: Timer | None = None
+        self._manifest_signature: tuple[int, int] | None = None
+        self._previous_batch_status: str | None = None
         self._persisted_status = (
             "running" if process is not None or persisted_live else "observation_error"
         )
@@ -302,31 +304,49 @@ class BatchTaskScreen(DeskScreen):
         if self._persisted_status in {"starting", "running", "stopping"}:
             self._refresh_timer = self.set_interval(1.0, self.refresh_batch)
 
+    def _manifest_signature_for_current_file(self) -> tuple[int, int] | None:
+        try:
+            stat = self.manifest_path.stat()
+        except FileNotFoundError:
+            return None
+        return stat.st_mtime_ns, stat.st_size
+
+    def _refresh_manifest_items(self) -> tuple[str, str | None]:
+        """Load manifest and rebuild OptionList. Returns (summary, batch_status)."""
+        from subtap.batch import load_manifest
+
+        manifest = load_manifest(self.manifest_path)
+        self._items = list(manifest["items"])
+        batch_status = self._manifest_status(manifest)
+        item_list = self.query_one("#batch-run-items", OptionList)
+        item_list.clear_options()
+        item_list.add_options(
+            [
+                Option(
+                    f"{self._item_marker(item)} " f"{Path(item['input_path']).name}",
+                    id=f"item-{index}",
+                )
+                for index, item in enumerate(self._items)
+            ]
+        )
+        summary = (
+            f"成功 {manifest['succeeded']} · 失败 {manifest['failed']}"
+            f" · 已停止 {manifest['interrupted']}"
+        )
+        return summary, batch_status
+
     def refresh_batch(self) -> None:
         status = self.query_one("#batch-run-status", Static)
-        item_list = self.query_one("#batch-run-items", OptionList)
         batch_status = None
-        if self.manifest_path.is_file():
-            from subtap.batch import load_manifest
+        summary: str
 
-            manifest = load_manifest(self.manifest_path)
-            self._items = list(manifest["items"])
-            batch_status = self._manifest_status(manifest)
-            item_list.clear_options()
-            item_list.add_options(
-                [
-                    Option(
-                        f"{self._item_marker(item)} "
-                        f"{Path(item['input_path']).name}",
-                        id=f"item-{index}",
-                    )
-                    for index, item in enumerate(self._items)
-                ]
-            )
-            summary = (
-                f"成功 {manifest['succeeded']} · 失败 {manifest['failed']}"
-                f" · 已停止 {manifest['interrupted']}"
-            )
+        if self.manifest_path.is_file():
+            signature = self._manifest_signature_for_current_file()
+            if signature is not None and signature == self._manifest_signature:
+                summary = self._summarize_items()
+            else:
+                summary, batch_status = self._refresh_manifest_items()
+                self._manifest_signature = signature
         else:
             summary = "正在建立任务清单"
 
@@ -372,7 +392,18 @@ class BatchTaskScreen(DeskScreen):
         ):
             self._refresh_timer.stop()
             self._refresh_timer = None
-        self.refresh_bindings()
+        if batch_status != self._previous_batch_status:
+            self.refresh_bindings()
+            self._previous_batch_status = batch_status
+
+    def _summarize_items(self) -> str:
+        """Build summary from cached items without re-reading manifest."""
+        succeeded = sum(1 for item in self._items if item.get("status") == "succeeded")
+        failed = sum(1 for item in self._items if item.get("status") == "failed")
+        interrupted = sum(
+            1 for item in self._items if item.get("status") == "interrupted"
+        )
+        return f"成功 {succeeded} · 失败 {failed}" f" · 已停止 {interrupted}"
 
     @staticmethod
     def _manifest_status(manifest: dict) -> str:
@@ -611,8 +642,17 @@ class TasksScreen(DeskScreen):
             "recorded": "任务记录",
             "observation_error": "状态未知",
         }
+        terminal_labels = {
+            "completed": "已完成",
+            "success": "已完成",
+            "failed": "失败",
+            "partial_failure": "部分失败",
+            "interrupted": "已中断",
+        }
+        live_statuses = {"starting", "running", "stopping"}
+
         if str(task.get("task_id", "")).startswith("batch-"):
-            if status in {"starting", "running", "stopping"}:
+            if status in live_statuses:
                 from .home import _is_live_task
 
                 if not _is_live_task(task):
@@ -624,11 +664,20 @@ class TasksScreen(DeskScreen):
                     )
                     return "状态未知"
             return labels.get(status, "状态未知")
-        if status in {"starting", "running", "stopping"}:
+
+        if status in terminal_labels:
+            return terminal_labels[status]
+
+        if status in live_statuses:
             from .home import _is_live_task
 
             if not _is_live_task(task):
                 return "状态未知"
+            return labels[status]
+
+        if status in labels:
+            return labels[status]
+
         if log.is_file():
             try:
                 presentation = build_task_presentation_from_log(
@@ -637,11 +686,7 @@ class TasksScreen(DeskScreen):
                 )
             except (OSError, ValueError):
                 return "状态未知"
-            if presentation.state == TaskState.RECORDED and status in {
-                "starting",
-                "running",
-                "stopping",
-            }:
+            if presentation.state == TaskState.RECORDED and status in live_statuses:
                 return labels[status]
             return {
                 TaskState.RUNNING: "运行中",
@@ -651,8 +696,7 @@ class TasksScreen(DeskScreen):
                 TaskState.OBSERVATION_ERROR: "状态未知",
                 TaskState.RECORDED: "任务记录",
             }[presentation.state]
-        if status in labels:
-            return labels[status]
+
         if output.is_file():
             return "已完成"
         return "记录不完整"

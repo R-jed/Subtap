@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass, replace
 from enum import Enum
+import io
 import json
 import logging
 import os
@@ -114,13 +116,9 @@ def iter_event_log(log_path: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def _summarize_event_rows(
-    rows: list[dict[str, Any]], *, recent_limit: int = 4
-) -> dict[str, Any]:
-    """Reduce validated event rows into the latest pipeline state."""
-    if recent_limit < 1:
-        raise ValueError("recent_limit must be at least 1")
-    state: dict[str, Any] = {
+def _new_observer_state() -> dict[str, Any]:
+    """Return a clean observer state dict."""
+    return {
         "stage": "等待中",
         "progress": None,
         "chunk_id": None,
@@ -150,102 +148,241 @@ def _summarize_event_rows(
         "retryable": False,
         "pipeline_duration_sec": None,
     }
-    draft_texts: list[str] = []
-    aligned_texts: list[str] = []
-    for row in rows:
-        event_type = row.get("event_type")
-        data = row.get("data") or {}
-        state["schema_version"] = max(
-            state["schema_version"], int(row.get("schema_version") or 1)
-        )
-        if state["run_id"] is None:
-            state["run_id"] = row.get("run_id") or data.get("task_id")
-        if state["started_at"] is None:
-            state["started_at"] = row.get("timestamp")
-        if row.get("timestamp") is not None:
-            state["last_event_at"] = row["timestamp"]
-        row_schema = int(row.get("schema_version") or 1)
+
+
+def _apply_event_row(
+    state: dict[str, Any],
+    row: dict[str, Any],
+    *,
+    recent_limit: int,
+) -> None:
+    """Apply one validated event row to an observer state dict."""
+    event_type = row.get("event_type")
+    data = row.get("data") or {}
+    state["schema_version"] = max(
+        state["schema_version"], int(row.get("schema_version") or 1)
+    )
+    if state["run_id"] is None:
+        state["run_id"] = row.get("run_id") or data.get("task_id")
+    if state["started_at"] is None:
+        state["started_at"] = row.get("timestamp")
+    if row.get("timestamp") is not None:
+        state["last_event_at"] = row["timestamp"]
+    row_schema = int(row.get("schema_version") or 1)
+    if row_schema >= 2:
+        if event_type in {"stage_start", "stage_end"} and not data.get("stage"):
+            raise ValueError(f"{event_type} 事件缺少处理阶段")
+        if event_type == "pipeline_plan" and not data.get("stages"):
+            raise ValueError("任务计划事件缺少处理阶段")
+    if event_type == "pipeline_plan" and data.get("stages"):
+        state["stage_order"] = list(data["stages"])
+        state["has_pipeline_plan"] = True
+    if "stage" in data:
+        state["stage"] = data["stage"]
+    if event_type == "stage_start":
+        if data.get("stage") and row.get("timestamp") is not None:
+            state["stage_started_at"][data["stage"]] = row["timestamp"]
+            state["stage_statuses"][data["stage"]] = "running"
+        state["stage_progress"] = None
+        state["item_index"] = None
+        state["total_items"] = None
+    if "progress" in data:
+        state["stage_progress"] = data["progress"]
+    if "chunk_id" in data:
+        state["chunk_id"] = data["chunk_id"]
+    if "model" in data:
+        state["model"] = data["model"]
+        if str(data["model"]).startswith("asr"):
+            state["asr_model"] = data["model"]
+    if "item_index" in data:
+        state["item_index"] = data["item_index"]
+    if "total_items" in data:
+        state["total_items"] = data["total_items"]
+    if event_type == "stage_end" and data.get("stage"):
+        stage = data["stage"]
+        if row_schema >= 2 and "status" not in data:
+            raise ValueError(f"处理阶段 {stage} 缺少处理阶段状态")
+        if row_schema >= 2 and "duration_sec" not in data:
+            raise ValueError(f"处理阶段 {stage} 缺少阶段耗时")
+        stage_status = data.get("status") or "success"
+        if stage_status not in {"success", "failed", "skipped"}:
+            raise ValueError(f"无效的处理阶段状态：{stage_status}")
+        state["stage_progress"] = 100 if stage_status == "success" else None
+        if stage_status == "success" and stage not in state["completed_stages"]:
+            state["completed_stages"].append(stage)
+        duration = data.get("duration_sec", data.get("duration"))
+        if duration is None and row.get("timestamp") is not None:
+            started_at = state["stage_started_at"].get(stage)
+            if started_at is not None:
+                duration = row["timestamp"] - started_at
+        if duration is not None:
+            state["stage_durations"][stage] = max(0.0, float(duration))
+        state["stage_statuses"][stage] = stage_status
+    if event_type == "pipeline_end":
         if row_schema >= 2:
-            if event_type in {"stage_start", "stage_end"} and not data.get("stage"):
-                raise ValueError(f"{event_type} 事件缺少处理阶段")
-            if event_type == "pipeline_plan" and not data.get("stages"):
-                raise ValueError("任务计划事件缺少处理阶段")
-        if event_type == "pipeline_plan" and data.get("stages"):
-            state["stage_order"] = list(data["stages"])
-            state["has_pipeline_plan"] = True
-        if "stage" in data:
-            state["stage"] = data["stage"]
-        if event_type == "stage_start":
-            if data.get("stage") and row.get("timestamp") is not None:
-                state["stage_started_at"][data["stage"]] = row["timestamp"]
-                state["stage_statuses"][data["stage"]] = "running"
-            state["stage_progress"] = None
-            state["item_index"] = None
-            state["total_items"] = None
-        if "progress" in data:
-            state["stage_progress"] = data["progress"]
-        if "chunk_id" in data:
-            state["chunk_id"] = data["chunk_id"]
-        if "model" in data:
-            state["model"] = data["model"]
-            if str(data["model"]).startswith("asr"):
-                state["asr_model"] = data["model"]
-        if "item_index" in data:
-            state["item_index"] = data["item_index"]
-        if "total_items" in data:
-            state["total_items"] = data["total_items"]
-        if event_type == "stage_end" and data.get("stage"):
-            stage = data["stage"]
-            if row_schema >= 2 and "status" not in data:
-                raise ValueError(f"处理阶段 {stage} 缺少处理阶段状态")
-            if row_schema >= 2 and "duration_sec" not in data:
-                raise ValueError(f"处理阶段 {stage} 缺少阶段耗时")
-            stage_status = data.get("status") or "success"
-            if stage_status not in {"success", "failed", "skipped"}:
-                raise ValueError(f"无效的处理阶段状态：{stage_status}")
-            state["stage_progress"] = 100 if stage_status == "success" else None
-            if stage_status == "success" and stage not in state["completed_stages"]:
-                state["completed_stages"].append(stage)
-            duration = data.get("duration_sec", data.get("duration"))
-            if duration is None and row.get("timestamp") is not None:
-                started_at = state["stage_started_at"].get(stage)
-                if started_at is not None:
-                    duration = row["timestamp"] - started_at
-            if duration is not None:
-                state["stage_durations"][stage] = max(0.0, float(duration))
-            state["stage_statuses"][stage] = stage_status
-        if event_type == "pipeline_end":
-            if row_schema >= 2:
-                if "total_duration_sec" not in data:
-                    raise ValueError("任务结束事件缺少总耗时")
-                if "output_ready" not in data:
-                    raise ValueError("任务结束事件缺少输出状态")
-            terminal_status = data.get("status")
-            if terminal_status not in {"success", "failed", "interrupted"}:
-                raise ValueError(f"无效的任务结束状态：{terminal_status}")
-            state["pipeline_status"] = (
-                "completed" if terminal_status == "success" else terminal_status
+            if "total_duration_sec" not in data:
+                raise ValueError("任务结束事件缺少总耗时")
+            if "output_ready" not in data:
+                raise ValueError("任务结束事件缺少输出状态")
+        terminal_status = data.get("status")
+        if terminal_status not in {"success", "failed", "interrupted"}:
+            raise ValueError(f"无效的任务结束状态：{terminal_status}")
+        state["pipeline_status"] = (
+            "completed" if terminal_status == "success" else terminal_status
+        )
+        state["output_ready"] = data.get("output_ready")
+        state["subtitle_count"] = data.get("subtitle_count")
+        state["error_code"] = data.get("error_code")
+        state["error_message"] = data.get("error_message")
+        state["retryable"] = data.get("retryable") is True
+        state["pipeline_duration_sec"] = data.get(
+            "total_duration_sec",
+            data.get("duration_sec", data.get("duration")),
+        )
+    if event_type == "asr_draft_ready":
+        state["asr_drafts"] += 1
+        if data.get("text"):
+            state.setdefault("recent_draft_texts", deque(maxlen=recent_limit)).append(
+                data["text"]
             )
-            state["output_ready"] = data.get("output_ready")
-            state["subtitle_count"] = data.get("subtitle_count")
-            state["error_code"] = data.get("error_code")
-            state["error_message"] = data.get("error_message")
-            state["retryable"] = data.get("retryable") is True
-            state["pipeline_duration_sec"] = data.get(
-                "total_duration_sec",
-                data.get("duration_sec", data.get("duration")),
+    if event_type == "alignment_ready":
+        state["aligned"] += 1
+        if data.get("text"):
+            state.setdefault("recent_aligned_texts", deque(maxlen=recent_limit)).append(
+                data["text"]
             )
-        if event_type == "asr_draft_ready":
-            state["asr_drafts"] += 1
-            if data.get("text"):
-                draft_texts.append(data["text"])
-        if event_type == "alignment_ready":
-            state["aligned"] += 1
-            if data.get("text"):
-                aligned_texts.append(data["text"])
+
+
+def _summarize_event_rows(
+    rows: list[dict[str, Any]], *, recent_limit: int = 4
+) -> dict[str, Any]:
+    """Reduce validated event rows into the latest pipeline state."""
+    if recent_limit < 1:
+        raise ValueError("recent_limit must be at least 1")
+    state = _new_observer_state()
+    state["recent_draft_texts"] = deque(maxlen=recent_limit)
+    state["recent_aligned_texts"] = deque(maxlen=recent_limit)
+    for row in rows:
+        _apply_event_row(state, row, recent_limit=recent_limit)
     state["progress"] = state["stage_progress"]
-    state["recent_texts"] = (aligned_texts or draft_texts)[-recent_limit:]
+    state["recent_texts"] = _recent_texts_from_state(state)
     return state
+
+
+def _recent_texts_from_state(state: dict[str, Any]) -> list[str]:
+    """Build the recent_texts list from internal deques."""
+    aligned = state.get("recent_aligned_texts") or ()
+    draft = state.get("recent_draft_texts") or ()
+    return list(aligned) if aligned else list(draft)
+
+
+class EventLogCursor:
+    """Incremental reader for run.log.jsonl that tracks offset and inode."""
+
+    def __init__(self, log_path: Path, *, recent_limit: int = 12) -> None:
+        self._path = log_path
+        self._recent_limit = recent_limit
+        self._offset = 0
+        self._inode: int | None = None
+        self._partial = b""
+        self._state = _new_observer_state()
+        self._state["recent_draft_texts"] = deque(maxlen=recent_limit)
+        self._state["recent_aligned_texts"] = deque(maxlen=recent_limit)
+
+    @property
+    def state(self) -> dict[str, Any]:
+        return self._state
+
+    def _finalize(self) -> None:
+        self._state["progress"] = self._state["stage_progress"]
+        self._state["recent_texts"] = _recent_texts_from_state(self._state)
+
+    def read_initial(self) -> dict[str, Any]:
+        """Full cold read from offset 0. Returns the finalized state."""
+        self._offset = 0
+        self._inode = None
+        self._partial = b""
+        self._state = _new_observer_state()
+        self._state["recent_draft_texts"] = deque(maxlen=self._recent_limit)
+        self._state["recent_aligned_texts"] = deque(maxlen=self._recent_limit)
+        return self.read_updates()
+
+    def read_updates(self) -> dict[str, Any]:
+        """Read only newly appended bytes and apply them. Returns finalized state."""
+        try:
+            current_stat = self._path.stat()
+        except FileNotFoundError:
+            self._finalize()
+            return self._state
+
+        current_inode = current_stat.st_ino
+        file_size = current_stat.st_size
+
+        if self._inode is None:
+            self._inode = current_inode
+            self._offset = 0
+            self._partial = b""
+
+        if current_inode != self._inode:
+            self._offset = 0
+            self._inode = current_inode
+            self._partial = b""
+            self._state = _new_observer_state()
+            self._state["recent_draft_texts"] = deque(maxlen=self._recent_limit)
+            self._state["recent_aligned_texts"] = deque(maxlen=self._recent_limit)
+
+        if file_size < self._offset:
+            self._offset = 0
+            self._partial = b""
+            self._state = _new_observer_state()
+            self._state["recent_draft_texts"] = deque(maxlen=self._recent_limit)
+            self._state["recent_aligned_texts"] = deque(maxlen=self._recent_limit)
+
+        if file_size == self._offset and not self._partial:
+            self._finalize()
+            return self._state
+
+        with self._path.open("rb") as f:
+            f.seek(self._offset)
+            raw = f.read()
+
+        if self._partial:
+            raw = self._partial + raw
+            self._partial = b""
+
+        lines = raw.split(b"\n")
+        if raw and not raw.endswith(b"\n"):
+            self._partial = lines.pop()
+        elif raw.endswith(b"\n"):
+            self._partial = b""
+
+        for line_bytes in lines:
+            if not line_bytes.strip():
+                continue
+            try:
+                row = json.loads(line_bytes)
+            except json.JSONDecodeError:
+                raise ValueError(
+                    f"任务日志行损坏：{self._path} (offset {self._offset})"
+                )
+            if not isinstance(row, dict) or not isinstance(row.get("data", {}), dict):
+                raise ValueError(
+                    f"任务日志行格式无效：{self._path} (offset {self._offset})"
+                )
+            schema_version = row.get("schema_version", 1)
+            if schema_version not in {1, 2}:
+                raise ValueError(f"不支持的任务日志版本 {schema_version}：{self._path}")
+            if schema_version == 2 and not row.get("run_id"):
+                raise ValueError(
+                    f"任务日志行缺少任务标识：{self._path} (offset {self._offset})"
+                )
+            _apply_event_row(self._state, row, recent_limit=self._recent_limit)
+
+        bytes_read = sum(len(l) + 1 for l in lines)
+        self._offset += bytes_read
+
+        self._finalize()
+        return self._state
 
 
 def summarize_event_log(log_path: Path) -> dict[str, Any]:

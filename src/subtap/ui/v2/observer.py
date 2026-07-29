@@ -12,12 +12,14 @@ from typing import Any, cast
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.screen import ModalScreen, Screen
+from textual.timer import Timer
 from textual.widgets import Footer, Static
 
 from subtap.cli.hotword_cli import _open_file_cross_platform
 from subtap.cli.pipeline_cli import _record_interrupted_task, _stop_observer_child
 from subtap.ui.observer import (
     TaskState,
+    EventLogCursor,
     _summarize_event_rows,
     build_observation_error_presentation,
     build_task_presentation,
@@ -79,10 +81,17 @@ class ObserverHostApp(App[Any]):
     _diagnostic_path: Path | None
     _interrupted: bool
     _task_screen: ObserverTaskScreen | None
+    _observer_timer: Timer | None
+    _event_cursor: EventLogCursor | None
 
     def _build_presentation(self):
         try:
-            rows = iter_event_log(self._log_path)
+            if self._event_cursor is None:
+                self._event_cursor = EventLogCursor(self._log_path, recent_limit=12)
+                self._event_cursor.read_initial()
+            else:
+                self._event_cursor.read_updates()
+            state = self._event_cursor.state
         except ValueError as error:
             logger.exception("任务观察日志无效：%s", self._log_path)
             previous = (
@@ -92,7 +101,7 @@ class ObserverHostApp(App[Any]):
             )
             return build_observation_error_presentation(error, previous)
         presentation = build_task_presentation(
-            _summarize_event_rows(rows, recent_limit=12),
+            state,
             returncode=self._process.poll(),
             output_path=self._output_path,
             now=time.time(),
@@ -107,11 +116,27 @@ class ObserverHostApp(App[Any]):
             else presentation
         )
 
+    def _stop_observer_timer(self) -> None:
+        timer = self._observer_timer
+        if timer is None:
+            return
+        timer.stop()
+        self._observer_timer = None
+
+    def _start_observer_timer(self) -> None:
+        self._stop_observer_timer()
+        self._observer_timer = self.set_interval(1.0, self.refresh_from_log)
+
     async def refresh_from_log(self) -> None:
         if self._task_screen is None:
             raise RuntimeError("Observer task screen is not mounted")
-        await self._task_screen.update_presentation(self._build_presentation())
-        self.refresh_bindings()
+        previous = self._task_screen.presentation
+        presentation = self._build_presentation()
+        await self._task_screen.update_presentation(presentation)
+        if previous.allowed_actions != presentation.allowed_actions:
+            self.refresh_bindings()
+        if presentation.state is not TaskState.RUNNING:
+            self._stop_observer_timer()
 
     def action_interrupt_task(self) -> None:
         if self._process.poll() is None:
@@ -270,6 +295,7 @@ class V2ObserverApp(ObserverHostApp):
         self._diagnostic_path = diagnostic_path
         self._interrupted = False
         self._task_screen: ObserverTaskScreen | None = None
+        self._event_cursor = None
         self.register_theme(SIGNAL_DESK_THEME)
         self.theme = SIGNAL_DESK_THEME.name
 
@@ -278,7 +304,9 @@ class V2ObserverApp(ObserverHostApp):
         return self._task_screen
 
     def on_mount(self) -> None:
-        self.set_interval(self._refresh_interval, self.refresh_from_log)
+        self._observer_timer = self.set_interval(
+            self._refresh_interval, self.refresh_from_log
+        )
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         if action == "interrupt_task":

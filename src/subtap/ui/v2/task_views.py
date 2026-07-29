@@ -42,6 +42,7 @@ class TaskView(Widget):
     def __init__(self, presentation: TaskPresentation) -> None:
         self.presentation = presentation
         self.kind = _status_kind(presentation.state)
+        self._rendered_recent_texts: tuple[str, ...] = ()
         super().__init__(id="task-view")
 
     def compose(self) -> ComposeResult:
@@ -154,36 +155,104 @@ class TaskView(Widget):
 
     def on_mount(self) -> None:
         self._sync_progress()
+        if self.kind == "running":
+            self._rendered_recent_texts = self.presentation.recent_texts
 
     def _sync_progress(self) -> None:
         if self.kind == "running" and self.presentation.progress is not None:
             progress = self.query_one("#task-progress", ProgressBar)
             progress.update(progress=self.presentation.progress)
 
+    @staticmethod
+    def _requires_recompose(
+        previous: TaskPresentation, current: TaskPresentation
+    ) -> bool:
+        return previous.state is not current.state
+
     async def update_presentation(self, presentation: TaskPresentation) -> None:
         """Refresh this view without replacing its parent screen."""
-        details_collapsed = self.query_one(TaskDetails).collapsed
-        previous_log = (
-            self.query_one("#task-subtitles", RichLog)
-            if self.kind == "running"
-            else None
-        )
-        follow_subtitles = (
-            previous_log.is_vertical_scroll_end if previous_log is not None else True
-        )
-        subtitle_scroll_y = previous_log.scroll_y if previous_log is not None else 0
+        old = self.presentation
         self.presentation = presentation
         self.kind = _status_kind(presentation.state)
-        await self.recompose()
-        self.query_one(TaskDetails).collapsed = details_collapsed
-        self._sync_progress()
-        if self.kind == "running" and not follow_subtitles:
-            self._restore_subtitle_scroll(subtitle_scroll_y)
 
-    def _restore_subtitle_scroll(self, scroll_y: float | int) -> None:
+        if self._requires_recompose(old, presentation):
+            details_collapsed = self.query_one(TaskDetails).collapsed
+            previous_log = (
+                self.query_one("#task-subtitles", RichLog)
+                if old.state is TaskState.RUNNING
+                else None
+            )
+            follow_subtitles = (
+                previous_log.is_vertical_scroll_end
+                if previous_log is not None
+                else True
+            )
+            subtitle_scroll_y = previous_log.scroll_y if previous_log is not None else 0
+
+            await self.recompose()
+            self.query_one(TaskDetails).collapsed = details_collapsed
+            self._sync_progress()
+            if self.kind == "running" and not follow_subtitles:
+                log = self.query_one("#task-subtitles", RichLog)
+                log.auto_scroll = False
+                log.scroll_to(y=subtitle_scroll_y, animate=False, force=True)
+            return
+
+        if self.kind != "running":
+            return
+
+        self._update_live_widgets()
+
+    def _update_live_widgets(self) -> None:
+        """Update individual widgets without recomposing the full tree."""
+        p = self.presentation
+
+        self.query_one(TaskStatus).update_state(p, self.kind)
+
+        try:
+            self.query_one("#task-stage", Static).update(
+                f"正在处理  {_stage_name(p.stage)}"
+            )
+            self.query_one("#task-stage-count", Static).update(
+                f"已完成 {p.completed_stage_count}/{p.total_stage_count or '?'} 阶段"
+            )
+            elapsed_text = (
+                f"本阶段 {p.current_stage_elapsed_sec // 60:02d}:"
+                f"{p.current_stage_elapsed_sec % 60:02d}"
+                if p.current_stage_elapsed_sec is not None
+                else p.current_work
+            )
+            self.query_one("#task-elapsed", Static).update(elapsed_text)
+        except Exception:
+            pass
+
+        self._sync_progress()
+        self._update_subtitles()
+        self.query_one(TaskPipeline).update_state(p)
+
+        details = self.query_one(TaskDetails)
+        if not details.collapsed:
+            details._update_content(p)
+
+    def _update_subtitles(self) -> None:
+        """Append only new subtitle texts to the RichLog."""
         log = self.query_one("#task-subtitles", RichLog)
-        log.auto_scroll = False
-        log.scroll_to(y=scroll_y, animate=False, force=True)
+        old = self._rendered_recent_texts
+        new = self.presentation.recent_texts
+        was_at_end = log.is_vertical_scroll_end
+
+        if not was_at_end:
+            log.auto_scroll = False
+
+        if len(new) >= len(old) and new[: len(old)] == old:
+            additions = new[len(old) :]
+        else:
+            log.clear()
+            additions = new
+
+        for text in additions:
+            log.write(text)
+        self._rendered_recent_texts = new
 
 
 class TaskScreen(Screen[None]):
