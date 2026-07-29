@@ -13,6 +13,7 @@ from textual.widgets import Button, Footer, OptionList, Static
 from textual.widgets.option_list import Option
 
 from subtap.core.state_store import StateStore
+from subtap.ui.observer import LIVE_STATUSES
 
 if TYPE_CHECKING:
     from .app import SubtapV2App
@@ -38,18 +39,24 @@ HOME_LOGO = (
 
 
 def _is_live_task(task: dict) -> bool:
-    if task.get("status") != "running":
+    if task.get("status") not in LIVE_STATUSES:
         return False
     pid = task.get("pid")
-    if isinstance(pid, int) and pid > 0:
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass
+    task_id = task.get("task_id")
+    if isinstance(task_id, str) and task_id:
+        from subtap.cli.pipeline_cli import _observer_process_matches_run_id
+
+        if not _observer_process_matches_run_id(pid, task_id):
             return False
-        except PermissionError:
-            return True
-        return True
-    return False
+    return True
 
 
 HOME_CSS = """

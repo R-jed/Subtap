@@ -19,6 +19,8 @@ from subtap.engine.state import STAGE_CN
 logger = logging.getLogger(__name__)
 _UNSET = object()
 
+LIVE_STATUSES = frozenset({"starting", "running", "stopping"})
+
 SUBTAP_ASCII = """
 █▀▀ █ █ █▀▄ ▀█▀ ▄▀█ █▀█
 ▄██ █▄█ █▄▀  █  █▀█ █▀▀
@@ -581,6 +583,16 @@ def build_task_presentation(
     )
 
 
+def _run_id_matches(pid: int | None, run_id: str | None) -> bool:
+    """Return True when the process at *pid* carries SUBTAP_RUN_ID=<run_id>."""
+    if run_id is None or not isinstance(pid, int):
+        return True  # nothing to verify — PID-only check is the caller's choice
+    # Lazy import to avoid circular dependency at module level.
+    from subtap.cli.pipeline_cli import _observer_process_matches_run_id
+
+    return _observer_process_matches_run_id(pid, run_id)
+
+
 def build_task_presentation_from_log(
     log_path: Path,
     *,
@@ -588,12 +600,13 @@ def build_task_presentation_from_log(
     process: Any | None = None,
     pid: int | None = None,
     now: float | None = None,
+    run_id: str | None = None,
 ) -> TaskPresentation:
     """Build a live or historical task view without confusing the two."""
     state = summarize_event_log(log_path)
     if process is None:
         if pid is not None:
-            if _pid_is_alive(pid):
+            if _pid_is_alive(pid) and _run_id_matches(pid, run_id):
                 return build_task_presentation(
                     state,
                     returncode=None,
@@ -627,7 +640,7 @@ def build_task_presentation_from_log(
         )
 
     pid = getattr(process, "pid", None)
-    if not _pid_is_alive(pid):
+    if not _pid_is_alive(pid) or not _run_id_matches(pid, run_id):
         recorded = build_task_presentation(
             state,
             returncode=_UNSET,

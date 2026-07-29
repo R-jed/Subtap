@@ -350,6 +350,10 @@ async def test_reopened_live_task_confirmed_stop_targets_persisted_process_group
         lambda _pid, _task_id: True,
     )
     monkeypatch.setattr("subtap.ui.observer._pid_is_alive", lambda _pid: True)
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli._observer_process_matches_run_id",
+        lambda _pid, _run_id: True,
+    )
     app = ScreenApp()
 
     async with app.run_test() as pilot:
@@ -362,6 +366,7 @@ async def test_reopened_live_task_confirmed_stop_targets_persisted_process_group
             )
         )
         await pilot.press("x")
+        await pilot.pause()
         await pilot.press("y")
         await pilot.pause()
 
@@ -951,13 +956,14 @@ async def test_batch_unchanged_ticks_do_no_manifest_work(tmp_path, monkeypatch):
         encoding="utf-8",
     )
 
-    call_count = [0]
+    load_call_count = [0]
+    rebuild_call_count = [0]
     import subtap.batch as batch_module
 
     original_load = batch_module.load_manifest
 
     def spy_load_manifest(path):
-        call_count[0] += 1
+        load_call_count[0] += 1
         return original_load(path)
 
     monkeypatch.setattr("subtap.batch.load_manifest", spy_load_manifest)
@@ -974,6 +980,14 @@ async def test_batch_unchanged_ticks_do_no_manifest_work(tmp_path, monkeypatch):
             log_path=tmp_path / "batch.log",
             task_id="batch-1",
         )
+        original_refresh = screen._refresh_manifest_items
+
+        def spy_refresh_manifest_items():
+            rebuild_call_count[0] += 1
+            return original_refresh()
+
+        screen._refresh_manifest_items = spy_refresh_manifest_items
+
         await app.push_screen(screen)
         await pilot.pause()
 
@@ -981,7 +995,8 @@ async def test_batch_unchanged_ticks_do_no_manifest_work(tmp_path, monkeypatch):
             screen.refresh_batch()
             await pilot.pause()
 
-    assert call_count[0] <= 1
+    assert load_call_count[0] == 1
+    assert rebuild_call_count[0] == 1
 
 
 @pytest.mark.asyncio
@@ -1084,7 +1099,7 @@ async def test_recorded_task_interrupted_via_pipeline_end(tmp_path, monkeypatch)
 
 @pytest.mark.asyncio
 async def test_batch_persisted_pid_dies_yields_observation_error(tmp_path, monkeypatch):
-    """BatchTaskScreen with dead persisted PID shows observation_error."""
+    """BatchTaskScreen with lived-then-dead persisted PID: timer starts, dies, stops."""
     from subtap.ui.v2.screens import BatchTaskScreen
 
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
@@ -1105,7 +1120,21 @@ async def test_batch_persisted_pid_dies_yields_observation_error(tmp_path, monke
     )
     log_path = tmp_path / "batch.log"
     log_path.write_text("", encoding="utf-8")
-    dead_pid = 999_999_999  # extremely unlikely to exist
+    some_pid = 4_321
+
+    pid_dead = [False]
+
+    def pid_dead_after_first(_pid):
+        result = not pid_dead[0]
+        pid_dead[0] = True
+        return result
+
+    monkeypatch.setattr("subtap.ui.observer._pid_is_alive", pid_dead_after_first)
+    monkeypatch.setattr("subtap.ui.v2.screens._pid_is_alive", pid_dead_after_first)
+    monkeypatch.setattr(
+        "subtap.ui.v2.screens._observer_process_matches_run_id",
+        lambda _pid, _run_id: True,
+    )
 
     app = ScreenApp()
     async with app.run_test() as pilot:
@@ -1115,13 +1144,25 @@ async def test_batch_persisted_pid_dies_yields_observation_error(tmp_path, monke
             log_path=log_path,
             task_id="batch-dead",
             persisted_live=True,
-            persisted_pid=dead_pid,
+            persisted_pid=some_pid,
         )
         await app.push_screen(screen)
-        await pilot.pause()
+        await pilot.pause(0.1)
 
+        # First tick: PID alive → timer started, status remains running
+        assert (
+            screen._refresh_timer is not None
+        ), "Timer should have been started after mount"
+        initial_status = str(app.screen.query_one("#batch-run-status", Static).render())
+        assert (
+            "状态未知" not in initial_status
+        ), f"Expected running status, got: {initial_status}"
+
+        # Second tick: PID dead → observation_error + timer stopped
+        await pilot.pause(1.1)
         status = str(app.screen.query_one("#batch-run-status", Static).render())
-        assert "状态未知" in status
+        assert "状态未知" in status, f"Expected observation_error, got: {status}"
+        assert screen._refresh_timer is None or not screen._refresh_timer.is_running
 
 
 @pytest.mark.asyncio
@@ -1179,7 +1220,7 @@ async def test_consecutive_terminal_to_new_task_stack_stays_bounded(
             "FakeStore",
             (),
             {
-                "load": lambda: type("State", (), {"recent_tasks": []})(),
+                "load": lambda self: type("State", (), {"recent_tasks": []})(),
                 "add_recent_task": lambda *a, **kw: None,
                 "attach_recent_task_process": lambda *a, **kw: True,
             },
@@ -1240,3 +1281,20 @@ async def test_consecutive_terminal_to_new_task_stack_stays_bounded(
         assert (
             final_depth <= initial_depth + 3
         ), f"Final stack depth {final_depth} exceeded {initial_depth + 3}"
+
+        # detach → TasksScreen → Escape → Home
+        app.action_quit_observer()
+        await pilot.pause()
+        assert isinstance(
+            app.screen, TasksScreen
+        ), f"Expected TasksScreen after detach, got {type(app.screen).__name__}"
+        await pilot.press("escape")
+        await pilot.pause()
+        from subtap.ui.v2.home import HomeScreen
+
+        assert isinstance(
+            app.screen, HomeScreen
+        ), f"Expected HomeScreen after Escape, got {type(app.screen).__name__}"
+        assert (
+            len(app.screen_stack) == initial_depth
+        ), f"Stack depth after full navigation: {len(app.screen_stack)} vs {initial_depth}"

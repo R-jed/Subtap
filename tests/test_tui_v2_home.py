@@ -141,6 +141,10 @@ async def test_home_exposes_recent_tasks_as_direct_buttons(tmp_path, monkeypatch
 async def test_home_refreshes_task_state_when_resumed(tmp_path, monkeypatch):
     store = StateStore(tmp_path / "state.json")
     monkeypatch.setattr("subtap.ui.v2.home.StateStore", lambda _path: store)
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli._observer_process_matches_run_id",
+        lambda _pid, _run_id: True,
+    )
     app = HomeApp()
 
     async with app.run_test() as pilot:
@@ -177,6 +181,10 @@ async def test_home_drops_continue_action_when_process_dies(tmp_path, monkeypatc
 
     monkeypatch.setattr("subtap.ui.v2.home.StateStore", lambda _path: store)
     monkeypatch.setattr("subtap.ui.v2.home.os.kill", probe)
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli._observer_process_matches_run_id",
+        lambda _pid, _run_id: True,
+    )
     app = HomeApp()
 
     async with app.run_test() as pilot:

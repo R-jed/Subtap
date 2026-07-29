@@ -52,6 +52,7 @@ from subtap.ui.native_picker import choose_file, choose_folder
 from subtap.ui.views.wizard import WizardView
 from subtap.ui.observer import (
     TaskState,
+    LIVE_STATUSES,
     EventLogCursor,
     _pid_is_alive,
     _summarize_event_rows,
@@ -314,7 +315,7 @@ class BatchTaskScreen(DeskScreen):
 
     def on_mount(self) -> None:
         self.refresh_batch()
-        if self._persisted_status in {"starting", "running", "stopping"}:
+        if self._persisted_status in LIVE_STATUSES:
             self._refresh_timer = self.set_interval(1.0, self.refresh_batch)
 
     def _manifest_signature_for_current_file(self) -> tuple[int, int, int] | None:
@@ -378,7 +379,7 @@ class BatchTaskScreen(DeskScreen):
         elif self.process is not None and returncode != 0:
             batch_status = "failed"
         elif (
-            batch_status in {"starting", "running", "stopping"}
+            batch_status in LIVE_STATUSES
             and self.process is None
             and self._persisted_status == "observation_error"
         ):
@@ -386,15 +387,23 @@ class BatchTaskScreen(DeskScreen):
         elif batch_status is None:
             batch_status = self._stored_status() or "observation_error"
 
-        # When no app-owned process exists but the persisted PID is dead,
+        # When no app-owned process exists but the persisted PID is dead
+        # or the process behind the PID doesn't carry the expected run_id,
         # the task cannot still be running — demote to observation_error.
         if (
             self.process is None
             and self._persisted_pid is not None
-            and batch_status in {"starting", "running", "stopping"}
-            and not _pid_is_alive(self._persisted_pid)
+            and batch_status in LIVE_STATUSES
         ):
-            batch_status = "observation_error"
+            pid_alive = _pid_is_alive(self._persisted_pid)
+            run_id_match = (
+                self.task_id is not None
+                and _observer_process_matches_run_id(self._persisted_pid, self.task_id)
+                if pid_alive
+                else False
+            )
+            if not pid_alive or not run_id_match:
+                batch_status = "observation_error"
 
         labels = {
             "starting": "准备中",
@@ -416,10 +425,7 @@ class BatchTaskScreen(DeskScreen):
         else:
             status.update(f"状态：{labels[batch_status]} · {summary}")
         self._persist_status(batch_status)
-        if (
-            batch_status not in {"starting", "running", "stopping"}
-            and self._refresh_timer is not None
-        ):
+        if batch_status not in LIVE_STATUSES and self._refresh_timer is not None:
             self._refresh_timer.stop()
             self._refresh_timer = None
         if batch_status != self._previous_batch_status:
@@ -680,7 +686,7 @@ class TasksScreen(DeskScreen):
             "partial_failure": "部分失败",
             "interrupted": "已中断",
         }
-        live_statuses = {"starting", "running", "stopping"}
+        live_statuses = LIVE_STATUSES
 
         if str(task.get("task_id", "")).startswith("batch-"):
             if status in live_statuses:
@@ -880,6 +886,7 @@ class RecordedTaskScreen(TaskScreen):
                 output_path=self.output_path,
                 pid=self.pid,
                 now=time.time(),
+                run_id=self.task_id,
             )
         except (OSError, ValueError) as error:
             previous = getattr(self, "presentation", None)

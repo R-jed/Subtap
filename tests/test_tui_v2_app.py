@@ -115,6 +115,10 @@ async def test_home_surfaces_running_task_as_primary_continuation(monkeypatch):
             )
 
     monkeypatch.setattr("subtap.ui.v2.home.StateStore", RunningStore)
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli._observer_process_matches_run_id",
+        lambda _pid, _run_id: True,
+    )
     app = SubtapV2App()
 
     async with app.run_test(size=(90, 40)):
