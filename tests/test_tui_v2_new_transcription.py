@@ -14,12 +14,21 @@ from textual.app import App
 from textual.widgets import Button, Static
 
 from subtap.ui.v2.new_transcription import NewTranscriptionScreen
+from subtap.ui.views.wizard import WizardView
 
 
 class _ScreenApp(App[list[str] | None]):
     def __init__(self, screen: NewTranscriptionScreen) -> None:
         super().__init__()
         self.target_screen = screen
+
+
+@pytest.fixture(autouse=True)
+def _models_are_ready(monkeypatch):
+    monkeypatch.setattr(
+        "subtap.ui.v2.new_transcription.validate_runtime_models",
+        lambda _config: None,
+    )
 
 
 @pytest.mark.asyncio
@@ -45,7 +54,7 @@ async def test_new_transcription_and_review_use_simplified_chinese(
         assert "新建字幕" in visible
         assert "媒体文件" in visible
         assert "任务设置" in visible
-        assert "设置摘要" in visible
+        assert "设置摘要" not in visible
         assert screen.query_one("#choose-media", Button).label.plain == "选择…"
         assert screen.query_one("#start", Button).label.plain == "开始转录"
 
@@ -58,6 +67,8 @@ async def test_new_transcription_and_review_use_simplified_chinese(
         assert "媒体文件" in review
         assert "输出目录" in review
         assert "转录质量" in review
+        assert "热词策略" in review
+        assert "默认热词表 · default.txt" in review
         assert "字幕目标" in review
         assert app.screen.query_one("#review-cancel", Button).label.plain == "返回修改"
         assert app.screen.query_one("#review-confirm", Button).label.plain == "开始转录"
@@ -72,7 +83,7 @@ async def test_new_transcription_returns_complete_pipeline_command(
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
     audio = tmp_path / "interview.mov"
     audio.write_bytes(b"video")
-    glossary = tmp_path / ".subtap" / "glossaries" / "camera.yaml"
+    glossary = tmp_path / ".subtap" / "glossaries" / "camera.txt"
     glossary.parent.mkdir(parents=True)
     glossary.write_text("Subtap\n", encoding="utf-8")
     manuscript = tmp_path / ".subtap" / "manuscripts" / "draft.txt"
@@ -162,8 +173,6 @@ async def test_review_back_preserves_configured_form(tmp_path, monkeypatch):
 @pytest.mark.parametrize(
     ("case", "value", "message"),
     [
-        ("media", "", "请选择音频或视频文件"),
-        ("output", "", "请选择输出目录"),
         ("max-chars", "not-a-number", "必须是 10 到 60 的整数"),
         ("max-chars", "9", "必须在 10 到 60 之间"),
         ("max-chars", "61", "必须在 10 到 60 之间"),
@@ -195,6 +204,65 @@ async def test_new_transcription_shows_field_errors(
 
 
 @pytest.mark.asyncio
+async def test_new_transcription_disables_start_until_required_fields_exist(
+    tmp_path, monkeypatch
+):
+    from textual.widgets import Button, Input
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    screen = NewTranscriptionScreen()
+    app = _ScreenApp(screen)
+
+    async with app.run_test() as pilot:
+        await app.push_screen(screen, app.exit)
+        await pilot.pause()
+        start = screen.query_one("#start", Button)
+        assert start.disabled is True
+
+        media = tmp_path / "voice.wav"
+        media.write_bytes(b"audio")
+        screen.input_path = media
+        screen.query_one("#output", Input).value = ""
+        screen._update_start_state()
+        assert start.disabled is True
+
+        screen.query_one("#output", Input).value = str(tmp_path / "output")
+        screen._update_start_state()
+        assert start.disabled is False
+
+
+@pytest.mark.asyncio
+async def test_new_transcription_blocks_when_selected_model_is_unavailable(
+    tmp_path, monkeypatch
+):
+    from textual.widgets import Button, Input, Static
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+
+    def unavailable(_config):
+        raise RuntimeError("必需模型未就绪")
+
+    monkeypatch.setattr(
+        "subtap.ui.v2.new_transcription.validate_runtime_models",
+        unavailable,
+    )
+    media = tmp_path / "voice.wav"
+    media.write_bytes(b"audio")
+    screen = NewTranscriptionScreen(media)
+    app = _ScreenApp(screen)
+
+    async with app.run_test() as pilot:
+        await app.push_screen(screen, app.exit)
+        screen.query_one("#output", Input).value = str(tmp_path / "output")
+        screen.query_one("#start", Button).press()
+        await pilot.pause()
+
+        assert "必需模型未就绪" in str(screen.query_one("#status", Static).render())
+        assert app.screen is screen
+        assert screen.query_one("#open-models", Button).display is True
+
+
+@pytest.mark.asyncio
 async def test_media_picker_cancel_preserves_current_selection(tmp_path, monkeypatch):
     from textual.widgets import Button, Static
 
@@ -219,6 +287,37 @@ async def test_media_picker_cancel_preserves_current_selection(tmp_path, monkeyp
 
         assert screen.input_path == media
         assert str(media) in str(screen.query_one("#media-path", Static).render())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("filename", "message"),
+    [
+        ("learned.txt", "只能在热词管理中审阅"),
+        ("legacy.yaml", "旧格式只支持迁移"),
+    ],
+)
+async def test_glossary_picker_rejects_owned_and_legacy_files(
+    tmp_path, monkeypatch, filename, message
+):
+    from textual.widgets import Button, Select, Static
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    selected = tmp_path / filename
+    selected.write_text("Subtap\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "subtap.ui.v2.new_transcription.choose_file", lambda _prompt: selected
+    )
+    screen = NewTranscriptionScreen()
+    app = _ScreenApp(screen)
+
+    async with app.run_test() as pilot:
+        await app.push_screen(screen, app.exit)
+        screen.query_one("#choose-glossary", Button).press()
+        await pilot.pause()
+
+        assert message in str(screen.query_one("#status", Static).render())
+        assert screen.query_one("#glossary", Select).value != str(selected)
 
 
 @pytest.mark.asyncio
@@ -305,6 +404,22 @@ async def test_new_transcription_uses_config_defaults_and_responsive_layout(
         assert screen.query_one("#new-shell").region.width == 104
 
 
+def test_new_transcription_does_not_emit_deprecated_config_warning(
+    tmp_path, monkeypatch, caplog
+):
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    config = tmp_path / ".subtap" / "config.yaml"
+    config.parent.mkdir(parents=True)
+    config.write_text(
+        "audio:\n  vad:\n    max_chunk_sec: 30\n",
+        encoding="utf-8",
+    )
+
+    NewTranscriptionScreen()
+
+    assert "max_chunk_sec" not in caplog.text
+
+
 @pytest.mark.asyncio
 async def test_back_dismisses_without_command(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
@@ -318,3 +433,25 @@ async def test_back_dismisses_without_command(tmp_path, monkeypatch):
         await pilot.pause()
 
     assert app.return_value is None
+
+
+@pytest.mark.asyncio
+async def test_glossary_picker_lists_only_user_maintained_text_files(
+    tmp_path, monkeypatch
+):
+    glossary_dir = tmp_path / "glossaries"
+    glossary_dir.mkdir()
+    for name in ("default.txt", "team.txt", "learned.txt", "legacy.yaml"):
+        (glossary_dir / name).write_text("", encoding="utf-8")
+    monkeypatch.setattr(
+        WizardView,
+        "list_glossaries",
+        staticmethod(lambda: sorted(glossary_dir.iterdir())),
+    )
+
+    screen = NewTranscriptionScreen()
+
+    assert screen._glossary_options == [
+        ("默认热词表 · default.txt", ""),
+        ("本地热词表 · team.txt", str(glossary_dir / "team.txt")),
+    ]

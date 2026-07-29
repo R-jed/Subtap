@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from enum import Enum
 import json
 import logging
+import os
 from pathlib import Path
 import subprocess
 import time
@@ -53,6 +55,29 @@ class TaskPresentation:
     stage_lines: tuple[str, ...]
     recent_texts: tuple[str, ...]
     output_text: str
+    state: "TaskState"
+    elapsed_sec: int
+    stage_durations: tuple[tuple[str, float], ...]
+    current_stage_elapsed_sec: int | None = None
+    allowed_actions: tuple[str, ...] = ()
+    completed_stage_count: int = 0
+    total_stage_count: int = 0
+    subtitle_count: int | None = None
+    quality_label: str = "质量模式未记录"
+    failed_stage: str | None = None
+    error_message: str | None = None
+    retryable: bool = False
+
+
+class TaskState(Enum):
+    """Pipeline state independent from localized presentation copy."""
+
+    RECORDED = "recorded"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    INTERRUPTED = "interrupted"
+    OBSERVATION_ERROR = "observation_error"
 
 
 def iter_event_log(log_path: Path) -> list[dict[str, Any]]:
@@ -70,10 +95,21 @@ def iter_event_log(log_path: Path) -> list[dict[str, Any]]:
             row = json.loads(line)
         except json.JSONDecodeError as error:
             raise ValueError(
-                f"Invalid event log row {log_path}:{line_number}"
+                f"任务日志第 {line_number} 行损坏：{log_path}:{line_number}"
             ) from error
         if not isinstance(row, dict) or not isinstance(row.get("data", {}), dict):
-            raise ValueError(f"Invalid event log row {log_path}:{line_number}")
+            raise ValueError(
+                f"任务日志第 {line_number} 行格式无效：{log_path}:{line_number}"
+            )
+        schema_version = row.get("schema_version", 1)
+        if schema_version not in {1, 2}:
+            raise ValueError(
+                f"不支持的任务日志版本 {schema_version}：" f"{log_path}:{line_number}"
+            )
+        if schema_version == 2 and not row.get("run_id"):
+            raise ValueError(
+                f"任务日志第 {line_number} 行缺少任务标识：" f"{log_path}:{line_number}"
+            )
         rows.append(row)
     return rows
 
@@ -89,6 +125,7 @@ def _summarize_event_rows(
         "progress": None,
         "chunk_id": None,
         "model": "未知",
+        "asr_model": None,
         "asr_drafts": 0,
         "aligned": 0,
         "completed_stages": [],
@@ -97,26 +134,52 @@ def _summarize_event_rows(
         "recent_texts": [],
         "started_at": None,
         "last_event_at": None,
-        "stage_progress": 0,
-        "stage_order": list(_OBSERVED_STAGE_ORDER),
+        "stage_progress": None,
+        "stage_order": [],
         "has_pipeline_plan": False,
+        "run_id": None,
+        "pipeline_status": None,
+        "stage_durations": {},
+        "stage_started_at": {},
+        "stage_statuses": {},
+        "schema_version": 1,
+        "output_ready": None,
+        "subtitle_count": None,
+        "error_code": None,
+        "error_message": None,
+        "retryable": False,
+        "pipeline_duration_sec": None,
     }
     draft_texts: list[str] = []
     aligned_texts: list[str] = []
     for row in rows:
         event_type = row.get("event_type")
         data = row.get("data") or {}
+        state["schema_version"] = max(
+            state["schema_version"], int(row.get("schema_version") or 1)
+        )
+        if state["run_id"] is None:
+            state["run_id"] = row.get("run_id") or data.get("task_id")
         if state["started_at"] is None:
             state["started_at"] = row.get("timestamp")
         if row.get("timestamp") is not None:
             state["last_event_at"] = row["timestamp"]
+        row_schema = int(row.get("schema_version") or 1)
+        if row_schema >= 2:
+            if event_type in {"stage_start", "stage_end"} and not data.get("stage"):
+                raise ValueError(f"{event_type} 事件缺少处理阶段")
+            if event_type == "pipeline_plan" and not data.get("stages"):
+                raise ValueError("任务计划事件缺少处理阶段")
         if event_type == "pipeline_plan" and data.get("stages"):
             state["stage_order"] = list(data["stages"])
             state["has_pipeline_plan"] = True
         if "stage" in data:
             state["stage"] = data["stage"]
         if event_type == "stage_start":
-            state["stage_progress"] = 0
+            if data.get("stage") and row.get("timestamp") is not None:
+                state["stage_started_at"][data["stage"]] = row["timestamp"]
+                state["stage_statuses"][data["stage"]] = "running"
+            state["stage_progress"] = None
             state["item_index"] = None
             state["total_items"] = None
         if "progress" in data:
@@ -125,15 +188,53 @@ def _summarize_event_rows(
             state["chunk_id"] = data["chunk_id"]
         if "model" in data:
             state["model"] = data["model"]
+            if str(data["model"]).startswith("asr"):
+                state["asr_model"] = data["model"]
         if "item_index" in data:
             state["item_index"] = data["item_index"]
         if "total_items" in data:
             state["total_items"] = data["total_items"]
         if event_type == "stage_end" and data.get("stage"):
-            state["stage_progress"] = 100
             stage = data["stage"]
-            if stage not in state["completed_stages"]:
+            if row_schema >= 2 and "status" not in data:
+                raise ValueError(f"处理阶段 {stage} 缺少处理阶段状态")
+            if row_schema >= 2 and "duration_sec" not in data:
+                raise ValueError(f"处理阶段 {stage} 缺少阶段耗时")
+            stage_status = data.get("status") or "success"
+            if stage_status not in {"success", "failed", "skipped"}:
+                raise ValueError(f"无效的处理阶段状态：{stage_status}")
+            state["stage_progress"] = 100 if stage_status == "success" else None
+            if stage_status == "success" and stage not in state["completed_stages"]:
                 state["completed_stages"].append(stage)
+            duration = data.get("duration_sec", data.get("duration"))
+            if duration is None and row.get("timestamp") is not None:
+                started_at = state["stage_started_at"].get(stage)
+                if started_at is not None:
+                    duration = row["timestamp"] - started_at
+            if duration is not None:
+                state["stage_durations"][stage] = max(0.0, float(duration))
+            state["stage_statuses"][stage] = stage_status
+        if event_type == "pipeline_end":
+            if row_schema >= 2:
+                if "total_duration_sec" not in data:
+                    raise ValueError("任务结束事件缺少总耗时")
+                if "output_ready" not in data:
+                    raise ValueError("任务结束事件缺少输出状态")
+            terminal_status = data.get("status")
+            if terminal_status not in {"success", "failed", "interrupted"}:
+                raise ValueError(f"无效的任务结束状态：{terminal_status}")
+            state["pipeline_status"] = (
+                "completed" if terminal_status == "success" else terminal_status
+            )
+            state["output_ready"] = data.get("output_ready")
+            state["subtitle_count"] = data.get("subtitle_count")
+            state["error_code"] = data.get("error_code")
+            state["error_message"] = data.get("error_message")
+            state["retryable"] = data.get("retryable") is True
+            state["pipeline_duration_sec"] = data.get(
+                "total_duration_sec",
+                data.get("duration_sec", data.get("duration")),
+            )
         if event_type == "asr_draft_ready":
             state["asr_drafts"] += 1
             if data.get("text"):
@@ -142,19 +243,7 @@ def _summarize_event_rows(
             state["aligned"] += 1
             if data.get("text"):
                 aligned_texts.append(data["text"])
-    stage_order = state["stage_order"]
-    completed = {stage for stage in state["completed_stages"] if stage in stage_order}
-    current_stage = state["stage"]
-    current_fraction = (
-        state["stage_progress"] / 100
-        if current_stage in stage_order and current_stage not in completed
-        else 0
-    )
-    state["progress"] = (
-        round((len(completed) + current_fraction) / len(stage_order) * 100)
-        if state["has_pipeline_plan"]
-        else state["stage_progress"]
-    )
+    state["progress"] = state["stage_progress"]
     state["recent_texts"] = (aligned_texts or draft_texts)[-recent_limit:]
     return state
 
@@ -172,32 +261,83 @@ def build_task_presentation(
     now: float | None = None,
 ) -> TaskPresentation:
     """Translate reducer state into one shared task presentation."""
-    if returncode is _UNSET:
-        status = "任务记录"
+    terminal = state.get("pipeline_status")
+    terminal_key = terminal if isinstance(terminal, str) else None
+    terminal_state = {
+        "completed": TaskState.COMPLETED,
+        "failed": TaskState.FAILED,
+        "interrupted": TaskState.INTERRUPTED,
+    }.get(terminal_key or "")
+    if returncode is _UNSET and terminal_state is None:
+        status, task_state = "任务记录", TaskState.RECORDED
+    elif terminal_state is not None and returncode in {_UNSET, None}:
+        assert terminal_state is not None
+        task_state = terminal_state
+        status = {
+            TaskState.COMPLETED: "任务已完成",
+            TaskState.FAILED: "任务失败",
+            TaskState.INTERRUPTED: "任务已中断",
+        }[task_state]
     elif returncode is None:
         status = "任务运行中"
-    elif returncode == 0:
+        task_state = TaskState.RUNNING
+    elif returncode == 0 and terminal_state in {None, TaskState.COMPLETED}:
         status = (
             "任务已完成"
             if output_path is None or output_path.is_file()
             else "任务异常：未找到字幕文件"
         )
-    else:
+        task_state = (
+            TaskState.COMPLETED
+            if output_path is None or output_path.is_file()
+            else TaskState.FAILED
+        )
+    elif returncode not in {None, 0} and terminal_state in {None, TaskState.FAILED}:
         status = f"任务失败（退出码 {returncode}）"
+        task_state = TaskState.FAILED
+    else:
+        status = "任务状态未知：进程结果与任务日志不一致"
+        task_state = TaskState.OBSERVATION_ERROR
+
+    if (
+        state.get("schema_version", 1) >= 2
+        and returncode is not _UNSET
+        and returncode is not None
+        and terminal_state is None
+    ):
+        status = "任务状态未知：缺少结束事件"
+        task_state = TaskState.OBSERVATION_ERROR
+    if task_state is TaskState.COMPLETED and (
+        state.get("output_ready") is False
+        or (output_path is not None and not output_path.is_file())
+    ):
+        status = "任务异常：未找到字幕文件"
+        task_state = TaskState.FAILED
 
     completed = set(state["completed_stages"])
     current = state["stage"]
-    stage_lines = tuple(
-        f"{'✓' if stage in completed else '▶' if stage == current else '·'} "
-        f"{_OBSERVED_STAGE_CN.get(stage, stage)}"
-        for stage in state["stage_order"]
-    )
+
+    def stage_line(stage: str) -> str:
+        marker = (
+            "×"
+            if state["stage_statuses"].get(stage) == "failed"
+            else "✓" if stage in completed else "▶" if stage == current else "·"
+        )
+        duration = state["stage_durations"].get(stage)
+        timing = f"  {duration:.1f}s" if duration is not None else ""
+        return f"{marker} {_OBSERVED_STAGE_CN.get(stage, '处理阶段')}{timing}"
+
+    stage_lines = tuple(stage_line(stage) for stage in state["stage_order"])
     item_index = state["item_index"]
     total_items = state["total_items"]
     item_text = (
         f"当前项目：{item_index}/{total_items}"
         if item_index is not None and total_items is not None
-        else f"当前分块：{state['chunk_id']}"
+        else (
+            f"当前分块：{state['chunk_id']}"
+            if state["chunk_id"] is not None
+            else "当前任务"
+        )
     )
     elapsed = 0
     if state["started_at"] is not None:
@@ -207,18 +347,61 @@ def build_task_presentation(
         if end_time is None:
             end_time = state["started_at"]
         elapsed = max(0, int(end_time - state["started_at"]))
+    if (
+        task_state is not TaskState.RUNNING
+        and state.get("pipeline_duration_sec") is not None
+    ):
+        elapsed = max(0, int(float(state["pipeline_duration_sec"])))
     current_work = f"{item_text}  已用时：{elapsed // 60:02d}:{elapsed % 60:02d}"
+    current_stage_elapsed: int | None = None
+    stage_started_at = state["stage_started_at"].get(current)
+    if (
+        stage_started_at is not None
+        and current not in completed
+        and now is not None
+        and task_state is TaskState.RUNNING
+    ):
+        current_stage_elapsed = max(0, int(now - stage_started_at))
 
-    if returncode is _UNSET:
-        output_text = f"[b]输出[/b]  {output_path or '未记录'}"
-    elif returncode is None:
+    if task_state is TaskState.RUNNING:
         output_text = f"[b]输出[/b]  {output_path or '任务完成后显示'}"
-    elif returncode == 0 and output_path is not None and output_path.is_file():
-        output_text = f"[green]✓ 字幕已生成[/green]\n{output_path}"
-    elif returncode == 0 and output_path is not None:
-        output_text = f"[red]未找到字幕文件[/red]\n{output_path}"
+    elif task_state is TaskState.COMPLETED:
+        output_text = f"[green]✓ 字幕已生成[/green]\n{output_path or '输出已就绪'}"
+    elif task_state is TaskState.FAILED and output_path is not None:
+        reason = "未找到字幕文件" if "未找到字幕文件" in status else "未生成可交付字幕"
+        output_text = f"[red]{reason}[/red]\n{output_path}"
+    elif returncode is _UNSET:
+        output_text = f"[b]输出[/b]  {output_path or '未记录'}"
     else:
         output_text = "[red]未生成可交付字幕[/red]"
+
+    allowed_actions = {
+        TaskState.RUNNING: ("details", "diagnostics", "detach", "stop"),
+        TaskState.COMPLETED: (
+            "open_output",
+            "open_directory",
+            "new_task",
+            "details",
+        ),
+        TaskState.FAILED: ("diagnostics", "new_task", "details"),
+        TaskState.INTERRUPTED: ("diagnostics", "new_task", "details"),
+        TaskState.OBSERVATION_ERROR: ("diagnostics", "details"),
+        TaskState.RECORDED: ("details",),
+    }[task_state]
+    model_name = str(state.get("asr_model") or state.get("model") or "")
+    quality_label = (
+        "高质量 · 1.7B"
+        if "1.7b" in model_name.casefold()
+        else "快速 · 0.6B" if "0.6b" in model_name.casefold() else "质量模式未记录"
+    )
+    failed_stage = next(
+        (
+            _OBSERVED_STAGE_CN.get(stage, "处理阶段")
+            for stage, stage_status in state["stage_statuses"].items()
+            if stage_status == "failed"
+        ),
+        None,
+    )
 
     return TaskPresentation(
         status=status,
@@ -230,6 +413,112 @@ def build_task_presentation(
         stage_lines=stage_lines,
         recent_texts=tuple(state["recent_texts"]),
         output_text=output_text,
+        state=task_state,
+        elapsed_sec=elapsed,
+        stage_durations=tuple(state["stage_durations"].items()),
+        current_stage_elapsed_sec=current_stage_elapsed,
+        allowed_actions=allowed_actions,
+        completed_stage_count=len(completed),
+        total_stage_count=len(state["stage_order"]),
+        subtitle_count=state.get("subtitle_count"),
+        quality_label=quality_label,
+        failed_stage=failed_stage,
+        error_message=state.get("error_message") or state.get("error_code"),
+        retryable=state.get("retryable") is True,
+    )
+
+
+def build_task_presentation_from_log(
+    log_path: Path,
+    *,
+    output_path: Path | None = None,
+    process: Any | None = None,
+    pid: int | None = None,
+    now: float | None = None,
+) -> TaskPresentation:
+    """Build a live or historical task view without confusing the two."""
+    state = summarize_event_log(log_path)
+    if process is None:
+        if pid is not None:
+            if _pid_is_alive(pid):
+                return build_task_presentation(
+                    state,
+                    returncode=None,
+                    output_path=output_path,
+                    now=now,
+                )
+            recorded = build_task_presentation(
+                state,
+                returncode=_UNSET,
+                output_path=output_path,
+                now=now,
+            )
+            return build_observation_error_presentation(
+                RuntimeError("无法确认任务进程仍在运行"),
+                recorded,
+            )
+        return build_task_presentation(
+            state,
+            returncode=_UNSET,
+            output_path=output_path,
+            now=now,
+        )
+
+    returncode = process.poll()
+    if returncode is not None:
+        return build_task_presentation(
+            state,
+            returncode=returncode,
+            output_path=output_path,
+            now=now,
+        )
+
+    pid = getattr(process, "pid", None)
+    if not _pid_is_alive(pid):
+        recorded = build_task_presentation(
+            state,
+            returncode=_UNSET,
+            output_path=output_path,
+            now=now,
+        )
+        return build_observation_error_presentation(
+            RuntimeError("无法确认任务进程仍在运行"),
+            recorded,
+        )
+
+    return build_task_presentation(
+        state,
+        returncode=None,
+        output_path=output_path,
+        now=now,
+    )
+
+
+def _pid_is_alive(pid: object) -> bool:
+    """Return true only when the operating system confirms a live PID."""
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def build_observation_error_presentation(
+    error: Exception,
+    previous: TaskPresentation | None = None,
+) -> TaskPresentation:
+    """Preserve the last trustworthy view when new observer data is invalid."""
+    if previous is None:
+        previous = build_task_presentation(_summarize_event_rows([]))
+    return replace(
+        previous,
+        status=f"任务状态未知：{error}",
+        state=TaskState.OBSERVATION_ERROR,
+        allowed_actions=("diagnostics", "back"),
     )
 
 

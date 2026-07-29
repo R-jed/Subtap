@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 import logging
+import os
 from pathlib import Path
 
 from textual import on
@@ -12,8 +14,13 @@ from textual.containers import Grid, Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen, Screen
 from textual.widgets import Button, Footer, Input, Select, Static
 
-from subtap.core.models import asr_mode_for_model
+from subtap.core.models import (
+    apply_asr_mode,
+    asr_mode_for_model,
+    validate_runtime_models,
+)
 from subtap.schemas.config import load_config
+from subtap.schemas.glossary import load_glossary
 from subtap.ui.native_picker import choose_file, choose_folder
 from subtap.ui.views.wizard import WizardView
 
@@ -28,13 +35,14 @@ class ReviewTranscriptionScreen(ModalScreen[bool]):
     BINDINGS = [
         Binding("escape", "cancel", "返回", priority=True),
     ]
-    CSS = """
+    DEFAULT_CSS = """
     ReviewTranscriptionScreen {
         align: center middle;
         background: $background 70%;
     }
     #review-dialog {
-        width: 64;
+        width: 100%;
+        max-width: 64;
         height: auto;
         max-height: 90%;
         padding: 2 3;
@@ -93,7 +101,7 @@ class NewTranscriptionScreen(Screen[list[str] | None]):
     """Collect every setting needed by the existing ``subtap run`` command."""
 
     HORIZONTAL_BREAKPOINTS = HORIZONTAL_BREAKPOINTS
-    CSS = """
+    DEFAULT_CSS = """
     NewTranscriptionScreen {
         align: center top;
     }
@@ -138,13 +146,12 @@ class NewTranscriptionScreen(Screen[list[str] | None]):
     }
 
     #workbench {
-        grid-size: 2 1;
-        grid-columns: 2fr 1fr;
-        grid-gutter: 1 2;
+        grid-size: 1 1;
+        grid-columns: 1fr;
         height: auto;
     }
 
-    #settings, #summary-pane {
+    #settings {
         height: auto;
     }
 
@@ -152,26 +159,16 @@ class NewTranscriptionScreen(Screen[list[str] | None]):
         margin-bottom: 1;
     }
 
-    #summary-pane {
-        padding: 1 2;
-        background: $surface;
-    }
-
-    #summary-title {
-        height: auto;
-        text-style: bold;
-        margin-bottom: 1;
-    }
-
-    #summary {
-        height: auto;
-        color: $text-muted;
-    }
-
     #status {
         min-height: 1;
         height: auto;
         color: $error;
+    }
+
+    #open-models {
+        display: none;
+        width: 24;
+        margin-bottom: 1;
     }
 
     #action-row {
@@ -186,22 +183,21 @@ class NewTranscriptionScreen(Screen[list[str] | None]):
         margin-right: 1;
     }
 
-    NewTranscriptionScreen.-compact #workbench {
-        grid-size: 1 2;
-        grid-columns: 1fr;
-    }
-
-    NewTranscriptionScreen.-compact #summary-pane {
-        margin-top: 1;
-    }
     """
 
     def __init__(self, input_path: Path | None = None) -> None:
         super().__init__()
         self.input_path = input_path
-        config = load_config(Path.home() / ".subtap" / "config.yaml")
+        config = load_config(
+            Path.home() / ".subtap" / "config.yaml",
+            warn_deprecated=False,
+        )
+        self.config = config
         self.default_mode = asr_mode_for_model(config.asr.model)
         self.default_max_chars = config.output.max_chars
+        self.default_output_dir = Path(config.output.directory).expanduser()
+        if not self.default_output_dir.is_absolute():
+            self.default_output_dir = Path.cwd() / self.default_output_dir
         self._glossary_options = [
             ("默认热词表 · default.txt", ""),
             *[
@@ -211,7 +207,8 @@ class NewTranscriptionScreen(Screen[list[str] | None]):
                     str(path),
                 )
                 for path in WizardView.list_glossaries()
-                if path.name != "default.txt"
+                if path.suffix.casefold() == ".txt"
+                and path.name not in {"default.txt", "learned.txt"}
             ],
         ]
         self._manuscript_options = [
@@ -271,12 +268,10 @@ class NewTranscriptionScreen(Screen[list[str] | None]):
                     )
                     yield Static("输出目录", classes="field-label")
                     with Horizontal(classes="resource-row"):
-                        yield Input(value=str(Path.cwd() / "output"), id="output")
+                        yield Input(value=str(self.default_output_dir), id="output")
                         yield Button("选择…", id="choose-output")
-                with Vertical(id="summary-pane"):
-                    yield Static("设置摘要", id="summary-title")
-                    yield Static("", id="summary")
             yield Static("", id="status")
+            yield Button("打开模型管理", id="open-models")
             with Horizontal(id="action-row"):
                 yield Button("返回", id="back")
                 yield Button(
@@ -287,7 +282,7 @@ class NewTranscriptionScreen(Screen[list[str] | None]):
         yield Footer(compact=True, show_command_palette=False)
 
     def on_mount(self) -> None:
-        self._update_summary()
+        self._update_start_state()
 
     def action_back(self) -> None:
         self.dismiss(None)
@@ -324,15 +319,29 @@ class NewTranscriptionScreen(Screen[list[str] | None]):
         if path is not None:
             self.input_path = path
             self.query_one("#media-path", Static).update(str(path))
-            self._update_summary()
+            self._update_start_state()
 
     @on(Button.Pressed, "#choose-glossary")
     def choose_glossary(self) -> None:
         path = self._pick(choose_file, "选择本地热词表")
-        if path is not None:
-            self._set_select_path(
-                "#glossary", self._glossary_options, path, "本地热词表"
+        if path is None:
+            return
+        status = self.query_one("#status", Static)
+        if path.name in {"default.txt", "learned.txt"}:
+            status.update(
+                "default.txt 请使用“默认热词表”；learned.txt 只能在热词管理中审阅。"
             )
+            return
+        if path.suffix.casefold() != ".txt":
+            status.update("旧格式只支持迁移，单次任务请选择 .txt 热词表。")
+            return
+        try:
+            load_glossary(path)
+        except (OSError, ValueError) as error:
+            status.update(f"热词表无效：{error}")
+            return
+        status.update("")
+        self._set_select_path("#glossary", self._glossary_options, path, "本地热词表")
 
     @on(Button.Pressed, "#choose-manuscript")
     def choose_manuscript(self) -> None:
@@ -351,35 +360,23 @@ class NewTranscriptionScreen(Screen[list[str] | None]):
     @on(Select.Changed)
     @on(Input.Changed)
     def settings_changed(self) -> None:
-        self._update_summary()
+        self._update_start_state()
 
-    def _update_summary(self) -> None:
-        quality = self.query_one("#quality", Select).value
-        glossary = self.query_one("#glossary", Select).value
-        manuscript = self.query_one("#manuscript", Select).value
-        output = self.query_one("#output", Input).value.strip()
-        summary = [
-            self.input_path.name if self.input_path else "尚未选择媒体文件",
-            "高质量" if quality == "quality" else "快速",
-            (
-                Path(glossary).name
-                if isinstance(glossary, str) and glossary
-                else "默认热词表"
-            ),
-            (
-                Path(manuscript).name
-                if isinstance(manuscript, str) and manuscript
-                else "不使用参考文稿"
-            ),
-            output or "尚未选择输出目录",
-        ]
-        self.query_one("#summary", Static).update("\n".join(summary))
+    def _update_start_state(self) -> None:
+        self.query_one("#start", Button).disabled = (
+            self.input_path is None
+            or not self.query_one("#output", Input).value.strip()
+        )
 
     @on(Button.Pressed, "#start")
     def start(self) -> None:
         status = self.query_one("#status", Static)
+        self.query_one("#open-models", Button).display = False
         if self.input_path is None:
             status.update("请选择音频或视频文件")
+            return
+        if not self.input_path.is_file() or not os.access(self.input_path, os.R_OK):
+            status.update(f"媒体文件不可读取：{self.input_path}")
             return
         output = self.query_one("#output", Input).value.strip()
         if not output:
@@ -393,10 +390,30 @@ class NewTranscriptionScreen(Screen[list[str] | None]):
         if not 10 <= max_chars <= 60:
             status.update("字幕最大字数必须在 10 到 60 之间")
             return
+        output_path = Path(output).expanduser()
+        try:
+            output_path.mkdir(parents=True, exist_ok=True)
+        except OSError as error:
+            status.update(f"无法创建输出目录：{error}")
+            return
+        if not output_path.is_dir() or not os.access(output_path, os.W_OK):
+            status.update(f"输出目录不可写：{output_path}")
+            return
+        quality = self.query_one("#quality", Select).value
+        runtime_config = deepcopy(self.config)
+        try:
+            apply_asr_mode(
+                runtime_config,
+                quality if isinstance(quality, str) else self.default_mode,
+            )
+            validate_runtime_models(runtime_config)
+        except (RuntimeError, ValueError, FileNotFoundError) as error:
+            status.update(str(error))
+            self.query_one("#open-models", Button).display = True
+            return
 
         wizard = WizardView()
         wizard.select_file(self.input_path)
-        quality = self.query_one("#quality", Select).value
         wizard.select_quality(
             quality if isinstance(quality, str) else self.default_mode
         )
@@ -408,7 +425,7 @@ class NewTranscriptionScreen(Screen[list[str] | None]):
         wizard.select_manuscript(
             Path(manuscript) if isinstance(manuscript, str) and manuscript else None
         )
-        wizard.select_output_dir(Path(output).expanduser())
+        wizard.select_output_dir(output_path)
         wizard.select_max_chars(max_chars)
         try:
             command = wizard.build_run_command()
@@ -419,16 +436,28 @@ class NewTranscriptionScreen(Screen[list[str] | None]):
             raise RuntimeError("WizardView 未生成预期的 TUI 观察参数")
         command[-1] = "--tui-v2"
         status.update("")
+        glossary_label = (
+            "默认热词表 · default.txt"
+            if not isinstance(glossary, str) or not glossary
+            else f"本地热词表 · {Path(glossary).name}"
+        )
         summary = (
             f"媒体文件\n{self.input_path}\n\n"
             f"输出目录\n{Path(output).expanduser()}\n\n"
             f"转录质量\n{'高质量 · 1.7B' if quality == 'quality' else '快速 · 0.6B'}\n\n"
+            f"热词策略\n{glossary_label}\n\n"
             f"字幕目标\n最多 {max_chars} 字"
         )
         self.app.push_screen(
             ReviewTranscriptionScreen(summary),
             lambda confirmed: self._finish_review(confirmed, command),
         )
+
+    @on(Button.Pressed, "#open-models")
+    def open_models(self) -> None:
+        from .screens import ModelsScreen
+
+        self.app.push_screen(ModelsScreen())
 
     def _finish_review(self, confirmed: bool | None, command: list[str]) -> None:
         if confirmed:

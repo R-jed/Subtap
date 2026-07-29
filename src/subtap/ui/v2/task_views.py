@@ -3,28 +3,37 @@
 from __future__ import annotations
 
 from textual.app import ComposeResult
-from textual.containers import Grid, Vertical
+from textual.containers import Grid, Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import ProgressBar, RichLog, Static
 from textual.widget import Widget
 
-from subtap.ui.observer import TaskPresentation
+from subtap.ui.observer import TaskPresentation, TaskState
 
 from .components import TaskDetails, TaskPipeline, TaskStatus
 from .theme import HORIZONTAL_BREAKPOINTS as SIGNAL_DESK_BREAKPOINTS
 
 
-def _status_kind(status: str) -> str:
-    normalized = status.casefold()
-    if any(token in normalized for token in ("中断", "取消", "interrupt", "cancel")):
-        return "interrupted"
-    if any(token in normalized for token in ("失败", "异常", "failed", "error")):
-        return "failed"
-    if any(token in normalized for token in ("完成", "completed", "success", "done")):
-        return "completed"
-    if any(token in normalized for token in ("运行", "running")):
-        return "running"
-    raise ValueError(f"Unknown task status: {status}")
+def _stage_name(stage: str) -> str:
+    return {
+        "prepare": "音频标准化",
+        "chunk": "音频切段",
+        "asr": "语音识别",
+        "clean": "文本清洗",
+        "segment": "智能断句",
+        "script_match": "参考文稿匹配",
+        "align": "时间轴对齐",
+        "hotword": "热词替换",
+        "translate": "字幕翻译",
+        "learn": "热词学习",
+        "export": "字幕导出",
+    }.get(stage, "处理阶段")
+
+
+def _status_kind(state: TaskState) -> str:
+    if not isinstance(state, TaskState):
+        raise ValueError(f"Unknown task status: {state!r}")
+    return state.value
 
 
 class TaskView(Widget):
@@ -32,25 +41,42 @@ class TaskView(Widget):
 
     def __init__(self, presentation: TaskPresentation) -> None:
         self.presentation = presentation
-        self.kind = _status_kind(presentation.status)
+        self.kind = _status_kind(presentation.state)
         super().__init__(id="task-view")
 
     def compose(self) -> ComposeResult:
-        with Grid(id="task-grid"):
-            yield TaskPipeline(self.presentation)
-            with Vertical(id="task-main"):
-                yield TaskStatus(self.presentation, self.kind)
-                if self.kind == "running":
-                    yield ProgressBar(
-                        total=100,
-                        show_percentage=False,
-                        show_eta=False,
-                        id="task-progress",
-                    )
-                    yield Static(
-                        f"当前阶段：{self.presentation.stage}",
-                        id="task-stage",
-                    )
+        yield TaskStatus(self.presentation, self.kind)
+        if self.kind == "running":
+            with Horizontal(id="task-live-summary"):
+                yield Static(
+                    f"正在处理  {_stage_name(self.presentation.stage)}",
+                    id="task-stage",
+                )
+                yield Static(
+                    f"已完成 {self.presentation.completed_stage_count}/"
+                    f"{self.presentation.total_stage_count or '?'} 阶段",
+                    id="task-stage-count",
+                )
+                stage_elapsed = self.presentation.current_stage_elapsed_sec
+                elapsed_text = (
+                    f"本阶段 {stage_elapsed // 60:02d}:{stage_elapsed % 60:02d}"
+                    if stage_elapsed is not None
+                    else self.presentation.current_work
+                )
+                yield Static(elapsed_text, id="task-elapsed")
+            if self.presentation.progress is not None:
+                yield Static("本阶段进度", id="task-progress-label")
+                yield ProgressBar(
+                    total=100,
+                    show_percentage=True,
+                    show_eta=False,
+                    id="task-progress",
+                )
+        if self.kind == "running":
+            with Grid(id="task-grid"):
+                yield TaskPipeline(self.presentation)
+                with Vertical(id="task-main"):
+                    yield Static("最近字幕", classes="task-label")
                     log = RichLog(
                         wrap=True,
                         markup=False,
@@ -58,17 +84,35 @@ class TaskView(Widget):
                         min_width=0,
                         id="task-subtitles",
                     )
-                    for line in self.presentation.recent_texts:
+                    waiting_text = {
+                        "prepare": "正在准备音频…",
+                        "chunk": "正在分析并切分音频…",
+                        "asr": "正在识别，首段字幕生成后将在这里显示…",
+                        "align": "正在对齐字幕时间轴…",
+                    }.get(self.presentation.stage, "正在处理当前阶段…")
+                    for line in self.presentation.recent_texts or (waiting_text,):
                         log.write(line)
                     yield log
-                elif self.kind == "completed":
+                    yield TaskDetails(self.presentation)
+        else:
+            with Vertical(id="task-terminal"):
+                if self.kind == "completed":
+                    subtitle_count = (
+                        f"字幕 {self.presentation.subtitle_count} 条"
+                        if self.presentation.subtitle_count is not None
+                        else "字幕数量未记录"
+                    )
                     yield Static("输出", classes="task-label")
+                    yield Static(self.presentation.output_text, id="task-output")
                     yield Static(
-                        self.presentation.output_text,
-                        id="task-output",
+                        f"总耗时 {self.presentation.elapsed_sec // 60:02d}:"
+                        f"{self.presentation.elapsed_sec % 60:02d}"
+                        f"  ·  {subtitle_count}"
+                        f"  ·  {self.presentation.quality_label}",
+                        id="task-result-summary",
                     )
                     yield Static(
-                        "动作\n按 O 打开字幕\n按 F 打开所在目录",
+                        "可打开字幕、打开所在目录，或新建字幕。",
                         id="task-actions",
                     )
                 elif self.kind == "failed":
@@ -78,29 +122,43 @@ class TaskView(Widget):
                         id="task-error",
                     )
                     yield Static(
-                        "下一步\n按 D 打开诊断日志，确认原因后重新运行。",
+                        f"失败阶段：{self.presentation.failed_stage or '未能确定'}\n"
+                        f"原因：{self.presentation.error_message or '请查看诊断日志'}",
+                        id="task-failure-reason",
+                    )
+                    yield Static(
+                        "下一步\n打开诊断日志确认原因，或新建字幕。",
                         id="task-next-action",
                     )
-                else:
+                elif self.kind == "interrupted":
                     yield Static("任务已中断", classes="task-label")
                     yield Static(
                         "任务未完成，当前观察结果已保留。",
                         id="task-interrupted-summary",
                     )
                     yield Static(
-                        "下一步\n检查保留文件，再重新运行任务。",
+                        "下一步\n检查保留文件，再新建任务。",
                         id="task-next-action",
                     )
+                elif self.kind == "observation_error":
+                    yield Static("任务状态未知", classes="task-label")
+                    yield Static(
+                        "观察日志不完整或与进程结果冲突；最后可信状态已保留。",
+                        id="task-error",
+                    )
+                    yield Static("下一步\n打开诊断日志。", id="task-next-action")
+                else:
+                    yield Static("历史任务", classes="task-label")
+                    yield Static(self.presentation.output_text, id="task-output")
                 yield TaskDetails(self.presentation)
 
     def on_mount(self) -> None:
         self._sync_progress()
 
     def _sync_progress(self) -> None:
-        if self.kind == "running":
+        if self.kind == "running" and self.presentation.progress is not None:
             progress = self.query_one("#task-progress", ProgressBar)
-            if self.presentation.progress is not None:
-                progress.update(progress=self.presentation.progress)
+            progress.update(progress=self.presentation.progress)
 
     async def update_presentation(self, presentation: TaskPresentation) -> None:
         """Refresh this view without replacing its parent screen."""
@@ -115,7 +173,7 @@ class TaskView(Widget):
         )
         subtitle_scroll_y = previous_log.scroll_y if previous_log is not None else 0
         self.presentation = presentation
-        self.kind = _status_kind(presentation.status)
+        self.kind = _status_kind(presentation.state)
         await self.recompose()
         self.query_one(TaskDetails).collapsed = details_collapsed
         self._sync_progress()
@@ -133,7 +191,7 @@ class TaskScreen(Screen[None]):
 
     HORIZONTAL_BREAKPOINTS = SIGNAL_DESK_BREAKPOINTS
 
-    CSS = """
+    DEFAULT_CSS = """
     TaskScreen {
         align: center top;
     }
@@ -141,29 +199,70 @@ class TaskScreen(Screen[None]):
         width: 100%;
         max-width: 104;
         height: 100%;
+        padding: 2 3 1 3;
+    }
+    #task-status {
+        height: auto;
         padding: 1 2;
+        margin-bottom: 1;
+        background: $surface;
+        color: $primary;
+        text-style: bold;
+    }
+    #task-live-summary {
+        height: 3;
+        padding: 0 1;
+    }
+    #task-stage {
+        width: 1fr;
+        height: auto;
+        text-style: bold;
+    }
+    #task-stage-count {
+        width: auto;
+        height: auto;
+        margin-right: 2;
+        color: $text-muted;
+    }
+    #task-elapsed {
+        width: auto;
+        height: auto;
+        color: $text-muted;
+    }
+    #task-progress {
+        margin: 0 1 1 1;
+    }
+    #task-progress-label {
+        height: auto;
+        margin: 0 1 1 1;
+        color: $text-muted;
     }
     #task-grid {
         width: 100%;
-        height: 100%;
+        height: auto;
         grid-size: 1 2;
         grid-columns: 1fr;
         grid-gutter: 1 2;
+    }
+    #task-terminal {
+        height: auto;
+        min-height: 14;
+        padding: 2 3;
+        background: $surface;
+    }
+    #task-pipeline, #task-main {
+        padding: 1 2;
+    }
+    #task-pipeline {
+        height: auto;
     }
     #task-main {
         height: auto;
         min-height: 12;
     }
-    #task-status {
-        height: auto;
-        padding-bottom: 1;
-    }
-    #task-progress {
-        margin-bottom: 1;
-    }
     #task-subtitles {
-        height: 1fr;
-        min-height: 8;
+        height: 12;
+        min-height: 6;
     }
     #task-details {
         height: auto;
@@ -172,7 +271,8 @@ class TaskScreen(Screen[None]):
     .task-label {
         padding-top: 1;
     }
-    #task-output, #task-error, #task-interrupted-summary, #task-next-action, #task-actions {
+    #task-output, #task-error, #task-failure-reason, #task-interrupted-summary,
+    #task-next-action, #task-actions, #task-result-summary {
         height: auto;
         padding: 1 0;
     }
@@ -180,16 +280,21 @@ class TaskScreen(Screen[None]):
     TaskScreen.-wide #task-grid {
         grid-size: 2 1;
         grid-columns: 32 1fr;
-        height: 1fr;
     }
-    TaskScreen.-regular #task-main,
-    TaskScreen.-wide #task-main {
-        height: 1fr;
+    TaskScreen.-compact #task-pipeline {
+        display: none;
+    }
+    TaskScreen.-compact #task-main {
+        min-height: 8;
+    }
+    TaskScreen.-compact #task-subtitles {
+        height: 8;
+        min-height: 4;
     }
     """
 
     def __init__(self, presentation: TaskPresentation) -> None:
-        _status_kind(presentation.status)
+        _status_kind(presentation.state)
         super().__init__()
         self.presentation = presentation
 
@@ -200,3 +305,16 @@ class TaskScreen(Screen[None]):
         """Expose the live-observer refresh seam."""
         self.presentation = presentation
         await self.query_one(TaskView).update_presentation(presentation)
+
+    def action_new_task(self) -> None:
+        from .new_transcription import NewTranscriptionScreen
+
+        self.app.push_screen(NewTranscriptionScreen(), self._finish_new_task)
+
+    def _finish_new_task(self, command: list[str] | None) -> None:
+        if command is None:
+            return
+        start_transcription = getattr(self.app, "start_transcription", None)
+        if start_transcription is None:
+            raise RuntimeError("当前应用无法启动转录任务")
+        start_transcription(command)

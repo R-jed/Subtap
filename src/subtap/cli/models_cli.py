@@ -108,7 +108,7 @@ def models_verify() -> None:
 
     all_ok = True
     for name in MODEL_REGISTRY:
-        result = verifier.verify(name)
+        result = verifier.verify(name, require_hash=True)
         if result["status"] == "ok":
             typer.echo(typer.style(f"  ✓ {name}: 正常", fg=typer.colors.GREEN))
         else:
@@ -121,6 +121,7 @@ def models_verify() -> None:
         typer.echo(typer.style("\n✓ 所有模型验证通过", fg=typer.colors.GREEN))
     else:
         typer.echo(typer.style("\n✗ 部分模型异常，请检查", fg=typer.colors.YELLOW))
+        raise typer.Exit(1)
 
 
 @models_app.command("list")

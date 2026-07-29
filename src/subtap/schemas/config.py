@@ -135,6 +135,7 @@ class WorkspaceConfig(BaseModel):
 class OutputConfig(BaseModel):
     """Output system configuration."""
 
+    directory: str = "./output"
     generate_metrics: bool = True
     timestamp: bool = True
     subtitle_punctuation: bool = Field(
@@ -216,7 +217,11 @@ class SubtapConfig(BaseModel):
 _DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[3] / "configs" / "default.yaml"
 
 
-def load_config(config_path: Optional[Path] = None) -> SubtapConfig:
+def load_config(
+    config_path: Optional[Path] = None,
+    *,
+    warn_deprecated: bool = True,
+) -> SubtapConfig:
     """Load config from YAML, merging with defaults.
 
     Priority: user config overrides defaults for any specified keys.
@@ -234,11 +239,12 @@ def load_config(config_path: Optional[Path] = None) -> SubtapConfig:
             removed_value = output_data.pop(removed_minimum_key)
             user_data = dict(user_data)
             user_data["output"] = output_data
-            logger.warning(
-                "配置项 output.%s=%r 已移除并忽略；现在仅支持 output.max_chars",
-                removed_minimum_key,
-                removed_value,
-            )
+            if warn_deprecated:
+                logger.warning(
+                    "配置项 output.%s=%r 已移除并忽略；现在仅支持 output.max_chars",
+                    removed_minimum_key,
+                    removed_value,
+                )
         audio_data = user_data.get("audio")
         if isinstance(audio_data, dict):
             vad_data = audio_data.get("vad")
@@ -249,11 +255,12 @@ def load_config(config_path: Optional[Path] = None) -> SubtapConfig:
                 audio_data["vad"] = vad_data
                 user_data = dict(user_data)
                 user_data["audio"] = audio_data
-                logger.warning(
-                    "配置项 audio.vad.max_chunk_sec=%r 已移除并忽略；"
-                    "现在仅在 ForcedAligner 180 秒硬上限处自动切分",
-                    removed_value,
-                )
+                if warn_deprecated:
+                    logger.warning(
+                        "配置项 audio.vad.max_chunk_sec=%r 已移除并忽略；"
+                        "现在仅在 ForcedAligner 180 秒硬上限处自动切分",
+                        removed_value,
+                    )
         return SubtapConfig.model_validate(user_data)
 
     return defaults

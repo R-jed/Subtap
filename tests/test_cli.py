@@ -7,11 +7,17 @@ from pathlib import Path
 import re
 from types import SimpleNamespace
 
+import pytest
 from typer.testing import CliRunner
 
 from subtap.cli import app, check_first_run_wizard
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_user_home(tmp_path, monkeypatch):
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
 
 def _strip_ansi(text: str) -> str:
@@ -645,8 +651,9 @@ def test_run_full_pipeline_with_align(
     srt_files = list(output_dir.glob("*.srt"))
     assert len(srt_files) > 0, f"No .srt files in {output_dir}"
     work_dir = tmp_path / "work"
-    run_log = work_dir / "run.log.jsonl"
-    assert run_log.exists()
+    run_logs = list((work_dir / "jobs").glob("*/run.log.jsonl"))
+    assert len(run_logs) == 1
+    run_log = run_logs[0]
     assert '"event_type": "stage_start"' in run_log.read_text(encoding="utf-8")
 
 
@@ -855,7 +862,9 @@ def test_tui_run_rejects_zero_exit_without_subtitle(
     assert "未找到字幕文件" in _strip_ansi(result.output)
     assert popen_kwargs["start_new_session"] is True
     assert popen_kwargs["stderr"] is subprocess.STDOUT
-    assert popen_kwargs["stdout"].name == str(tmp_path / "work" / "observer-child.log")
+    child_log = Path(popen_kwargs["stdout"].name)
+    assert child_log.parent.parent == tmp_path / "work" / "jobs"
+    assert child_log.name == "observer-child.log"
 
 
 def test_run_mode_fast():
@@ -1774,3 +1783,29 @@ def test_run_config_explicitly_resets_optional_resources(tmp_path, monkeypatch):
     assert config.clean.glossary_path == str(default_glossary)
     assert config.output.script_path is None
     assert config.asr.hotwords == []
+
+
+def test_pipeline_end_survives_recent_task_index_failure(monkeypatch):
+    from subtap.cli.pipeline_cli import _publish_pipeline_end
+    from subtap.core.state_store import StateStore
+
+    events = []
+    pipeline = SimpleNamespace(
+        task_id="run-1",
+        event_bus=SimpleNamespace(publish_nowait=events.append),
+    )
+
+    def fail_index(*args, **kwargs):
+        raise OSError("state index unavailable")
+
+    monkeypatch.setattr(StateStore, "update_recent_task_status", fail_index)
+
+    _publish_pipeline_end(
+        pipeline,
+        status="success",
+        duration_sec=3.0,
+        output_ready=True,
+    )
+
+    assert events[0].event_type.value == "pipeline_end"
+    assert events[0].data["status"] == "success"

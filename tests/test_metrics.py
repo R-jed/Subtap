@@ -3,7 +3,12 @@ import json
 import threading
 
 import pytest
-from subtap.metrics.events import EventType, PipelineEvent, EventBus
+from subtap.metrics.events import (
+    EventBus,
+    EventType,
+    PipelineEvent,
+    make_pipeline_event,
+)
 
 
 def test_event_type_enum():
@@ -24,6 +29,64 @@ def test_pipeline_event_creation():
     assert event.timestamp == 1234567890.0
 
 
+def test_pipeline_end_event_uses_total_duration_contract():
+    event = make_pipeline_event(
+        EventType.PIPELINE_END,
+        task_id="run-1",
+        stage="pipeline",
+        status="success",
+        total_duration_sec=42.5,
+        output_ready=True,
+    )
+
+    assert event.data["total_duration_sec"] == 42.5
+    assert "duration_sec" not in event.data
+
+
+def test_pipeline_end_event_keeps_user_visible_failure_reason():
+    event = make_pipeline_event(
+        EventType.PIPELINE_END,
+        task_id="run-1",
+        stage="pipeline",
+        status="failed",
+        total_duration_sec=2.0,
+        output_ready=False,
+        error_code="RuntimeError",
+        error_message="模型文件损坏",
+    )
+
+    assert event.data["error_message"] == "模型文件损坏"
+
+
+@pytest.mark.parametrize(
+    ("event_type", "kwargs", "message"),
+    [
+        (EventType.STAGE_END, {"duration_sec": 1.0}, "status"),
+        (EventType.STAGE_END, {"status": "success"}, "duration_sec"),
+        (
+            EventType.PIPELINE_END,
+            {"status": "success", "output_ready": True},
+            "total_duration_sec",
+        ),
+    ],
+)
+def test_v2_terminal_event_builder_requires_contract_fields(
+    event_type, kwargs, message
+):
+    with pytest.raises(ValueError, match=message):
+        make_pipeline_event(
+            event_type,
+            task_id="run-1",
+            stage="pipeline",
+            **kwargs,
+        )
+
+
+def test_v2_event_builder_rejects_blank_task_id():
+    with pytest.raises(ValueError, match="task_id"):
+        make_pipeline_event(EventType.STAGE_START, task_id="", stage="prepare")
+
+
 def test_event_bus_writes_event_log_jsonl(tmp_path):
     """EventBus 应把 pipeline 事件写入 JSONL，供独立观察者进程读取。"""
     bus = EventBus(log_path=tmp_path / "run.log.jsonl")
@@ -31,7 +94,7 @@ def test_event_bus_writes_event_log_jsonl(tmp_path):
     bus.publish_nowait(
         PipelineEvent(
             event_type=EventType.PROGRESS,
-            data={"stage": "asr", "progress": 30},
+            data={"task_id": "run-1", "stage": "asr", "progress": 30},
             timestamp=123.0,
         )
     )
@@ -39,9 +102,28 @@ def test_event_bus_writes_event_log_jsonl(tmp_path):
     rows = (tmp_path / "run.log.jsonl").read_text(encoding="utf-8").splitlines()
     assert len(rows) == 1
     payload = json.loads(rows[0])
+    assert payload["schema_version"] == 2
+    assert payload["run_id"] == "run-1"
     assert payload["event_type"] == "progress"
-    assert payload["data"] == {"stage": "asr", "progress": 30}
+    assert payload["data"] == {
+        "task_id": "run-1",
+        "stage": "asr",
+        "progress": 30,
+    }
     assert payload["timestamp"] == 123.0
+
+
+def test_event_bus_rejects_v2_log_without_task_id(tmp_path):
+    bus = EventBus(log_path=tmp_path / "run.log.jsonl")
+
+    with pytest.raises(ValueError, match="task_id"):
+        bus.publish_nowait(
+            PipelineEvent(
+                event_type=EventType.PROGRESS,
+                data={"stage": "asr", "progress": 30},
+                timestamp=123.0,
+            )
+        )
 
 
 def test_event_bus_subscribe():

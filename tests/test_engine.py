@@ -574,9 +574,7 @@ def test_corrupt_pipeline_state_fails_explicitly(tmp_path: Path):
 
 def test_normal_run_persists_stage_state(tmp_path: Path):
     """C3-P1: Normal run via TrackedPipeline writes pipeline-state.json."""
-    import os
     import subprocess
-    import sys
 
     work_dir = tmp_path / "work"
     work_dir.mkdir()
@@ -611,9 +609,7 @@ def test_normal_run_persists_stage_state(tmp_path: Path):
 
 def test_hard_crash_leaves_running_checkpoint(tmp_path: Path):
     """C3-P2: os._exit during ASR leaves RUNNING checkpoint on disk."""
-    import os
     import subprocess
-    import sys
 
     work_dir = tmp_path / "work"
     work_dir.mkdir()
@@ -1081,9 +1077,7 @@ def _run_helper_subprocess(
     tmp_path, mode, script_path="", translate_to="", glossary_path=""
 ):
     """Run _c3_test_helper.py as subprocess, return (returncode, state_file_path)."""
-    import os
     import subprocess
-    import sys
 
     work_dir = tmp_path / "work"
     work_dir.mkdir()

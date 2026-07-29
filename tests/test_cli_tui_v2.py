@@ -6,9 +6,16 @@ from pathlib import Path
 from types import ModuleType
 from types import SimpleNamespace
 
+import pytest
 from typer.testing import CliRunner
 
 from subtap.cli import _build_observer_child_command, app
+from subtap.core.state_store import StateStore
+
+
+@pytest.fixture(autouse=True)
+def _isolate_user_state(tmp_path, monkeypatch):
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
 
 def test_tui_v2_flag_launches_preview_app(monkeypatch):
@@ -53,19 +60,10 @@ def test_observer_child_command_removes_every_parent_ui_flag():
     ]
 
 
-def test_tui_v2_runs_the_command_returned_by_the_preview(monkeypatch):
-    command = [
-        sys.executable,
-        "-m",
-        "subtap.cli",
-        "run",
-        "voice.wav",
-        "--tui-v2",
-    ]
-
+def test_tui_v2_does_not_launch_a_second_cli_after_the_app_closes(monkeypatch):
     class FakeV2App:
         def run(self):
-            return command
+            return None
 
     fake_module = ModuleType("subtap.ui.v2")
     fake_module.SubtapV2App = FakeV2App
@@ -80,16 +78,7 @@ def test_tui_v2_runs_the_command_returned_by_the_preview(monkeypatch):
     result = CliRunner().invoke(app, ["tui", "--v2"])
 
     assert result.exit_code == 0
-    assert launched == [
-        [
-            sys.executable,
-            "-m",
-            "subtap.cli",
-            "run",
-            "voice.wav",
-            "--tui-v2",
-        ]
-    ]
+    assert launched == []
 
 
 def test_run_tui_v2_uses_signal_desk_observer(
@@ -108,14 +97,24 @@ def test_run_tui_v2_uses_signal_desk_observer(
         ),
         workspace=SimpleNamespace(root=str(tmp_path / "work")),
     )
-    process = SimpleNamespace(poll=lambda: None)
+    process = SimpleNamespace(poll=lambda: None, pid=4321)
     dashboard = SimpleNamespace(run=lambda: "quit")
     selected: list[Path] = []
 
-    monkeypatch.setattr("subtap.schemas.config.load_config", lambda _path: config)
     monkeypatch.setattr(
-        "subtap.cli.pipeline_cli.subprocess.Popen", lambda *_args, **_kwargs: process
+        "subtap.schemas.config.load_config",
+        lambda _path, **_kwargs: config,
     )
+    registration_statuses: list[str] = []
+
+    def fake_popen(*_args, **_kwargs):
+        store = StateStore(tmp_path / ".subtap" / "state.json")
+        task = store.load().recent_tasks[0]
+        registration_statuses.append(str(task["status"]))
+        store.update_recent_task_status(str(task["task_id"]), "success")
+        return process
+
+    monkeypatch.setattr("subtap.cli.pipeline_cli.subprocess.Popen", fake_popen)
     monkeypatch.setattr(
         "subtap.ui.v2.observer._make_v2_observer_dashboard",
         lambda log_path, *_args, **_kwargs: selected.append(log_path) or dashboard,
@@ -137,4 +136,134 @@ def test_run_tui_v2_uses_signal_desk_observer(
     )
 
     assert result.exit_code == 0
-    assert selected == [tmp_path / "work" / "run.log.jsonl"]
+    assert len(selected) == 1
+    assert selected[0].parent.parent == tmp_path / "work" / "jobs"
+    assert selected[0].name == "run.log.jsonl"
+    task = StateStore(tmp_path / ".subtap" / "state.json").load().recent_tasks[0]
+    assert registration_statuses == ["starting"]
+    assert task["pid"] == 4321
+    assert task["status"] == "success"
+
+
+def test_tui_parent_start_failure_does_not_register_running_task(
+    tmp_path, monkeypatch, skip_runtime_model_validation
+):
+    config = SimpleNamespace(
+        mode="online",
+        translate_to="",
+        asr=SimpleNamespace(backend="mlx-qwen-asr", model="asr_0.6b"),
+        clean=SimpleNamespace(glossary_path=None),
+        output=SimpleNamespace(
+            timestamp=True,
+            subtitle_punctuation=False,
+            subtitle_language="zh",
+            subtitle_stem="output",
+        ),
+        workspace=SimpleNamespace(root=str(tmp_path / "work")),
+    )
+    monkeypatch.setattr(
+        "subtap.schemas.config.load_config",
+        lambda _path, **_kwargs: config,
+    )
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli.subprocess.Popen",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("spawn failed")),
+    )
+    input_path = tmp_path / "voice.wav"
+    input_path.write_bytes(b"audio")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "run",
+            str(input_path),
+            "--tui-v2",
+            "--work-dir",
+            str(tmp_path / "work"),
+            "--output-dir",
+            str(tmp_path / "output"),
+        ],
+    )
+
+    assert result.exit_code != 0
+    state_path = tmp_path / ".subtap" / "state.json"
+    assert StateStore(state_path).load().recent_tasks == []
+
+
+def test_observer_child_does_not_register_the_task_again(
+    tmp_path, monkeypatch, skip_runtime_model_validation
+):
+    registrations: list[str] = []
+
+    class Workspace:
+        root = tmp_path / "work"
+
+        def ensure_dirs(self):
+            self.root.mkdir(parents=True, exist_ok=True)
+
+    class FakePipeline:
+        def __init__(self, config, work_dir):
+            self.config = config
+            self.workspace = Workspace()
+            self.event_bus = None
+
+        def cleanup(self):
+            return {"cleaned_count": 0, "cleaned_files": []}
+
+    config = SimpleNamespace(
+        mode="online",
+        translate_to="",
+        asr=SimpleNamespace(backend="mlx-qwen-asr", model="asr_0.6b"),
+        align=SimpleNamespace(model="aligner"),
+        clean=SimpleNamespace(glossary_path=None),
+        output=SimpleNamespace(
+            timestamp=True,
+            generate_metrics=False,
+            subtitle_punctuation=False,
+            subtitle_language="zh",
+            subtitle_stem="output",
+        ),
+        workspace=SimpleNamespace(root=str(tmp_path / "work")),
+    )
+    monkeypatch.setattr(
+        "subtap.schemas.config.load_config",
+        lambda _path, **_kwargs: config,
+    )
+    monkeypatch.setattr("subtap.core.tracked_pipeline.TrackedPipeline", FakePipeline)
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli.PipelineProfiler.wrap_pipeline",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli._execute_pipeline",
+        lambda *_args, **_kwargs: {},
+    )
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli._safe_add_recent_task",
+        lambda task_id, *_args, **_kwargs: registrations.append(task_id),
+    )
+    input_path = tmp_path / "voice.wav"
+    input_path.write_bytes(b"audio")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "run",
+            str(input_path),
+            "--observer-child",
+            "--no-tui",
+            "--no-cleanroom",
+            "--no-git-check",
+            "--work-dir",
+            str(tmp_path / "work"),
+            "--output-dir",
+            str(tmp_path / "output"),
+        ],
+        env={
+            "SUBTAP_RUN_ID": "run-001",
+            "SUBTAP_EVENT_LOG": str(tmp_path / "work" / "jobs" / "run.log.jsonl"),
+        },
+    )
+
+    assert result.exit_code == 0, result.output
+    assert registrations == []

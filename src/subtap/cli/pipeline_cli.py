@@ -9,6 +9,8 @@ import signal
 import shutil
 import subprocess
 import sys
+import time
+import uuid
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -17,12 +19,22 @@ from typing import TYPE_CHECKING
 import typer
 
 from subtap.cli._utils import _handle_error
+from subtap.metrics.events import EventType, make_pipeline_event
 from subtap.metrics.profiler import PipelineProfiler
 from subtap.core.user_resources import default_glossary_path
 from subtap.schemas.task_request import SubtitleTaskRequest
 
 REMOTE_ASR_BACKENDS = {"http-asr"}
 logger = logging.getLogger(__name__)
+
+
+class PipelineInterrupted(Exception):
+    """Raised when the observer requests a graceful pipeline stop."""
+
+
+def _raise_pipeline_interrupted(_signum, _frame) -> None:
+    raise PipelineInterrupted("任务已中断")
+
 
 if TYPE_CHECKING:
     from subtap.core.pipeline import Pipeline
@@ -57,6 +69,36 @@ def _stop_observer_child(process: subprocess.Popen) -> None:
             return
     if process.poll() is None:
         process.wait(timeout=5)
+
+
+def _stop_observer_process_group(process_group: int) -> None:
+    """Stop a detached observer child when only its process-group id is known."""
+    try:
+        os.killpg(process_group, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    deadline = time.monotonic() + 5
+    while _process_group_exists(process_group) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    if _process_group_exists(process_group):
+        try:
+            os.killpg(process_group, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
+def _observer_process_matches_run_id(pid: int, run_id: str) -> bool:
+    """Verify a persisted PID still belongs to the recorded observer task."""
+    try:
+        result = subprocess.run(
+            ["ps", "eww", "-p", str(pid), "-o", "command="],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return f"SUBTAP_RUN_ID={run_id}" in result.stdout.split()
 
 
 def check_first_run_wizard(config) -> bool:
@@ -226,20 +268,49 @@ def _execute_pipeline(
             )
         timings = result.get("timings", {})
         _run_elapsed = time.monotonic() - _run_start
+        output_path = output_dir / f"{input_path.stem}.{fmt}"
+        _publish_pipeline_end(
+            pipeline,
+            status="success",
+            duration_sec=_run_elapsed,
+            output_ready=output_path.is_file(),
+            subtitle_count=result.get("segment_count"),
+        )
         for _stage_name, _stage_dur in timings.items():
             run_log.stage(_stage_name, "success", duration_sec=_stage_dur)
-        _output_stem = input_path.stem
         run_log.finalize(
             True,
             total_duration_sec=_run_elapsed,
-            output_path=str(output_dir / f"{_output_stem}.{fmt}"),
+            output_path=str(output_path),
         )
+    except PipelineInterrupted:
+        _run_elapsed = time.monotonic() - _run_start
+        _publish_pipeline_end(
+            pipeline,
+            status="interrupted",
+            duration_sec=_run_elapsed,
+            output_ready=False,
+        )
+        run_log.finalize(
+            False,
+            total_duration_sec=_run_elapsed,
+            error="任务已中断",
+        )
+        raise typer.Exit(130)
     except SystemExit:
         raise
     except Exception as e:
         _run_elapsed = time.monotonic() - _run_start
         import traceback
 
+        _publish_pipeline_end(
+            pipeline,
+            status="failed",
+            duration_sec=_run_elapsed,
+            output_ready=False,
+            error_code=type(e).__name__,
+            error_message=str(e),
+        )
         run_log.finalize(
             False,
             total_duration_sec=_run_elapsed,
@@ -248,6 +319,142 @@ def _execute_pipeline(
         _handle_error(f"处理失败：{e}")
 
     return timings
+
+
+def _publish_pipeline_end(
+    pipeline: "Pipeline",
+    *,
+    status: str,
+    duration_sec: float,
+    output_ready: bool,
+    subtitle_count: int | None = None,
+    error_code: str | None = None,
+    error_message: str | None = None,
+) -> None:
+    """Publish the terminal event when a run has an attached event log."""
+    if pipeline.event_bus is None:
+        return
+    pipeline.event_bus.publish_nowait(
+        make_pipeline_event(
+            EventType.PIPELINE_END,
+            task_id=pipeline.task_id,
+            stage="pipeline",
+            status=status,
+            total_duration_sec=duration_sec,
+            output_ready=output_ready,
+            subtitle_count=subtitle_count,
+            error_code=error_code,
+            error_message=error_message,
+            message_zh="任务已结束",
+        )
+    )
+    _safe_update_recent_task_status(pipeline.task_id, status)
+
+
+def _record_interrupted_task(
+    log_path: Path,
+    task_id: str,
+    *,
+    total_duration_sec: float,
+) -> None:
+    """Persist the terminal truth after the observer stops its child process."""
+    from subtap.metrics.events import EventBus
+
+    if log_path.is_file():
+        for line_number, line in enumerate(
+            log_path.read_text(encoding="utf-8").splitlines(),
+            start=1,
+        ):
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as error:
+                logger.error(
+                    "检查中断状态时发现损坏日志：%s:%s：%s",
+                    log_path,
+                    line_number,
+                    error,
+                )
+                continue
+            if row.get("event_type") == EventType.PIPELINE_END.value:
+                status = (row.get("data") or {}).get("status")
+                if isinstance(status, str):
+                    _safe_update_recent_task_status(task_id, status)
+                return
+    EventBus(log_path=log_path).publish_nowait(
+        make_pipeline_event(
+            EventType.PIPELINE_END,
+            task_id=task_id,
+            stage="pipeline",
+            status="interrupted",
+            total_duration_sec=total_duration_sec,
+            output_ready=False,
+            message_zh="任务已中断",
+        )
+    )
+    _safe_update_recent_task_status(task_id, "interrupted")
+
+
+def _safe_add_recent_task(
+    task_id: str,
+    input_name: str,
+    output_path: Path,
+    *,
+    log_path: Path,
+    diagnostic_path: Path,
+    pid: int | None = None,
+    status: str = "running",
+) -> None:
+    """Maintain the auxiliary task index without changing pipeline truth."""
+    from subtap.core.state_store import StateStore
+
+    try:
+        StateStore(Path.home() / ".subtap" / "state.json").add_recent_task(
+            task_id,
+            input_name,
+            str(output_path),
+            log_path=str(log_path),
+            diagnostic_path=str(diagnostic_path),
+            status=status,
+            pid=pid,
+        )
+    except (OSError, ValueError) as error:
+        logger.exception("无法登记最近任务 %s：%s", task_id, error)
+
+
+def _safe_attach_recent_task_process(task_id: str, pid: int) -> None:
+    """Attach the spawned process without reverting a child-written terminal state."""
+    from subtap.core.state_store import StateStore
+
+    try:
+        attached = StateStore(
+            Path.home() / ".subtap" / "state.json"
+        ).attach_recent_task_process(task_id, pid)
+        if not attached:
+            logger.error("无法关联最近任务进程，任务不存在：%s", task_id)
+    except (OSError, ValueError) as error:
+        logger.exception("无法关联最近任务进程 %s：%s", task_id, error)
+
+
+def _safe_remove_recent_task(task_id: str) -> None:
+    """Roll back a task reservation when its child process cannot be spawned."""
+    from subtap.core.state_store import StateStore
+
+    try:
+        StateStore(Path.home() / ".subtap" / "state.json").remove_recent_task(task_id)
+    except (OSError, ValueError) as error:
+        logger.exception("无法移除未启动任务 %s：%s", task_id, error)
+
+
+def _safe_update_recent_task_status(task_id: str, status: str) -> None:
+    """Update the auxiliary task index without changing pipeline truth."""
+    from subtap.core.state_store import StateStore
+
+    try:
+        StateStore(Path.home() / ".subtap" / "state.json").update_recent_task_status(
+            task_id, status
+        )
+    except (OSError, ValueError) as error:
+        logger.exception("无法更新最近任务 %s 的状态：%s", task_id, error)
 
 
 def _apply_run_config(
@@ -491,7 +698,12 @@ def _run(
     tui = request.show_observer
 
     # ── 加载配置并应用回退 ───────────────────────────────────
-    config = load_config(Path.home() / ".subtap" / "config.yaml")
+    config_path = Path.home() / ".subtap" / "config.yaml"
+    config = (
+        load_config(config_path, warn_deprecated=False)
+        if tui_v2
+        else load_config(config_path)
+    )
 
     # Config mode → local_only merge (config sets baseline, CLI can override)
     if getattr(config, "mode", "online") == "offline" and not local_only:
@@ -528,32 +740,70 @@ def _run(
     if tui and not observer_child and not no_tui:
         from subtap.cli import _build_observer_child_command
 
-        work_dir.mkdir(parents=True, exist_ok=True)
-        child_log_path = work_dir / "observer-child.log"
-        with child_log_path.open("w", encoding="utf-8") as child_log:
-            process = subprocess.Popen(
-                _build_observer_child_command(sys.argv),
-                start_new_session=True,
-                stdout=child_log,
-                stderr=subprocess.STDOUT,
-            )
+        run_id = uuid.uuid4().hex
+        task_dir = work_dir / "jobs" / run_id
+        task_dir.mkdir(parents=True, exist_ok=True)
+        event_log_path = task_dir / "run.log.jsonl"
+        child_log_path = task_dir / "observer-child.log"
+        child_env = {
+            **os.environ,
+            "SUBTAP_RUN_ID": run_id,
+            "SUBTAP_EVENT_LOG": str(event_log_path),
+        }
+        output_path = output_dir / f"{input_path.stem}.{fmt}"
+        _safe_add_recent_task(
+            run_id,
+            input_path.name,
+            output_path,
+            log_path=event_log_path,
+            diagnostic_path=work_dir / "run_latest.log",
+            status="starting",
+        )
+        process = None
+        try:
+            with child_log_path.open("w", encoding="utf-8") as child_log:
+                process = subprocess.Popen(
+                    _build_observer_child_command(sys.argv),
+                    start_new_session=True,
+                    stdout=child_log,
+                    stderr=subprocess.STDOUT,
+                    env=child_env,
+                )
+        finally:
+            if process is None:
+                _safe_remove_recent_task(run_id)
+        _safe_attach_recent_task_process(run_id, process.pid)
+        observer_started_at = time.monotonic()
         if tui_v2:
             from subtap.ui.v2.observer import (
-                _make_v2_observer_dashboard as make_observer_dashboard,
+                _make_v2_observer_dashboard,
+            )
+
+            dashboard = _make_v2_observer_dashboard(
+                event_log_path,
+                process,
+                output_path=output_path,
+                run_id=run_id,
+                diagnostic_path=work_dir / "run_latest.log",
             )
         else:
             from subtap.ui.observer import (
-                _make_observer_dashboard as make_observer_dashboard,
+                _make_observer_dashboard,
             )
 
-        output_path = output_dir / f"{input_path.stem}.{fmt}"
-        result = make_observer_dashboard(
-            work_dir / "run.log.jsonl",
-            process,
-            output_path=output_path,
-        ).run()
+            dashboard = _make_observer_dashboard(
+                event_log_path,
+                process,
+                output_path=output_path,
+            )
+        result = dashboard.run()
         if result == "interrupt":
             _stop_observer_child(process)
+            _record_interrupted_task(
+                event_log_path,
+                run_id,
+                total_duration_sec=time.monotonic() - observer_started_at,
+            )
             typer.echo("已中断子进程。")
             raise typer.Exit(130)
         elif result == "quit" and process.poll() is None:
@@ -570,6 +820,7 @@ def _run(
     from subtap.core.tracked_pipeline import TrackedPipeline
 
     pipeline = TrackedPipeline(config, work_dir=work_dir)
+    pipeline.task_id = os.environ.get("SUBTAP_RUN_ID") or uuid.uuid4().hex
     pipeline._local_only = local_only
     pipeline._policy_mode = "local" if local_only else "fast"
     pipeline.workspace.ensure_dirs()
@@ -662,13 +913,25 @@ def _run(
     # 创建 Event Bus 和 Profiler
     # 支持 SUBTAP_EVENT_LOG 环境变量指定日志路径（TUI 进度渲染用）
     _env_log = os.environ.get("SUBTAP_EVENT_LOG")
-    event_log_path = Path(_env_log) if _env_log else work_dir / "run.log.jsonl"
+    event_log_path = (
+        Path(_env_log)
+        if _env_log
+        else work_dir / "jobs" / pipeline.task_id / "run.log.jsonl"
+    )
     # truncate 而非 unlink，避免 inode 变化导致渲染线程丢失事件
     if event_log_path.exists():
         with event_log_path.open("w"):
             pass
     event_bus = EventBus(log_path=event_log_path)
     pipeline.event_bus = event_bus
+    if not observer_child:
+        _safe_add_recent_task(
+            pipeline.task_id,
+            input_path.name,
+            output_dir / f"{input_path.stem}.{fmt}",
+            log_path=event_log_path,
+            diagnostic_path=work_dir / "run_latest.log",
+        )
     profiler = PipelineProfiler(event_bus)
     profiler.wrap_pipeline(pipeline)
 
@@ -679,17 +942,24 @@ def _run(
         config.llm_proofread = False
         config.llm_hotword = False
 
-    timings = _execute_pipeline(
-        pipeline,
-        input_path,
-        output_dir,
-        fmt,
-        enhance,
-        translate_to,
-        bilingual,
-        json_output,
-        run_log,
-    )
+    previous_sigterm = None
+    if observer_child:
+        previous_sigterm = signal.signal(signal.SIGTERM, _raise_pipeline_interrupted)
+    try:
+        timings = _execute_pipeline(
+            pipeline,
+            input_path,
+            output_dir,
+            fmt,
+            enhance,
+            translate_to,
+            bilingual,
+            json_output,
+            run_log,
+        )
+    finally:
+        if previous_sigterm is not None:
+            signal.signal(signal.SIGTERM, previous_sigterm)
     pipeline.cleanup()
 
     _generate_metrics(

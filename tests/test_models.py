@@ -400,7 +400,7 @@ def test_cli_models_status(tmp_path: Path, monkeypatch):
 
 
 def test_cli_models_verify(tmp_path: Path, monkeypatch):
-    """CLI models verify runs without crash."""
+    """CLI models verify reports missing files as a failure."""
     from typer.testing import CliRunner
     from subtap.cli import app
 
@@ -412,8 +412,9 @@ def test_cli_models_verify(tmp_path: Path, monkeypatch):
 
     runner = CliRunner()
     result = runner.invoke(app, ["models", "verify"])
-    assert result.exit_code == 0
+    assert result.exit_code == 1
     assert "asr_0.6b" in result.output
+    assert "部分模型异常" in result.output
 
 
 def test_cli_models_install_shows_path(tmp_path: Path, monkeypatch):

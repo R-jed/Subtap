@@ -163,7 +163,7 @@ class BaseRunner(ABC):
         stages = self._build_stages(pipeline.config, translate_to)
 
         # Build effective context — single source of truth for stage kwargs
-        from subtap.engine.state import PipelineRunContext, build_stage_kwargs
+        from subtap.engine.state import PipelineRunContext
 
         glossary = ""
         clean_cfg = getattr(pipeline.config, "clean", None)

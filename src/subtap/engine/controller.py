@@ -13,7 +13,6 @@ from subtap.engine.state import (
     PipelineRunContext,
     StageStatus,
     STATUS_CN,
-    STAGE_ORDER,
     build_stage_kwargs,
 )
 from subtap.engine.policy import ExecutionPolicy

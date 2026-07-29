@@ -8,7 +8,7 @@ import pytest
 from textual.app import App
 from textual.widgets import Footer, ProgressBar, RichLog, Static
 
-from subtap.ui.observer import TaskPresentation
+from subtap.ui.observer import TaskPresentation, TaskState
 from subtap.ui.v2.components import TaskDetails
 from subtap.ui.v2.task_views import TaskScreen, TaskView
 
@@ -24,6 +24,9 @@ def _presentation(**overrides: object) -> TaskPresentation:
         "stage_lines": ("✓ 准备", "▶ 语音识别", "· 导出"),
         "recent_texts": ("第一句字幕",),
         "output_text": "[red]未生成可交付字幕[/red]",
+        "state": TaskState.RUNNING,
+        "elapsed_sec": 12,
+        "stage_durations": (("prepare", 1.2),),
     }
     values.update(overrides)
     return TaskPresentation(**values)
@@ -52,6 +55,7 @@ async def test_task_screen_refreshes_presentation_without_pushing_a_screen() -> 
                 status="任务已完成",
                 progress=100,
                 output_text="[green]✓ 字幕已生成[/green]\n/tmp/result.srt",
+                state=TaskState.COMPLETED,
             )
         )
         await pilot.pause()
@@ -150,6 +154,7 @@ async def test_live_observer_reduces_event_log_and_refreshes_the_same_screen(
         running = "\n".join(str(widget.render()) for widget in screen.query(Static))
         assert "任务运行中" in running
         assert "asr_0.6b-q8" in running
+        assert screen.query_one("#task-live-summary").region.height == 3
 
         output_path.write_text("subtitle", encoding="utf-8")
         process.returncode = 0
@@ -192,6 +197,31 @@ def test_v2_observer_keeps_twelve_recent_subtitles(tmp_path) -> None:
     assert presentation.recent_texts == tuple(f"字幕 {index}" for index in range(3, 15))
 
 
+def test_v2_observer_turns_invalid_schema_into_observation_error(tmp_path) -> None:
+    from subtap.ui.v2.observer import _make_v2_observer_dashboard
+
+    log_path = tmp_path / "run.log.jsonl"
+    log_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 99,
+                "event_type": "stage_start",
+                "data": {"stage": "asr"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    process = type("Process", (), {"poll": lambda self: None})()
+
+    presentation = _make_v2_observer_dashboard(
+        log_path, process, refresh_interval=60
+    )._build_presentation()
+
+    assert presentation.state is TaskState.OBSERVATION_ERROR
+    assert "不支持的任务日志版本" in presentation.status
+
+
 @pytest.mark.asyncio
 async def test_v2_observer_confirms_interrupt_and_keeps_interrupted_view(
     tmp_path, monkeypatch
@@ -216,6 +246,7 @@ async def test_v2_observer_confirms_interrupt_and_keeps_interrupted_view(
         tmp_path / "run.log.jsonl",
         process,
         refresh_interval=60,
+        run_id="task-1",
     )
 
     async with dashboard.run_test(size=(90, 56)) as pilot:
@@ -238,6 +269,13 @@ async def test_v2_observer_confirms_interrupt_and_keeps_interrupted_view(
         )
         assert "已中断" in visible
         assert "任务未完成" in visible
+        persisted = json.loads(
+            (tmp_path / "run.log.jsonl").read_text(encoding="utf-8").splitlines()[-1]
+        )
+        assert persisted["event_type"] == "pipeline_end"
+        assert persisted["data"]["status"] == "interrupted"
+        assert persisted["run_id"] == "task-1"
+        assert persisted["data"]["total_duration_sec"] >= 0
 
         await pilot.press("q")
         await pilot.pause()
@@ -307,6 +345,7 @@ async def test_v2_observer_preserves_output_diagnostic_and_overview_actions(
         process,
         refresh_interval=60,
         output_path=output_path,
+        diagnostic_path=diagnostic_path,
     )
 
     async with dashboard.run_test() as pilot:

@@ -76,3 +76,12 @@ def test_load_config_migrates_removed_vad_chunk_limit(tmp_path: Path, caplog):
 
     assert not hasattr(config.audio.vad, "max_chunk_sec")
     assert "max_chunk_sec=30" in caplog.text
+
+
+def test_load_config_can_suppress_deprecation_warning(tmp_path: Path, caplog):
+    path = tmp_path / "config.yaml"
+    path.write_text("audio:\n  vad:\n    max_chunk_sec: 30\n", encoding="utf-8")
+
+    load_config(path, warn_deprecated=False)
+
+    assert "max_chunk_sec" not in caplog.text

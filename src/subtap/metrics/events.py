@@ -5,12 +5,15 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import logging
 import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable
+
+logger = logging.getLogger(__name__)
 
 
 class EventType(Enum):
@@ -33,6 +36,7 @@ class EventType(Enum):
     MODEL_RELEASE_START = "model_release_start"
     MODEL_RELEASE_DONE = "model_release_done"
     PIPELINE_PLAN = "pipeline_plan"
+    PIPELINE_END = "pipeline_end"
 
 
 @dataclass
@@ -54,14 +58,38 @@ def make_pipeline_event(
     subtitle_id: int | None = None,
     progress: int | float | None = None,
     duration_sec: float | None = None,
+    total_duration_sec: float | None = None,
     model: str | None = None,
     text: str | None = None,
     item_index: int | None = None,
     total_items: int | None = None,
     stages: list[str] | None = None,
+    status: str | None = None,
+    output_ready: bool | None = None,
+    subtitle_count: int | None = None,
+    error_code: str | None = None,
+    error_message: str | None = None,
     message_zh: str = "",
 ) -> PipelineEvent:
     """Build a streaming event with the shared payload contract."""
+    if not task_id.strip():
+        raise ValueError("task_id must not be blank")
+    if not stage.strip():
+        raise ValueError("stage must not be blank")
+    if event_type is EventType.STAGE_END:
+        if status is None:
+            raise ValueError("stage_end requires status")
+        if duration_sec is None:
+            raise ValueError("stage_end requires duration_sec")
+    elif event_type is EventType.PIPELINE_PLAN and not stages:
+        raise ValueError("pipeline_plan requires stages")
+    elif event_type is EventType.PIPELINE_END:
+        if status is None:
+            raise ValueError("pipeline_end requires status")
+        if total_duration_sec is None:
+            raise ValueError("pipeline_end requires total_duration_sec")
+        if output_ready is None:
+            raise ValueError("pipeline_end requires output_ready")
     timestamp = time.time()
     data: dict[str, Any] = {
         "task_id": task_id,
@@ -75,11 +103,17 @@ def make_pipeline_event(
         "subtitle_id": subtitle_id,
         "progress": progress,
         "duration_sec": duration_sec,
+        "total_duration_sec": total_duration_sec,
         "model": model,
         "text": text,
         "item_index": item_index,
         "total_items": total_items,
         "stages": stages,
+        "status": status,
+        "output_ready": output_ready,
+        "subtitle_count": subtitle_count,
+        "error_code": error_code,
+        "error_message": error_message,
     }
     for key, value in optional.items():
         if value is not None:
@@ -120,8 +154,13 @@ class EventBus:
     def _write_log(self, event: PipelineEvent) -> None:
         if self._log_path is None:
             return
+        run_id = event.data.get("task_id")
+        if not isinstance(run_id, str) or not run_id.strip():
+            raise ValueError("schema v2 event log requires a non-empty task_id")
         self._log_path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
+            "schema_version": 2,
+            "run_id": run_id,
             "event_type": event.event_type.value,
             "timestamp": event.timestamp,
             "data": event.data,
@@ -134,7 +173,10 @@ class EventBus:
         try:
             self._queue.put_nowait(event)
         except asyncio.QueueFull:
-            pass  # 丢弃新事件以防止阻塞
+            logger.error(
+                "事件队列已满，事件未进入订阅分发：%s",
+                event.event_type.value,
+            )
 
     def _is_running_on_other_thread(self) -> bool:
         return (

@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
 from types import SimpleNamespace
 
 import pytest
 
 pytest.importorskip("textual", reason="textual is optional UI dependency")
 
-from subtap.ui.observer import build_task_presentation, summarize_event_log
+from subtap.ui.observer import TaskState, build_task_presentation, summarize_event_log
 
 
 def test_summarize_event_log_restores_latest_status(tmp_path):
@@ -115,15 +116,285 @@ def test_task_presentation_covers_running_completed_and_failed_states(tmp_path):
     failed = build_task_presentation(state, returncode=2)
 
     assert running.status == "任务运行中"
+    assert running.state is TaskState.RUNNING
+    assert running.current_work.startswith("当前任务")
     assert running.current_work.endswith("已用时：00:32")
     assert running.stage_lines == ("· 音频标准化", "▶ 语音识别", "· 字幕导出")
     assert completed.status == "任务已完成"
+    assert completed.state is TaskState.COMPLETED
     assert "字幕已生成" in completed.output_text
     assert failed.status == "任务失败（退出码 2）"
+    assert failed.state is TaskState.FAILED
     assert "未生成可交付字幕" in failed.output_text
 
 
-def test_observer_reports_monotonic_overall_pipeline_progress(tmp_path):
+def test_observer_preserves_stage_timing_and_pipeline_terminal_state(tmp_path):
+    log_path = tmp_path / "run.log.jsonl"
+    rows = [
+        {
+            "schema_version": 2,
+            "run_id": "run-1",
+            "event_type": "pipeline_plan",
+            "timestamp": 10.0,
+            "data": {"stages": ["prepare", "asr", "export"]},
+        },
+        {
+            "schema_version": 2,
+            "run_id": "run-1",
+            "event_type": "stage_start",
+            "timestamp": 11.0,
+            "data": {"stage": "prepare"},
+        },
+        {
+            "schema_version": 2,
+            "run_id": "run-1",
+            "event_type": "stage_end",
+            "timestamp": 13.5,
+            "data": {
+                "stage": "prepare",
+                "duration_sec": 2.5,
+                "status": "success",
+            },
+        },
+        {
+            "schema_version": 2,
+            "run_id": "run-1",
+            "event_type": "model_load",
+            "timestamp": 13.7,
+            "data": {"stage": "asr", "model": "asr_1.7b-q8"},
+        },
+        {
+            "schema_version": 2,
+            "run_id": "run-1",
+            "event_type": "pipeline_end",
+            "timestamp": 14.0,
+            "data": {
+                "status": "success",
+                "total_duration_sec": 40.0,
+                "output_ready": True,
+                "subtitle_count": 39,
+            },
+        },
+    ]
+    log_path.write_text(
+        "\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8"
+    )
+
+    state = summarize_event_log(log_path)
+
+    assert state["run_id"] == "run-1"
+    assert state["pipeline_status"] == "completed"
+    assert state["stage_durations"] == {"prepare": 2.5}
+    assert state["pipeline_duration_sec"] == 40.0
+    presentation = build_task_presentation(state, returncode=None)
+    assert presentation.completed_stage_count == 1
+    assert presentation.total_stage_count == 3
+    assert presentation.elapsed_sec == 40
+    assert presentation.subtitle_count == 39
+    assert presentation.quality_label == "高质量 · 1.7B"
+
+
+def test_schema_v2_stage_end_requires_explicit_status(tmp_path):
+    log_path = tmp_path / "run.log.jsonl"
+    log_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "run_id": "run-1",
+                "event_type": "stage_end",
+                "timestamp": 13.5,
+                "data": {"stage": "prepare", "duration_sec": 2.5},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="缺少处理阶段状态"):
+        summarize_event_log(log_path)
+
+
+@pytest.mark.parametrize(
+    ("data", "message"),
+    [
+        ({"status": "success", "output_ready": True}, "总耗时"),
+        ({"status": "success", "total_duration_sec": 2.0}, "输出状态"),
+    ],
+)
+def test_schema_v2_pipeline_end_requires_terminal_contract(tmp_path, data, message):
+    log_path = tmp_path / "run.log.jsonl"
+    log_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "run_id": "run-1",
+                "event_type": "pipeline_end",
+                "timestamp": 13.5,
+                "data": data,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=message):
+        summarize_event_log(log_path)
+
+
+def test_failed_stage_is_not_rendered_as_completed(tmp_path):
+    log_path = tmp_path / "run.log.jsonl"
+    log_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "event_type": "pipeline_plan",
+                        "timestamp": 1.0,
+                        "data": {"stages": ["prepare", "asr"]},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "event_type": "stage_end",
+                        "timestamp": 2.0,
+                        "data": {"stage": "asr", "status": "failed"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "event_type": "pipeline_end",
+                        "timestamp": 3.0,
+                        "data": {
+                            "status": "failed",
+                            "total_duration_sec": 2.0,
+                            "output_ready": False,
+                            "error_message": "模型文件损坏",
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    state = summarize_event_log(log_path)
+    presentation = build_task_presentation(state, returncode=1)
+
+    assert "asr" not in state["completed_stages"]
+    assert "× 语音识别" in presentation.stage_lines
+    assert presentation.failed_stage == "语音识别"
+    assert presentation.error_message == "模型文件损坏"
+
+
+@pytest.mark.parametrize(
+    ("terminal", "expected"),
+    [
+        ("completed", TaskState.COMPLETED),
+        ("failed", TaskState.FAILED),
+        ("interrupted", TaskState.INTERRUPTED),
+    ],
+)
+def test_historical_task_trusts_persisted_terminal_event(tmp_path, terminal, expected):
+    log_path = tmp_path / "run.log.jsonl"
+    log_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "run_id": "run-1",
+                "event_type": "pipeline_end",
+                "timestamp": 14.0,
+                "data": {
+                    "status": "success" if terminal == "completed" else terminal,
+                    "output_ready": terminal == "completed",
+                    "total_duration_sec": 4.0,
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "result.srt"
+    if terminal == "completed":
+        output.write_text("subtitle", encoding="utf-8")
+
+    presentation = build_task_presentation(
+        summarize_event_log(log_path),
+        returncode=None,
+        output_path=output,
+    )
+
+    assert presentation.state is expected
+
+
+@pytest.mark.parametrize("retryable", [True, False])
+def test_failed_task_does_not_offer_unwired_retry(tmp_path, retryable):
+    log_path = tmp_path / "run.log.jsonl"
+    log_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "run_id": "run-1",
+                "event_type": "pipeline_end",
+                "timestamp": 14.0,
+                "data": {
+                    "status": "failed",
+                    "output_ready": False,
+                    "total_duration_sec": 4.0,
+                    "retryable": retryable,
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    presentation = build_task_presentation(
+        summarize_event_log(log_path),
+        returncode=None,
+    )
+
+    assert "retry" not in presentation.allowed_actions
+    assert "new_task" in presentation.allowed_actions
+
+
+def test_persisted_log_without_end_event_is_recorded_not_running(tmp_path):
+    from subtap.ui.observer import build_task_presentation_from_log
+
+    log_path = tmp_path / "run.log.jsonl"
+    log_path.write_text(
+        json.dumps(
+            {
+                "event_type": "stage_start",
+                "timestamp": 1.0,
+                "data": {"stage": "asr"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    recorded = build_task_presentation_from_log(log_path)
+    unverified = build_task_presentation_from_log(
+        log_path,
+        process=SimpleNamespace(poll=lambda: None),
+    )
+    dead = build_task_presentation_from_log(
+        log_path,
+        process=SimpleNamespace(pid=999_999_999, poll=lambda: None),
+    )
+    running = build_task_presentation_from_log(
+        log_path,
+        process=SimpleNamespace(pid=os.getpid(), poll=lambda: None),
+    )
+
+    assert recorded.state is TaskState.RECORDED
+    assert unverified.state is TaskState.OBSERVATION_ERROR
+    assert dead.state is TaskState.OBSERVATION_ERROR
+    assert running.state is TaskState.RUNNING
+
+
+def test_observer_reports_only_current_stage_progress(tmp_path):
     log_path = tmp_path / "run.log.jsonl"
     rows = [
         {
@@ -178,7 +449,7 @@ def test_observer_reports_monotonic_overall_pipeline_progress(tmp_path):
     state = summarize_event_log(log_path)
 
     assert state["stage_progress"] == 50
-    assert state["progress"] == 28
+    assert state["progress"] == 50
 
 
 def test_observer_uses_the_pipeline_plan_for_optional_stages(tmp_path):
@@ -217,7 +488,7 @@ def test_observer_uses_the_pipeline_plan_for_optional_stages(tmp_path):
 
     state = summarize_event_log(log_path)
 
-    assert state["progress"] == 25
+    assert state["progress"] == 50
     assert state["stage_order"] == rows[0]["data"]["stages"]
 
 
@@ -697,3 +968,37 @@ def test_stop_observer_child_accepts_process_group_race(monkeypatch):
     )
 
     _stop_observer_child(Process())
+
+
+def test_stop_observer_process_group_terminates_detached_task(monkeypatch):
+    import signal
+
+    from subtap.cli.pipeline_cli import _stop_observer_process_group
+
+    calls = []
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli.os.killpg",
+        lambda pgid, signal_number: calls.append((pgid, signal_number)),
+    )
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli._process_group_exists",
+        lambda _pgid: False,
+    )
+
+    _stop_observer_process_group(42)
+
+    assert calls == [(42, signal.SIGTERM)]
+
+
+def test_observer_process_identity_requires_matching_run_id(monkeypatch):
+    from subtap.cli.pipeline_cli import _observer_process_matches_run_id
+
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            stdout="python -m subtap.cli run clip.wav SUBTAP_RUN_ID=run-other"
+        ),
+    )
+
+    assert _observer_process_matches_run_id(42, "run-live") is False
+    assert _observer_process_matches_run_id(42, "run-other") is True
