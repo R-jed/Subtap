@@ -583,16 +583,79 @@ def build_task_presentation(
     )
 
 
-def persisted_process_matches_task(pid: int | None, task_id: str | None) -> bool:
-    """Return True only when *pid* is alive AND carries SUBTAP_RUN_ID=<task_id>."""
-    if not isinstance(pid, int) or not _pid_is_alive(pid):
-        return False
+# ── Positive process-identity TTL cache ──────────────────────────────
+# Stores (pid, task_id) -> last_successful_verification (time.monotonic).
+# Only successful run-id verification results are cached.
+# PID liveness is ALWAYS checked first — before cache lookup.
+_IDENTITY_CACHE_TTL = 5.0
+_IDENTITY_CACHE_MAX_ENTRIES = 64
+_IDENTITY_CACHE: dict[tuple[int, str], float] = {}
+
+
+def _evict_identity_cache(pid: int | None, task_id: str | None) -> None:
+    """Remove positive cache entry for *pid* × *task_id*."""
+    if not isinstance(pid, int):
+        return
     if task_id is None:
-        return True  # no run-id to verify — PID-only check is the caller's choice
-    # Lazy import to avoid circular dependency at module level.
+        # Evict all entries for this PID.
+        stale = [k for k in _IDENTITY_CACHE if k[0] == pid]
+        for k in stale:
+            _IDENTITY_CACHE.pop(k, None)
+    else:
+        _IDENTITY_CACHE.pop((pid, task_id), None)
+
+
+def _prune_identity_cache(now: float) -> None:
+    """Remove all expired positive cache entries."""
+    stale = [
+        k for k, ts in _IDENTITY_CACHE.items() if (now - ts) >= _IDENTITY_CACHE_TTL
+    ]
+    for k in stale:
+        _IDENTITY_CACHE.pop(k, None)
+
+
+def persisted_process_matches_task(pid: int | None, task_id: str | None) -> bool:
+    """Return True only when *pid* is alive AND carries SUBTAP_RUN_ID=<task_id>.
+
+    Positive verification results are cached for ``_IDENTITY_CACHE_TTL``
+    seconds.  PID liveness is still checked on every invocation — the cache
+    only avoids the expensive ``ps eww`` subprocess when both the PID is
+    alive and a recent verification entry exists.
+    """
+    # ── 1. PID liveness (always checked) ──
+    if not isinstance(pid, int) or not _pid_is_alive(pid):
+        _evict_identity_cache(pid, task_id)
+        return False
+
+    # ── 2. No task_id — legacy PID-only path ──
+    if task_id is None:
+        return True
+
+    # ── 3. Positive cache hit inside TTL ──
+    now = time.monotonic()
+    key = (pid, task_id)
+    cached_ts = _IDENTITY_CACHE.get(key)
+    if cached_ts is not None and (now - cached_ts) < _IDENTITY_CACHE_TTL:
+        return True
+
+    # ── 4. Cache miss — run identity verifier ──
     from subtap.cli.pipeline_cli import _observer_process_matches_run_id
 
-    return _observer_process_matches_run_id(pid, task_id)
+    if _observer_process_matches_run_id(pid, task_id):
+        # Opportunistic eviction before insert.
+        if len(_IDENTITY_CACHE) >= _IDENTITY_CACHE_MAX_ENTRIES:
+            _prune_identity_cache(now)
+            # Prune only removes expired entries.  If all within TTL,
+            # evict the oldest surviving entry.
+            if len(_IDENTITY_CACHE) >= _IDENTITY_CACHE_MAX_ENTRIES:
+                oldest_key = min(_IDENTITY_CACHE, key=lambda k: _IDENTITY_CACHE[k])
+                _IDENTITY_CACHE.pop(oldest_key, None)
+        _IDENTITY_CACHE[key] = now
+        return True
+
+    # ── 5. Identity mismatch — never cache False ──
+    _IDENTITY_CACHE.pop(key, None)
+    return False
 
 
 def build_task_presentation_from_log(

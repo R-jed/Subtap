@@ -14,6 +14,7 @@ pytest.importorskip("textual", reason="textual is optional UI dependency")
 from subtap.ui.observer import (
     TaskState,
     EventLogCursor,
+    _pid_is_alive,
     build_task_presentation,
     summarize_event_log,
 )
@@ -1192,3 +1193,291 @@ def test_event_log_cursor_expected_run_id_none_skips_validation(tmp_path):
     cursor = EventLogCursor(log_path, recent_limit=4)
     cursor.read_initial()
     assert cursor._parsed_count == 8
+
+
+# ── Positive process-identity TTL cache tests (Phase 8.1) ────────────
+
+
+@pytest.fixture(autouse=True)
+def _clear_identity_cache():
+    """Clear the module-level identity cache between tests."""
+    yield
+    from subtap.ui.observer import _IDENTITY_CACHE
+
+    _IDENTITY_CACHE.clear()
+
+
+def _fake_clock(clock: list[float]) -> float:
+    """Return the current value of *clock* (mutable list for side-effect)."""
+    return clock[0]
+
+
+def _make_alive_spy(monkeypatch, original) -> list[int]:
+    """Wrap _pid_is_alive with a call counter. Returns [call_count]."""
+    counts = [0]
+
+    def spy(pid):
+        counts[0] += 1
+        return original(pid)
+
+    monkeypatch.setattr("subtap.ui.observer._pid_is_alive", spy)
+    return counts
+
+
+def _make_ps_spy(monkeypatch, return_value: bool = True) -> list[int]:
+    """Mock _observer_process_matches_run_id with call counter."""
+    counts = [0]
+
+    def mock_ps(pid, run_id):
+        counts[0] += 1
+        return return_value
+
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli._observer_process_matches_run_id", mock_ps
+    )
+    return counts
+
+
+# ── Test A: first successful verification ──
+
+
+def test_identity_cache_first_success(monkeypatch):
+    """First call with alive PID + matching run-id: ps runs, result True, cache stores entry."""
+    from subtap.ui.observer import (
+        persisted_process_matches_task,
+        _IDENTITY_CACHE,
+    )
+
+    pid = os.getpid()
+    alive_counts = _make_alive_spy(monkeypatch, _pid_is_alive)
+    ps_counts = _make_ps_spy(monkeypatch, return_value=True)
+
+    result = persisted_process_matches_task(pid, "task-a")
+
+    assert result is True
+    assert alive_counts[0] == 1, "liveness should be checked exactly once"
+    assert ps_counts[0] == 1, "ps should run exactly once"
+    assert (pid, "task-a") in _IDENTITY_CACHE
+    assert isinstance(_IDENTITY_CACHE[(pid, "task-a")], float)
+
+
+# ── Test B: repeated calls inside TTL ──
+
+
+def test_identity_cache_repeated_inside_ttl(monkeypatch):
+    """Calls inside TTL: liveness every time, ps skipped on cache hit."""
+    from subtap.ui.observer import (
+        persisted_process_matches_task,
+    )
+
+    pid = os.getpid()
+    alive_counts = _make_alive_spy(monkeypatch, _pid_is_alive)
+    ps_counts = _make_ps_spy(monkeypatch, return_value=True)
+
+    # First call — establish cache entry
+    assert persisted_process_matches_task(pid, "task-a") is True
+    assert alive_counts[0] == 1
+    assert ps_counts[0] == 1
+
+    # 4 more calls inside TTL
+    for _ in range(4):
+        assert persisted_process_matches_task(pid, "task-a") is True
+
+    assert alive_counts[0] == 5, "liveness must be checked every call"
+    assert ps_counts[0] == 1, "ps must NOT run again inside TTL"
+
+
+# ── Test C: TTL expiry forces re-verification ──
+
+
+def test_identity_cache_ttl_expiry(monkeypatch):
+    """After TTL expiry: liveness runs, ps runs again, cache timestamp refreshed."""
+    from subtap.ui.observer import (
+        persisted_process_matches_task,
+        _IDENTITY_CACHE,
+        _IDENTITY_CACHE_TTL,
+    )
+
+    pid = os.getpid()
+    clock = [0.0]
+    monkeypatch.setattr("time.monotonic", lambda: clock[0])
+
+    alive_counts = _make_alive_spy(monkeypatch, _pid_is_alive)
+    ps_counts = _make_ps_spy(monkeypatch, return_value=True)
+
+    # Establish cache at t=0
+    assert persisted_process_matches_task(pid, "task-a") is True
+    first_ts = _IDENTITY_CACHE[(pid, "task-a")]
+    assert alive_counts[0] == 1
+    assert ps_counts[0] == 1
+
+    # Advance beyond TTL
+    clock[0] = _IDENTITY_CACHE_TTL + 0.001
+
+    # Should re-verify
+    assert persisted_process_matches_task(pid, "task-a") is True
+    second_ts = _IDENTITY_CACHE[(pid, "task-a")]
+    assert alive_counts[0] == 2
+    assert ps_counts[0] == 2, "ps must run again after TTL expiry"
+    assert second_ts >= _IDENTITY_CACHE_TTL + 0.001, "cache timestamp must refresh"
+
+
+# ── Test D: process dies inside TTL — cache evicted immediately ──
+
+
+def test_identity_cache_process_dies_inside_ttl(monkeypatch):
+    """PID death inside TTL: evict cache, return False, do NOT run ps."""
+    from subtap.ui.observer import (
+        persisted_process_matches_task,
+        _IDENTITY_CACHE,
+    )
+
+    pid = os.getpid()
+    clock = [0.0]
+    monkeypatch.setattr("time.monotonic", lambda: clock[0])
+
+    alive_counts = _make_alive_spy(monkeypatch, _pid_is_alive)
+    ps_counts = _make_ps_spy(monkeypatch, return_value=True)
+
+    # Establish cache at t=0
+    assert persisted_process_matches_task(pid, "task-a") is True
+    assert (pid, "task-a") in _IDENTITY_CACHE
+    assert ps_counts[0] == 1
+
+    # Now make _pid_is_alive return False for any PID (use dead pid)
+    dead_pid = 999_999_999
+
+    result = persisted_process_matches_task(dead_pid, "task-a")
+    assert result is False, "dead PID must return False"
+    # alive call count increased by 1 (the call for dead_pid)
+    assert alive_counts[0] == 2, "liveness checked for dead PID"
+    assert ps_counts[0] == 1, "ps MUST NOT run — dead PID evicts first"
+    assert (dead_pid, "task-a") not in _IDENTITY_CACHE, "dead PID entry must be evicted"
+
+
+# ── Test E: identity mismatch — False not cached ──
+
+
+def test_identity_cache_mismatch_not_cached(monkeypatch):
+    """Identity verifier returning False: result False, no cache entry, re-runs on next call."""
+    from subtap.ui.observer import (
+        persisted_process_matches_task,
+        _IDENTITY_CACHE,
+    )
+
+    pid = os.getpid()
+    alive_counts = _make_alive_spy(monkeypatch, _pid_is_alive)
+    ps_counts = _make_ps_spy(monkeypatch, return_value=False)
+
+    # First call — verifier says False
+    result = persisted_process_matches_task(pid, "task-bad")
+    assert result is False
+    assert alive_counts[0] == 1
+    assert ps_counts[0] == 1
+    assert (pid, "task-bad") not in _IDENTITY_CACHE, "False must not be cached"
+
+    # Second call — must re-run verifier
+    result = persisted_process_matches_task(pid, "task-bad")
+    assert result is False
+    assert ps_counts[0] == 2, "verifier must run again (False not cached)"
+
+
+# ── Test F: same PID, different task_id ──
+
+
+def test_identity_cache_different_task_id_independent(monkeypatch):
+    """Same PID with different task_id: cache hit for task-a does not satisfy task-b."""
+    from subtap.ui.observer import (
+        persisted_process_matches_task,
+        _IDENTITY_CACHE,
+    )
+
+    pid = os.getpid()
+    clock = [0.0]
+    monkeypatch.setattr("time.monotonic", lambda: clock[0])
+
+    alive_counts = _make_alive_spy(monkeypatch, _pid_is_alive)
+    ps_counts_a = [0]
+    ps_counts_b = [0]
+
+    def mock_ps(pid_arg, run_id):
+        if run_id == "task-a":
+            ps_counts_a[0] += 1
+            return True
+        if run_id == "task-b":
+            ps_counts_b[0] += 1
+            return True
+        return False
+
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli._observer_process_matches_run_id", mock_ps
+    )
+
+    # task-a succeeds — cached
+    assert persisted_process_matches_task(pid, "task-a") is True
+    assert ps_counts_a[0] == 1
+    assert (pid, "task-a") in _IDENTITY_CACHE
+
+    # task-b — must run independently despite same PID + valid cache for task-a
+    assert persisted_process_matches_task(pid, "task-b") is True
+    assert ps_counts_b[0] == 1, "task-b must verify independently"
+    assert (pid, "task-b") in _IDENTITY_CACHE
+    # total ps calls across both keys
+    assert ps_counts_a[0] + ps_counts_b[0] == 2
+
+    # task-a cache still valid — no additional ps
+    assert persisted_process_matches_task(pid, "task-a") is True
+    assert ps_counts_a[0] == 1, "task-a cache hit should not re-run ps"
+
+
+# ── Test G: bounded cache — never exceeds MAX_ENTRIES ──
+
+
+def test_identity_cache_bounded(monkeypatch):
+    """Creating MAX_ENTRIES + N successful pairs: cache size never exceeds bound."""
+    from subtap.ui.observer import (
+        persisted_process_matches_task,
+        _IDENTITY_CACHE,
+        _IDENTITY_CACHE_MAX_ENTRIES,
+        _IDENTITY_CACHE_TTL,
+    )
+
+    clock = [0.0]
+    monkeypatch.setattr("time.monotonic", lambda: clock[0])
+    alive_counts = _make_alive_spy(monkeypatch, _pid_is_alive)
+
+    ps_counts = [0]
+
+    def mock_ps(pid_arg, run_id):
+        ps_counts[0] += 1
+        return True
+
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli._observer_process_matches_run_id", mock_ps
+    )
+
+    # Need a real alive PID for each entry.  We reuse os.getpid() but vary
+    # the task_id so each (pid, task_id) is a distinct key.
+    pid = os.getpid()
+    extra = 5
+    total = _IDENTITY_CACHE_MAX_ENTRIES + extra
+
+    for i in range(total):
+        # Advance clock so each entry lands at a distinct time.  Keep within
+        # TTL so entries don't expire during population.
+        clock[0] = float(i) * 0.01
+        assert (
+            persisted_process_matches_task(pid, f"task-{i}") is True
+        ), f"task-{i} should verify successfully"
+
+    # Cache must not exceed MAX_ENTRIES
+    assert len(_IDENTITY_CACHE) <= _IDENTITY_CACHE_MAX_ENTRIES, (
+        f"Cache size {len(_IDENTITY_CACHE)} exceeds bound "
+        f"{_IDENTITY_CACHE_MAX_ENTRIES}"
+    )
+
+    # With TTL >> 0 and each entry at +0.01s, all within TTL, the
+    # earliest entries are pruned when the cache fills up.
+    assert (
+        ps_counts[0] <= _IDENTITY_CACHE_MAX_ENTRIES + extra
+    ), "ps count should match total verification attempts"

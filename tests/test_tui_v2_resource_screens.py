@@ -1246,9 +1246,13 @@ async def test_recorded_task_identity_dies_mid_lifecycle(tmp_path, monkeypatch):
 
         # Break identity: run_id no longer matches
         identity_map["task-a"] = False
+        # Clear Phase 8.1 TTL cache so next tick does not return stale True.
+        from subtap.ui.observer import _IDENTITY_CACHE
+
+        _IDENTITY_CACHE.clear()
         await pilot.pause(1.1)
 
-        assert rts._refresh_timer is None or not rts._refresh_timer.is_running
+        assert rts._refresh_timer is None, "Timer stops after identity loss"
         after = str(rts.query_one(Static).render())
         assert "状态未知" in after, f"Expected observation_error, got: {after}"
 
@@ -1848,3 +1852,129 @@ async def test_tasks_stale_running_no_terminal_persists_error(tmp_path, monkeypa
             f"Expected 0 scans on second visit, got {call_count} — "
             "reconciliation did not prevent repeat full-scan"
         )
+
+
+# ── Phase 8.1: identity TTL cache tests (Textual integration) ─────────
+
+
+@pytest.mark.asyncio
+async def test_identity_cache_interrupt_bypasses_cache(tmp_path, monkeypatch):
+    """Stop paths call _observer_process_matches_run_id directly (not cached helper)."""
+    from subtap.ui.observer import _IDENTITY_CACHE
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    log_path = tmp_path / "run.log.jsonl"
+    log_path.write_text("", encoding="utf-8")
+
+    pid = os.getpid()
+    task_id = "task-stop"
+
+    # Spy toggles: first call (mount) returns True to establish cache entry;
+    # subsequent calls return False so stop paths reject without modal push.
+    ps_calls = [0]
+
+    def spy_ps(call_pid, call_run_id):
+        ps_calls[0] += 1
+        return ps_calls[0] == 1
+
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli._observer_process_matches_run_id",
+        spy_ps,
+    )
+    monkeypatch.setattr(
+        "subtap.ui.v2.screens._observer_process_matches_run_id",
+        spy_ps,
+    )
+    app = ScreenApp()
+
+    async with app.run_test() as pilot:
+        await app.push_screen(
+            RecordedTaskScreen(
+                log_path,
+                tmp_path / "clip.srt",
+                pid=pid,
+                task_id=task_id,
+            )
+        )
+        await pilot.pause()
+
+        rts = app.screen
+        assert isinstance(rts, RecordedTaskScreen)
+        assert rts._refresh_timer is not None, "expect RUNNING state → timer active"
+
+        ps_calls_before = ps_calls[0]
+
+        # action_interrupt_task checks the verifier directly (not via the
+        # persisted_process_matches_task cache).  With spy returning False
+        # the method shows an error notification and returns without pushing
+        # a modal screen.
+        rts.action_interrupt_task()
+
+        assert ps_calls[0] > ps_calls_before, (
+            "_observer_process_matches_run_id must be called directly"
+            " in action_interrupt_task despite positive cache entry"
+        )
+
+        # Also verify _finish_interrupt (confirmed-stop path).
+        ps_calls_before = ps_calls[0]
+        rts._finish_interrupt(True)
+
+        assert ps_calls[0] > ps_calls_before, (
+            "_observer_process_matches_run_id must be called directly"
+            " in _finish_interrupt despite positive cache entry"
+        )
+
+
+@pytest.mark.asyncio
+async def test_identity_cache_lifecycle_preserved(tmp_path, monkeypatch):
+    """Identity-loss lifecycle (RUNNING→OBSERVATION_ERROR) works with cache enabled."""
+    from subtap.ui.observer import _IDENTITY_CACHE
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    log_path = tmp_path / "run.log.jsonl"
+    log_path.write_text("", encoding="utf-8")
+
+    ps_result = [True]
+
+    def check_identity(pid_arg, run_id):
+        return ps_result[0]
+
+    monkeypatch.setattr(
+        "subtap.cli.pipeline_cli._observer_process_matches_run_id",
+        check_identity,
+    )
+    app = ScreenApp()
+
+    async with app.run_test() as pilot:
+        await app.push_screen(
+            RecordedTaskScreen(
+                log_path,
+                tmp_path / "clip.srt",
+                pid=os.getpid(),
+                task_id="task-lifecycle",
+            )
+        )
+        await pilot.pause()
+
+        rts = app.screen
+        assert isinstance(rts, RecordedTaskScreen)
+        # Initially valid → cursor + timer created, RUNNING state.
+        assert rts._event_cursor is not None
+        assert rts._refresh_timer is not None
+        initial = "\n".join(str(w.render()) for w in rts.query(Static))
+        assert "状态未知" not in initial
+
+        # Make identity verifier return False and clear the TTL cache so
+        # the next identity check does a real verifier call and fails.
+        ps_result[0] = False
+        _IDENTITY_CACHE.clear()
+
+        # Wait for the 1 Hz refresh timer to fire.
+        await pilot.pause(1.1)
+
+        # Timer must have stopped — _stop_refresh_timer sets to None.
+        assert rts._refresh_timer is None, "Timer must stop after identity loss"
+        after = "\n".join(str(w.render()) for w in rts.query(Static))
+        assert (
+            "状态未知" in after
+        ), f"Expected OBSERVATION_ERROR after identity loss, got: {after}"
