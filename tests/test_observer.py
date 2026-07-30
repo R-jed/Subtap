@@ -1344,15 +1344,20 @@ def test_identity_cache_process_dies_inside_ttl(monkeypatch):
     assert (pid, "task-a") in _IDENTITY_CACHE
     assert ps_counts[0] == 1
 
-    # Now make _pid_is_alive return False for any PID (use dead pid)
-    dead_pid = 999_999_999
+    # Swap _pid_is_alive to return False for the SAME cached PID,
+    # simulating process death inside the TTL window.
+    def dead_pid_check(p):
+        return False
 
-    result = persisted_process_matches_task(dead_pid, "task-a")
-    assert result is False, "dead PID must return False"
-    # alive call count increased by 1 (the call for dead_pid)
-    assert alive_counts[0] == 2, "liveness checked for dead PID"
+    monkeypatch.setattr("subtap.ui.observer._pid_is_alive", dead_pid_check)
+
+    result = persisted_process_matches_task(pid, "task-a")
+    assert result is False, "same now-dead PID must return False"
     assert ps_counts[0] == 1, "ps MUST NOT run — dead PID evicts first"
-    assert (dead_pid, "task-a") not in _IDENTITY_CACHE, "dead PID entry must be evicted"
+    assert (
+        pid,
+        "task-a",
+    ) not in _IDENTITY_CACHE, "cached PID entry must be evicted on death"
 
 
 # ── Test E: identity mismatch — False not cached ──

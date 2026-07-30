@@ -1931,6 +1931,7 @@ async def test_identity_cache_lifecycle_preserved(tmp_path, monkeypatch):
     from subtap.ui.observer import _IDENTITY_CACHE
 
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+
     log_path = tmp_path / "run.log.jsonl"
     log_path.write_text("", encoding="utf-8")
 
@@ -1964,10 +1965,13 @@ async def test_identity_cache_lifecycle_preserved(tmp_path, monkeypatch):
         initial = "\n".join(str(w.render()) for w in rts.query(Static))
         assert "状态未知" not in initial
 
-        # Make identity verifier return False and clear the TTL cache so
-        # the next identity check does a real verifier call and fails.
+        # Make the cache entry appear expired (timestamp far in the past)
+        # so the next identity check falls through to the verifier without
+        # needing a fake monotonic clock or a manual cache clear.
+        pid = os.getpid()
+        if (pid, "task-lifecycle") in _IDENTITY_CACHE:
+            _IDENTITY_CACHE[(pid, "task-lifecycle")] = -1.0
         ps_result[0] = False
-        _IDENTITY_CACHE.clear()
 
         # Wait for the 1 Hz refresh timer to fire.
         await pilot.pause(1.1)
