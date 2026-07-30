@@ -66,7 +66,7 @@ def _patch_stage_pipeline(monkeypatch, stage_name: str):
             self.root.mkdir(parents=True, exist_ok=True)
 
     class FakePipeline:
-        def __init__(self, _config, work_dir):
+        def __init__(self, _config, work_dir, **kwargs):
             self.workspace = FakeWorkspace(work_dir)
             captured["workspace"] = self.workspace
 
@@ -330,7 +330,7 @@ def test_batch_transcribe_runs_each_file(
             }
 
     class FakePipeline:
-        def __init__(self, _config, work_dir):
+        def __init__(self, _config, work_dir, **kwargs):
             self.work_dir = work_dir
 
             class Workspace:
@@ -408,7 +408,7 @@ def test_batch_transcribe_passes_translate_and_bilingual(
             }
 
     class FakePipeline:
-        def __init__(self, _config, work_dir):
+        def __init__(self, _config, work_dir, **kwargs):
             self.work_dir = work_dir
 
             class Workspace:
@@ -483,7 +483,7 @@ def test_batch_transcribe_bilingual_defaults_to_off(
             }
 
     class FakePipeline:
-        def __init__(self, _config, work_dir):
+        def __init__(self, _config, work_dir, **kwargs):
             self.work_dir = work_dir
 
             class Workspace:
@@ -545,7 +545,7 @@ def test_run_full_pipeline_with_align(
     calls = []
 
     class FakePipeline:
-        def __init__(self, _config, work_dir):
+        def __init__(self, _config, work_dir, **kwargs):
             self.config = _config
 
             class Workspace:
@@ -664,7 +664,7 @@ def test_run_enhance_local_passes_clean_local_to_pipeline(
     clean_kwargs = []
 
     class FakePipeline:
-        def __init__(self, _config, work_dir):
+        def __init__(self, _config, work_dir, **kwargs):
             self.config = _config
 
             class Workspace:

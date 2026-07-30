@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import time
+from typing import TYPE_CHECKING
 
 from subtap.backends.asr import get_backend
 from subtap.core.models import _get_model_root
@@ -12,6 +13,9 @@ from subtap.schemas.asr import ASRDraft
 from subtap.schemas.config import SubtapConfig
 from subtap.schemas.models import Chunk, ASRSegment
 from subtap.core.workspace import Workspace
+
+if TYPE_CHECKING:
+    from subtap.runtime.external_policy import ExternalProcessingPolicy
 
 
 def load_chunks(chunks_jsonl: Path) -> list[Chunk]:
@@ -98,6 +102,7 @@ def run_asr(
     backend_name: str | None = None,
     event_bus: EventBus | None = None,
     task_id: str = "local",
+    external_policy: ExternalProcessingPolicy | None = None,
 ) -> dict:
     """Run ASR stage: load chunks, transcribe, write asr.jsonl.
 
@@ -105,10 +110,16 @@ def run_asr(
         workspace: Workspace instance with paths.
         config: Subtap config (used for ASR backend settings).
         backend_name: Override backend name (defaults to config).
+        external_policy: Authoritative policy object for remote ASR enforcement.
 
     Returns:
         Dict with segment_count.
     """
+    # Enforce external-processing policy for remote ASR
+    if external_policy is not None:
+        resolved_backend = backend_name or config.asr.backend
+        if resolved_backend == "http-asr":
+            external_policy.assert_remote_asr_allowed()
     # Load chunks
     chunks = load_chunks(workspace.chunks_jsonl)
     if not chunks:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from subtap.backends.llm import get_llm_backend
 from subtap.core.text_utils import normalize_punct
@@ -14,6 +15,9 @@ from subtap.schemas.glossary import Glossary, load_glossary as load_yaml_glossar
 from subtap.schemas.models import ASRSegment, RawCleanSegment
 from subtap.core.workspace import Workspace
 from subtap.glossary.hotword import HotwordGlossary
+
+if TYPE_CHECKING:
+    from subtap.runtime.external_policy import ExternalProcessingPolicy
 
 
 def load_asr_segments(asr_jsonl: Path) -> list[ASRSegment]:
@@ -227,6 +231,7 @@ def run_clean(
     glossary_path: str | None = None,
     style_rules: list[str] | None = None,
     enhance_mode: str | None = None,
+    external_policy: ExternalProcessingPolicy | None = None,
 ) -> dict:
     """Run clean stage: load ASR → local clean → replacement → LLM → cleaned.jsonl.
 
@@ -241,6 +246,7 @@ def run_clean(
         glossary_path: Path to glossary YAML file.
         style_rules: Additional style rules for LLM.
         enhance_mode: "local" or "api". Controls LLM enhancement level.
+        external_policy: Authoritative policy object (preferred over enhance_mode).
 
     Returns:
         Dict with segment_count.
@@ -264,12 +270,19 @@ def run_clean(
         seg.cleaned_text = local_clean_text(seg.cleaned_text, language=language)
 
     # 确定 LLM 功能开关
-    llm_proofread, llm_hotword = resolve_llm_flags(
-        config_llm_proofread=config.llm_proofread,
-        config_llm_hotword=config.llm_hotword,
-        llm_backend_name=llm_backend_name,
-        enhance_mode=enhance_mode,
-    )
+    if external_policy is not None:
+        # Authoritative policy — resolves all flags and enforces deny
+        external_policy.assert_clean_llm_allowed()
+        llm_proofread = external_policy.llm_proofread
+        llm_hotword = external_policy.llm_hotword
+    else:
+        # Legacy path — resolve from raw flags (for callers not yet migrated)
+        llm_proofread, llm_hotword = resolve_llm_flags(
+            config_llm_proofread=config.llm_proofread,
+            config_llm_hotword=config.llm_hotword,
+            llm_backend_name=llm_backend_name,
+            enhance_mode=enhance_mode,
+        )
 
     # LLM 增强层
     if llm_proofread or llm_hotword:

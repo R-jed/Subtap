@@ -51,7 +51,7 @@ def test_batch_transcribe_writes_manifest_and_keeps_failed_items(
             return {"output_dir": str(output_dir), "timings": {"asr": 1.0}}
 
     class FakePipeline:
-        def __init__(self, _config, work_dir):
+        def __init__(self, _config, work_dir, **kwargs):
             self.work_dir = work_dir
 
             class Workspace:
@@ -149,7 +149,7 @@ def test_batch_transcribe_explicit_fast_selects_06b(
     captured_models = []
 
     class FakePipeline:
-        def __init__(self, config, work_dir):
+        def __init__(self, config, work_dir, **kwargs):
             captured_models.append(config.asr.model)
             self.work_dir = work_dir
             self.workspace = SimpleNamespace(ensure_dirs=lambda: None)

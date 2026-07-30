@@ -202,7 +202,7 @@ def test_observer_child_does_not_register_the_task_again(
             self.root.mkdir(parents=True, exist_ok=True)
 
     class FakePipeline:
-        def __init__(self, config, work_dir):
+        def __init__(self, config, work_dir, **kwargs):
             self.config = config
             self.workspace = Workspace()
             self.event_bus = None

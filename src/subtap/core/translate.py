@@ -5,12 +5,16 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from subtap.backends.llm import get_translator
 from subtap.core.export import _fmt_srt_time, load_aligned
 from subtap.core.workspace import Workspace
 from subtap.schemas.config import SubtapConfig
 from subtap.schemas.models import AlignedSegment
+
+if TYPE_CHECKING:
+    from subtap.runtime.external_policy import ExternalProcessingPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +203,7 @@ def run_translate(
     config: SubtapConfig,
     target_language: str,
     llm_backend_name: str | None = None,
+    external_policy: ExternalProcessingPolicy | None = None,
 ) -> dict:
     clean_config = config.clean.model_copy()
     if llm_backend_name:
@@ -207,6 +212,10 @@ def run_translate(
         clean_config.backend = llm_backend_name
     else:
         clean_config.backend = f"openai:{config.remote_api.model or 'gpt-4o-mini'}"
+
+    # Enforce external-processing policy before constructing backend
+    if external_policy is not None:
+        external_policy.assert_translation_allowed()
 
     llm = get_translator(clean_config, config.remote_api)
     source_srt = render_srt_from_aligned(workspace.aligned_jsonl)

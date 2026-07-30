@@ -26,6 +26,7 @@ class SubtitleTaskRequest:
     max_chars: int | None = None
     local_only: bool = False
     show_observer: bool = True
+    enhance: str | None = None
 
     def validate(self) -> None:
         """Reject choices that cannot describe one unambiguous task."""
@@ -75,6 +76,8 @@ class SubtitleTaskRequest:
             command.extend(["--max-chars", str(self.max_chars)])
         if self.local_only:
             command.append("--local-only")
+        if self.enhance is not None:
+            command.extend(["--enhance", self.enhance])
         if self.glossary_path is not None:
             command.extend(["--glossary", str(self.glossary_path)])
         elif self.use_default_glossary:

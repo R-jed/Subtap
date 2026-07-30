@@ -11,6 +11,7 @@ from subtap.engine.state import (
     PipelineRunContext,
     PipelineState,
 )
+from subtap.runtime.external_policy import ExternalProcessingPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +35,15 @@ class TrackedPipeline(Pipeline):
         task_id: str = "local",
         state: PipelineState | None = None,
         stage_order: list[str] | None = None,
+        external_policy: ExternalProcessingPolicy | None = None,
     ):
-        super().__init__(config, work_dir, event_bus=event_bus, task_id=task_id)
+        super().__init__(
+            config,
+            work_dir,
+            event_bus=event_bus,
+            task_id=task_id,
+            external_policy=external_policy,
+        )
         if state is not None:
             self.state = state
         elif stage_order is not None:

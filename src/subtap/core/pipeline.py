@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from subtap.schemas.config import SubtapConfig
 from subtap.core.workspace import Workspace
 from subtap.metrics.events import EventBus, EventType, make_pipeline_event
+
+if TYPE_CHECKING:
+    from subtap.runtime.external_policy import ExternalProcessingPolicy
 
 
 class Pipeline:
@@ -38,11 +41,13 @@ class Pipeline:
         work_dir: Path,
         event_bus: EventBus | None = None,
         task_id: str = "local",
+        external_policy: ExternalProcessingPolicy | None = None,
     ):
         self.config = config
         self.workspace = Workspace(config, base_dir=work_dir)
         self.event_bus = event_bus
         self.task_id = task_id
+        self.external_policy = external_policy
 
     def _publish_event(self, event_type: EventType, *, stage: str, **data: Any) -> None:
         """Publish a non-blocking pipeline event without UI coupling."""
@@ -126,6 +131,7 @@ class Pipeline:
             backend_name=backend_name,
             event_bus=self.event_bus,
             task_id=self.task_id,
+            external_policy=self.external_policy,
         )
         return {
             "segment_count": result["segment_count"],
@@ -148,6 +154,7 @@ class Pipeline:
             glossary_path=glossary_path,
             style_rules=self.config.clean.style_rules or None,
             enhance_mode=enhance_mode,
+            external_policy=self.external_policy,
         )
         self._publish_event(
             EventType.ENHANCEMENT_READY,
@@ -313,6 +320,7 @@ class Pipeline:
             self.config,
             target_language=target_language,
             llm_backend_name=llm_backend,
+            external_policy=self.external_policy,
         )
 
     def _stage_export(

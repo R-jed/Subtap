@@ -12,6 +12,7 @@ import typer
 
 
 from subtap.cli._utils import _handle_error, auto_json
+from subtap.runtime.external_policy import build_policy, parse_enhance_mode
 
 
 def batch_transcribe(
@@ -25,7 +26,10 @@ def batch_transcribe(
     ),
     mode: str | None = typer.Option(None, "--mode", "-m", help="fast / quality"),
     enhance: str | None = typer.Option(
-        None, "--enhance", "-e", help="字幕增强模式：off / local / api"
+        None,
+        "--enhance",
+        "-e",
+        help="字幕增强模式：off（仅本地规则）/ local（本地规则，默认）/ api（远程 LLM，需配置 API Key）",
     ),
     translate_to: str | None = typer.Option(
         None, "--translate-to", help="翻译目标语言：en / ja / zh"
@@ -215,6 +219,12 @@ def batch_transcribe(
         output_dir = Path(manifest["output_dir"])
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Restore enhance mode from persisted manifest to prevent escalation
+        manifest_params = manifest.get("params", {})
+        manifest_enhance = manifest_params.get("enhance")
+        if manifest_enhance is not None:
+            enhance = manifest_enhance
+
         if resume:
             items_to_process = get_pending_items(manifest["items"])
             typer.echo(f"▸ 恢复模式：跳过 {manifest['succeeded']} 个成功文件")
@@ -244,6 +254,10 @@ def batch_transcribe(
     else:
         output_dir.mkdir(parents=True, exist_ok=True)
         items = [make_item(p, output_dir) for p in collected]
+
+    # Validate enhance mode
+    if enhance is not None:
+        parse_enhance_mode(enhance)
 
     # ── 构建参数快照 ──────────────────────────────────────────
     params = {
@@ -356,7 +370,19 @@ def batch_transcribe(
 
             apply_asr_mode(item_config, mode)
 
-            pipeline = Pipeline(item_config, work_dir=item_output_dir / "work")
+            # Build external-processing policy
+            item_policy = build_policy(
+                local_only=False,
+                enhance_mode=enhance,
+                asr_backend=getattr(item_config.asr, "backend", "mlx-qwen-asr"),
+                translation=bool(translate_to),
+            )
+
+            pipeline = Pipeline(
+                item_config,
+                work_dir=item_output_dir / "work",
+                external_policy=item_policy,
+            )
             pipeline.workspace.ensure_dirs()
 
             # 运行 Pipeline

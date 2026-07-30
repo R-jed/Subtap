@@ -23,6 +23,12 @@ from subtap.metrics.events import EventType, make_pipeline_event
 from subtap.metrics.profiler import PipelineProfiler
 from subtap.core.user_resources import default_glossary_path
 from subtap.schemas.task_request import SubtitleTaskRequest
+from subtap.runtime.external_policy import (
+    ExternalProcessingPolicy,
+    build_policy,
+    is_remote_asr_backend,
+    parse_enhance_mode,
+)
 
 REMOTE_ASR_BACKENDS = {"http-asr"}
 logger = logging.getLogger(__name__)
@@ -512,10 +518,13 @@ def _validate_run_params(
     asr_backend: str = "mlx-qwen-asr",
 ) -> None:
     """验证 run 命令参数。"""
-    if enhance not in ("local", "api"):
-        _handle_error(f"错误：--enhance 必须是 local/api，收到：{enhance}")
+    # Use typed validation from external_policy
+    try:
+        parse_enhance_mode(enhance)
+    except ValueError as exc:
+        _handle_error(str(exc))
 
-    if local_only and asr_backend in REMOTE_ASR_BACKENDS:
+    if local_only and is_remote_asr_backend(asr_backend):
         _handle_error(
             f"错误：--local-only 模式下不能使用会外发音频的 ASR 后端：{asr_backend}"
         )
@@ -538,11 +547,19 @@ def _validate_run_params(
 def _warn_external_api_use(
     enhance: str, translate_to: str | None, asr_backend: str = "mlx-qwen-asr"
 ) -> None:
-    """Warn before any stage can send data to an external API."""
-    if asr_backend in REMOTE_ASR_BACKENDS:
-        typer.echo("⚠ 将使用外部 ASR API 处理音频。", err=True)
-    if enhance == "api" or translate_to:
-        typer.echo("⚠ 将使用外部 LLM API 处理字幕文本。", err=True)
+    """Warn before any stage can send data to an external API.
+
+    Uses the authoritative policy object to derive disclosure text,
+    replacing the previous string-based warning logic.
+    """
+    policy = build_policy(
+        local_only=False,  # local-only is validated separately
+        enhance_mode=enhance,
+        asr_backend=asr_backend,
+        translation=bool(translate_to),
+    )
+    for line in policy.disclosure_lines():
+        typer.echo(line, err=True)
 
 
 def _run(
@@ -571,7 +588,7 @@ def _run(
         "local",
         "--enhance",
         "-e",
-        help="字幕增强模式：local（默认）/ api（需配置 API Key）",
+        help="字幕增强模式：off（仅本地规则）/ local（本地规则，默认）/ api（远程 LLM，需配置 API Key）",
     ),
     local_only: bool = typer.Option(
         False, "--local-only", help="仅本地运行，禁止所有外部 API 调用"
@@ -717,6 +734,14 @@ def _run(
 
     asr_backend = getattr(getattr(config, "asr", None), "backend", "mlx-qwen-asr")
     _validate_run_params(enhance, local_only, translate_to, bilingual, asr_backend)
+
+    # Build authoritative external-processing policy
+    external_policy = build_policy(
+        local_only=local_only,
+        enhance_mode=enhance,
+        asr_backend=asr_backend,
+        translation=bool(translate_to),
+    )
     _warn_external_api_use(enhance, translate_to, asr_backend)
 
     work_dir = _apply_run_config(
@@ -819,7 +844,11 @@ def _run(
 
     from subtap.core.tracked_pipeline import TrackedPipeline
 
-    pipeline = TrackedPipeline(config, work_dir=work_dir)
+    pipeline = TrackedPipeline(
+        config,
+        work_dir=work_dir,
+        external_policy=external_policy,
+    )
     pipeline.task_id = os.environ.get("SUBTAP_RUN_ID") or uuid.uuid4().hex
     pipeline._local_only = local_only
     pipeline._policy_mode = "local" if local_only else "fast"

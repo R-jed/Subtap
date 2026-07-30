@@ -57,6 +57,6 @@ def test_translate_to_shows_external_api_warning(tmp_path, monkeypatch):
         ["run", str(input_file), "--translate-to", "en", "--enhance", "api"],
     )
 
-    assert "翻译" in _strip_ansi(result.output) or "外部 LLM API" in _strip_ansi(
+    assert "翻译" in _strip_ansi(result.output) or "LLM 服务" in _strip_ansi(
         result.output
     )

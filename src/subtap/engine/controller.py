@@ -19,6 +19,7 @@ from subtap.engine.policy import ExecutionPolicy
 from subtap.engine.events import EventLogger
 from subtap.schemas.config import SubtapConfig
 from subtap.core.workspace import Workspace
+from subtap.runtime.external_policy import ExternalProcessingPolicy, build_policy
 
 logger = logging.getLogger(__name__)
 
@@ -64,12 +65,30 @@ class PipelineController:
         if self._pipeline is None:
             from subtap.core.tracked_pipeline import TrackedPipeline
 
+            # Rebuild external policy from persisted context
+            ext_policy = self._build_policy_from_context()
+
             self._pipeline = TrackedPipeline(
                 self.config,
                 work_dir=self.workspace.root,
                 state=self.state,
+                external_policy=ext_policy,
             )
         return self._pipeline
+
+    def _build_policy_from_context(self) -> ExternalProcessingPolicy | None:  # type: ignore[name-defined]
+        """Rebuild ExternalProcessingPolicy from persisted run context if available."""
+        if self._run_context is None:
+            return None
+        ctx = self._run_context
+        return build_policy(
+            local_only=ctx.local_only,
+            enhance_mode=ctx.enhance,
+            asr_backend=ctx.asr_backend,
+            llm_proofread=ctx.llm_proofread,
+            llm_hotword=ctx.llm_hotword,
+            translation=bool(ctx.translate_to),
+        )
 
     def load_state(self) -> None:
         """Load persisted state from _state_path.
