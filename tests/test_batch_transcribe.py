@@ -182,3 +182,79 @@ def test_batch_transcribe_explicit_fast_selects_06b(
 
     assert result.exit_code == 0
     assert captured_models == ["asr_0.6b"]
+
+
+# ── R0 regression: batch local path ──
+
+
+def test_batch_transcribe_local_item_succeeds_with_policy(
+    tmp_path, monkeypatch, skip_runtime_model_validation
+):
+    """Batch item with enhance=local: succeeds, no LLM backend, manifest records success."""
+    captured_policies = []
+    captured_configs = []
+
+    class FakePipeline:
+        def __init__(self, config, work_dir, **kwargs):
+            captured_configs.append(
+                {
+                    "llm_proofread": getattr(config, "llm_proofread", None),
+                    "llm_hotword": getattr(config, "llm_hotword", None),
+                }
+            )
+            policy = kwargs.get("external_policy")
+            if policy:
+                captured_policies.append(
+                    {
+                        "llm_proofread": policy.llm_proofread,
+                        "llm_hotword": policy.llm_hotword,
+                    }
+                )
+            self.work_dir = work_dir
+            self.external_policy = policy
+            self.workspace = SimpleNamespace(ensure_dirs=lambda: None)
+
+    class FakeRunner:
+        def run_pipeline(self, _pipeline, _input, output_dir, **_kwargs):
+            return {"output_dir": str(output_dir), "timings": {"asr": 1.0}}
+
+    monkeypatch.setattr("subtap.core.pipeline.Pipeline", FakePipeline)
+    monkeypatch.setattr("subtap.ui.tui.RichRunner", FakeRunner)
+    monkeypatch.setattr(
+        "subtap.schemas.config.load_config", lambda _: _make_mock_config()
+    )
+
+    audio = tmp_path / "voice.wav"
+    audio.write_bytes(b"audio")
+    output = tmp_path / "output"
+
+    result = runner.invoke(
+        app,
+        [
+            "batch-transcribe",
+            str(audio),
+            "--enhance",
+            "local",
+            "--output-dir",
+            str(output),
+            "--no-confirm",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+
+    # Verify manifest records success
+    manifest = output / "manifest.json"
+    saved = json.loads(manifest.read_text(encoding="utf-8"))
+    assert saved["items"][0]["status"] == "succeeded"
+
+    # Verify policy has LLM disabled for local mode
+    assert len(captured_policies) == 1
+    assert captured_policies[0]["llm_proofread"] is False
+    assert captured_policies[0]["llm_hotword"] is False
+
+    # Verify config was synced with policy
+    assert len(captured_configs) == 1
+    assert captured_configs[0]["llm_proofread"] is False
+    assert captured_configs[0]["llm_hotword"] is False

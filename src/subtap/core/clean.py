@@ -271,10 +271,11 @@ def run_clean(
 
     # 确定 LLM 功能开关
     if external_policy is not None:
-        # Authoritative policy — resolves all flags and enforces deny
-        external_policy.assert_clean_llm_allowed()
         llm_proofread = external_policy.llm_proofread
         llm_hotword = external_policy.llm_hotword
+
+        if llm_proofread or llm_hotword:
+            external_policy.assert_clean_llm_allowed()
     else:
         # Legacy path — resolve from raw flags (for callers not yet migrated)
         llm_proofread, llm_hotword = resolve_llm_flags(

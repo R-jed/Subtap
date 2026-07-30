@@ -545,19 +545,12 @@ def _validate_run_params(
 
 
 def _warn_external_api_use(
-    enhance: str, translate_to: str | None, asr_backend: str = "mlx-qwen-asr"
+    policy: ExternalProcessingPolicy,
 ) -> None:
     """Warn before any stage can send data to an external API.
 
-    Uses the authoritative policy object to derive disclosure text,
-    replacing the previous string-based warning logic.
+    Uses the already-resolved execution policy — never rebuilds.
     """
-    policy = build_policy(
-        local_only=False,  # local-only is validated separately
-        enhance_mode=enhance,
-        asr_backend=asr_backend,
-        translation=bool(translate_to),
-    )
     for line in policy.disclosure_lines():
         typer.echo(line, err=True)
 
@@ -735,14 +728,31 @@ def _run(
     asr_backend = getattr(getattr(config, "asr", None), "backend", "mlx-qwen-asr")
     _validate_run_params(enhance, local_only, translate_to, bilingual, asr_backend)
 
+    # Resolve effective LLM flags using CLI-over-config precedence
+    effective_llm_proofread = (
+        llm_proofread
+        if llm_proofread is not None
+        else getattr(config, "llm_proofread", None)
+    )
+    effective_llm_hotword = (
+        llm_hotword if llm_hotword is not None else getattr(config, "llm_hotword", None)
+    )
+
     # Build authoritative external-processing policy
     external_policy = build_policy(
         local_only=local_only,
         enhance_mode=enhance,
         asr_backend=asr_backend,
+        llm_proofread=effective_llm_proofread,
+        llm_hotword=effective_llm_hotword,
         translation=bool(translate_to),
     )
-    _warn_external_api_use(enhance, translate_to, asr_backend)
+
+    # Sync config with resolved policy — single source of truth
+    config.llm_proofread = external_policy.llm_proofread
+    config.llm_hotword = external_policy.llm_hotword
+
+    _warn_external_api_use(external_policy)
 
     work_dir = _apply_run_config(
         config,
@@ -964,12 +974,9 @@ def _run(
     profiler = PipelineProfiler(event_bus)
     profiler.wrap_pipeline(pipeline)
 
-    _apply_cli_overrides(config, llm_proofread, llm_hotword)
-
-    # Enforce local-only security boundary: no remote LLM calls
-    if local_only:
-        config.llm_proofread = False
-        config.llm_hotword = False
+    # NOTE: CLI overrides and local-only enforcement are already handled
+    # by the policy resolution above (build_policy + config sync).
+    # Do NOT re-apply here to avoid split-brain state.
 
     previous_sigterm = None
     if observer_child:

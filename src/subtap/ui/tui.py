@@ -171,13 +171,18 @@ class BaseRunner(ABC):
             glossary = getattr(clean_cfg, "glossary_path", "") or ""
 
         # Resolve effective LLM flags for persistence
+        # Prefer the already-resolved policy; fall back to legacy resolution
         from subtap.core.clean import resolve_llm_flags
 
-        llm_proofread, llm_hotword = resolve_llm_flags(
-            config_llm_proofread=getattr(pipeline.config, "llm_proofread", None),
-            config_llm_hotword=getattr(pipeline.config, "llm_hotword", False),
-            enhance_mode=enhance,
-        )
+        if getattr(pipeline, "external_policy", None) is not None:
+            llm_proofread = pipeline.external_policy.llm_proofread
+            llm_hotword = pipeline.external_policy.llm_hotword
+        else:
+            llm_proofread, llm_hotword = resolve_llm_flags(
+                config_llm_proofread=getattr(pipeline.config, "llm_proofread", None),
+                config_llm_hotword=getattr(pipeline.config, "llm_hotword", False),
+                enhance_mode=enhance,
+            )
 
         ctx = PipelineRunContext(
             input_path=str(Path(input_path).expanduser().resolve()),

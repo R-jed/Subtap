@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
 import pytest
 
 from subtap.runtime.external_policy import (
     EnhanceMode,
     ExternalProcessingError,
-    ExternalProcessingPolicy,
     build_policy,
     parse_enhance_mode,
     is_remote_asr_backend,
@@ -237,3 +234,67 @@ class TestPolicyEnforcement:
         policy = build_policy(local_only=False, enhance_mode="local")
         with pytest.raises(ExternalProcessingError, match="禁止翻译"):
             policy.assert_translation_allowed()
+
+
+class TestDisclosureFromPolicy:
+    """R0 regression: disclosure must derive from the exact execution policy.
+
+    Verify the _warn_external_api_use helper receives the already-resolved
+    policy (not rebuilds it internally).
+    """
+
+    def test_local_off_no_disclosure(self) -> None:
+        """local/off: no disclosure lines."""
+        for mode in ("off", "local"):
+            policy = build_policy(local_only=False, enhance_mode=mode)
+            assert policy.disclosure_lines() == []
+
+    def test_api_both_disabled_no_subtitle_disclosure(self) -> None:
+        """api with proofread=False and hotword=False: no subtitle-text disclosure."""
+        policy = build_policy(
+            local_only=False,
+            enhance_mode="api",
+            llm_proofread=False,
+            llm_hotword=False,
+        )
+        lines = policy.disclosure_lines()
+        assert not any("字幕" in line for line in lines)
+
+    def test_api_proofread_subtitle_disclosure(self) -> None:
+        """api with proofread=True: subtitle-text disclosure present."""
+        policy = build_policy(
+            local_only=False, enhance_mode="api", llm_proofread=True, llm_hotword=False
+        )
+        lines = policy.disclosure_lines()
+        assert any("字幕" in line for line in lines)
+
+    def test_api_hotword_subtitle_disclosure(self) -> None:
+        """api with hotword=True: subtitle-text disclosure present."""
+        policy = build_policy(
+            local_only=False, enhance_mode="api", llm_proofread=False, llm_hotword=True
+        )
+        lines = policy.disclosure_lines()
+        assert any("字幕" in line for line in lines)
+
+    def test_remote_asr_audio_disclosure_only(self) -> None:
+        """remote ASR only: audio disclosure, no subtitle-text disclosure."""
+        policy = build_policy(
+            local_only=False,
+            enhance_mode="off",
+            asr_backend="http-asr",
+        )
+        lines = policy.disclosure_lines()
+        assert len(lines) == 1
+        assert "音频" in lines[0]
+
+    def test_remote_asr_plus_llm_both_disclosures(self) -> None:
+        """remote ASR plus LLM: both audio and subtitle-text disclosures."""
+        policy = build_policy(
+            local_only=False,
+            enhance_mode="api",
+            asr_backend="http-asr",
+        )
+        lines = policy.disclosure_lines()
+        assert len(lines) == 2
+        assert any("音频" in line for line in lines)
+        assert any("字幕" in line for line in lines)

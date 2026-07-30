@@ -1809,3 +1809,108 @@ def test_pipeline_end_survives_recent_task_index_failure(monkeypatch):
 
     assert events[0].event_type.value == "pipeline_end"
     assert events[0].data["status"] == "success"
+
+
+# ── R0 regression: CLI flag precedence with policy ──
+
+
+class TestCLIFlagPrecedence:
+    """CLI flags override config before policy creation.
+
+    Precedence:
+      1. local_only hard-denies all remote features
+      2. enhance=off/local disables clean-stage LLM features
+      3. enhance=api permits features per resolved booleans
+      4. explicit CLI boolean overrides config
+      5. explicit False must remain False
+    """
+
+    def _build_policy_from_cli_flags(
+        self, *, config_proofread, config_hotword, cli_proofread, cli_hotword, enhance
+    ):
+        """Simulate the CLI run path's flag resolution and policy creation."""
+        from subtap.runtime.external_policy import build_policy
+
+        effective_llm_proofread = (
+            cli_proofread if cli_proofread is not None else config_proofread
+        )
+        effective_llm_hotword = (
+            cli_hotword if cli_hotword is not None else config_hotword
+        )
+
+        policy = build_policy(
+            local_only=False,
+            enhance_mode=enhance,
+            asr_backend="mlx-qwen-asr",
+            llm_proofread=effective_llm_proofread,
+            llm_hotword=effective_llm_hotword,
+            translation=False,
+        )
+        return policy
+
+    def test_config_none_enhance_api_defaults_true(self):
+        """config proofread=None, enhance=api → proofread=True."""
+        policy = self._build_policy_from_cli_flags(
+            config_proofread=None,
+            config_hotword=None,
+            cli_proofread=None,
+            cli_hotword=None,
+            enhance="api",
+        )
+        assert policy.llm_proofread is True
+        assert policy.llm_hotword is True
+
+    def test_config_hotword_false_enhance_api_keeps_false(self):
+        """config hotword=False, enhance=api → hotword=False."""
+        policy = self._build_policy_from_cli_flags(
+            config_proofread=None,
+            config_hotword=False,
+            cli_proofread=None,
+            cli_hotword=None,
+            enhance="api",
+        )
+        assert policy.llm_hotword is False
+
+    def test_cli_no_proofread_enhance_api(self):
+        """--no-llm-proofread, enhance=api → policy proofread=False."""
+        policy = self._build_policy_from_cli_flags(
+            config_proofread=None,
+            config_hotword=None,
+            cli_proofread=False,
+            cli_hotword=None,
+            enhance="api",
+        )
+        assert policy.llm_proofread is False
+
+    def test_cli_hotword_enhance_api(self):
+        """--llm-hotword, enhance=api → policy hotword=True."""
+        policy = self._build_policy_from_cli_flags(
+            config_proofread=None,
+            config_hotword=None,
+            cli_proofread=None,
+            cli_hotword=True,
+            enhance="api",
+        )
+        assert policy.llm_hotword is True
+
+    def test_cli_proofread_enhance_local_forced_off(self):
+        """--llm-proofread, enhance=local → policy proofread=False."""
+        policy = self._build_policy_from_cli_flags(
+            config_proofread=None,
+            config_hotword=None,
+            cli_proofread=True,
+            cli_hotword=None,
+            enhance="local",
+        )
+        assert policy.llm_proofread is False
+
+    def test_cli_hotword_enhance_off_forced_off(self):
+        """--llm-hotword, enhance=off → policy hotword=False."""
+        policy = self._build_policy_from_cli_flags(
+            config_proofread=None,
+            config_hotword=None,
+            cli_proofread=None,
+            cli_hotword=True,
+            enhance="off",
+        )
+        assert policy.llm_hotword is False

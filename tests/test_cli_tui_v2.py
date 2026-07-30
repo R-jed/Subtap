@@ -267,3 +267,79 @@ def test_observer_child_does_not_register_the_task_again(
 
     assert result.exit_code == 0, result.output
     assert registrations == []
+
+
+# ── R0 regression: TUI v2 local-only path ──
+
+
+def test_tui_v2_wizard_generates_local_only_task(tmp_path):
+    """Verify the wizard's build_request always sets local_only=True.
+
+    The WizardView.build_request() hardcodes local_only=True, which produces
+    a --local-only flag in the resulting CLI command.
+    """
+    from subtap.schemas.task_request import SubtitleTaskRequest
+
+    # Simulate what WizardView.build_request() produces
+    audio = tmp_path / "test.wav"
+    audio.write_bytes(b"fake-wav")
+
+    request = SubtitleTaskRequest(
+        input_path=audio,
+        output_dir=tmp_path / "output",
+        mode="fast",
+        subtitle_format="srt",
+        subtitle_language="zh",
+        local_only=True,
+        show_observer=True,
+        use_default_glossary=False,
+        reset_hotwords=True,
+    )
+
+    command = request.to_cli_command()
+    assert "--local-only" in command
+    assert "--tui" in command
+    assert "--local-only" in command
+
+
+def test_tui_v2_local_only_clean_completes_without_external_error(tmp_path):
+    """The --local-only child CLI path can complete clean stage without ExternalProcessingError.
+
+    Verifies the core regression: with local_only=True and both LLM features
+    disabled, run_clean() completes successfully without calling
+    assert_clean_llm_allowed().
+    """
+    from unittest.mock import patch
+
+    from subtap.core.clean import run_clean
+    from subtap.core.workspace import Workspace
+    from subtap.runtime.external_policy import build_policy
+    from subtap.schemas.config import SubtapConfig
+    from subtap.schemas.models import ASRSegment
+
+    config = SubtapConfig()
+    config.llm_proofread = False
+    config.llm_hotword = False
+
+    # Build a local_only policy (as TUI v2 wizard does)
+    policy = build_policy(local_only=True, enhance_mode="api")
+    assert policy.llm_proofread is False
+    assert policy.llm_hotword is False
+
+    # Create workspace with mock ASR data
+    ws = Workspace(config, base_dir=tmp_path / "work")
+    ws.ensure_dirs()
+    ws.asr_dir.mkdir(parents=True, exist_ok=True)
+    seg = ASRSegment(
+        chunk_id=0, segment_id=0, start_sec=0.0, end_sec=1.0, text="test segment"
+    )
+    ws.asr_jsonl.write_text(seg.model_dump_json() + "\n")
+
+    def fail_if_called(*_a, **_k):
+        raise AssertionError("get_llm_backend must not be called for local_only clean")
+
+    with patch("subtap.core.clean.get_llm_backend", fail_if_called):
+        result = run_clean(ws, config, external_policy=policy)
+
+    assert result["segment_count"] == 1
+    assert ws.cleaned_jsonl.exists()

@@ -370,13 +370,19 @@ def batch_transcribe(
 
             apply_asr_mode(item_config, mode)
 
-            # Build external-processing policy
+            # Build external-processing policy with item config's effective LLM flags
             item_policy = build_policy(
                 local_only=False,
                 enhance_mode=enhance,
                 asr_backend=getattr(item_config.asr, "backend", "mlx-qwen-asr"),
+                llm_proofread=getattr(item_config, "llm_proofread", None),
+                llm_hotword=getattr(item_config, "llm_hotword", None),
                 translation=bool(translate_to),
             )
+
+            # Sync item config with resolved policy
+            item_config.llm_proofread = item_policy.llm_proofread
+            item_config.llm_hotword = item_policy.llm_hotword
 
             pipeline = Pipeline(
                 item_config,

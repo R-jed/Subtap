@@ -625,3 +625,201 @@ def test_run_clean_llm_backend_name_off_disables_all(workspace):
         result = run_clean(workspace, config, llm_backend_name="off")
 
     assert result["segment_count"] > 0
+
+
+# ── R0 regression: external_policy clean-stage matrix ──
+
+
+def test_clean_external_policy_enhance_off(workspace, monkeypatch):
+    """enhance=off with external_policy: clean completes, no LLM backend."""
+    from subtap.runtime.external_policy import build_policy
+
+    policy = build_policy(local_only=False, enhance_mode="off")
+
+    def fail_if_called(*_a, **_k):
+        raise AssertionError("get_llm_backend must not be called for enhance=off")
+
+    monkeypatch.setattr("subtap.core.clean.get_llm_backend", fail_if_called)
+
+    result = run_clean(workspace, SubtapConfig(), external_policy=policy)
+
+    assert result["segment_count"] > 0
+    assert workspace.cleaned_jsonl.exists()
+
+
+def test_clean_external_policy_enhance_local(workspace, monkeypatch):
+    """enhance=local with external_policy: clean completes, no LLM backend."""
+    from subtap.runtime.external_policy import build_policy
+
+    policy = build_policy(local_only=False, enhance_mode="local")
+
+    def fail_if_called(*_a, **_k):
+        raise AssertionError("get_llm_backend must not be called for enhance=local")
+
+    monkeypatch.setattr("subtap.core.clean.get_llm_backend", fail_if_called)
+
+    result = run_clean(workspace, SubtapConfig(), external_policy=policy)
+
+    assert result["segment_count"] > 0
+    assert workspace.cleaned_jsonl.exists()
+
+
+def test_clean_external_policy_local_only(workspace, monkeypatch):
+    """local_only=True with external_policy: clean completes, no LLM backend."""
+    from subtap.runtime.external_policy import build_policy
+
+    policy = build_policy(local_only=True, enhance_mode="api")
+
+    def fail_if_called(*_a, **_k):
+        raise AssertionError("get_llm_backend must not be called for local_only")
+
+    monkeypatch.setattr("subtap.core.clean.get_llm_backend", fail_if_called)
+
+    result = run_clean(workspace, SubtapConfig(), external_policy=policy)
+
+    assert result["segment_count"] > 0
+    assert workspace.cleaned_jsonl.exists()
+
+
+def test_clean_external_policy_api_both_disabled(workspace, monkeypatch):
+    """enhance=api, proofread=False, hotword=False: clean completes, no LLM backend."""
+    from subtap.runtime.external_policy import build_policy
+
+    policy = build_policy(
+        local_only=False,
+        enhance_mode="api",
+        llm_proofread=False,
+        llm_hotword=False,
+    )
+
+    def fail_if_called(*_a, **_k):
+        raise AssertionError("get_llm_backend must not be called when both disabled")
+
+    monkeypatch.setattr("subtap.core.clean.get_llm_backend", fail_if_called)
+
+    result = run_clean(workspace, SubtapConfig(), external_policy=policy)
+
+    assert result["segment_count"] > 0
+    assert workspace.cleaned_jsonl.exists()
+
+
+def test_clean_external_policy_api_proofread_enabled(workspace):
+    """enhance=api, proofread=True: permitted remote backend path is entered."""
+    from subtap.runtime.external_policy import build_policy
+
+    policy = build_policy(
+        local_only=False, enhance_mode="api", llm_proofread=True, llm_hotword=False
+    )
+    mock_llm = MockLLMBackend()
+
+    with patch("subtap.core.clean.get_llm_backend", return_value=mock_llm):
+        result = run_clean(workspace, SubtapConfig(), external_policy=policy)
+
+    assert result["segment_count"] > 0
+    assert mock_llm.select_suspicious_segments_called is True
+    assert mock_llm.repair_segments_called is True
+    assert mock_llm.replace_hotwords_called is False
+
+
+def test_clean_external_policy_api_hotword_enabled(workspace):
+    """enhance=api, hotword=True: permitted remote backend path is entered."""
+    from subtap.runtime.external_policy import build_policy
+
+    policy = build_policy(
+        local_only=False, enhance_mode="api", llm_proofread=False, llm_hotword=True
+    )
+    mock_llm = MockLLMBackend()
+    mock_glossary = Glossary(terms=[GlossaryTerm(canonical="test", aliases=["Test"])])
+
+    with (
+        patch("subtap.core.clean.get_llm_backend", return_value=mock_llm),
+        patch("subtap.core.clean.load_yaml_glossary", return_value=mock_glossary),
+    ):
+        result = run_clean(workspace, SubtapConfig(), external_policy=policy)
+
+    assert result["segment_count"] > 0
+    assert mock_llm.select_suspicious_segments_called is False
+    assert mock_llm.replace_hotwords_called is True
+
+
+# ── R0 regression: full local pipeline through clean ──
+
+
+def test_full_local_pipeline_clean_stage_with_policy(
+    test_config: SubtapConfig, tmp_path: Path, monkeypatch
+):
+    """Default local execution through clean stage with external_policy.
+
+    Verifies:
+    - clean completes with cleaned.jsonl artifact
+    - no remote LLM backend is constructed
+    - deterministic local cleaning is reflected in output
+    """
+    from subtap.runtime.external_policy import build_policy
+
+    ws = Workspace(test_config, base_dir=tmp_path / "work")
+    ws.ensure_dirs()
+    _make_asr_jsonl(ws, ["hello  世界", "maching learning is great"])
+
+    policy = build_policy(local_only=False, enhance_mode="local")
+
+    def fail_if_called(*_a, **_k):
+        raise AssertionError("LLM backend must not be constructed in local mode")
+
+    monkeypatch.setattr("subtap.core.clean.get_llm_backend", fail_if_called)
+
+    result = run_clean(ws, test_config, external_policy=policy)
+
+    assert result["segment_count"] == 2
+    assert ws.cleaned_jsonl.exists()
+
+    lines = ws.cleaned_jsonl.read_text().strip().split("\n")
+    segs = [RawCleanSegment.model_validate_json(line) for line in lines]
+    # Extra spaces should be normalized by local_clean_text
+    assert "  " not in segs[0].cleaned_text
+
+
+def test_full_local_pipeline_clean_stage_local_only(
+    test_config: SubtapConfig, tmp_path: Path, monkeypatch
+):
+    """local_only=True through clean stage: no LLM backend constructed."""
+    from subtap.runtime.external_policy import build_policy
+
+    ws = Workspace(test_config, base_dir=tmp_path / "work")
+    ws.ensure_dirs()
+    _make_asr_jsonl(ws, ["test segment"])
+
+    policy = build_policy(local_only=True, enhance_mode="api")
+
+    def fail_if_called(*_a, **_k):
+        raise AssertionError("LLM backend must not be constructed for local_only")
+
+    monkeypatch.setattr("subtap.core.clean.get_llm_backend", fail_if_called)
+
+    result = run_clean(ws, test_config, external_policy=policy)
+
+    assert result["segment_count"] == 1
+    assert ws.cleaned_jsonl.exists()
+
+
+def test_full_local_pipeline_clean_stage_enhance_off(
+    test_config: SubtapConfig, tmp_path: Path, monkeypatch
+):
+    """enhance=off through clean stage: no LLM backend constructed."""
+    from subtap.runtime.external_policy import build_policy
+
+    ws = Workspace(test_config, base_dir=tmp_path / "work")
+    ws.ensure_dirs()
+    _make_asr_jsonl(ws, ["another test"])
+
+    policy = build_policy(local_only=False, enhance_mode="off")
+
+    def fail_if_called(*_a, **_k):
+        raise AssertionError("LLM backend must not be constructed for enhance=off")
+
+    monkeypatch.setattr("subtap.core.clean.get_llm_backend", fail_if_called)
+
+    result = run_clean(ws, test_config, external_policy=policy)
+
+    assert result["segment_count"] == 1
+    assert ws.cleaned_jsonl.exists()
