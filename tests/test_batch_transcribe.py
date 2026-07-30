@@ -187,10 +187,16 @@ def test_batch_transcribe_explicit_fast_selects_06b(
 # ── R0 regression: batch local path ──
 
 
-def test_batch_transcribe_local_item_succeeds_with_policy(
+def test_batch_transcribe_local_item_policy_resolution(
     tmp_path, monkeypatch, skip_runtime_model_validation
 ):
-    """Batch item with enhance=local: succeeds, no LLM backend, manifest records success."""
+    """Batch item with enhance=local: policy/config resolution verified.
+
+    Note: This test uses FakePipeline and FakeRunner to verify policy
+    resolution only. It does NOT execute real run_clean() or produce
+    real artifacts. For real pipeline integration tests, see
+    test_batch_runtime_integration.py.
+    """
     captured_policies = []
     captured_configs = []
 

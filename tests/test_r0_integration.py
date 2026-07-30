@@ -1,7 +1,12 @@
-"""R0.1 Test Evidence Closure — real integration tests.
+"""R0 integration tests — clean stage and policy resolution.
 
-These tests exercise actual code paths (no stubbing of run_clean or
-policy resolution) to verify the R0 runtime repair end-to-end.
+These tests exercise actual run_clean() and build_policy() code paths
+(no stubbing of run_clean or policy resolution) to verify the R0
+runtime repair at the clean-stage level.
+
+Note: Tests in this module exercise clean-stage isolation, NOT the full
+pipeline stage loop. For full pipeline tests reaching export, see
+test_runtime_local_pipeline_integration.py.
 
 Heavy backends (ffmpeg, ASR model, aligner model) are stubbed.
 run_clean is NEVER stubbed — it runs the real deterministic local
@@ -93,11 +98,16 @@ def _seed_aligned_jsonl(ws: Workspace, texts: list[str]) -> None:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-# ── Test A: CLI precedence with real _run() ─────────────────
+# ── Test A: CLI precedence via build_policy() ────────────────
 
 
-class TestCLIPrecedenceRealRun:
-    """Capture config and policy as they reach TrackedPipeline via _run()."""
+class TestCLIPrecedenceBuildPolicy:
+    """Verify build_policy() produces correct policy/config for CLI scenarios.
+
+    These tests exercise the same build_policy() path used by the CLI,
+    but do NOT invoke the real Typer CLI command. For real CLI invocation
+    tests, see test_cli_external_policy_integration.py.
+    """
 
     def test_local_off_resolves_policy_before_pipeline(
         self, tmp_path, monkeypatch, skip_runtime_model_validation
@@ -214,18 +224,24 @@ class TestCLIPrecedenceRealRun:
         assert policy.llm_hotword is False
 
 
-# ── Test B: Real Pipeline stage loop ────────────────────────
+# ── Test B: Real Pipeline clean stage ───────────────────────
 
 
-class TestRealPipelineStageLoop:
-    """Execute real Pipeline stages with heavy backends stubbed.
+class TestPipelineCleanStage:
+    """Execute real Pipeline clean stage with heavy backends stubbed.
 
     run_clean is NEVER stubbed — it runs the real deterministic local
     clean + policy-guarded LLM path.
+
+    Note: These tests exercise clean+segment only, NOT the full pipeline
+    loop through export. For full pipeline tests, see
+    test_runtime_local_pipeline_integration.py.
     """
 
-    def test_local_pipeline_through_clean_and_segment(self, tmp_path, monkeypatch):
-        """Default local: prepare→chunk→asr→clean→segment all complete."""
+    def test_clean_stage_local_policy_writes_cleaned_artifact(
+        self, tmp_path, monkeypatch
+    ):
+        """Default local: clean stage writes cleaned.jsonl."""
         config = _make_local_config(tmp_path)
         ws = Workspace(config, base_dir=tmp_path / "work")
         ws.ensure_dirs()
@@ -251,7 +267,7 @@ class TestRealPipelineStageLoop:
             record = json.loads(line)
             assert "text" not in record or "cleaned_text" in record
 
-    def test_local_only_pipeline_through_clean(self, tmp_path, monkeypatch):
+    def test_clean_stage_local_only_no_llm(self, tmp_path, monkeypatch):
         """local_only=True: clean completes, no LLM backend."""
         config = _make_local_config(tmp_path)
         ws = Workspace(config, base_dir=tmp_path / "work")
@@ -275,7 +291,7 @@ class TestRealPipelineStageLoop:
         assert clean_result["segment_count"] == 1
         assert ws.cleaned_jsonl.exists()
 
-    def test_enhance_off_pipeline_through_clean(self, tmp_path, monkeypatch):
+    def test_clean_stage_enhance_off_no_llm(self, tmp_path, monkeypatch):
         """enhance=off: clean completes, no LLM backend."""
         config = _make_local_config(tmp_path)
         ws = Workspace(config, base_dir=tmp_path / "work")
@@ -299,10 +315,11 @@ class TestRealPipelineStageLoop:
         assert clean_result["segment_count"] == 1
         assert ws.cleaned_jsonl.exists()
 
-    def test_full_stage_loop_with_stubbed_heavy_backends(self, tmp_path, monkeypatch):
-        """Full stage loop: prepare/chunk/asr stubbed, clean/segment/align/export real.
+    def test_clean_and_segment_stage_loop(self, tmp_path, monkeypatch):
+        """Clean+segment stage loop: prepare/chunk/asr stubbed, clean/segment real.
 
-        Verifies the pipeline can run through export with local clean.
+        Verifies clean and segment stages complete. Does NOT reach export —
+        use test_runtime_local_pipeline_integration.py for full export tests.
         """
         config = _make_local_config(tmp_path)
         ws = Workspace(config, base_dir=tmp_path / "work")
@@ -368,14 +385,18 @@ class TestRealPipelineStageLoop:
         assert export_result.get("output_path") or (output_dir / "final.srt").exists()
 
 
-# ── Test C: TUI v2 command path verification ────────────────
+# ── Test C: TUI v2 local-only clean stage ───────────────────
 
 
-class TestTUIV2CommandPath:
-    """Verify TUI v2 wizard generates --local-only and clean completes."""
+class TestTUIV2LocalOnlyClean:
+    """Verify local_only=True policy allows clean stage to complete.
 
-    def test_wizard_request_has_local_only(self, tmp_path):
-        """WizardView.build_request() always sets local_only=True."""
+    Note: These tests exercise the policy and clean stage directly.
+    For real WizardView tests, see test_tui_v2_real_path.py.
+    """
+
+    def test_task_request_local_only_command(self, tmp_path):
+        """SubtitleTaskRequest(local_only=True) produces --local-only flag."""
         from subtap.schemas.task_request import SubtitleTaskRequest
 
         audio = tmp_path / "test.wav"
@@ -398,7 +419,7 @@ class TestTUIV2CommandPath:
         assert "--tui" in command
 
     def test_local_only_policy_clean_completes(self, tmp_path, monkeypatch):
-        """The local_only=True policy allows clean stage to complete."""
+        """local_only=True policy allows clean stage to complete."""
         config = SubtapConfig()
         config.llm_proofread = False
         config.llm_hotword = False
@@ -423,16 +444,21 @@ class TestTUIV2CommandPath:
         assert ws.cleaned_jsonl.exists()
 
 
-# ── Test D: Batch real Pipeline stage loop ───────────────────
+# ── Test D: Batch clean stage integration ───────────────────
 
 
-class TestBatchRealPipeline:
-    """Batch with real Pipeline stage loop — heavy stages stubbed, clean real."""
+class TestBatchCleanStage:
+    """Batch with real clean stage — heavy stages stubbed.
 
-    def test_batch_item_local_succeeds_with_real_clean(
+    Note: These tests use a custom Pipeline stub that runs real clean
+    but stubs other stages. For tests using the real Pipeline class,
+    see test_batch_runtime_integration.py.
+    """
+
+    def test_batch_item_local_clean_writes_artifact(
         self, tmp_path, monkeypatch, skip_runtime_model_validation
     ):
-        """Batch item with enhance=local: real clean runs, manifest records success."""
+        """Batch item with enhance=local: real clean writes cleaned.jsonl."""
         captured_policies = []
         captured_configs = []
 
@@ -553,10 +579,10 @@ class TestBatchRealPipeline:
         assert captured_configs[0]["llm_proofread"] is False
         assert captured_configs[0]["llm_hotword"] is False
 
-    def test_batch_item_default_local_clean_produces_artifact(
+    def test_batch_default_clean_writes_artifact(
         self, tmp_path, monkeypatch, skip_runtime_model_validation
     ):
-        """Default batch (no --enhance): local clean produces cleaned.jsonl."""
+        """Default batch (no --enhance): local clean writes cleaned.jsonl."""
         clean_artifacts = []
 
         class RealCleanPipeline:

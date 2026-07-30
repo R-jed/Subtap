@@ -272,15 +272,14 @@ def test_observer_child_does_not_register_the_task_again(
 # ── R0 regression: TUI v2 local-only path ──
 
 
-def test_tui_v2_wizard_generates_local_only_task(tmp_path):
-    """Verify the wizard's build_request always sets local_only=True.
+def test_task_request_local_only_command_has_tui(tmp_path):
+    """SubtitleTaskRequest(local_only=True) produces --local-only and --tui flags.
 
-    The WizardView.build_request() hardcodes local_only=True, which produces
-    a --local-only flag in the resulting CLI command.
+    Note: This tests SubtitleTaskRequest directly, NOT the real WizardView.
+    For real WizardView tests, see test_tui_v2_real_path.py.
     """
     from subtap.schemas.task_request import SubtitleTaskRequest
 
-    # Simulate what WizardView.build_request() produces
     audio = tmp_path / "test.wav"
     audio.write_bytes(b"fake-wav")
 
@@ -299,15 +298,16 @@ def test_tui_v2_wizard_generates_local_only_task(tmp_path):
     command = request.to_cli_command()
     assert "--local-only" in command
     assert "--tui" in command
-    assert "--local-only" in command
 
 
-def test_tui_v2_local_only_clean_completes_without_external_error(tmp_path):
-    """The --local-only child CLI path can complete clean stage without ExternalProcessingError.
+def test_local_only_clean_stage_completes(tmp_path):
+    """local_only=True policy allows clean stage to complete without ExternalProcessingError.
 
     Verifies the core regression: with local_only=True and both LLM features
     disabled, run_clean() completes successfully without calling
     assert_clean_llm_allowed().
+
+    Note: This tests run_clean() directly, NOT the full pipeline or CLI path.
     """
     from unittest.mock import patch
 
