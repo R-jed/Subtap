@@ -703,14 +703,17 @@ class TasksScreen(DeskScreen):
             if not _is_live_task(task):
                 # PID dead — attempt log-driven terminal state reconciliation.
                 if log.is_file():
+                    presentation = None
                     try:
                         presentation = build_task_presentation_from_log(
                             log,
                             output_path=output,
+                            run_id=str(task["task_id"]),
                         )
                     except (OSError, ValueError):
                         pass
-                    else:
+
+                    if presentation is not None:
                         terminal = {
                             TaskState.COMPLETED: "completed",
                             TaskState.FAILED: "failed",
@@ -724,6 +727,15 @@ class TasksScreen(DeskScreen):
                                 terminal,
                             )
                             return labels[terminal]
+
+                    # No terminal event or unverifiable log — persist
+                    # observation_error so full-scan is not repeated.
+                    StateStore(
+                        Path.home() / ".subtap" / "state.json"
+                    ).update_recent_task_status(
+                        str(task["task_id"]),
+                        "observation_error",
+                    )
                 return "状态未知"
             return labels[status]
 

@@ -604,7 +604,53 @@ def build_task_presentation_from_log(
     now: float | None = None,
     run_id: str | None = None,
 ) -> TaskPresentation:
-    """Build a live or historical task view without confusing the two."""
+    """Build a live or historical task view without confusing the two.
+
+    When *run_id* is provided without a live *process* or *pid*, the log is
+    read through an ``EventLogCursor`` that validates every v2 row against
+    the expected run-id.  If the log passes identity validation but contains
+    no terminal event the result is ``OBSERVATION_ERROR`` (the caller can
+    persist that to avoid repeat scans).
+    """
+    if process is None and pid is None and run_id is not None:
+        try:
+            cursor = EventLogCursor(
+                log_path,
+                recent_limit=12,
+                expected_run_id=run_id,
+            )
+            cursor.read_initial()
+            state = cursor.state
+        except (OSError, ValueError) as error:
+            return build_observation_error_presentation(error)
+
+        pipeline_status = state.get("pipeline_status")
+        if pipeline_status:
+            returncode: int | object = 0
+            if pipeline_status == "completed":
+                pass
+            elif pipeline_status == "interrupted":
+                returncode = _UNSET
+            else:
+                returncode = 1
+            return build_task_presentation(
+                state,
+                returncode=returncode,
+                output_path=output_path,
+                now=now,
+            )
+
+        recorded = build_task_presentation(
+            state,
+            returncode=_UNSET,
+            output_path=output_path,
+            now=now,
+        )
+        return build_observation_error_presentation(
+            RuntimeError("任务日志不完整：未找到任务结束记录"),
+            recorded,
+        )
+
     state = summarize_event_log(log_path)
     if process is None:
         if pid is not None:

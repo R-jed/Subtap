@@ -1566,7 +1566,7 @@ async def test_cold_read_dead_pid_interrupted_log_shows_terminal(tmp_path, monke
 
 @pytest.mark.asyncio
 async def test_terminal_presentation_never_starts_timer(tmp_path, monkeypatch):
-    """RecordedTaskScreen with terminal log: timer never started on mount."""
+    """RecordedTaskScreen with terminal log: identity=True → cursor created yet timer=None."""
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
     log_path = tmp_path / "run.log.jsonl"
     log_path.write_text(
@@ -1589,9 +1589,11 @@ async def test_terminal_presentation_never_starts_timer(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     (tmp_path / "out.srt").write_text("SRT content", encoding="utf-8")
+    # Identity MATCHES so cursor IS created — timer guard must still suppress
+    # the refresh timer because the initial presentation is terminal.
     monkeypatch.setattr(
         "subtap.cli.pipeline_cli._observer_process_matches_run_id",
-        lambda _pid, _run_id: False,
+        lambda _pid, _run_id: True,
     )
     app = ScreenApp()
 
@@ -1608,7 +1610,12 @@ async def test_terminal_presentation_never_starts_timer(tmp_path, monkeypatch):
 
         rts = app.screen
         assert isinstance(rts, RecordedTaskScreen)
-        # Terminal presentation → timer must be None (never started)
+        assert rts._event_cursor is not None, (
+            "Expected cursor with identity=True, got None — "
+            "test does not lock the real repair"
+        )
+        assert rts.presentation.state is TaskState.COMPLETED
+        # Timer guard: cursor exists BUT terminal state → timer stays None
         assert (
             rts._refresh_timer is None
         ), f"Expected no timer for terminal state {rts.presentation.state}"
@@ -1672,3 +1679,172 @@ async def test_tasks_stale_running_reconciled_via_log(tmp_path, monkeypatch):
         reloaded = StateStore(tmp_path / ".subtap" / "state.json").load()
         assert len(reloaded.recent_tasks) == 1
         assert reloaded.recent_tasks[0]["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_tasks_stale_running_cross_task_log_identity(tmp_path, monkeypatch):
+    """Task A stale-running + Task B completed log → A not completed, A=observation_error."""
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    # Task A log — no terminal event, just a start.
+    log_a = tmp_path / "task-a.log.jsonl"
+    log_a.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "run_id": "task-a",
+                "event_type": "stage_start",
+                "timestamp": 1.0,
+                "data": {"stage": "asr"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    # Task B log — completed, but run_id is "task-b".
+    log_b = tmp_path / "task-b.log.jsonl"
+    log_b.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "run_id": "task-b",
+                "event_type": "pipeline_end",
+                "timestamp": 10.0,
+                "data": {
+                    "stage": "export",
+                    "status": "success",
+                    "total_duration_sec": 9.0,
+                    "output_ready": True,
+                    "subtitle_count": 42,
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "out.srt"
+    output_path.write_text("SRT content", encoding="utf-8")
+
+    store = StateStore(tmp_path / ".subtap" / "state.json")
+    # Task A registered with task-b's log — simulating log misrouting.
+    store.add_recent_task(
+        "task-a",
+        "stale.wav",
+        str(output_path),
+        log_path=str(log_b),
+        status="running",
+        pid=999_999_999,
+    )
+
+    app = ScreenApp()
+
+    async with app.run_test() as pilot:
+        await app.push_screen(TasksScreen())
+        await pilot.pause()
+
+        task_list = app.screen.query_one("#task-list", OptionList)
+        assert task_list.option_count >= 1
+        first_option = task_list.get_option_at_index(0)
+        assert first_option is not None
+
+        # The reconciliation should detect the run_id mismatch via
+        # EventLogCursor(expected_run_id="task-a") and NOT write
+        # "completed" into task A's StateStore entry.
+        option_text = str(first_option.prompt)
+        # After the observation_error persistence the label is "状态未知"
+        assert (
+            "状态未知" in option_text
+        ), f"Expected '状态未知' for mismatched log, got: {option_text}"
+
+        # StateStore must remain non-terminal for task A.
+        reloaded = StateStore(tmp_path / ".subtap" / "state.json").load()
+        assert len(reloaded.recent_tasks) == 1
+        assert (
+            reloaded.recent_tasks[0]["status"] == "observation_error"
+        ), f"Expected observation_error, got {reloaded.recent_tasks[0]['status']}"
+
+
+@pytest.mark.asyncio
+async def test_tasks_stale_running_no_terminal_persists_error(tmp_path, monkeypatch):
+    """stale-running + matching log but no pipeline_end → obs_error persisted.
+
+    First visit triggers one validated log read (run_id matches, but no
+    terminal event) → persist observation_error.  Second visit reads
+    observation_error from StateStore and skips the log entirely so the
+    log-read code path is not reached a second time.
+    """
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    log_path = tmp_path / "run.log.jsonl"
+    log_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "run_id": "stale-task",
+                "event_type": "stage_start",
+                "timestamp": 1.0,
+                "data": {"stage": "asr"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "out.srt"
+    output_path.write_text("SRT content", encoding="utf-8")
+
+    store = StateStore(tmp_path / ".subtap" / "state.json")
+    store.add_recent_task(
+        "stale-task",
+        "stale.wav",
+        str(output_path),
+        log_path=str(log_path),
+        status="running",
+        pid=999_999_999,
+    )
+
+    import subtap.ui.v2.screens as _screens_mod
+
+    _real_build = _screens_mod.build_task_presentation_from_log
+    call_count = 0
+
+    def counting_wrapper(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return _real_build(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "subtap.ui.v2.screens.build_task_presentation_from_log",
+        counting_wrapper,
+    )
+    app = ScreenApp()
+
+    async with app.run_test() as pilot:
+        # -------- First visit --------
+        await app.push_screen(TasksScreen())
+        await pilot.pause()
+
+        # Must have scanned once.
+        first_scan_count = call_count
+        assert (
+            first_scan_count >= 1
+        ), f"Expected at least 1 scan on first visit, got {first_scan_count}"
+
+        reloaded = StateStore(tmp_path / ".subtap" / "state.json").load()
+        assert len(reloaded.recent_tasks) == 1
+        assert reloaded.recent_tasks[0]["status"] == "observation_error", (
+            f"Expected observation_error after first visit, "
+            f"got {reloaded.recent_tasks[0]['status']}"
+        )
+
+        # -------- Second visit --------
+        await app.screen.dismiss()
+        await pilot.pause()
+
+        call_count = 0
+        await app.push_screen(TasksScreen())
+        await pilot.pause()
+
+        # Must scan 0 times — status is already observation_error in
+        # StateStore so _task_state hits the labels-fast-path.
+        assert call_count == 0, (
+            f"Expected 0 scans on second visit, got {call_count} — "
+            "reconciliation did not prevent repeat full-scan"
+        )
