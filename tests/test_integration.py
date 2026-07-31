@@ -70,7 +70,17 @@ def prepare_test_audio(tmp_path):
 
 def run_pipeline(config, workspace):
     """运行 pipeline 的 clean 和 translate 阶段。"""
-    pipeline = Pipeline(config, work_dir=workspace.root)
+    from subtap.runtime.external_policy import build_policy
+
+    enhance = "api" if (config.llm_proofread or config.llm_hotword) else "local"
+    policy = build_policy(
+        local_only=False,
+        enhance_mode=enhance,
+        llm_proofread=config.llm_proofread,
+        llm_hotword=config.llm_hotword,
+        translation=bool(config.translate_to),
+    )
+    pipeline = Pipeline(config, work_dir=workspace.root, external_policy=policy)
 
     # 运行 clean 阶段
     clean_kwargs = {

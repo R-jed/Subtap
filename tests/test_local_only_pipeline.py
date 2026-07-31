@@ -5,6 +5,12 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 
+def _local_policy():
+    from subtap.runtime.external_policy import build_policy
+
+    return build_policy(local_only=True, enhance_mode="local")
+
+
 class TestLocalOnlyPipeline:
     """纯本地工况端到端测试"""
 
@@ -44,7 +50,9 @@ class TestLocalOnlyPipeline:
         ]
         mock_align.release_model = MagicMock()
 
-        pipeline = Pipeline(local_config, workspace.root)
+        pipeline = Pipeline(
+            local_config, workspace.root, external_policy=_local_policy()
+        )
 
         # 执行流水线
         with (
@@ -82,7 +90,9 @@ class TestLocalOnlyPipeline:
         from subtap.core.pipeline import Pipeline
 
         local_config.translate_to = ""
-        pipeline = Pipeline(local_config, workspace.root)
+        pipeline = Pipeline(
+            local_config, workspace.root, external_policy=_local_policy()
+        )
 
         # translate 阶段应该被跳过或报错
         with pytest.raises(ValueError, match="target_language required"):
@@ -106,7 +116,12 @@ class TestLocalOnlyPipeline:
         for event_type in EventType:
             event_bus.subscribe(event_type, handler)
 
-        pipeline = Pipeline(local_config, workspace.root, event_bus=event_bus)
+        pipeline = Pipeline(
+            local_config,
+            workspace.root,
+            event_bus=event_bus,
+            external_policy=_local_policy(),
+        )
 
         with (
             patch("subtap.core.asr.get_backend") as mock_asr_cls,

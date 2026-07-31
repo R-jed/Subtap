@@ -126,7 +126,10 @@ def main():
     config.output.max_chars = max_chars
     config.output.subtitle_stem = stem
 
-    pipeline = TrackedPipeline(config, work_dir=work_dir)
+    from subtap.runtime.external_policy import build_policy
+
+    policy = build_policy(local_only=True, enhance_mode="local")
+    pipeline = TrackedPipeline(config, work_dir=work_dir, external_policy=policy)
     pipeline.workspace.ensure_dirs()
 
     # Create minimal sentences.jsonl for script_match to read

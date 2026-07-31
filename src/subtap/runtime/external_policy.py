@@ -198,5 +198,13 @@ class ExternalProcessingError(RuntimeError):
     pass
 
 
+class MissingExternalProcessingPolicyError(RuntimeError):
+    """An external-capable stage was invoked without an authoritative policy.
+
+    Signals an internal programming or orchestration defect — the caller
+    must construct and propagate an ExternalProcessingPolicy before execution.
+    """
+
+
 def _raise_local_only(feature: str) -> None:
     raise ExternalProcessingError(f"--local-only 模式禁止使用 {feature}")

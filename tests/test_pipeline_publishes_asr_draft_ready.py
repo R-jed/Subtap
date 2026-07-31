@@ -46,10 +46,19 @@ def _drain_events(bus: EventBus):
 
 def test_pipeline_publishes_asr_draft_ready(monkeypatch, tmp_path):
     """ASR stage should publish one ASR_DRAFT_READY event per draft segment."""
+    from subtap.runtime.external_policy import build_policy
+
     config = SubtapConfig()
     bus = EventBus()
     bus.subscribe(EventType.ASR_DRAFT_READY, lambda e: None)
-    pipeline = Pipeline(config, tmp_path / "work", event_bus=bus, task_id="task-1")
+    policy = build_policy(local_only=True, enhance_mode="local")
+    pipeline = Pipeline(
+        config,
+        tmp_path / "work",
+        event_bus=bus,
+        task_id="task-1",
+        external_policy=policy,
+    )
     pipeline.workspace.ensure_dirs()
 
     chunk = Chunk(chunk_id=0, start_sec=0.0, end_sec=1.0, path="chunks/chunk.wav")

@@ -72,8 +72,21 @@ class Pipeline:
             message_zh="已确定本次任务流程",
         )
 
+    _EXTERNAL_CAPABLE_STAGES = frozenset({"asr", "clean", "translate"})
+
     def run_stage(self, stage: str, **kwargs) -> dict:
         """Run a single pipeline stage."""
+        if stage in self._EXTERNAL_CAPABLE_STAGES and self.external_policy is None:
+            from subtap.runtime.external_policy import (
+                MissingExternalProcessingPolicyError,
+            )
+
+            raise MissingExternalProcessingPolicyError(
+                f"External-capable stage '{stage}' was invoked without an "
+                f"ExternalProcessingPolicy. The caller must construct and "
+                f"propagate an authoritative policy before execution."
+            )
+
         handler = {
             "prepare": self._stage_prepare,
             "chunk": self._stage_chunk,

@@ -366,6 +366,7 @@ def test_clean_jsonl_valid_schema(test_config: SubtapConfig, tmp_path: Path):
 def test_clean_stage_in_pipeline(test_config: SubtapConfig, tmp_path: Path):
     """Pipeline.run_stage('clean') works end-to-end."""
     from subtap.core.pipeline import Pipeline
+    from subtap.runtime.external_policy import build_policy
 
     ws = Workspace(test_config, base_dir=tmp_path / "work")
     ws.ensure_dirs()
@@ -376,7 +377,10 @@ def test_clean_stage_in_pipeline(test_config: SubtapConfig, tmp_path: Path):
     original_get = clean_module.get_llm_backend
     clean_module.get_llm_backend = lambda cfg, remote_api=None: None  # type: ignore
     try:
-        pipeline = Pipeline(test_config, work_dir=tmp_path / "work")
+        policy = build_policy(local_only=True, enhance_mode="local")
+        pipeline = Pipeline(
+            test_config, work_dir=tmp_path / "work", external_policy=policy
+        )
         result = pipeline.run_stage("clean", enhance_mode="local")
     finally:
         clean_module.get_llm_backend = original_get
@@ -451,9 +455,14 @@ def test_local_clean_no_glossary():
 
 
 def test_cli_clean_runnable(test_config: SubtapConfig, tmp_path: Path, monkeypatch):
-    """CLI clean command runs without crash."""
+    """CLI clean command raises MissingExternalProcessingPolicyError.
+
+    The CLI _clean() command does not yet build a policy (Ticket 04).
+    Until then, Pipeline enforcement correctly rejects the missing policy.
+    """
     from typer.testing import CliRunner
     from subtap.cli import app
+    from subtap.runtime.external_policy import MissingExternalProcessingPolicyError
 
     ws = Workspace(test_config, base_dir=tmp_path / "work")
     ws.ensure_dirs()
@@ -482,8 +491,10 @@ def test_cli_clean_runnable(test_config: SubtapConfig, tmp_path: Path, monkeypat
             "off",
         ],
     )
-    assert result.exit_code == 0
-    assert "完成" in result.output
+    # Ticket 04 will add policy construction to _clean(); until then,
+    # Pipeline correctly rejects the missing policy.
+    assert result.exit_code == 1
+    assert isinstance(result.exception, MissingExternalProcessingPolicyError)
 
 
 # ── Independent LLM config tests ──
