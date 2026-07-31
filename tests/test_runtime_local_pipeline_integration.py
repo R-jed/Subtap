@@ -20,7 +20,6 @@ segment output.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -28,8 +27,15 @@ from typer.testing import CliRunner
 
 from subtap.core.pipeline import Pipeline
 from subtap.schemas.config import SubtapConfig
-from subtap.schemas.models import ASRSegment, Chunk
 from subtap.ui.tui import RichRunner
+from tests.fixtures.pipeline_stubs import (
+    seed_asr as _seed_asr,
+    stub_align as _stub_align,
+    stub_asr as _stub_asr,
+    stub_chunks_duration as _stub_chunks_duration,
+    stub_hotword as _stub_hotword,
+    stub_prepare_duration as _stub_prepare_duration,
+)
 
 runner = CliRunner()
 
@@ -43,97 +49,6 @@ def _make_config(tmp_path: Path) -> SubtapConfig:
     config.workspace.root = str(tmp_path / "work")
     config.output.directory = str(tmp_path / "output")
     return config
-
-
-def _seed_asr(ws, texts: list[str]) -> None:
-    """Write ASR segments with observable doubled-space text."""
-    ws.asr_dir.mkdir(parents=True, exist_ok=True)
-    with open(ws.asr_jsonl, "w") as f:
-        for i, text in enumerate(texts):
-            seg = ASRSegment(
-                chunk_id=0,
-                segment_id=i,
-                start_sec=float(i),
-                end_sec=float(i + 1),
-                text=text,
-            )
-            f.write(seg.model_dump_json() + "\n")
-
-
-def _make_prepare_stub(tmp_path: Path):
-    """Stub prepare_media: write media_info.json, return result shape."""
-
-    def _stub(input_path, workspace, config):
-        info = {"duration": 2.0, "sample_rate": 16000, "channels": 1}
-        ws_root = Path(workspace.root)
-        ws_root.mkdir(parents=True, exist_ok=True)
-        (ws_root / "media_info.json").write_text(json.dumps(info))
-        from types import SimpleNamespace
-
-        return SimpleNamespace(model_dump=lambda: info)
-
-    return _stub
-
-
-def _make_chunk_stub(tmp_path: Path):
-    """Stub split_chunks: return one chunk covering full audio."""
-
-    def _stub(workspace, config):
-        chunk = Chunk(
-            chunk_id=0, start_sec=0.0, end_sec=2.0, path=str(tmp_path / "chunk0.wav")
-        )
-        with open(workspace.chunks_jsonl, "w") as f:
-            f.write(chunk.model_dump_json() + "\n")
-        return [chunk]
-
-    return _stub
-
-
-def _make_asr_stub():
-    """Stub run_asr: ASR data already seeded in __init__."""
-
-    def _stub(workspace, config, **kwargs):
-        count = 0
-        if workspace.asr_jsonl.exists():
-            count = sum(1 for _ in open(workspace.asr_jsonl))
-        return {"segment_count": count, "asr_jsonl": str(workspace.asr_jsonl)}
-
-    return _stub
-
-
-def _make_align_stub():
-    """Stub run_align: read actual sentences.jsonl, write aligned.jsonl."""
-
-    def _stub(workspace, config, **kwargs):
-        sentences_path = kwargs.get("sentences_path") or workspace.sentences_jsonl
-        aligned = []
-        with open(sentences_path) as f:
-            for line in f:
-                if line.strip():
-                    rec = json.loads(line)
-                    aligned.append(
-                        {
-                            "sentence_id": rec.get("sentence_id", 0),
-                            "start_sec": rec.get("start_sec", 0.0),
-                            "end_sec": rec.get("end_sec", 1.0),
-                            "text": rec["text"],
-                        }
-                    )
-        with open(workspace.aligned_jsonl, "w") as f:
-            for rec in aligned:
-                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-        return {"aligned_count": len(aligned)}
-
-    return _stub
-
-
-def _make_hotword_stub():
-    """Stub run_hotword: no replacements (avoids glossary load)."""
-
-    def _stub(workspace, **kwargs):
-        return {"replaced": 0, "total": 0}
-
-    return _stub
 
 
 # ── tests ───────────────────────────────────────────────────────────
@@ -172,12 +87,14 @@ class TestRunnerDrivenPipeline:
 
         # Stub heavy backends
         monkeypatch.setattr(
-            "subtap.core.media.prepare_media", _make_prepare_stub(tmp_path)
+            "subtap.core.media.prepare_media", _stub_prepare_duration(2.0)
         )
-        monkeypatch.setattr("subtap.core.vad.split_chunks", _make_chunk_stub(tmp_path))
-        monkeypatch.setattr("subtap.core.asr.run_asr", _make_asr_stub())
-        monkeypatch.setattr("subtap.core.align.run_align", _make_align_stub())
-        monkeypatch.setattr("subtap.core.hotword.run_hotword", _make_hotword_stub())
+        monkeypatch.setattr(
+            "subtap.core.vad.split_chunks", _stub_chunks_duration(tmp_path, 2.0)
+        )
+        monkeypatch.setattr("subtap.core.asr.run_asr", _stub_asr)
+        monkeypatch.setattr("subtap.core.align.run_align", _stub_align)
+        monkeypatch.setattr("subtap.core.hotword.run_hotword", _stub_hotword)
 
         # Prevent LLM backend calls
         def fail_if_llm(*_a, **_k):

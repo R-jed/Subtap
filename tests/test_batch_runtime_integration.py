@@ -14,13 +14,22 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from types import SimpleNamespace
+
 import pytest
 from typer.testing import CliRunner
 
 from subtap.cli import app
 from subtap.core.pipeline import Pipeline
-from subtap.schemas.models import ASRSegment, Chunk
+from subtap.schemas.models import ASRSegment
+from tests.fixtures.pipeline_stubs import (
+    make_instrumented_init as _make_instrumented_init,
+    seed_asr as _seed_asr,
+    stub_align as _stub_align,
+    stub_asr as _stub_asr,
+    stub_chunks as _stub_chunks,
+    stub_hotword as _stub_hotword,
+    stub_prepare as _stub_prepare,
+)
 
 runner = CliRunner()
 
@@ -30,84 +39,16 @@ def _isolate_user_home(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
 
-def _seed_asr_init(original_init, texts: list[str]):
-    """Create an instrumented Pipeline.__init__ that seeds ASR data."""
+def _seed_asr_for_batch_item(
+    audio: Path, work_dir: Path, text: str, *, hotword: bool = False
+) -> None:
+    """Seed ASR output for a single batch item."""
+    from subtap.core.workspace import Workspace
 
-    def instrumented(self, config, work_dir, **kwargs):
-        original_init(self, config, work_dir, **kwargs)
-        self.workspace.ensure_dirs()
-        self.workspace.asr_dir.mkdir(parents=True, exist_ok=True)
-        with open(self.workspace.asr_jsonl, "w") as f:
-            for i, text in enumerate(texts):
-                seg = ASRSegment(
-                    chunk_id=0,
-                    segment_id=i,
-                    start_sec=float(i),
-                    end_sec=float(i + 1),
-                    text=text,
-                )
-                f.write(seg.model_dump_json() + "\n")
-
-    return instrumented
-
-
-def _stub_prepare(input_path, workspace, config):
-    """Stub prepare_media: write media_info.json."""
-    info = {"duration": 1.0, "sample_rate": 16000, "channels": 1}
-    ws_root = Path(workspace.root)
-    ws_root.mkdir(parents=True, exist_ok=True)
-    (ws_root / "media_info.json").write_text(json.dumps(info))
-    return SimpleNamespace(model_dump=lambda: info)
-
-
-def _stub_chunks(workspace, config):
-    """Stub split_chunks: return one chunk."""
-    ws_root = Path(workspace.root)
-    ws_root.mkdir(parents=True, exist_ok=True)
-    chunk = Chunk(
-        chunk_id=0,
-        start_sec=0.0,
-        end_sec=1.0,
-        path=str(Path(workspace.root) / "chunk0.wav"),
-    )
-    with open(workspace.chunks_jsonl, "w") as f:
-        f.write(chunk.model_dump_json() + "\n")
-    return [chunk]
-
-
-def _stub_asr(workspace, config, **kwargs):
-    """Stub run_asr: data already seeded."""
-    count = 0
-    if workspace.asr_jsonl.exists():
-        count = sum(1 for _ in open(workspace.asr_jsonl))
-    return {"segment_count": count}
-
-
-def _stub_align(workspace, config, **kwargs):
-    """Stub run_align: read actual sentences.jsonl, write aligned.jsonl."""
-    sentences_path = kwargs.get("sentences_path") or workspace.sentences_jsonl
-    aligned = []
-    with open(sentences_path) as f:
-        for line in f:
-            if line.strip():
-                rec = json.loads(line)
-                aligned.append(
-                    {
-                        "sentence_id": rec.get("sentence_id", 0),
-                        "start_sec": rec.get("start_sec", 0.0),
-                        "end_sec": rec.get("end_sec", 1.0),
-                        "text": rec["text"],
-                    }
-                )
-    with open(workspace.aligned_jsonl, "w") as f:
-        for rec in aligned:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-    return {"aligned_count": len(aligned)}
-
-
-def _stub_hotword(workspace, **kwargs):
-    """Stub run_hotword: no replacements."""
-    return {"replaced": 0, "total": 0}
+    ws = Workspace.__new__(Workspace)
+    ws.asr_dir = work_dir / "asr"
+    ws.asr_jsonl = ws.asr_dir / "asr.jsonl"
+    _seed_asr(ws, [text])
 
 
 class TestBatchRealRunner:
@@ -118,7 +59,7 @@ class TestBatchRealRunner:
     ):
         """Batch item with enhance=local: real runner drives full pipeline through export."""
         original_init = Pipeline.__init__
-        instrumented = _seed_asr_init(original_init, ["batch  test  segment"])
+        instrumented = _make_instrumented_init(original_init, ["batch  test  segment"])
 
         monkeypatch.setattr(Pipeline, "__init__", instrumented)
         monkeypatch.setattr("subtap.core.media.prepare_media", _stub_prepare)
@@ -145,17 +86,16 @@ class TestBatchRealRunner:
 
         # Intercept cleanroom.clean_intermediate_files to record cleaned.jsonl
         # existence BEFORE it gets deleted by cleanup
+        from subtap.engine.cleanroom import Cleanroom
+
+        original_clean_intermediate = Cleanroom.clean_intermediate_files
         cleaned_existed_before_cleanup: list[bool] = []
-        original_clean_intermediate = None
 
         def intercepting_clean_intermediate(self):
             cleaned_path = self.root / "cleaned.jsonl"
             cleaned_existed_before_cleanup.append(cleaned_path.is_file())
             return original_clean_intermediate(self)
 
-        from subtap.engine.cleanroom import Cleanroom
-
-        original_clean_intermediate = Cleanroom.clean_intermediate_files
         monkeypatch.setattr(
             Cleanroom, "clean_intermediate_files", intercepting_clean_intermediate
         )
@@ -296,7 +236,7 @@ class TestBatchRealRunner:
     ):
         """Default batch (no --enhance): real local clean produces artifacts."""
         original_init = Pipeline.__init__
-        instrumented = _seed_asr_init(original_init, ["default  batch  test"])
+        instrumented = _make_instrumented_init(original_init, ["default  batch  test"])
 
         monkeypatch.setattr(Pipeline, "__init__", instrumented)
         monkeypatch.setattr("subtap.core.media.prepare_media", _stub_prepare)

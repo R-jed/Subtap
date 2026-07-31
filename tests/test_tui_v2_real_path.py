@@ -9,7 +9,6 @@ These tests exercise the actual production code paths for:
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,8 +18,15 @@ import pytest
 from typer.testing import CliRunner
 
 from subtap.core.pipeline import Pipeline
-from subtap.schemas.models import ASRSegment, Chunk
 from subtap.ui.views.wizard import WizardView
+from tests.fixtures.pipeline_stubs import (
+    make_instrumented_init as _make_instrumented_init,
+    stub_align as _stub_align_child,
+    stub_asr as _stub_asr_child,
+    stub_chunks as _stub_chunks_child,
+    stub_hotword as _stub_hotword_child,
+    stub_prepare as _stub_prepare_child,
+)
 
 cli_runner = CliRunner()
 
@@ -349,86 +355,6 @@ class TestObserverChildCommand:
 # ── Test 4: Normalized child args → real CLI runner ────────────────
 
 
-def _seed_asr_for_child(original_init, texts: list[str]):
-    """Create an instrumented Pipeline.__init__ that seeds ASR data."""
-
-    def instrumented(self, config, work_dir, **kwargs):
-        original_init(self, config, work_dir, **kwargs)
-        self.workspace.ensure_dirs()
-        self.workspace.asr_dir.mkdir(parents=True, exist_ok=True)
-        with open(self.workspace.asr_jsonl, "w") as f:
-            for i, text in enumerate(texts):
-                seg = ASRSegment(
-                    chunk_id=0,
-                    segment_id=i,
-                    start_sec=float(i),
-                    end_sec=float(i + 1),
-                    text=text,
-                )
-                f.write(seg.model_dump_json() + "\n")
-
-    return instrumented
-
-
-def _stub_prepare_child(input_path, workspace, config):
-    """Stub prepare_media: write media_info.json."""
-    info = {"duration": 1.0, "sample_rate": 16000, "channels": 1}
-    ws_root = Path(workspace.root)
-    ws_root.mkdir(parents=True, exist_ok=True)
-    (ws_root / "media_info.json").write_text(json.dumps(info))
-    return SimpleNamespace(model_dump=lambda: info)
-
-
-def _stub_chunks_child(workspace, config):
-    """Stub split_chunks: return one chunk."""
-    ws_root = Path(workspace.root)
-    ws_root.mkdir(parents=True, exist_ok=True)
-    chunk = Chunk(
-        chunk_id=0,
-        start_sec=0.0,
-        end_sec=1.0,
-        path=str(Path(workspace.root) / "chunk0.wav"),
-    )
-    with open(workspace.chunks_jsonl, "w") as f:
-        f.write(chunk.model_dump_json() + "\n")
-    return [chunk]
-
-
-def _stub_asr_child(workspace, config, **kwargs):
-    """Stub run_asr: data already seeded."""
-    count = 0
-    if workspace.asr_jsonl.exists():
-        count = sum(1 for _ in open(workspace.asr_jsonl))
-    return {"segment_count": count}
-
-
-def _stub_align_child(workspace, config, **kwargs):
-    """Stub run_align: read actual sentences.jsonl, write aligned.jsonl."""
-    sentences_path = kwargs.get("sentences_path") or workspace.sentences_jsonl
-    aligned = []
-    with open(sentences_path) as f:
-        for line in f:
-            if line.strip():
-                rec = json.loads(line)
-                aligned.append(
-                    {
-                        "sentence_id": rec.get("sentence_id", 0),
-                        "start_sec": rec.get("start_sec", 0.0),
-                        "end_sec": rec.get("end_sec", 1.0),
-                        "text": rec["text"],
-                    }
-                )
-    with open(workspace.aligned_jsonl, "w") as f:
-        for rec in aligned:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-    return {"aligned_count": len(aligned)}
-
-
-def _stub_hotword_child(workspace, **kwargs):
-    """Stub run_hotword: no replacements."""
-    return {"replaced": 0, "total": 0}
-
-
 class TestNormalizedChildArgsExecution:
     """Normalized child args → real CLI runner → clean → export.
 
@@ -447,7 +373,7 @@ class TestNormalizedChildArgsExecution:
         from subtap.cli import _build_observer_child_command, app
 
         original_init = Pipeline.__init__
-        instrumented = _seed_asr_for_child(original_init, ["child  test  segment"])
+        instrumented = _make_instrumented_init(original_init, ["child  test  segment"])
         monkeypatch.setattr(Pipeline, "__init__", instrumented)
         monkeypatch.setattr("subtap.core.media.prepare_media", _stub_prepare_child)
         monkeypatch.setattr("subtap.core.vad.split_chunks", _stub_chunks_child)
