@@ -62,13 +62,14 @@ def _make_config(
 
 def _run_and_capture(
     monkeypatch, config: SimpleNamespace, args: list[str]
-) -> tuple[int, list[str], list]:
-    """Run CLI and capture exit code, stderr, and pipeline policy."""
+) -> tuple[int, list[str], list, list]:
+    """Run CLI and capture exit code, stderr, pipeline policy, and pipeline instances."""
     from subtap.cli import pipeline_cli as pcl_mod
     from subtap.runtime import external_policy as ep_mod
 
     original_build_policy = ep_mod.build_policy
     captured_policies = []
+    captured_pipelines = []
 
     def capturing_build_policy(*bp_args, **bp_kwargs):
         policy = original_build_policy(*bp_args, **bp_kwargs)
@@ -79,6 +80,7 @@ def _run_and_capture(
     monkeypatch.setattr(pcl_mod, "build_policy", capturing_build_policy)
 
     def capturing_execute(pipeline, *args, **kwargs):
+        captured_pipelines.append(pipeline)
         return {}
 
     monkeypatch.setattr(
@@ -146,7 +148,7 @@ def _run_and_capture(
     )
 
     result = runner.invoke(app, args)
-    return result.exit_code, captured_policies, result.output
+    return result.exit_code, captured_policies, result.output, captured_pipelines
 
 
 # ── Test 1: enhance=local → no external disclosure ───────────
@@ -158,7 +160,7 @@ def test_enhance_local_no_disclosure(tmp_path, monkeypatch):
     audio = tmp_path / "test.wav"
     audio.write_bytes(b"fake-wav")
 
-    exit_code, policies, output = _run_and_capture(
+    exit_code, policies, output, pipelines = _run_and_capture(
         monkeypatch,
         config,
         [
@@ -184,6 +186,10 @@ def test_enhance_local_no_disclosure(tmp_path, monkeypatch):
     assert policy.sends_audio is False
     assert policy.sends_text is False
 
+    # Policy object identity
+    assert len(pipelines) == 1
+    assert pipelines[0].external_policy is policy
+
     # No disclosure lines about sending data
     assert "发送" not in output
 
@@ -197,7 +203,7 @@ def test_enhance_api_no_llm_no_text_disclosure(tmp_path, monkeypatch):
     audio = tmp_path / "test.wav"
     audio.write_bytes(b"fake-wav")
 
-    exit_code, policies, output = _run_and_capture(
+    exit_code, policies, output, pipelines = _run_and_capture(
         monkeypatch,
         config,
         [
@@ -220,6 +226,8 @@ def test_enhance_api_no_llm_no_text_disclosure(tmp_path, monkeypatch):
     assert exit_code == 0, output
     policy = policies[0]
     assert policy.sends_text is False
+    assert len(pipelines) == 1
+    assert pipelines[0].external_policy is policy
     assert "字幕文本" not in output
 
 
@@ -232,7 +240,7 @@ def test_enhance_api_proofread_text_disclosure(tmp_path, monkeypatch):
     audio = tmp_path / "test.wav"
     audio.write_bytes(b"fake-wav")
 
-    exit_code, policies, output = _run_and_capture(
+    exit_code, policies, output, pipelines = _run_and_capture(
         monkeypatch,
         config,
         [
@@ -254,6 +262,8 @@ def test_enhance_api_proofread_text_disclosure(tmp_path, monkeypatch):
     assert exit_code == 0, output
     policy = policies[0]
     assert policy.sends_text is True
+    assert len(pipelines) == 1
+    assert pipelines[0].external_policy is policy
     assert "字幕文本" in output
 
 
@@ -266,7 +276,7 @@ def test_http_asr_audio_disclosure_only(tmp_path, monkeypatch):
     audio = tmp_path / "test.wav"
     audio.write_bytes(b"fake-wav")
 
-    exit_code, policies, output = _run_and_capture(
+    exit_code, policies, output, pipelines = _run_and_capture(
         monkeypatch,
         config,
         [
@@ -286,6 +296,8 @@ def test_http_asr_audio_disclosure_only(tmp_path, monkeypatch):
 
     assert exit_code == 0, output
     policy = policies[0]
+    assert len(pipelines) == 1
+    assert pipelines[0].external_policy is policy
     assert policy.sends_audio is True
     assert policy.sends_text is False
 

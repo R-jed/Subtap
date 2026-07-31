@@ -1,16 +1,13 @@
 """Real batch local pipeline integration tests.
 
-These tests invoke batch-transcribe through the real Typer command and
-real batch processing loop. Heavy media/model boundaries are stubbed,
-but the real Pipeline, real RichRunner stage loop, real run_clean(),
-real manifest writes, and real stage result propagation are preserved.
+These tests invoke batch-transcribe through the real Typer command,
+real batch processing loop, real Pipeline, real RichRunner stage loop,
+real run_clean(), real segment, and real export.
 
-Key differences from test_batch_transcribe.py::test_batch_transcribe_local_item_succeeds_with_policy:
-- Uses real Pipeline instance (not FakePipeline)
-- Uses real RichRunner/BaseRunner stage loop (not FakeRunner)
-- run_clean() executes real deterministic local clean
-- Produces real cleaned.jsonl artifact
-- Produces real final subtitle artifact
+Heavy media/model boundaries are stubbed at their function boundaries.
+The align stub reads the actual sentences.jsonl produced by the real
+segment stage — final subtitle is causally derived from real clean and
+segment output.
 """
 
 from __future__ import annotations
@@ -24,7 +21,7 @@ from typer.testing import CliRunner
 
 from subtap.cli import app
 from subtap.core.pipeline import Pipeline
-from subtap.schemas.models import ASRSegment
+from subtap.schemas.models import ASRSegment, Chunk
 
 runner = CliRunner()
 
@@ -34,131 +31,118 @@ def _isolate_user_home(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
 
-def _make_mock_config(tmp_path: Path) -> SimpleNamespace:
-    """Build a mock config for batch tests."""
-    config = SimpleNamespace(
-        mode="online",
-        translate_to="",
-        asr=SimpleNamespace(
-            backend="mlx-qwen-asr",
-            model="asr_0.6b",
-            hotwords=[],
-            quantization="q8",
-        ),
-        align=SimpleNamespace(model="aligner", quantization="q8", backend="whisper"),
-        clean=SimpleNamespace(
-            glossary_path=None,
-            style_rules=None,
-            backend="local",
-        ),
-        output=SimpleNamespace(
-            timestamp=True,
-            subtitle_punctuation=False,
-            subtitle_language="zh",
-            subtitle_stem="batch",
-            max_chars=25,
-            directory=str(tmp_path / "output"),
-            generate_metrics=False,
-        ),
-        workspace=SimpleNamespace(root=str(tmp_path / "work")),
-        models=SimpleNamespace(root=str(tmp_path / "models")),
-        remote_api=SimpleNamespace(model=None, base_url="", api_key_env=""),
-        metrics=SimpleNamespace(output_path="metrics.json"),
-        llm_proofread=False,
-        llm_hotword=False,
+def _seed_asr_init(original_init, texts: list[str]):
+    """Create an instrumented Pipeline.__init__ that seeds ASR data."""
+
+    def instrumented(self, config, work_dir, **kwargs):
+        original_init(self, config, work_dir, **kwargs)
+        self.workspace.ensure_dirs()
+        self.workspace.asr_dir.mkdir(parents=True, exist_ok=True)
+        with open(self.workspace.asr_jsonl, "w") as f:
+            for i, text in enumerate(texts):
+                seg = ASRSegment(
+                    chunk_id=0,
+                    segment_id=i,
+                    start_sec=float(i),
+                    end_sec=float(i + 1),
+                    text=text,
+                )
+                f.write(seg.model_dump_json() + "\n")
+
+    return instrumented
+
+
+def _stub_prepare(input_path, workspace, config):
+    """Stub prepare_media: write media_info.json."""
+    info = {"duration": 1.0, "sample_rate": 16000, "channels": 1}
+    ws_root = Path(workspace.root)
+    ws_root.mkdir(parents=True, exist_ok=True)
+    (ws_root / "media_info.json").write_text(json.dumps(info))
+    return SimpleNamespace(model_dump=lambda: info)
+
+
+def _stub_chunks(workspace, config):
+    """Stub split_chunks: return one chunk."""
+    ws_root = Path(workspace.root)
+    ws_root.mkdir(parents=True, exist_ok=True)
+    chunk = Chunk(
+        chunk_id=0,
+        start_sec=0.0,
+        end_sec=1.0,
+        path=str(Path(workspace.root) / "chunk0.wav"),
     )
-    return config
+    with open(workspace.chunks_jsonl, "w") as f:
+        f.write(chunk.model_dump_json() + "\n")
+    return [chunk]
 
 
-class TestBatchRealPipeline:
-    """Batch with real Pipeline stage loop — heavy stages stubbed, clean real."""
+def _stub_asr(workspace, config, **kwargs):
+    """Stub run_asr: data already seeded."""
+    count = 0
+    if workspace.asr_jsonl.exists():
+        count = sum(1 for _ in open(workspace.asr_jsonl))
+    return {"segment_count": count}
 
-    def test_batch_local_succeeds_with_real_clean(
+
+def _stub_align(workspace, config, **kwargs):
+    """Stub run_align: read actual sentences.jsonl, write aligned.jsonl."""
+    sentences_path = kwargs.get("sentences_path") or workspace.sentences_jsonl
+    aligned = []
+    with open(sentences_path) as f:
+        for line in f:
+            if line.strip():
+                rec = json.loads(line)
+                aligned.append(
+                    {
+                        "sentence_id": rec.get("sentence_id", 0),
+                        "start_sec": rec.get("start_sec", 0.0),
+                        "end_sec": rec.get("end_sec", 1.0),
+                        "text": rec["text"],
+                    }
+                )
+    with open(workspace.aligned_jsonl, "w") as f:
+        for rec in aligned:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    return {"aligned_count": len(aligned)}
+
+
+def _stub_hotword(workspace, **kwargs):
+    """Stub run_hotword: no replacements."""
+    return {"replaced": 0, "total": 0}
+
+
+class TestBatchRealRunner:
+    """Batch with real Pipeline and real RichRunner stage loop."""
+
+    def test_batch_local_succeeds_with_real_runner(
         self, tmp_path, monkeypatch, skip_runtime_model_validation
     ):
-        """Batch item with enhance=local: real clean runs, manifest records success.
+        """Batch item with enhance=local: real runner drives full pipeline through export."""
+        original_init = Pipeline.__init__
+        instrumented = _seed_asr_init(original_init, ["batch  test  segment"])
 
-        Uses real Pipeline and real RichRunner. Only heavy backends are stubbed.
-        """
-        captured_policies = []
-        captured_configs = []
-        clean_artifacts = []
+        monkeypatch.setattr(Pipeline, "__init__", instrumented)
+        monkeypatch.setattr("subtap.core.media.prepare_media", _stub_prepare)
+        monkeypatch.setattr("subtap.core.vad.split_chunks", _stub_chunks)
+        monkeypatch.setattr("subtap.core.asr.run_asr", _stub_asr)
+        monkeypatch.setattr("subtap.core.align.run_align", _stub_align)
+        monkeypatch.setattr("subtap.core.hotword.run_hotword", _stub_hotword)
 
-        original_pipeline_init = Pipeline.__init__
-
-        def instrumented_init(self, config, work_dir, **kwargs):
-            """Capture policy/config and seed ASR data."""
-            original_pipeline_init(self, config, work_dir, **kwargs)
-            captured_configs.append(
-                {
-                    "llm_proofread": getattr(config, "llm_proofread", None),
-                    "llm_hotword": getattr(config, "llm_hotword", None),
-                }
-            )
-            policy = kwargs.get("external_policy")
-            if policy:
-                captured_policies.append(
-                    {
-                        "llm_proofread": policy.llm_proofread,
-                        "llm_hotword": policy.llm_hotword,
-                    }
-                )
-            # Seed ASR data for the real clean stage
-            self.workspace.ensure_dirs()
-            self.workspace.asr_dir.mkdir(parents=True, exist_ok=True)
-            seg = ASRSegment(
-                chunk_id=0,
-                segment_id=0,
-                start_sec=0.0,
-                end_sec=1.0,
-                text="batch  test  segment",
-            )
-            self.workspace.asr_jsonl.write_text(seg.model_dump_json() + "\n")
-
-        # Patch Pipeline.__init__ to seed data but keep real run_stage
-        monkeypatch.setattr(Pipeline, "__init__", instrumented_init)
-
-        # Patch RichRunner to run clean through real pipeline but stub heavy stages
-        class RealCleanRunner:
-            """Runner that executes real clean but stubs prepare/chunk/asr/align/export."""
-
-            def run_pipeline(self, pipeline, input_path, output_dir, **kwargs):
-                # Run REAL clean stage
-                clean_result = pipeline.run_stage(
-                    "clean", enhance_mode=kwargs.get("enhance", "local")
-                )
-                clean_artifacts.append(
-                    {
-                        "cleaned_jsonl_exists": pipeline.workspace.cleaned_jsonl.exists(),
-                        "segment_count": clean_result["segment_count"],
-                    }
-                )
-                # Stub remaining stages
-                return {
-                    "output_dir": str(output_dir),
-                    "timings": {"clean": 0.1},
-                    "segment_count": clean_result["segment_count"],
-                }
-
-        monkeypatch.setattr("subtap.ui.tui.RichRunner", RealCleanRunner)
-        monkeypatch.setattr(
-            "subtap.schemas.config.load_config",
-            lambda _p, **_kw: _make_mock_config(tmp_path),
-        )
+        # Stub model validation
         monkeypatch.setattr(
             "subtap.core.models.validate_runtime_models", lambda _c: None
         )
         monkeypatch.setattr("subtap.core.models.apply_asr_mode", lambda _c, _m: None)
         monkeypatch.setattr("subtap.core.models.asr_mode_for_model", lambda _m: "fast")
 
-        # Stub LLM backend to verify it's never called
+        # Prevent LLM backend calls
         llm_calls = []
 
-        def fail_if_llm_called(*_a, **_k):
+        def fail_if_llm(*_a, **_k):
             llm_calls.append(True)
             raise AssertionError("get_llm_backend must not be called")
 
-        monkeypatch.setattr("subtap.core.clean.get_llm_backend", fail_if_llm_called)
+        monkeypatch.setattr("subtap.core.clean.get_llm_backend", fail_if_llm)
 
         audio = tmp_path / "voice.wav"
         audio.write_bytes(b"audio")
@@ -180,74 +164,44 @@ class TestBatchRealPipeline:
 
         assert result.exit_code == 0, result.output
 
-        # Verify manifest records success
+        # Verify manifest
         manifest = output / "manifest.json"
         saved = json.loads(manifest.read_text(encoding="utf-8"))
-        assert saved["items"][0]["status"] == "succeeded", saved["items"][0].get(
-            "error", ""
-        )
+        assert saved["total"] == 1
+        assert saved["succeeded"] == 1
+        assert saved["failed"] == 0
+        assert saved["items"][0]["status"] == "succeeded"
 
-        # Verify real clean produced artifacts
-        assert len(clean_artifacts) == 1
-        assert clean_artifacts[0]["cleaned_jsonl_exists"] is True
-        assert clean_artifacts[0]["segment_count"] > 0
+        # Verify surviving artifacts (cleaned.jsonl and sentences.jsonl are
+        # deleted by cleanroom.clean_intermediate_files() after successful batch)
+        item_work = output / "voice_wav" / "work"
+        assert (item_work / "aligned.jsonl").exists()
 
-        # Verify policy has LLM disabled for local mode
-        assert len(captured_policies) == 1
-        assert captured_policies[0]["llm_proofread"] is False
-        assert captured_policies[0]["llm_hotword"] is False
-
-        # Verify config was synced with policy
-        assert len(captured_configs) == 1
-        assert captured_configs[0]["llm_proofread"] is False
-        assert captured_configs[0]["llm_hotword"] is False
+        # Verify final subtitle exists and is non-empty
+        srt_path = output / "voice_wav" / "voice.srt"
+        assert srt_path.exists()
+        srt_text = srt_path.read_text()
+        assert srt_text.strip()
 
         # Verify no LLM backend was called
         assert llm_calls == []
 
+        # Verify no external disclosure text for local execution
+        assert "发送" not in result.output
+
     def test_batch_default_local_clean_produces_artifact(
         self, tmp_path, monkeypatch, skip_runtime_model_validation
     ):
-        """Default batch (no --enhance): real local clean produces cleaned.jsonl."""
-        clean_artifacts = []
+        """Default batch (no --enhance): real local clean produces artifacts."""
+        original_init = Pipeline.__init__
+        instrumented = _seed_asr_init(original_init, ["default  batch  test"])
 
-        original_pipeline_init = Pipeline.__init__
-
-        def instrumented_init(self, config, work_dir, **kwargs):
-            original_pipeline_init(self, config, work_dir, **kwargs)
-            self.workspace.ensure_dirs()
-            self.workspace.asr_dir.mkdir(parents=True, exist_ok=True)
-            seg = ASRSegment(
-                chunk_id=0,
-                segment_id=0,
-                start_sec=0.0,
-                end_sec=1.0,
-                text="default  batch  test",
-            )
-            self.workspace.asr_jsonl.write_text(seg.model_dump_json() + "\n")
-
-        monkeypatch.setattr(Pipeline, "__init__", instrumented_init)
-
-        class RealCleanRunner:
-            def run_pipeline(self, pipeline, input_path, output_dir, **kwargs):
-                clean_result = pipeline.run_stage("clean")
-                clean_artifacts.append(
-                    {
-                        "cleaned_jsonl_exists": pipeline.workspace.cleaned_jsonl.exists(),
-                        "segment_count": clean_result["segment_count"],
-                    }
-                )
-                return {
-                    "output_dir": str(output_dir),
-                    "timings": {},
-                    "segment_count": clean_result.get("segment_count", 1),
-                }
-
-        monkeypatch.setattr("subtap.ui.tui.RichRunner", RealCleanRunner)
-        monkeypatch.setattr(
-            "subtap.schemas.config.load_config",
-            lambda _p, **_kw: _make_mock_config(tmp_path),
-        )
+        monkeypatch.setattr(Pipeline, "__init__", instrumented)
+        monkeypatch.setattr("subtap.core.media.prepare_media", _stub_prepare)
+        monkeypatch.setattr("subtap.core.vad.split_chunks", _stub_chunks)
+        monkeypatch.setattr("subtap.core.asr.run_asr", _stub_asr)
+        monkeypatch.setattr("subtap.core.align.run_align", _stub_align)
+        monkeypatch.setattr("subtap.core.hotword.run_hotword", _stub_hotword)
         monkeypatch.setattr(
             "subtap.core.models.validate_runtime_models", lambda _c: None
         )
@@ -256,11 +210,11 @@ class TestBatchRealPipeline:
 
         llm_calls = []
 
-        def fail_if_llm_called(*_a, **_k):
+        def fail_if_llm(*_a, **_k):
             llm_calls.append(True)
             raise AssertionError("get_llm_backend must not be called")
 
-        monkeypatch.setattr("subtap.core.clean.get_llm_backend", fail_if_llm_called)
+        monkeypatch.setattr("subtap.core.clean.get_llm_backend", fail_if_llm)
 
         audio = tmp_path / "voice.wav"
         audio.write_bytes(b"audio")
@@ -280,15 +234,18 @@ class TestBatchRealPipeline:
 
         assert result.exit_code == 0, result.output
 
-        # Verify clean produced artifacts
-        assert len(clean_artifacts) == 1
-        assert clean_artifacts[0]["cleaned_jsonl_exists"] is True
-        assert clean_artifacts[0]["segment_count"] > 0
-
         # Verify manifest success
         manifest = output / "manifest.json"
         saved = json.loads(manifest.read_text(encoding="utf-8"))
         assert saved["items"][0]["status"] == "succeeded"
 
-        # Verify no LLM backend was called
+        # Verify surviving artifacts
+        item_work = output / "voice_wav" / "work"
+        assert (item_work / "aligned.jsonl").exists()
+
+        # Verify final subtitle
+        srt_path = output / "voice_wav" / "voice.srt"
+        assert srt_path.exists()
+        assert srt_path.read_text().strip()
+
         assert llm_calls == []

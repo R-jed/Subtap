@@ -84,6 +84,7 @@ def _setup_cli_patches(monkeypatch, config: SimpleNamespace, captured: list):
         policy = original_build_policy(*args, **kwargs)
         captured.append(
             {
+                "policy_object": policy,
                 "policy_proofread": policy.llm_proofread,
                 "policy_hotword": policy.llm_hotword,
                 "policy_local_only": policy.local_only,
@@ -103,6 +104,7 @@ def _setup_cli_patches(monkeypatch, config: SimpleNamespace, captured: list):
         if captured:
             captured[0].update(
                 {
+                    "pipeline_policy": getattr(pipeline, "external_policy", None),
                     "config_proofread": getattr(cfg, "llm_proofread", None),
                     "config_hotword": getattr(cfg, "llm_hotword", None),
                 }
@@ -210,6 +212,12 @@ def test_config_none_enhance_api_defaults_true(tmp_path, monkeypatch):
     assert c["policy_hotword"] is True, f"captured={c}"
     assert c["config_proofread"] is True, f"captured={c}"
     assert c["config_hotword"] is True, f"captured={c}"
+    # Policy object identity: Pipeline receives the exact same policy
+    assert (
+        c["pipeline_policy"] is c["policy_object"]
+    ), f"pipeline.external_policy is not the build_policy() result"
+    assert c["config_proofread"] == c["policy_proofread"]
+    assert c["config_hotword"] == c["policy_hotword"]
 
 
 # ── Test 2: config hotword=False, enhance=api → keeps False ──
@@ -245,6 +253,8 @@ def test_config_hotword_false_enhance_api_keeps_false(tmp_path, monkeypatch):
     c = captured[0]
     assert c["policy_hotword"] is False, f"captured={c}"
     assert c["config_hotword"] is False, f"captured={c}"
+    assert c["pipeline_policy"] is c["policy_object"]
+    assert c["config_hotword"] == c["policy_hotword"]
 
 
 # ── Test 3: --no-llm-proofread, enhance=api → proofread=False ─
@@ -281,6 +291,8 @@ def test_cli_no_proofread_enhance_api(tmp_path, monkeypatch):
     c = captured[0]
     assert c["policy_proofread"] is False, f"captured={c}"
     assert c["config_proofread"] is False, f"captured={c}"
+    assert c["pipeline_policy"] is c["policy_object"]
+    assert c["config_proofread"] == c["policy_proofread"]
 
 
 # ── Test 4: --llm-hotword, enhance=api → hotword=True ────────
@@ -317,6 +329,8 @@ def test_cli_hotword_enhance_api(tmp_path, monkeypatch):
     c = captured[0]
     assert c["policy_hotword"] is True, f"captured={c}"
     assert c["config_hotword"] is True, f"captured={c}"
+    assert c["pipeline_policy"] is c["policy_object"]
+    assert c["config_hotword"] == c["policy_hotword"]
 
 
 # ── Test 5: --llm-proofread, enhance=local → forced off ──────
@@ -353,6 +367,8 @@ def test_cli_proofread_enhance_local_forced_off(tmp_path, monkeypatch):
     c = captured[0]
     assert c["policy_proofread"] is False, f"captured={c}"
     assert c["config_proofread"] is False, f"captured={c}"
+    assert c["pipeline_policy"] is c["policy_object"]
+    assert c["config_proofread"] == c["policy_proofread"]
 
 
 # ── Test 6: --llm-hotword, enhance=off → forced off ──────────
@@ -389,6 +405,8 @@ def test_cli_hotword_enhance_off_forced_off(tmp_path, monkeypatch):
     c = captured[0]
     assert c["policy_hotword"] is False, f"captured={c}"
     assert c["config_hotword"] is False, f"captured={c}"
+    assert c["pipeline_policy"] is c["policy_object"]
+    assert c["config_hotword"] == c["policy_hotword"]
 
 
 # ── Test 7: config.mode=offline → local_only=True ────────────
@@ -425,3 +443,6 @@ def test_config_mode_offline_forces_local_only(tmp_path, monkeypatch):
     assert c["policy_hotword"] is False, f"captured={c}"
     assert c["config_proofread"] is False, f"captured={c}"
     assert c["config_hotword"] is False, f"captured={c}"
+    assert c["pipeline_policy"] is c["policy_object"]
+    assert c["config_proofread"] == c["policy_proofread"]
+    assert c["config_hotword"] == c["policy_hotword"]

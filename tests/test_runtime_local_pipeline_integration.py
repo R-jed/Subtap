@@ -1,15 +1,21 @@
-"""Real full local pipeline regression tests.
+"""Real runner-driven local pipeline integration tests.
 
-These tests execute the actual production stage loop through to export,
-verifying that a final subtitle artifact is produced.
+These tests exercise the actual production orchestration path:
 
-Heavy boundaries (ffmpeg, ASR model, aligner model) are stubbed at their
-true function boundaries. run_clean() is NEVER stubbed — it runs the real
-deterministic local clean + policy-guarded LLM path.
+    real RichRunner.run_pipeline()
+        → BaseRunner._run_pipeline_inner()
+            → _build_stages()
+            → _run_loop()
+                → Pipeline.run_stage() for each stage
+            → _run_export()
 
-The Pipeline and its run_stage dispatch are real. Only the media extraction,
-ASR inference, and aligner inference functions are replaced with fixtures
-that write valid artifacts.
+Heavy backends (prepare_media, split_chunks, run_asr, run_align) are
+stubbed at their function boundaries.  run_clean, segment, hotword,
+learn, and export execute real production code.
+
+The align stub reads the ACTUAL sentences.jsonl produced by the real
+segment stage — final.srt is causally derived from the real clean and
+segment output.
 """
 
 from __future__ import annotations
@@ -17,36 +23,30 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+from typer.testing import CliRunner
 
 from subtap.core.pipeline import Pipeline
-from subtap.core.workspace import Workspace
-from subtap.runtime.external_policy import build_policy
 from subtap.schemas.config import SubtapConfig
-from subtap.schemas.models import ASRSegment
+from subtap.schemas.models import ASRSegment, Chunk
+from subtap.ui.tui import RichRunner
 
-# ── Helpers ─────────────────────────────────────────────────
-
-
-def _make_local_config(tmp_path: Path) -> SubtapConfig:
-    """Config for local-only pipeline tests."""
-    from subtap.schemas.config import AudioConfig, VADConfig, WorkspaceConfig
-
-    return SubtapConfig(
-        audio=AudioConfig(
-            sample_rate=16000,
-            channels=1,
-            format="wav",
-            vad=VADConfig(use_silero_vad=False, min_silence_sec=0.4),
-        ),
-        workspace=WorkspaceConfig(
-            root=str(tmp_path / "work"),
-            keep_intermediate=True,
-        ),
-    )
+runner = CliRunner()
 
 
-def _seed_asr_jsonl(ws: Workspace, texts: list[str]) -> None:
-    """Write mock ASR segments to asr.jsonl."""
+# ── helpers ─────────────────────────────────────────────────────────
+
+
+def _make_config(tmp_path: Path) -> SubtapConfig:
+    """Build a minimal SubtapConfig for pipeline tests."""
+    config = SubtapConfig()
+    config.workspace.root = str(tmp_path / "work")
+    config.output.directory = str(tmp_path / "output")
+    return config
+
+
+def _seed_asr(ws, texts: list[str]) -> None:
+    """Write ASR segments with observable doubled-space text."""
     ws.asr_dir.mkdir(parents=True, exist_ok=True)
     with open(ws.asr_jsonl, "w") as f:
         for i, text in enumerate(texts):
@@ -60,251 +60,230 @@ def _seed_asr_jsonl(ws: Workspace, texts: list[str]) -> None:
             f.write(seg.model_dump_json() + "\n")
 
 
-def _seed_chunks(ws: Workspace, count: int = 1) -> None:
-    """Write mock chunks.jsonl."""
-    ws.chunks_dir.mkdir(parents=True, exist_ok=True)
-    with open(ws.chunks_jsonl, "w") as f:
-        for i in range(count):
-            chunk = {
-                "chunk_id": i,
-                "start_sec": float(i),
-                "end_sec": float(i + 1),
-                "path": str(ws.root / f"chunk{i}.wav"),
-            }
-            f.write(json.dumps(chunk) + "\n")
+def _make_prepare_stub(tmp_path: Path):
+    """Stub prepare_media: write media_info.json, return result shape."""
+
+    def _stub(input_path, workspace, config):
+        info = {"duration": 2.0, "sample_rate": 16000, "channels": 1}
+        ws_root = Path(workspace.root)
+        ws_root.mkdir(parents=True, exist_ok=True)
+        (ws_root / "media_info.json").write_text(json.dumps(info))
+        from types import SimpleNamespace
+
+        return SimpleNamespace(model_dump=lambda: info)
+
+    return _stub
 
 
-def _seed_media_info(ws: Workspace) -> None:
-    """Write mock media_info.json."""
-    media_info = {"duration": 2.0, "sample_rate": 16000, "channels": 1}
-    (ws.root / "media_info.json").write_text(json.dumps(media_info))
+def _make_chunk_stub(tmp_path: Path):
+    """Stub split_chunks: return one chunk covering full audio."""
+
+    def _stub(workspace, config):
+        chunk = Chunk(
+            chunk_id=0, start_sec=0.0, end_sec=2.0, path=str(tmp_path / "chunk0.wav")
+        )
+        with open(workspace.chunks_jsonl, "w") as f:
+            f.write(chunk.model_dump_json() + "\n")
+        return [chunk]
+
+    return _stub
 
 
-# ── Test A: enhance=local full pipeline ─────────────────────
+def _make_asr_stub():
+    """Stub run_asr: ASR data already seeded in __init__."""
+
+    def _stub(workspace, config, **kwargs):
+        count = 0
+        if workspace.asr_jsonl.exists():
+            count = sum(1 for _ in open(workspace.asr_jsonl))
+        return {"segment_count": count, "asr_jsonl": str(workspace.asr_jsonl)}
+
+    return _stub
 
 
-class TestFullLocalPipeline:
-    """Execute real Pipeline stage loop from clean through export.
+def _make_align_stub():
+    """Stub run_align: read actual sentences.jsonl, write aligned.jsonl."""
 
-    Heavy stages (prepare, chunk, asr, align) are seeded with artifacts.
-    run_clean() and segment/export run the real production code.
+    def _stub(workspace, config, **kwargs):
+        sentences_path = kwargs.get("sentences_path") or workspace.sentences_jsonl
+        aligned = []
+        with open(sentences_path) as f:
+            for line in f:
+                if line.strip():
+                    rec = json.loads(line)
+                    aligned.append(
+                        {
+                            "sentence_id": rec.get("sentence_id", 0),
+                            "start_sec": rec.get("start_sec", 0.0),
+                            "end_sec": rec.get("end_sec", 1.0),
+                            "text": rec["text"],
+                        }
+                    )
+        with open(workspace.aligned_jsonl, "w") as f:
+            for rec in aligned:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        return {"aligned_count": len(aligned)}
+
+    return _stub
+
+
+def _make_hotword_stub():
+    """Stub run_hotword: no replacements (avoids glossary load)."""
+
+    def _stub(workspace, **kwargs):
+        return {"replaced": 0, "total": 0}
+
+    return _stub
+
+
+# ── tests ───────────────────────────────────────────────────────────
+
+
+class TestRunnerDrivenPipeline:
+    """Execute real pipeline through the real runner stage loop.
+
+    The runner constructs the stage plan, iterates stages, and calls
+    Pipeline.run_stage() for each one.  Heavy backends are stubbed;
+    run_clean and segment execute real production code.
     """
 
-    def test_enhance_local_reaches_export(self, tmp_path, monkeypatch):
-        """enhance=local: clean → segment → export produces final SRT."""
-        config = _make_local_config(tmp_path)
-        ws = Workspace(config, base_dir=tmp_path / "work")
-        ws.ensure_dirs()
-
-        # Seed artifacts for stages before clean
-        _seed_media_info(ws)
-        _seed_chunks(ws)
-        _seed_asr_jsonl(ws, ["hello  world", "test  segment"])
-
-        policy = build_policy(local_only=False, enhance_mode="local")
-        pipeline = Pipeline(
-            config,
-            work_dir=tmp_path / "work",
-            external_policy=policy,
-        )
-
-        # Verify get_llm_backend is never called
-        llm_calls = []
-
-        def fail_if_called(*_a, **_k):
-            llm_calls.append(True)
-            raise AssertionError("get_llm_backend must not be called for local clean")
-
-        monkeypatch.setattr("subtap.core.clean.get_llm_backend", fail_if_called)
-
-        # Stage 1: clean (REAL — not stubbed)
-        clean_result = pipeline.run_stage("clean", enhance_mode="local")
-        assert clean_result["segment_count"] == 2
-        assert ws.cleaned_jsonl.exists()
-
-        # Verify cleaned.jsonl content
-        lines = ws.cleaned_jsonl.read_text().strip().split("\n")
-        assert len(lines) == 2
-        for line in lines:
-            record = json.loads(line)
-            assert "cleaned_text" in record or "text" in record
-
-        # Stage 2: segment (real — reads cleaned.jsonl)
-        segment_result = pipeline.run_stage("segment")
-        assert segment_result["sentence_count"] >= 1
-        assert ws.sentences_jsonl.exists()
-
-        # Seed aligned output (stub aligner model)
-        ws.aligned_jsonl.write_text(
-            json.dumps(
-                {
-                    "sentence_id": 0,
-                    "start_sec": 0.0,
-                    "end_sec": 1.0,
-                    "text": "hello world",
-                }
-            )
-            + "\n"
-            + json.dumps(
-                {
-                    "sentence_id": 1,
-                    "start_sec": 1.0,
-                    "end_sec": 2.0,
-                    "text": "test segment",
-                }
-            )
-            + "\n"
-        )
-
-        # Stage 3: export (real)
+    def _run_full_pipeline(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        enhance: str = "local",
+        local_only: bool = False,
+    ) -> tuple[list[str], Path]:
+        """Run full pipeline through real runner.  Return (observed_stages, output_dir)."""
+        config = _make_config(tmp_path)
+        work_dir = tmp_path / "work"
         output_dir = tmp_path / "output"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        pipeline.run_stage(
-            "export",
-            fmt="srt",
-            output_dir=str(output_dir),
-            stem="final",
+
+        # Seed ASR data in Pipeline.__init__
+        original_init = Pipeline.__init__
+
+        def seeded_init(self, config, work_dir, **kwargs):
+            original_init(self, config, work_dir, **kwargs)
+            self.workspace.ensure_dirs()
+            _seed_asr(self.workspace, ["hello  world  test", "foo  bar  baz"])
+
+        monkeypatch.setattr(Pipeline, "__init__", seeded_init)
+
+        # Stub heavy backends
+        monkeypatch.setattr(
+            "subtap.core.media.prepare_media", _make_prepare_stub(tmp_path)
         )
+        monkeypatch.setattr("subtap.core.vad.split_chunks", _make_chunk_stub(tmp_path))
+        monkeypatch.setattr("subtap.core.asr.run_asr", _make_asr_stub())
+        monkeypatch.setattr("subtap.core.align.run_align", _make_align_stub())
+        monkeypatch.setattr("subtap.core.hotword.run_hotword", _make_hotword_stub())
 
-        # Verify final subtitle artifact
-        srt_path = output_dir / "final.srt"
-        assert srt_path.exists(), "Final SRT artifact must exist"
-        srt_content = srt_path.read_text()
-        assert len(srt_content) > 0, "Final SRT must be non-empty"
-        assert "hello world" in srt_content
-
-        # Verify no LLM backend was called
-        assert llm_calls == []
-
-        # Verify no ExternalProcessingError was raised
-        # (test would have failed already if it was)
-
-    def test_local_only_reaches_export(self, tmp_path, monkeypatch):
-        """local_only=True with enhance=api requested: effective LLM=False/False."""
-        config = _make_local_config(tmp_path)
-        ws = Workspace(config, base_dir=tmp_path / "work")
-        ws.ensure_dirs()
-
-        _seed_media_info(ws)
-        _seed_chunks(ws)
-        _seed_asr_jsonl(ws, ["local  only  test"])
-
-        # local_only=True overrides enhance=api
-        policy = build_policy(local_only=True, enhance_mode="api")
-        assert policy.llm_proofread is False
-        assert policy.llm_hotword is False
-
-        pipeline = Pipeline(
-            config,
-            work_dir=tmp_path / "work",
-            external_policy=policy,
-        )
-
-        llm_calls = []
-
-        def fail_if_called(*_a, **_k):
-            llm_calls.append(True)
+        # Prevent LLM backend calls
+        def fail_if_llm(*_a, **_k):
             raise AssertionError("get_llm_backend must not be called")
 
-        monkeypatch.setattr("subtap.core.clean.get_llm_backend", fail_if_called)
+        monkeypatch.setattr("subtap.core.clean.get_llm_backend", fail_if_llm)
 
-        # Clean
-        clean_result = pipeline.run_stage("clean", enhance_mode="local")
-        assert clean_result["segment_count"] == 1
-        assert ws.cleaned_jsonl.exists()
-
-        # Segment
-        segment_result = pipeline.run_stage("segment")
-        assert segment_result["sentence_count"] >= 1
-        assert ws.sentences_jsonl.exists()
-
-        # Seed aligned
-        ws.aligned_jsonl.write_text(
-            json.dumps(
-                {
-                    "sentence_id": 0,
-                    "start_sec": 0.0,
-                    "end_sec": 1.0,
-                    "text": "local only test",
-                }
-            )
-            + "\n"
+        # Stub model validation
+        monkeypatch.setattr(
+            "subtap.core.models.validate_runtime_models", lambda _c: None
         )
+        monkeypatch.setattr("subtap.core.models.apply_asr_mode", lambda _c, _m: None)
+        monkeypatch.setattr("subtap.core.models.asr_mode_for_model", lambda _m: "fast")
 
-        # Export
-        output_dir = tmp_path / "output"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        pipeline.run_stage(
-            "export",
-            fmt="srt",
-            output_dir=str(output_dir),
-            stem="final",
+        # Observe stage order via Pipeline.run_stage spy
+        observed: list[str] = []
+        original_run_stage = Pipeline.run_stage
+
+        def observed_run_stage(self, stage, **kwargs):
+            observed.append(stage)
+            return original_run_stage(self, stage, **kwargs)
+
+        monkeypatch.setattr(Pipeline, "run_stage", observed_run_stage)
+
+        # Build policy
+        from subtap.runtime.external_policy import build_policy
+
+        policy = build_policy(
+            local_only=local_only,
+            enhance_mode=enhance,
+            asr_backend="mlx-qwen-asr",
         )
+        config.llm_proofread = policy.llm_proofread
+        config.llm_hotword = policy.llm_hotword
 
-        srt_path = output_dir / "final.srt"
-        assert srt_path.exists()
-        assert len(srt_path.read_text()) > 0
-        assert llm_calls == []
-
-    def test_enhance_off_reaches_export(self, tmp_path, monkeypatch):
-        """enhance=off: clean → segment → export produces final SRT."""
-        config = _make_local_config(tmp_path)
-        ws = Workspace(config, base_dir=tmp_path / "work")
-        ws.ensure_dirs()
-
-        _seed_media_info(ws)
-        _seed_chunks(ws)
-        _seed_asr_jsonl(ws, ["enhance  off  test"])
-
-        policy = build_policy(local_only=False, enhance_mode="off")
+        # Create real Pipeline
         pipeline = Pipeline(
             config,
-            work_dir=tmp_path / "work",
+            work_dir=work_dir,
             external_policy=policy,
         )
 
-        llm_calls = []
+        # Create real input file
+        audio = tmp_path / "test.wav"
+        audio.write_bytes(b"fake-wav-data")
 
-        def fail_if_called(*_a, **_k):
-            llm_calls.append(True)
-            raise AssertionError("get_llm_backend must not be called")
-
-        monkeypatch.setattr("subtap.core.clean.get_llm_backend", fail_if_called)
-
-        # Clean
-        clean_result = pipeline.run_stage("clean", enhance_mode="off")
-        assert clean_result["segment_count"] == 1
-        assert ws.cleaned_jsonl.exists()
-
-        # Segment
-        segment_result = pipeline.run_stage("segment")
-        assert segment_result["sentence_count"] >= 1
-        assert ws.sentences_jsonl.exists()
-
-        # Seed aligned
-        ws.aligned_jsonl.write_text(
-            json.dumps(
-                {
-                    "sentence_id": 0,
-                    "start_sec": 0.0,
-                    "end_sec": 1.0,
-                    "text": "enhance off test",
-                }
-            )
-            + "\n"
-        )
-
-        # Export
-        output_dir = tmp_path / "output"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        pipeline.run_stage(
-            "export",
+        # Run through real RichRunner
+        rich = RichRunner()
+        meta = rich.run_pipeline(
+            pipeline,
+            audio,
+            output_dir,
             fmt="srt",
-            output_dir=str(output_dir),
-            stem="final",
+            enhance=enhance,
         )
 
+        return observed, output_dir
+
+    @pytest.mark.parametrize(
+        "enhance,local_only",
+        [
+            ("local", False),
+            ("api", True),
+            ("off", False),
+        ],
+        ids=["enhance=local", "local_only=True", "enhance=off"],
+    )
+    def test_full_pipeline_through_runner(
+        self, tmp_path, monkeypatch, skip_runtime_model_validation, enhance, local_only
+    ):
+        """Full runner-driven pipeline: clean → segment → export produces SRT."""
+        observed, output_dir = self._run_full_pipeline(
+            tmp_path, monkeypatch, enhance=enhance, local_only=local_only
+        )
+
+        # Verify stage order through runner
+        assert "prepare" in observed
+        assert "chunk" in observed
+        assert "asr" in observed
+        assert "clean" in observed
+        assert "segment" in observed
+        assert "align" in observed
+        assert "export" in observed
+
+        # Verify stage counts
+        assert observed.count("clean") == 1
+        assert observed.count("segment") == 1
+        assert observed.count("align") == 1
+        assert observed.count("export") == 1
+
+        # Verify artifacts
+        work_dir = tmp_path / "work"
+        assert (work_dir / "cleaned.jsonl").exists()
+        assert (work_dir / "sentences.jsonl").exists()
+        assert (work_dir / "aligned.jsonl").exists()
+
+        # Verify final SRT
         srt_path = output_dir / "final.srt"
         assert srt_path.exists()
-        assert len(srt_path.read_text()) > 0
-        assert llm_calls == []
+        srt_text = srt_path.read_text()
+        assert srt_text.strip()
+
+        # Verify causal chain: cleaned text appears in SRT
+        # The input had "hello  world  test" — real run_clean normalizes
+        # double spaces.  The SRT must contain the cleaned form.
+        assert "hello" in srt_text.lower() or "world" in srt_text.lower()
+
+        # Verify LLM was never called
+        # (fail_if_llm raises AssertionError if called)

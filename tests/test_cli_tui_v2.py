@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 from typer.testing import CliRunner
 
-from subtap.cli import _build_observer_child_command, app
+from subtap.cli import app
 from subtap.core.state_store import StateStore
 
 
@@ -34,30 +34,6 @@ def test_tui_v2_flag_launches_preview_app(monkeypatch):
 
     assert result.exit_code == 0
     assert launched == [True]
-
-
-def test_observer_child_command_removes_every_parent_ui_flag():
-    command = _build_observer_child_command(
-        [
-            "subtap",
-            "run",
-            "voice.wav",
-            "--tui",
-            "--tui-v2",
-            "--observer-child",
-            "--no-tui",
-        ]
-    )
-
-    assert command == [
-        sys.executable,
-        "-m",
-        "subtap.cli",
-        "run",
-        "voice.wav",
-        "--observer-child",
-        "--no-tui",
-    ]
 
 
 def test_tui_v2_does_not_launch_a_second_cli_after_the_app_closes(monkeypatch):
@@ -267,79 +243,3 @@ def test_observer_child_does_not_register_the_task_again(
 
     assert result.exit_code == 0, result.output
     assert registrations == []
-
-
-# ── R0 regression: TUI v2 local-only path ──
-
-
-def test_task_request_local_only_command_has_tui(tmp_path):
-    """SubtitleTaskRequest(local_only=True) produces --local-only and --tui flags.
-
-    Note: This tests SubtitleTaskRequest directly, NOT the real WizardView.
-    For real WizardView tests, see test_tui_v2_real_path.py.
-    """
-    from subtap.schemas.task_request import SubtitleTaskRequest
-
-    audio = tmp_path / "test.wav"
-    audio.write_bytes(b"fake-wav")
-
-    request = SubtitleTaskRequest(
-        input_path=audio,
-        output_dir=tmp_path / "output",
-        mode="fast",
-        subtitle_format="srt",
-        subtitle_language="zh",
-        local_only=True,
-        show_observer=True,
-        use_default_glossary=False,
-        reset_hotwords=True,
-    )
-
-    command = request.to_cli_command()
-    assert "--local-only" in command
-    assert "--tui" in command
-
-
-def test_local_only_clean_stage_completes(tmp_path):
-    """local_only=True policy allows clean stage to complete without ExternalProcessingError.
-
-    Verifies the core regression: with local_only=True and both LLM features
-    disabled, run_clean() completes successfully without calling
-    assert_clean_llm_allowed().
-
-    Note: This tests run_clean() directly, NOT the full pipeline or CLI path.
-    """
-    from unittest.mock import patch
-
-    from subtap.core.clean import run_clean
-    from subtap.core.workspace import Workspace
-    from subtap.runtime.external_policy import build_policy
-    from subtap.schemas.config import SubtapConfig
-    from subtap.schemas.models import ASRSegment
-
-    config = SubtapConfig()
-    config.llm_proofread = False
-    config.llm_hotword = False
-
-    # Build a local_only policy (as TUI v2 wizard does)
-    policy = build_policy(local_only=True, enhance_mode="api")
-    assert policy.llm_proofread is False
-    assert policy.llm_hotword is False
-
-    # Create workspace with mock ASR data
-    ws = Workspace(config, base_dir=tmp_path / "work")
-    ws.ensure_dirs()
-    ws.asr_dir.mkdir(parents=True, exist_ok=True)
-    seg = ASRSegment(
-        chunk_id=0, segment_id=0, start_sec=0.0, end_sec=1.0, text="test segment"
-    )
-    ws.asr_jsonl.write_text(seg.model_dump_json() + "\n")
-
-    def fail_if_called(*_a, **_k):
-        raise AssertionError("get_llm_backend must not be called for local_only clean")
-
-    with patch("subtap.core.clean.get_llm_backend", fail_if_called):
-        result = run_clean(ws, config, external_policy=policy)
-
-    assert result["segment_count"] == 1
-    assert ws.cleaned_jsonl.exists()
