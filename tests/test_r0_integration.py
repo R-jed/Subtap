@@ -11,7 +11,6 @@ For real batch runner tests, see test_batch_runtime_integration.py.
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import patch
 
 from subtap.core.clean import run_clean

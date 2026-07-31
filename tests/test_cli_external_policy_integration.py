@@ -215,7 +215,7 @@ def test_config_none_enhance_api_defaults_true(tmp_path, monkeypatch):
     # Policy object identity: Pipeline receives the exact same policy
     assert (
         c["pipeline_policy"] is c["policy_object"]
-    ), f"pipeline.external_policy is not the build_policy() result"
+    ), "pipeline.external_policy is not the build_policy() result"
     assert c["config_proofread"] == c["policy_proofread"]
     assert c["config_hotword"] == c["policy_hotword"]
 

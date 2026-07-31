@@ -175,7 +175,6 @@ class TestNewTranscriptionTransformation:
 
         # Intercept _finish_review to capture the transformed command
         captured_commands: list[list[str]] = []
-        original_finish = screen._finish_review
 
         def capturing_finish(confirmed, command):
             captured_commands.append(command)

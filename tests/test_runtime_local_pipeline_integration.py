@@ -226,7 +226,7 @@ class TestRunnerDrivenPipeline:
 
         # Run through real RichRunner
         rich = RichRunner()
-        meta = rich.run_pipeline(
+        rich.run_pipeline(
             pipeline,
             audio,
             output_dir,
