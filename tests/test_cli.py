@@ -1921,9 +1921,10 @@ class TestCLIFlagPrecedence:
 # ── Ticket 03: _transcribe() policy propagation ──────────────────
 
 
-def _make_transcribe_config(backend: str = "mlx-qwen-asr"):
+def _make_transcribe_config(backend: str = "mlx-qwen-asr", *, mode: str = "online"):
     """Build a minimal config for _transcribe() tests."""
     return SimpleNamespace(
+        mode=mode,
         asr=SimpleNamespace(backend=backend),
         clean=SimpleNamespace(backend="mock-llm"),
     )
@@ -1934,8 +1935,6 @@ def _patch_transcribe_deps(monkeypatch, config, *, run_stage_return=None):
 
     Returns (captured dict) where captured["pipeline"] is the FakePipeline instance.
     """
-    from subtap.runtime.external_policy import build_policy
-
     monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
 
     captured: dict = {}
@@ -1999,15 +1998,22 @@ def test_transcribe_local_only_rejects_remote_asr(tmp_path, monkeypatch):
     audio = tmp_path / "audio.wav"
     audio.touch()
     config = _make_transcribe_config(backend="http-asr")
-    captured = _patch_transcribe_deps(monkeypatch, config)
+    monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
+    pipeline_sentinel_calls = []
+
+    def _pipeline_sentinel(*_args, **_kwargs):
+        pipeline_sentinel_calls.append(True)
+        raise AssertionError("Pipeline must not be constructed when ASR is denied")
+
+    monkeypatch.setattr("subtap.core.pipeline.Pipeline", _pipeline_sentinel)
 
     result = runner.invoke(app, ["transcribe", str(audio), "--local-only"])
     assert result.exit_code == 1
     assert "local-only" in _strip_ansi(result.output).lower() or "禁止" in _strip_ansi(
         result.output
     )
-    # Pipeline.run_stage should NOT have been called
-    assert "run_stage_kwargs" not in captured
+    # Pipeline must NOT have been constructed
+    assert len(pipeline_sentinel_calls) == 0
 
 
 def test_transcribe_disclosure_matches_policy(tmp_path, monkeypatch):
@@ -2067,3 +2073,109 @@ def test_transcribe_policy_passed_to_pipeline(tmp_path, monkeypatch):
     from subtap.runtime.external_policy import ExternalProcessingPolicy
 
     assert isinstance(pipeline.external_policy, ExternalProcessingPolicy)
+
+
+# ── Ticket 03 review fixes: offline ceiling + effective backend dispatch ──
+
+
+def _patch_transcribe_denied(monkeypatch, config):
+    """Patch config and install a Pipeline sentinel that fails if reached.
+
+    Returns (pipeline_sentinel_calls, backend_sentinel_calls).
+    """
+    monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
+    pipeline_sentinel_calls: list[bool] = []
+
+    def _pipeline_sentinel(*_args, **_kwargs):
+        pipeline_sentinel_calls.append(True)
+        raise AssertionError(
+            "Pipeline must not be constructed when remote ASR is denied"
+        )
+
+    monkeypatch.setattr("subtap.core.pipeline.Pipeline", _pipeline_sentinel)
+    return pipeline_sentinel_calls
+
+
+def test_transcribe_config_offline_denies_configured_remote_backend(
+    tmp_path, monkeypatch
+):
+    """A. config.mode=offline + config.asr.backend=http-asr → denial."""
+    audio = tmp_path / "audio.wav"
+    audio.touch()
+    config = _make_transcribe_config(backend="http-asr", mode="offline")
+    pipeline_calls = _patch_transcribe_denied(monkeypatch, config)
+
+    result = runner.invoke(app, ["transcribe", str(audio)])
+    assert result.exit_code == 1
+    output = _strip_ansi(result.output).lower()
+    assert "local-only" in output or "offline" in output or "禁止" in output
+    assert len(pipeline_calls) == 0, "Pipeline was constructed under offline ceiling"
+
+
+def test_transcribe_config_offline_denies_cli_remote_override(tmp_path, monkeypatch):
+    """B. config.mode=offline + CLI --backend http-asr → CLI cannot widen ceiling."""
+    audio = tmp_path / "audio.wav"
+    audio.touch()
+    config = _make_transcribe_config(backend="mlx-qwen-asr", mode="offline")
+    pipeline_calls = _patch_transcribe_denied(monkeypatch, config)
+
+    result = runner.invoke(app, ["transcribe", str(audio), "-b", "http-asr"])
+    assert result.exit_code == 1
+    output = _strip_ansi(result.output).lower()
+    assert "local-only" in output or "offline" in output or "禁止" in output
+    assert len(pipeline_calls) == 0, "Pipeline was constructed under offline ceiling"
+
+
+def test_transcribe_configured_backend_dispatched_exactly(tmp_path, monkeypatch):
+    """C. config backend=http-asr, online → policy.remote_asr=True, run_stage gets http-asr."""
+    audio = tmp_path / "audio.wav"
+    audio.touch()
+    config = _make_transcribe_config(backend="http-asr")
+    captured = _patch_transcribe_deps(monkeypatch, config)
+
+    result = runner.invoke(app, ["transcribe", str(audio)])
+    assert result.exit_code == 0, result.output
+
+    pipeline = captured["pipeline"]
+    policy = pipeline.external_policy
+    assert policy is not None
+    assert policy.remote_asr is True
+    assert policy.local_only is False
+    assert captured["run_stage_kwargs"]["backend_name"] == "http-asr"
+
+
+def test_transcribe_cli_backend_override_dispatched_exactly(tmp_path, monkeypatch):
+    """D. CLI --backend http-asr overrides config → policy for http-asr, dispatch http-asr."""
+    audio = tmp_path / "audio.wav"
+    audio.touch()
+    config = _make_transcribe_config(backend="mlx-qwen-asr")
+    captured = _patch_transcribe_deps(monkeypatch, config)
+
+    result = runner.invoke(app, ["transcribe", str(audio), "-b", "http-asr"])
+    assert result.exit_code == 0, result.output
+
+    pipeline = captured["pipeline"]
+    policy = pipeline.external_policy
+    assert policy is not None
+    assert policy.remote_asr is True
+    assert captured["run_stage_kwargs"]["backend_name"] == "http-asr"
+    # Disclosure reflects remote audio processing
+    assert len(policy.disclosure_lines()) > 0, "remote policy must emit disclosure"
+
+
+def test_transcribe_local_backend_existing_behavior(tmp_path, monkeypatch):
+    """E. config.mode=online + local backend → policy.remote_asr=False, run_stage gets local."""
+    audio = tmp_path / "audio.wav"
+    audio.touch()
+    config = _make_transcribe_config(backend="mlx-qwen-asr")
+    captured = _patch_transcribe_deps(monkeypatch, config)
+
+    result = runner.invoke(app, ["transcribe", str(audio)])
+    assert result.exit_code == 0, result.output
+
+    pipeline = captured["pipeline"]
+    policy = pipeline.external_policy
+    assert policy is not None
+    assert policy.remote_asr is False
+    assert policy.local_only is False
+    assert captured["run_stage_kwargs"]["backend_name"] == "mlx-qwen-asr"

@@ -1075,9 +1075,13 @@ def _transcribe(
     # Resolve effective backend: CLI override → config default
     effective_backend = backend or config.asr.backend
 
+    # Config offline mode narrows permissions (same semantics as `subtap run`)
+    config_local_only = getattr(config, "mode", "online") == "offline"
+    effective_local_only = local_only or config_local_only
+
     # Build authoritative policy before any external-capable stage
     policy = build_policy(
-        local_only=local_only,
+        local_only=effective_local_only,
         enhance_mode="local",
         asr_backend=effective_backend,
         llm_proofread=False,
@@ -1100,7 +1104,7 @@ def _transcribe(
 
     typer.echo(f"▸ 语音识别（{effective_backend}）...")
     try:
-        result = pipeline.run_stage("asr", backend_name=backend)
+        result = pipeline.run_stage("asr", backend_name=effective_backend)
     except (ImportError, NotImplementedError) as e:
         _handle_error(f"错误：{e}")
 
