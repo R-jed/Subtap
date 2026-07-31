@@ -160,6 +160,19 @@ class BaseRunner(ABC):
         All stage kwargs come from build_stage_kwargs(ctx) — the single source
         of truth shared with resume/retry via PipelineController.
         """
+        # Fail-fast: require authoritative policy before any orchestration
+        policy = pipeline.external_policy
+        if policy is None:
+            from subtap.runtime.external_policy import (
+                MissingExternalProcessingPolicyError,
+            )
+
+            raise MissingExternalProcessingPolicyError(
+                "RichRunner full-pipeline execution was invoked without an "
+                "ExternalProcessingPolicy. The caller must construct and "
+                "propagate an authoritative policy before execution."
+            )
+
         stages = self._build_stages(pipeline.config, translate_to)
 
         # Build effective context — single source of truth for stage kwargs
@@ -170,19 +183,11 @@ class BaseRunner(ABC):
         if clean_cfg:
             glossary = getattr(clean_cfg, "glossary_path", "") or ""
 
-        # Resolve effective LLM flags for persistence
-        # Prefer the already-resolved policy; fall back to legacy resolution
-        from subtap.core.clean import resolve_llm_flags
-
-        if getattr(pipeline, "external_policy", None) is not None:
-            llm_proofread = pipeline.external_policy.llm_proofread
-            llm_hotword = pipeline.external_policy.llm_hotword
-        else:
-            llm_proofread, llm_hotword = resolve_llm_flags(
-                config_llm_proofread=getattr(pipeline.config, "llm_proofread", None),
-                config_llm_hotword=getattr(pipeline.config, "llm_hotword", False),
-                enhance_mode=enhance,
-            )
+        # Policy fields are the sole authority
+        llm_proofread = policy.llm_proofread
+        llm_hotword = policy.llm_hotword
+        local_only = policy.local_only
+        policy_mode = policy.enhance_mode.value
 
         ctx = PipelineRunContext(
             input_path=str(Path(input_path).expanduser().resolve()),
@@ -215,8 +220,8 @@ class BaseRunner(ABC):
                 getattr(getattr(pipeline.config, "asr", None), "hotwords", []) or []
             ),
             subtitle_stem=getattr(pipeline.config.output, "subtitle_stem", "final"),
-            policy_mode=getattr(pipeline, "_policy_mode", "local"),
-            local_only=getattr(pipeline, "_local_only", False),
+            policy_mode=policy_mode,
+            local_only=local_only,
         )
 
         # Persist stage plan and context for crash recovery

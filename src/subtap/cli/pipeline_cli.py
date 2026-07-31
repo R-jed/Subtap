@@ -860,8 +860,6 @@ def _run(
         external_policy=external_policy,
     )
     pipeline.task_id = os.environ.get("SUBTAP_RUN_ID") or uuid.uuid4().hex
-    pipeline._local_only = local_only
-    pipeline._policy_mode = "local" if local_only else "fast"
     pipeline.workspace.ensure_dirs()
 
     # Part P: Clean stale llm_hotword_ops.jsonl from previous runs

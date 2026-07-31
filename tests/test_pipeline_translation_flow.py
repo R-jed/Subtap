@@ -26,10 +26,13 @@ class FakeConfig:
 
 class FakePipeline:
     def __init__(self, root: Path):
+        from subtap.runtime.external_policy import build_policy
+
         self.workspace = FakeWorkspace(root)
         self.config = FakeConfig()
         self.calls: list[tuple[str, dict]] = []
         self.plans: list[list[str]] = []
+        self.external_policy = build_policy(local_only=False, enhance_mode="api")
 
     def publish_plan(self, stages):
         self.plans.append(stages)

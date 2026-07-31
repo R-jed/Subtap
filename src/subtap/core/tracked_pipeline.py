@@ -51,9 +51,13 @@ class TrackedPipeline(Pipeline):
         else:
             self.state = PipelineState()
         self._state_path = self.workspace.root / STATE_FILE
-        # Runtime attributes set by CLI before run
-        self._local_only: bool = False
-        self._policy_mode: str = "local"
+        # Transitional compatibility mirrors — derived from authoritative policy
+        if external_policy is not None:
+            self._local_only: bool = external_policy.local_only
+            self._policy_mode: str = external_policy.enhance_mode.value
+        else:
+            self._local_only = False
+            self._policy_mode = "local"
 
     def save_state(self) -> None:
         """Atomically persist current state to disk.

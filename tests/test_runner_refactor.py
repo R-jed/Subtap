@@ -16,6 +16,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from subtap.engine.state import PipelineRunContext, build_stage_kwargs
+from subtap.runtime.external_policy import (
+    MissingExternalProcessingPolicyError,
+    build_policy,
+)
 from subtap.ui.tui import BaseRunner, RichRunner, TUIRunner, PlainRunner
 
 # ── helpers ──────────────────────────────────────────────────────────
@@ -46,6 +50,7 @@ def _make_pipeline(config):
     pipeline.config = config
     pipeline.workspace.root = Path("/tmp/test_work")
     pipeline.workspace.aligned_jsonl = Path("/tmp/test_work/aligned.jsonl")
+    pipeline.external_policy = build_policy(local_only=True, enhance_mode="local")
 
     def run_stage(stage, **kwargs):
         calls.append((stage, kwargs))
@@ -632,3 +637,272 @@ class TestPathCanonicalization:
             assert str(tmp_path) in loaded.output_dir
         finally:
             os.chdir(original_cwd)
+
+
+# ── Ticket 02: RichRunner policy migration ──────────────────────────
+
+
+class TestRichRunnerPolicyRequirement:
+    """RichRunner._run_pipeline_inner() must require external_policy."""
+
+    def test_missing_policy_raises_before_context_persistence(self, tmp_path):
+        """Missing policy raises before PipelineRunContext is constructed."""
+        from subtap.core.pipeline import Pipeline
+        from subtap.schemas.config import SubtapConfig
+
+        config = SubtapConfig()
+        pipeline = Pipeline(config, work_dir=tmp_path)
+        assert pipeline.external_policy is None
+
+        runner = RichRunner()
+        with pytest.raises(MissingExternalProcessingPolicyError):
+            runner._run_pipeline_inner(
+                pipeline,
+                tmp_path / "in.wav",
+                tmp_path / "out",
+                "srt",
+                "local",
+                None,
+                "off",
+            )
+
+    def test_missing_policy_no_stage_dispatch(self, tmp_path):
+        """Missing policy raises before any stage is dispatched."""
+        from subtap.core.pipeline import Pipeline
+        from subtap.schemas.config import SubtapConfig
+
+        config = SubtapConfig()
+        pipeline = Pipeline(config, work_dir=tmp_path)
+        run_stage_calls: list[str] = []
+        original_run_stage = pipeline.run_stage
+
+        def tracking_run_stage(stage, **kwargs):
+            run_stage_calls.append(stage)
+            return original_run_stage(stage, **kwargs)
+
+        pipeline.run_stage = tracking_run_stage
+
+        runner = RichRunner()
+        with pytest.raises(MissingExternalProcessingPolicyError):
+            runner._run_pipeline_inner(
+                pipeline,
+                tmp_path / "in.wav",
+                tmp_path / "out",
+                "srt",
+                "local",
+                None,
+                "off",
+            )
+        assert (
+            run_stage_calls == []
+        ), f"Stages dispatched before policy check: {run_stage_calls}"
+
+    def test_missing_policy_no_context_set_plan(self, tmp_path):
+        """Missing policy raises before set_stage_plan is called."""
+        from subtap.core.pipeline import Pipeline
+        from subtap.schemas.config import SubtapConfig
+
+        config = SubtapConfig()
+        pipeline = Pipeline(config, work_dir=tmp_path)
+        plan_called = []
+        pipeline.set_stage_plan = lambda keys, ctx=None: plan_called.append(keys)
+
+        runner = RichRunner()
+        with pytest.raises(MissingExternalProcessingPolicyError):
+            runner._run_pipeline_inner(
+                pipeline,
+                tmp_path / "in.wav",
+                tmp_path / "out",
+                "srt",
+                "local",
+                None,
+                "off",
+            )
+        assert (
+            plan_called == []
+        ), f"set_stage_plan called before policy check: {plan_called}"
+
+    def test_error_message_identifies_rich_runner(self, tmp_path):
+        """Error message identifies the RichRunner full-pipeline seam."""
+        from subtap.core.pipeline import Pipeline
+        from subtap.schemas.config import SubtapConfig
+
+        config = SubtapConfig()
+        pipeline = Pipeline(config, work_dir=tmp_path)
+
+        runner = RichRunner()
+        with pytest.raises(
+            MissingExternalProcessingPolicyError,
+            match="RichRunner full-pipeline execution",
+        ):
+            runner._run_pipeline_inner(
+                pipeline,
+                tmp_path / "in.wav",
+                tmp_path / "out",
+                "srt",
+                "local",
+                None,
+                "off",
+            )
+
+
+@pytest.mark.parametrize(
+    "local_only, enhance_mode, llm_proofread, llm_hotword",
+    [
+        (True, "local", False, False),
+        (False, "api", True, False),
+        (False, "off", False, False),
+    ],
+)
+def test_policy_to_context_mapping(
+    tmp_path,
+    local_only,
+    enhance_mode,
+    llm_proofread,
+    llm_hotword,
+):
+    """Policy fields map exactly to PipelineRunContext."""
+    from unittest.mock import patch
+
+    from subtap.core.pipeline import Pipeline
+    from subtap.schemas.config import SubtapConfig
+
+    config = SubtapConfig()
+    policy = build_policy(
+        local_only=local_only,
+        enhance_mode=enhance_mode,
+        llm_proofread=llm_proofread,
+        llm_hotword=llm_hotword,
+    )
+
+    pipeline = Pipeline(config, work_dir=tmp_path, external_policy=policy)
+
+    captured_ctx = {}
+
+    def fake_set_plan(stage_keys, ctx=None):
+        if ctx is not None:
+            captured_ctx["ctx"] = ctx
+
+    pipeline.set_stage_plan = fake_set_plan
+
+    runner = RichRunner()
+    runner.total_start = 0.0
+
+    with (
+        patch.object(runner, "_run_loop"),
+        patch.object(runner, "_before_stage"),
+        patch.object(runner, "_after_stage"),
+        patch.object(runner, "_on_complete"),
+        patch.object(runner, "_run_export", return_value={"output_path": "out.srt"}),
+    ):
+        runner._run_pipeline_inner(
+            pipeline,
+            tmp_path / "in.wav",
+            tmp_path / "out",
+            "srt",
+            "local",
+            None,
+            "off",
+        )
+
+    assert "ctx" in captured_ctx, "PipelineRunContext was not captured"
+    ctx = captured_ctx["ctx"]
+    assert ctx.llm_proofread is policy.llm_proofread
+    assert ctx.llm_hotword is policy.llm_hotword
+    assert ctx.local_only is policy.local_only
+    assert ctx.policy_mode == policy.enhance_mode.value
+
+
+class TestRichRunnerNoResolveLlmFlagsFallback:
+    """RichRunner must not call resolve_llm_flags during normal execution."""
+
+    def test_resolve_llm_flags_not_called(self, tmp_path):
+        """Normal RichRunner execution does not call resolve_llm_flags."""
+        from unittest.mock import patch
+
+        from subtap.core.pipeline import Pipeline
+        from subtap.schemas.config import SubtapConfig
+
+        config = SubtapConfig()
+        policy = build_policy(local_only=True, enhance_mode="local")
+        pipeline = Pipeline(config, work_dir=tmp_path, external_policy=policy)
+
+        runner = RichRunner()
+        runner.total_start = 0.0
+
+        call_log: list = []
+
+        def raise_if_called(*args, **kwargs):
+            call_log.append(True)
+            raise AssertionError("resolve_llm_flags must not be called by RichRunner")
+
+        with (
+            patch("subtap.core.clean.resolve_llm_flags", raise_if_called),
+            patch.object(runner, "_run_loop"),
+            patch.object(runner, "_before_stage"),
+            patch.object(runner, "_after_stage"),
+            patch.object(runner, "_on_complete"),
+            patch.object(
+                runner, "_run_export", return_value={"output_path": "out.srt"}
+            ),
+        ):
+            runner._run_pipeline_inner(
+                pipeline,
+                tmp_path / "in.wav",
+                tmp_path / "out",
+                "srt",
+                "local",
+                None,
+                "off",
+            )
+
+        assert call_log == [], f"resolve_llm_flags was called {len(call_log)} time(s)"
+
+
+class TestCompatibilityMirrorDerivation:
+    """TrackedPipeline mirrors must be derived from external_policy."""
+
+    def test_local_only_true_mirror(self, tmp_path):
+        from subtap.core.tracked_pipeline import TrackedPipeline
+        from subtap.schemas.config import SubtapConfig
+
+        config = SubtapConfig()
+        policy = build_policy(local_only=True, enhance_mode="local")
+        pipeline = TrackedPipeline(config, work_dir=tmp_path, external_policy=policy)
+        assert pipeline._local_only is True
+        assert pipeline._policy_mode == "local"
+
+    def test_api_mode_mirror(self, tmp_path):
+        from subtap.core.tracked_pipeline import TrackedPipeline
+        from subtap.schemas.config import SubtapConfig
+
+        config = SubtapConfig()
+        policy = build_policy(
+            local_only=False,
+            enhance_mode="api",
+            llm_proofread=True,
+            llm_hotword=False,
+        )
+        pipeline = TrackedPipeline(config, work_dir=tmp_path, external_policy=policy)
+        assert pipeline._local_only is False
+        assert pipeline._policy_mode == "api"
+
+    def test_off_mode_mirror(self, tmp_path):
+        from subtap.core.tracked_pipeline import TrackedPipeline
+        from subtap.schemas.config import SubtapConfig
+
+        config = SubtapConfig()
+        policy = build_policy(local_only=False, enhance_mode="off")
+        pipeline = TrackedPipeline(config, work_dir=tmp_path, external_policy=policy)
+        assert pipeline._local_only is False
+        assert pipeline._policy_mode == "off"
+
+    def test_no_policy_preserves_defaults(self, tmp_path):
+        """Without external_policy, mirrors keep constructor defaults."""
+        from subtap.core.tracked_pipeline import TrackedPipeline
+        from subtap.schemas.config import SubtapConfig
+
+        config = SubtapConfig()
+        pipeline = TrackedPipeline(config, work_dir=tmp_path)
+        assert pipeline._local_only is False
+        assert pipeline._policy_mode == "local"

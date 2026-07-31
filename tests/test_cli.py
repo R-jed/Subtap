@@ -547,6 +547,7 @@ def test_run_full_pipeline_with_align(
     class FakePipeline:
         def __init__(self, _config, work_dir, **kwargs):
             self.config = _config
+            self.external_policy = kwargs.get("external_policy")
 
             class Workspace:
                 root = work_dir
@@ -666,6 +667,7 @@ def test_run_enhance_local_passes_clean_local_to_pipeline(
     class FakePipeline:
         def __init__(self, _config, work_dir, **kwargs):
             self.config = _config
+            self.external_policy = kwargs.get("external_policy")
 
             class Workspace:
                 root = work_dir
