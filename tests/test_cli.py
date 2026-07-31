@@ -2005,12 +2005,18 @@ def test_transcribe_local_only_rejects_remote_asr(tmp_path, monkeypatch):
     config = _make_transcribe_config(backend="http-asr")
     monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
     pipeline_sentinel_calls = []
+    asr_factory_calls = []
 
     def _pipeline_sentinel(*_args, **_kwargs):
         pipeline_sentinel_calls.append(True)
         raise AssertionError("Pipeline must not be constructed when ASR is denied")
 
+    def _asr_factory_sentinel(*_args, **_kwargs):
+        asr_factory_calls.append(True)
+        raise AssertionError("get_backend must not be called when remote ASR is denied")
+
     monkeypatch.setattr("subtap.core.pipeline.Pipeline", _pipeline_sentinel)
+    monkeypatch.setattr("subtap.core.asr.get_backend", _asr_factory_sentinel)
 
     result = runner.invoke(app, ["transcribe", str(audio), "--local-only"])
     assert result.exit_code == 1
@@ -2019,6 +2025,7 @@ def test_transcribe_local_only_rejects_remote_asr(tmp_path, monkeypatch):
     )
     # Pipeline must NOT have been constructed
     assert len(pipeline_sentinel_calls) == 0
+    assert len(asr_factory_calls) == 0, "get_backend was called under local-only"
 
 
 def test_transcribe_disclosure_matches_policy(tmp_path, monkeypatch):
@@ -2084,21 +2091,28 @@ def test_transcribe_policy_passed_to_pipeline(tmp_path, monkeypatch):
 
 
 def _patch_transcribe_denied(monkeypatch, config):
-    """Patch config and install a Pipeline sentinel that fails if reached.
+    """Patch config and install sentinels for denied-path _transcribe() tests.
 
-    Returns pipeline_sentinel_calls.
+    Returns (pipeline_calls, asr_factory_calls).
+    Patches the actual ASR factory call site: subtap.core.asr.get_backend.
     """
     monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
-    pipeline_sentinel_calls: list[bool] = []
+    pipeline_calls: list[bool] = []
+    asr_factory_calls: list[bool] = []
 
     def _pipeline_sentinel(*_args, **_kwargs):
-        pipeline_sentinel_calls.append(True)
+        pipeline_calls.append(True)
         raise AssertionError(
             "Pipeline must not be constructed when remote ASR is denied"
         )
 
+    def _asr_factory_sentinel(*_args, **_kwargs):
+        asr_factory_calls.append(True)
+        raise AssertionError("get_backend must not be called when remote ASR is denied")
+
     monkeypatch.setattr("subtap.core.pipeline.Pipeline", _pipeline_sentinel)
-    return pipeline_sentinel_calls
+    monkeypatch.setattr("subtap.core.asr.get_backend", _asr_factory_sentinel)
+    return pipeline_calls, asr_factory_calls
 
 
 def test_transcribe_config_offline_denies_configured_remote_backend(
@@ -2108,13 +2122,14 @@ def test_transcribe_config_offline_denies_configured_remote_backend(
     audio = tmp_path / "audio.wav"
     audio.touch()
     config = _make_transcribe_config(backend="http-asr", mode="offline")
-    pipeline_calls = _patch_transcribe_denied(monkeypatch, config)
+    pipeline_calls, asr_calls = _patch_transcribe_denied(monkeypatch, config)
 
     result = runner.invoke(app, ["transcribe", str(audio)])
     assert result.exit_code == 1
     output = _strip_ansi(result.output).lower()
     assert "local-only" in output or "offline" in output or "禁止" in output
     assert len(pipeline_calls) == 0, "Pipeline was constructed under offline ceiling"
+    assert len(asr_calls) == 0, "get_backend was called under offline ceiling"
 
 
 def test_transcribe_config_offline_denies_cli_remote_override(tmp_path, monkeypatch):
@@ -2122,13 +2137,14 @@ def test_transcribe_config_offline_denies_cli_remote_override(tmp_path, monkeypa
     audio = tmp_path / "audio.wav"
     audio.touch()
     config = _make_transcribe_config(backend="mlx-qwen-asr", mode="offline")
-    pipeline_calls = _patch_transcribe_denied(monkeypatch, config)
+    pipeline_calls, asr_calls = _patch_transcribe_denied(monkeypatch, config)
 
     result = runner.invoke(app, ["transcribe", str(audio), "-b", "http-asr"])
     assert result.exit_code == 1
     output = _strip_ansi(result.output).lower()
     assert "local-only" in output or "offline" in output or "禁止" in output
     assert len(pipeline_calls) == 0, "Pipeline was constructed under offline ceiling"
+    assert len(asr_calls) == 0, "get_backend was called under offline ceiling"
 
 
 def test_transcribe_configured_backend_dispatched_exactly(tmp_path, monkeypatch):
@@ -2203,7 +2219,9 @@ def _make_clean_config(
         llm_proofread=llm_proofread,
         llm_hotword=llm_hotword,
         asr=SimpleNamespace(backend=asr_backend),
-        clean=SimpleNamespace(backend=clean_backend),
+        clean=SimpleNamespace(
+            backend=clean_backend, glossary_path=None, style_rules=[]
+        ),
         output=SimpleNamespace(subtitle_language="zh"),
     )
 
@@ -2250,11 +2268,13 @@ def _patch_clean_deps(monkeypatch, config):
 def _patch_clean_denied(monkeypatch, config):
     """Patch config and install sentinels for denied-path _clean() tests.
 
-    Returns (pipeline_calls, llm_factory_calls).
+    Returns (pipeline_calls, llm_factory_calls, copy_calls).
+    Patches the actual LLM factory call site: subtap.core.clean.get_llm_backend.
     """
     monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
     pipeline_calls: list[bool] = []
     llm_factory_calls: list[bool] = []
+    copy_calls: list[bool] = []
 
     def _pipeline_sentinel(*_args, **_kwargs):
         pipeline_calls.append(True)
@@ -2265,8 +2285,8 @@ def _patch_clean_denied(monkeypatch, config):
         raise AssertionError("get_llm_backend must not be called when LLM is denied")
 
     monkeypatch.setattr("subtap.core.pipeline.Pipeline", _pipeline_sentinel)
-    monkeypatch.setattr("subtap.backends.llm.get_llm_backend", _llm_factory_sentinel)
-    return pipeline_calls, llm_factory_calls
+    monkeypatch.setattr("subtap.core.clean.get_llm_backend", _llm_factory_sentinel)
+    return pipeline_calls, llm_factory_calls, copy_calls
 
 
 # ── A. Disable aliases ──────────────────────────────────────────
@@ -2461,7 +2481,7 @@ def test_clean_local_only_denies_concrete_llm(tmp_path, monkeypatch):
     asr_path = tmp_path / "asr.jsonl"
     asr_path.write_text("{}\n", encoding="utf-8")
     config = _make_clean_config()
-    pipeline_calls, llm_calls = _patch_clean_denied(monkeypatch, config)
+    pipeline_calls, llm_calls, copy_calls = _patch_clean_denied(monkeypatch, config)
 
     result = runner.invoke(
         app,
@@ -2490,7 +2510,7 @@ def test_clean_config_offline_denies_concrete_llm(tmp_path, monkeypatch):
     asr_path = tmp_path / "asr.jsonl"
     asr_path.write_text("{}\n", encoding="utf-8")
     config = _make_clean_config(mode="offline")
-    pipeline_calls, llm_calls = _patch_clean_denied(monkeypatch, config)
+    pipeline_calls, llm_calls, copy_calls = _patch_clean_denied(monkeypatch, config)
 
     result = runner.invoke(
         app,
@@ -2516,7 +2536,7 @@ def test_clean_offline_config_cannot_be_widened(tmp_path, monkeypatch):
     asr_path = tmp_path / "asr.jsonl"
     asr_path.write_text("{}\n", encoding="utf-8")
     config = _make_clean_config(mode="offline", llm_proofread=True)
-    pipeline_calls, llm_calls = _patch_clean_denied(monkeypatch, config)
+    pipeline_calls, llm_calls, copy_calls = _patch_clean_denied(monkeypatch, config)
 
     result = runner.invoke(app, ["clean", str(asr_path), "-w", str(tmp_path / "work")])
     assert result.exit_code == 1
@@ -2619,3 +2639,243 @@ def test_clean_missing_input_error(tmp_path, monkeypatch):
     )
     assert result.exit_code == 1
     assert "文件未找到" in _strip_ansi(result.output)
+
+
+# ── F. Canonical clean backend resolution ────────────────────────
+
+
+@pytest.mark.parametrize(
+    "raw_input, expected_canonical",
+    [
+        ("openai:gpt-4o-mini", "openai:gpt-4o-mini"),
+        ("  openai:gpt-4o-mini  ", "openai:gpt-4o-mini"),
+        ("OpenAI:gpt-4o-mini", "openai:gpt-4o-mini"),
+        (" OpenAI:gpt-4o-mini ", "openai:gpt-4o-mini"),
+    ],
+)
+def test_clean_canonical_backend_resolution(
+    tmp_path, monkeypatch, raw_input, expected_canonical
+):
+    """F. Trimmed/lowercased backend dispatches canonical value."""
+    asr_path = tmp_path / "asr.jsonl"
+    asr_path.write_text("{}\n", encoding="utf-8")
+    config = _make_clean_config()
+    captured = _patch_clean_deps(monkeypatch, config)
+
+    result = runner.invoke(
+        app,
+        ["clean", str(asr_path), "-w", str(tmp_path / "work"), "--llm", raw_input],
+    )
+    assert result.exit_code == 0, result.output
+
+    pipeline = captured["pipeline"]
+    policy = pipeline.external_policy
+    assert policy is not None
+    assert policy.enhance_mode.value == "api"
+    assert policy.llm_proofread is True
+    assert policy.llm_hotword is False
+    # Canonical backend reaches Pipeline
+    assert captured["run_stage_kwargs"]["llm_backend"] == expected_canonical
+    # Display uses canonical value
+    assert expected_canonical in _strip_ansi(result.output)
+    # Disclosure derives from the exact policy
+    assert len(policy.disclosure_lines()) > 0
+    for line in policy.disclosure_lines():
+        assert line in _strip_ansi(result.output)
+
+
+# ── G. Invalid clean backend values fail early ───────────────────
+
+
+@pytest.mark.parametrize(
+    "invalid_value",
+    [
+        "",
+        " ",
+        "openai:",
+        "OpenAI:",
+        ":gpt-4o-mini",
+        "anthropic:claude",
+        "mock-llm",
+        "true",
+    ],
+)
+def test_clean_invalid_backend_fails_early(tmp_path, monkeypatch, invalid_value):
+    """G. Invalid explicit --llm value → validation error, no Pipeline, no factory."""
+    asr_path = tmp_path / "asr.jsonl"
+    asr_path.write_text("{}\n", encoding="utf-8")
+    config = _make_clean_config()
+    pipeline_calls, llm_calls, copy_calls = _patch_clean_denied(monkeypatch, config)
+
+    result = runner.invoke(
+        app,
+        ["clean", str(asr_path), "-w", str(tmp_path / "work"), "--llm", invalid_value],
+    )
+    assert result.exit_code == 1
+    output = _strip_ansi(result.output)
+    # Error must state accepted forms
+    assert "openai:" in output or "off" in output or "none" in output
+    assert len(pipeline_calls) == 0, f"Pipeline was constructed for {invalid_value!r}"
+    assert len(llm_calls) == 0, f"get_llm_backend was called for {invalid_value!r}"
+
+
+# ── H. Single-stage clean disclosure is command-scoped ───────────
+
+
+def test_clean_local_off_no_audio_disclosure(tmp_path, monkeypatch):
+    """H1. config.asr.backend=http-asr + --llm off → no audio disclosure."""
+    asr_path = tmp_path / "asr.jsonl"
+    asr_path.write_text("{}\n", encoding="utf-8")
+    # Config says remote ASR, but clean command cannot execute ASR
+    config = _make_clean_config(asr_backend="http-asr")
+    captured = _patch_clean_deps(monkeypatch, config)
+
+    result = runner.invoke(
+        app,
+        ["clean", str(asr_path), "-w", str(tmp_path / "work"), "--llm", "off"],
+    )
+    assert result.exit_code == 0, result.output
+
+    policy = captured["pipeline"].external_policy
+    assert policy.remote_asr is False, "clean command must not claim remote ASR"
+    assert policy.sends_text is False
+    assert len(policy.disclosure_lines()) == 0
+
+
+def test_clean_api_no_audio_disclosure(tmp_path, monkeypatch):
+    """H2. config.asr.backend=http-asr + --llm openai:... → text disclosure only, no audio."""
+    asr_path = tmp_path / "asr.jsonl"
+    asr_path.write_text("{}\n", encoding="utf-8")
+    config = _make_clean_config(asr_backend="http-asr")
+    captured = _patch_clean_deps(monkeypatch, config)
+
+    result = runner.invoke(
+        app,
+        [
+            "clean",
+            str(asr_path),
+            "-w",
+            str(tmp_path / "work"),
+            "--llm",
+            "openai:gpt-4o-mini",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    policy = captured["pipeline"].external_policy
+    assert policy.remote_asr is False, "clean command must not claim remote ASR"
+    assert policy.sends_text is True
+    # Text disclosure appears, audio disclosure does not
+    disclosure = policy.disclosure_lines()
+    assert len(disclosure) > 0
+    output = _strip_ansi(result.output)
+    for line in disclosure:
+        assert line in output
+    # Policy disclosure lines must not contain audio-related content
+    disclosure_text = " ".join(disclosure)
+    assert "音频" not in disclosure_text
+    assert "audio" not in disclosure_text.lower()
+
+
+# ── I. Real Pipeline/core allowed-path integration ───────────────
+
+
+def test_clean_real_pipeline_api_backend(tmp_path, monkeypatch):
+    """I1. Real Pipeline + real _stage_clean dispatch, canonical backend.
+
+    Patches run_clean to verify canonical backend reaches core.
+    Uses real Pipeline and real Pipeline._stage_clean dispatch.
+    """
+    from subtap.schemas.config import load_config
+
+    asr_path = tmp_path / "asr.jsonl"
+    asr_path.write_text(
+        '{"chunk_id":0,"segment_id":0,"start_sec":0.0,"end_sec":1.0,'
+        '"text":"hello world","confidence":0.95}\n',
+        encoding="utf-8",
+    )
+    # Use real config so Pipeline can be constructed
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("mode: online\n")
+    config = load_config(config_path)
+    monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
+
+    # Patch run_clean to capture the backend name and return deterministic result
+    clean_calls = []
+
+    def _fake_run_clean(workspace, config, **kwargs):
+        clean_calls.append(kwargs)
+        workspace.cleaned_jsonl.write_text(
+            '{"chunk_id":0,"segment_id":0,"start_sec":0.0,"end_sec":1.0,'
+            '"text":"cleaned: hello world"}\n',
+            encoding="utf-8",
+        )
+        return {"segment_count": 1}
+
+    monkeypatch.setattr("subtap.core.clean.run_clean", _fake_run_clean)
+
+    result = runner.invoke(
+        app,
+        [
+            "clean",
+            str(asr_path),
+            "-w",
+            str(tmp_path / "work"),
+            "--llm",
+            " OpenAI:gpt-4o-mini ",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    # Canonical backend reaches core
+    assert len(clean_calls) == 1
+    assert clean_calls[0]["llm_backend_name"] == "openai:gpt-4o-mini"
+    # cleaned.jsonl is produced
+    work_dir = tmp_path / "work"
+    cleaned = work_dir / "cleaned.jsonl"
+    assert cleaned.exists()
+    # Text disclosure appears
+    output = _strip_ansi(result.output)
+    assert "字幕" in output or "subtitle" in output.lower() or "text" in output.lower()
+
+
+def test_clean_real_pipeline_local_off(tmp_path, monkeypatch):
+    """I2. Real Pipeline + --llm off → local clean, no LLM factory called."""
+    from subtap.schemas.config import load_config
+
+    asr_path = tmp_path / "asr.jsonl"
+    asr_path.write_text(
+        '{"chunk_id":0,"segment_id":0,"start_sec":0.0,"end_sec":1.0,'
+        '"text":"hello world","confidence":0.95}\n',
+        encoding="utf-8",
+    )
+    # Use real config so Pipeline can be constructed
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("mode: online\n")
+    config = load_config(config_path)
+    monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
+
+    # Patch run_clean to capture calls and return deterministic result
+    clean_calls = []
+
+    def _fake_run_clean(workspace, config, **kwargs):
+        clean_calls.append(kwargs)
+        workspace.cleaned_jsonl.write_text(
+            '{"chunk_id":0,"segment_id":0,"start_sec":0.0,"end_sec":1.0,'
+            '"text":"cleaned: hello world"}\n',
+            encoding="utf-8",
+        )
+        return {"segment_count": 1}
+
+    monkeypatch.setattr("subtap.core.clean.run_clean", _fake_run_clean)
+
+    result = runner.invoke(
+        app,
+        ["clean", str(asr_path), "-w", str(tmp_path / "work"), "--llm", "off"],
+    )
+    assert result.exit_code == 0, result.output
+    assert len(clean_calls) == 1
+    assert clean_calls[0]["llm_backend_name"] is None
+    # cleaned.jsonl is produced
+    work_dir = tmp_path / "work"
+    cleaned = work_dir / "cleaned.jsonl"
+    assert cleaned.exists()

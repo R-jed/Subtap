@@ -1112,6 +1112,25 @@ def _transcribe(
     typer.echo(typer.style("\n✓ 完成", fg=typer.colors.GREEN))
 
 
+_CLEAN_LLM_DISABLE_ALIASES = frozenset({"off", "none", "false"})
+
+
+def _resolve_clean_llm_backend(raw_value: str) -> str:
+    """Canonicalize a concrete OpenAI backend string.
+
+    Returns the canonical form: "openai:<model>" (lowercase provider, stripped).
+    Raises ValueError for invalid explicit values.
+    """
+    candidate = raw_value.strip()
+    provider, separator, model = candidate.partition(":")
+    if provider.lower() == "openai" and separator == ":" and model.strip():
+        return f"openai:{model.strip()}"
+    raise ValueError(
+        f"不支持的 --llm 值：{raw_value!r}。"
+        "接受的格式：off / none / false / openai:<model>"
+    )
+
+
 def _clean(
     asr_path: Path = typer.Argument(..., help="asr.jsonl 路径"),
     work_dir: Path = typer.Option(Path("./work"), "-w", "--work-dir", help="工作目录"),
@@ -1140,7 +1159,6 @@ def _clean(
     effective_local_only = local_only or config_local_only
 
     # ── Normalize --llm ────────────────────────────────────────
-    _DISABLE_ALIASES = {"off", "none", "false"}
     requested_external_llm = False
     effective_enhance_mode = "local"
     effective_llm_proofread = False
@@ -1150,7 +1168,7 @@ def _clean(
 
     if llm is not None:
         normalized = llm.strip().lower()
-        if normalized in _DISABLE_ALIASES:
+        if normalized in _CLEAN_LLM_DISABLE_ALIASES:
             # Explicit disable — override any config flags
             requested_external_llm = False
             effective_enhance_mode = "off"
@@ -1158,18 +1176,18 @@ def _clean(
             effective_llm_hotword = False
             effective_llm_backend = None
             backend_label = "off"
-        elif normalized.startswith("openai:"):
+        else:
+            # Concrete backend — must be valid openai:<model>
+            try:
+                canonical = _resolve_clean_llm_backend(llm)
+            except ValueError as exc:
+                _handle_error(str(exc))
             requested_external_llm = True
             effective_enhance_mode = "api"
             effective_llm_proofread = True
             effective_llm_hotword = False
-            effective_llm_backend = llm  # preserve original string
-            backend_label = llm
-        else:
-            _handle_error(
-                f"错误：不支持的 --llm 值：{llm!r}。"
-                "接受的格式：off / none / false / openai:<model>"
-            )
+            effective_llm_backend = canonical
+            backend_label = canonical
     else:
         # Absent --llm: derive from config
         config_llm_proofread = bool(getattr(config, "llm_proofread", False))
@@ -1190,10 +1208,13 @@ def _clean(
             backend_label = "local"
 
     # ── Build authoritative policy ─────────────────────────────
+    # The single-stage clean command cannot execute ASR.
+    # Use a known local ASR classification so policy.remote_asr is False
+    # regardless of config.asr.backend.
     policy = build_policy(
         local_only=effective_local_only,
         enhance_mode=effective_enhance_mode,
-        asr_backend=getattr(config.asr, "backend", "mlx-qwen-asr"),
+        asr_backend="mlx-qwen-asr",
         llm_proofread=effective_llm_proofread,
         llm_hotword=effective_llm_hotword,
         translation=False,

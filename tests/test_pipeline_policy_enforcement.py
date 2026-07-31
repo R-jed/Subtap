@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from subtap.core.pipeline import Pipeline
+from subtap.core.tracked_pipeline import TrackedPipeline
 from subtap.runtime.external_policy import (
     ExternalProcessingError,
     MissingExternalProcessingPolicyError,
@@ -116,19 +117,6 @@ class TestPipelineWithPolicyDispatch:
         with pytest.raises(ValueError, match="input_path"):
             pipeline.run_stage("prepare")
 
-    def test_chunk_without_policy_ok(self, config, work_dir):
-        """chunk is a pure local stage — no policy required."""
-        pipeline = Pipeline(config, work_dir=work_dir)
-        # chunk will fail on missing workspace, not on missing policy
-        with pytest.raises(Exception):
-            pipeline.run_stage("chunk")
-
-    def test_segment_without_policy_ok(self, config, work_dir):
-        """segment is a pure local stage — no policy required."""
-        pipeline = Pipeline(config, work_dir=work_dir)
-        with pytest.raises(Exception):
-            pipeline.run_stage("segment")
-
     def test_asr_with_deny_policy_raises_external_error(self, config, work_dir):
         """With a deny policy, ASR raises ExternalProcessingError
         (not MissingExternalProcessingPolicyError)."""
@@ -139,7 +127,7 @@ class TestPipelineWithPolicyDispatch:
         )
         pipeline = Pipeline(config, work_dir=work_dir, external_policy=policy)
         # The assertion happens inside run_asr, not in run_stage dispatch
-        with pytest.raises((ExternalProcessingError, Exception)) as exc_info:
+        with pytest.raises(ExternalProcessingError) as exc_info:
             pipeline.run_stage("asr", backend_name="http-asr")
         # Must NOT be a missing-policy error
         assert not isinstance(exc_info.value, MissingExternalProcessingPolicyError)
@@ -167,3 +155,76 @@ class TestMissingPolicyErrorMessage:
             match="ExternalProcessingPolicy",
         ):
             pipeline.run_stage(stage, **_run_stage_kwargs(stage))
+
+
+# ── Pure-local stages succeed without policy (Contract B) ────────
+
+
+class TestPureLocalStagesWithoutPolicy:
+    """Pure-local stages dispatch successfully without external_policy.
+
+    Each stage handler is monkeypatched to return a deterministic result,
+    proving that MissingExternalProcessingPolicyError is never raised
+    for non-external-capable stages.
+    """
+
+    STAGE_HANDLER_KWARGS = [
+        ("prepare", "_stage_prepare", {"input_path": Path("/dev/null")}),
+        ("chunk", "_stage_chunk", {}),
+        ("segment", "_stage_segment", {}),
+        ("align", "_stage_align", {}),
+        ("export", "_stage_export", {}),
+    ]
+
+    @pytest.mark.parametrize("stage, handler, kwargs", STAGE_HANDLER_KWARGS)
+    def test_stage_dispatches_without_policy(
+        self, config, work_dir, monkeypatch, stage, handler, kwargs
+    ):
+        """Stage dispatches without raising MissingExternalProcessingPolicyError."""
+        sentinel = {"called": False, "result": {"ok": True}}
+
+        def fake_handler(**_kw):
+            sentinel["called"] = True
+            return sentinel["result"]
+
+        pipeline = Pipeline(config, work_dir=work_dir)
+        assert pipeline.external_policy is None
+        monkeypatch.setattr(pipeline, handler, fake_handler)
+
+        result = pipeline.run_stage(stage, **kwargs)
+
+        assert sentinel["called"], f"{handler} was not called"
+        assert result == sentinel["result"]
+
+
+# ── TrackedPipeline checkpoint mutation (Contract C) ─────────────
+
+
+class TestTrackedPipelineMissingPolicyNoCheckpoint:
+    """TrackedPipeline must not mutate state before rejecting a missing policy."""
+
+    def test_clean_missing_policy_no_checkpoint_mutation(self, config, work_dir):
+        """MissingExternalProcessingPolicyError on clean without policy,
+        with zero save_state or mark_running calls."""
+        pipeline = TrackedPipeline(config, work_dir=work_dir, stage_order=["clean"])
+        assert pipeline.external_policy is None
+
+        # Spy on state mutation methods — record calls without executing
+        save_calls = []
+        running_calls = []
+        failed_calls = []
+
+        pipeline.save_state = lambda: save_calls.append(1)
+        pipeline.state.mark_running = lambda s: running_calls.append(s)
+        pipeline.state.mark_failed = lambda s, m="": failed_calls.append(s)
+
+        with pytest.raises(MissingExternalProcessingPolicyError, match="clean"):
+            pipeline.run_stage("clean")
+
+        assert save_calls == [], "save_state must not be called before policy rejection"
+        assert (
+            running_calls == []
+        ), "mark_running must not be called before policy rejection"
+        assert (
+            failed_calls == []
+        ), "mark_failed must not be called before policy rejection"

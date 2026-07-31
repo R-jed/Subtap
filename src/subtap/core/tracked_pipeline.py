@@ -94,10 +94,19 @@ class TrackedPipeline(Pipeline):
         are tracked.  Optional stages (hotword, learn, script_match,
         translate) run without persistence.
 
+        For external-capable stages, the missing-policy guard must fire
+        BEFORE any state mutation so that checkpoint files never record
+        a RUNNING/FAILED state for a stage that was rejected by policy.
+
         SUCCESS checkpoint is persisted OUTSIDE the business exception
         handler so that a checkpoint failure raises CheckpointPersistenceError
         rather than being mistaken for a stage failure.
         """
+        # Preflight: delegate missing-policy rejection to the authoritative
+        # Pipeline guard before any checkpoint mutation.
+        if stage in self._EXTERNAL_CAPABLE_STAGES and self.external_policy is None:
+            return super().run_stage(stage, **kwargs)
+
         tracked = stage in self.state.stages
         if tracked:
             self.state.mark_running(stage)
