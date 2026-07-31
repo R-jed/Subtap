@@ -20,7 +20,6 @@ from typer.testing import CliRunner
 
 from subtap.cli import app
 from subtap.core.pipeline import Pipeline
-from subtap.schemas.models import ASRSegment
 from tests.fixtures.pipeline_stubs import (
     make_instrumented_init as _make_instrumented_init,
     seed_asr as _seed_asr,
@@ -37,18 +36,6 @@ runner = CliRunner()
 @pytest.fixture(autouse=True)
 def _isolate_user_home(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-
-
-def _seed_asr_for_batch_item(
-    audio: Path, work_dir: Path, text: str, *, hotword: bool = False
-) -> None:
-    """Seed ASR output for a single batch item."""
-    from subtap.core.workspace import Workspace
-
-    ws = Workspace.__new__(Workspace)
-    ws.asr_dir = work_dir / "asr"
-    ws.asr_jsonl = ws.asr_dir / "asr.jsonl"
-    _seed_asr(ws, [text])
 
 
 class TestBatchRealRunner:
@@ -172,16 +159,7 @@ class TestBatchRealRunner:
         def instrumented_with_capture(self, config, work_dir, **kwargs):
             original_init(self, config, work_dir, **kwargs)
             self.workspace.ensure_dirs()
-            self.workspace.asr_dir.mkdir(parents=True, exist_ok=True)
-            with open(self.workspace.asr_jsonl, "w") as f:
-                seg = ASRSegment(
-                    chunk_id=0,
-                    segment_id=0,
-                    start_sec=0.0,
-                    end_sec=1.0,
-                    text="policy  test",
-                )
-                f.write(seg.model_dump_json() + "\n")
+            _seed_asr(self.workspace, ["policy  test"])
             if kwargs.get("external_policy") is not None:
                 captured_policies.append(kwargs["external_policy"])
                 captured_configs.append(config)
