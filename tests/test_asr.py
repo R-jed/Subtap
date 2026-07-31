@@ -210,9 +210,5 @@ def test_cli_transcribe_runnable(
             str(ws.root),
         ],
     )
-    # Ticket 03 will add policy construction to _transcribe(); until then,
-    # Pipeline correctly rejects the missing policy.
-    assert result.exit_code == 1
-    from subtap.runtime.external_policy import MissingExternalProcessingPolicyError
-
-    assert isinstance(result.exception, MissingExternalProcessingPolicyError)
+    # Ticket 03: _transcribe() now builds and propagates policy.
+    assert result.exit_code == 0, result.output

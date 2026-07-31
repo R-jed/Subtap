@@ -24,6 +24,7 @@ from subtap.metrics.profiler import PipelineProfiler
 from subtap.core.user_resources import default_glossary_path
 from subtap.schemas.task_request import SubtitleTaskRequest
 from subtap.runtime.external_policy import (
+    ExternalProcessingError,
     ExternalProcessingPolicy,
     build_policy,
     is_remote_asr_backend,
@@ -1058,6 +1059,9 @@ def _transcribe(
     audio_path: Path = typer.Argument(..., help="音频文件路径"),
     work_dir: Path = typer.Option(Path("./work"), "-w", "--work-dir", help="工作目录"),
     backend: str | None = typer.Option(None, "-b", "--backend", help="ASR 后端覆盖"),
+    local_only: bool = typer.Option(
+        False, "--local-only", help="仅本地运行，禁止所有外部 API 调用"
+    ),
 ) -> None:
     """语音识别（单阶段执行）"""
     from subtap.schemas.config import load_config
@@ -1067,10 +1071,34 @@ def _transcribe(
         _handle_error(f"文件未找到：{audio_path}")
 
     config = load_config(Path.home() / ".subtap" / "config.yaml")
-    pipeline = Pipeline(config, work_dir=work_dir)
+
+    # Resolve effective backend: CLI override → config default
+    effective_backend = backend or config.asr.backend
+
+    # Build authoritative policy before any external-capable stage
+    policy = build_policy(
+        local_only=local_only,
+        enhance_mode="local",
+        asr_backend=effective_backend,
+        llm_proofread=False,
+        llm_hotword=False,
+        translation=False,
+    )
+
+    # Guard: deny remote ASR before backend factory construction
+    if is_remote_asr_backend(effective_backend):
+        try:
+            policy.assert_remote_asr_allowed()
+        except ExternalProcessingError as exc:
+            _handle_error(str(exc))
+
+    # Emit disclosure from the exact execution policy
+    _warn_external_api_use(policy)
+
+    pipeline = Pipeline(config, work_dir=work_dir, external_policy=policy)
     pipeline.workspace.ensure_dirs()
 
-    typer.echo(f"▸ 语音识别（{backend or config.asr.backend}）...")
+    typer.echo(f"▸ 语音识别（{effective_backend}）...")
     try:
         result = pipeline.run_stage("asr", backend_name=backend)
     except (ImportError, NotImplementedError) as e:

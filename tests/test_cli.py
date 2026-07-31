@@ -1916,3 +1916,154 @@ class TestCLIFlagPrecedence:
             enhance="off",
         )
         assert policy.llm_hotword is False
+
+
+# ── Ticket 03: _transcribe() policy propagation ──────────────────
+
+
+def _make_transcribe_config(backend: str = "mlx-qwen-asr"):
+    """Build a minimal config for _transcribe() tests."""
+    return SimpleNamespace(
+        asr=SimpleNamespace(backend=backend),
+        clean=SimpleNamespace(backend="mock-llm"),
+    )
+
+
+def _patch_transcribe_deps(monkeypatch, config, *, run_stage_return=None):
+    """Patch load_config and Pipeline for _transcribe() tests.
+
+    Returns (captured dict) where captured["pipeline"] is the FakePipeline instance.
+    """
+    from subtap.runtime.external_policy import build_policy
+
+    monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
+
+    captured: dict = {}
+
+    class FakePipeline:
+        def __init__(self, _config, work_dir, **kwargs):
+            self.workspace = SimpleNamespace(
+                root=work_dir,
+                ensure_dirs=lambda: None,
+            )
+            self.external_policy = kwargs.get("external_policy")
+            captured["pipeline"] = self
+
+        def run_stage(self, stage, **_kwargs):
+            captured["run_stage_kwargs"] = _kwargs
+            if run_stage_return is not None:
+                return run_stage_return
+            return {"segment_count": 42, "asr_jsonl": "/fake/asr.jsonl"}
+
+    monkeypatch.setattr("subtap.core.pipeline.Pipeline", FakePipeline)
+    return captured
+
+
+def test_transcribe_local_asr_propagates_policy(tmp_path, monkeypatch):
+    """_transcribe() with local ASR → policy built and propagated to Pipeline."""
+    audio = tmp_path / "audio.wav"
+    audio.touch()
+    config = _make_transcribe_config(backend="mlx-qwen-asr")
+    captured = _patch_transcribe_deps(monkeypatch, config)
+
+    result = runner.invoke(app, ["transcribe", str(audio)])
+    assert result.exit_code == 0, result.output
+
+    pipeline = captured["pipeline"]
+    assert pipeline.external_policy is not None
+    assert pipeline.external_policy.local_only is False
+    assert pipeline.external_policy.remote_asr is False
+    assert pipeline.external_policy.llm_proofread is False
+    assert pipeline.external_policy.llm_hotword is False
+    assert pipeline.external_policy.translation is False
+
+
+def test_transcribe_remote_asr_allowed_propagates_policy(tmp_path, monkeypatch):
+    """_transcribe() with http-asr (no --local-only) → policy propagated, remote_asr=True."""
+    audio = tmp_path / "audio.wav"
+    audio.touch()
+    config = _make_transcribe_config(backend="http-asr")
+    captured = _patch_transcribe_deps(monkeypatch, config)
+
+    result = runner.invoke(app, ["transcribe", str(audio)])
+    assert result.exit_code == 0, result.output
+
+    pipeline = captured["pipeline"]
+    assert pipeline.external_policy is not None
+    assert pipeline.external_policy.remote_asr is True
+    assert pipeline.external_policy.local_only is False
+
+
+def test_transcribe_local_only_rejects_remote_asr(tmp_path, monkeypatch):
+    """_transcribe() with --local-only + http-asr → denied, no backend constructed."""
+    audio = tmp_path / "audio.wav"
+    audio.touch()
+    config = _make_transcribe_config(backend="http-asr")
+    captured = _patch_transcribe_deps(monkeypatch, config)
+
+    result = runner.invoke(app, ["transcribe", str(audio), "--local-only"])
+    assert result.exit_code == 1
+    assert "local-only" in _strip_ansi(result.output).lower() or "禁止" in _strip_ansi(
+        result.output
+    )
+    # Pipeline.run_stage should NOT have been called
+    assert "run_stage_kwargs" not in captured
+
+
+def test_transcribe_disclosure_matches_policy(tmp_path, monkeypatch):
+    """_transcribe() disclosure derives from the exact policy used for execution."""
+    import io
+
+    audio = tmp_path / "audio.wav"
+    audio.touch()
+    config = _make_transcribe_config(backend="http-asr")
+    captured = _patch_transcribe_deps(monkeypatch, config)
+
+    # Capture stderr output (disclosure goes to err=True via typer.echo)
+    stderr_buf = io.StringIO()
+    monkeypatch.setattr("typer.echo", lambda msg, **kw: stderr_buf.write(msg + "\n"))
+
+    result = runner.invoke(app, ["transcribe", str(audio)])
+    assert result.exit_code == 0, result.output
+
+    pipeline = captured["pipeline"]
+    policy = pipeline.external_policy
+    assert policy is not None
+
+    stderr_text = stderr_buf.getvalue()
+    # Policy says remote_asr=True → audio disclosure should appear
+    for line in policy.disclosure_lines():
+        assert line in stderr_text
+
+
+def test_transcribe_backend_override_respected(tmp_path, monkeypatch):
+    """_transcribe() with --backend http-asr → effective backend is http-asr."""
+    audio = tmp_path / "audio.wav"
+    audio.touch()
+    # Config says local, but CLI overrides to http-asr
+    config = _make_transcribe_config(backend="mlx-qwen-asr")
+    captured = _patch_transcribe_deps(monkeypatch, config)
+
+    result = runner.invoke(app, ["transcribe", str(audio), "-b", "http-asr"])
+    assert result.exit_code == 0, result.output
+
+    pipeline = captured["pipeline"]
+    assert pipeline.external_policy is not None
+    assert pipeline.external_policy.remote_asr is True
+
+
+def test_transcribe_policy_passed_to_pipeline(tmp_path, monkeypatch):
+    """_transcribe() passes the exact same policy object to Pipeline."""
+    audio = tmp_path / "audio.wav"
+    audio.touch()
+    config = _make_transcribe_config(backend="mlx-qwen-asr")
+    captured = _patch_transcribe_deps(monkeypatch, config)
+
+    result = runner.invoke(app, ["transcribe", str(audio)])
+    assert result.exit_code == 0, result.output
+
+    pipeline = captured["pipeline"]
+    # external_policy should be a proper ExternalProcessingPolicy, not None
+    from subtap.runtime.external_policy import ExternalProcessingPolicy
+
+    assert isinstance(pipeline.external_policy, ExternalProcessingPolicy)
