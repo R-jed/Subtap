@@ -1122,6 +1122,9 @@ def _clean(
     output: Path | None = typer.Option(
         None, "-o", "--output", help="输出 cleaned.jsonl 路径"
     ),
+    local_only: bool = typer.Option(
+        False, "--local-only", help="仅本地运行，禁止所有外部 API 调用"
+    ),
 ) -> None:
     """文本清洗：术语替换 + LLM 纠错（单阶段执行）"""
     from subtap.schemas.config import load_config
@@ -1131,16 +1134,95 @@ def _clean(
         _handle_error(f"文件未找到：{asr_path}")
 
     config = load_config(Path.home() / ".subtap" / "config.yaml")
-    pipeline = Pipeline(config, work_dir=work_dir)
+
+    # ── Permission ceiling ─────────────────────────────────────
+    config_local_only = getattr(config, "mode", "online") == "offline"
+    effective_local_only = local_only or config_local_only
+
+    # ── Normalize --llm ────────────────────────────────────────
+    _DISABLE_ALIASES = {"off", "none", "false"}
+    requested_external_llm = False
+    effective_enhance_mode = "local"
+    effective_llm_proofread = False
+    effective_llm_hotword = False
+    effective_llm_backend: str | None = None
+    backend_label = "local"
+
+    if llm is not None:
+        normalized = llm.strip().lower()
+        if normalized in _DISABLE_ALIASES:
+            # Explicit disable — override any config flags
+            requested_external_llm = False
+            effective_enhance_mode = "off"
+            effective_llm_proofread = False
+            effective_llm_hotword = False
+            effective_llm_backend = None
+            backend_label = "off"
+        elif normalized.startswith("openai:"):
+            requested_external_llm = True
+            effective_enhance_mode = "api"
+            effective_llm_proofread = True
+            effective_llm_hotword = False
+            effective_llm_backend = llm  # preserve original string
+            backend_label = llm
+        else:
+            _handle_error(
+                f"错误：不支持的 --llm 值：{llm!r}。"
+                "接受的格式：off / none / false / openai:<model>"
+            )
+    else:
+        # Absent --llm: derive from config
+        config_llm_proofread = bool(getattr(config, "llm_proofread", False))
+        config_llm_hotword = bool(getattr(config, "llm_hotword", False))
+        if config_llm_proofread or config_llm_hotword:
+            requested_external_llm = True
+            effective_enhance_mode = "api"
+            effective_llm_proofread = config_llm_proofread
+            effective_llm_hotword = config_llm_hotword
+            effective_llm_backend = config.clean.backend
+            backend_label = config.clean.backend
+        else:
+            requested_external_llm = False
+            effective_enhance_mode = "local"
+            effective_llm_proofread = False
+            effective_llm_hotword = False
+            effective_llm_backend = None
+            backend_label = "local"
+
+    # ── Build authoritative policy ─────────────────────────────
+    policy = build_policy(
+        local_only=effective_local_only,
+        enhance_mode=effective_enhance_mode,
+        asr_backend=getattr(config.asr, "backend", "mlx-qwen-asr"),
+        llm_proofread=effective_llm_proofread,
+        llm_hotword=effective_llm_hotword,
+        translation=False,
+    )
+
+    # ── Assert external LLM capability ─────────────────────────
+    if requested_external_llm:
+        try:
+            policy.assert_clean_llm_allowed()
+        except ExternalProcessingError as exc:
+            _handle_error(str(exc))
+
+    # ── Disclosure ─────────────────────────────────────────────
+    _warn_external_api_use(policy)
+
+    # ── Pipeline construction ──────────────────────────────────
+    pipeline = Pipeline(config, work_dir=work_dir, external_policy=policy)
     pipeline.workspace.ensure_dirs()
 
+    # Copy input ASR JSONL only after policy assertion passed
     if asr_path.resolve() != pipeline.workspace.asr_jsonl.resolve():
         shutil.copy2(asr_path, pipeline.workspace.asr_jsonl)
 
-    typer.echo(f"▸ 文本清洗（{llm or config.clean.backend}）...")
+    typer.echo(f"▸ 文本清洗（{backend_label}）...")
     try:
         result = pipeline.run_stage(
-            "clean", llm_backend=llm, glossary_path=str(glossary) if glossary else None
+            "clean",
+            llm_backend=effective_llm_backend,
+            glossary_path=str(glossary) if glossary else None,
         )
     except ValueError as e:
         _handle_error(f"错误：{e}")

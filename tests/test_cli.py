@@ -45,8 +45,13 @@ def test_auto_json_detects_real_pipe(monkeypatch):
 def _patch_stage_pipeline(monkeypatch, stage_name: str):
     """Patch Pipeline so CLI stage tests only cover CLI file routing."""
     config = SimpleNamespace(
+        mode="online",
+        llm_proofread=None,
+        llm_hotword=False,
+        asr=SimpleNamespace(backend="mlx-qwen-asr"),
         clean=SimpleNamespace(backend="mock-llm"),
         align=SimpleNamespace(backend="mock-align"),
+        output=SimpleNamespace(subtitle_language="zh"),
     )
     captured = {}
 
@@ -2081,7 +2086,7 @@ def test_transcribe_policy_passed_to_pipeline(tmp_path, monkeypatch):
 def _patch_transcribe_denied(monkeypatch, config):
     """Patch config and install a Pipeline sentinel that fails if reached.
 
-    Returns (pipeline_sentinel_calls, backend_sentinel_calls).
+    Returns pipeline_sentinel_calls.
     """
     monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
     pipeline_sentinel_calls: list[bool] = []
@@ -2179,3 +2184,438 @@ def test_transcribe_local_backend_existing_behavior(tmp_path, monkeypatch):
     assert policy.remote_asr is False
     assert policy.local_only is False
     assert captured["run_stage_kwargs"]["backend_name"] == "mlx-qwen-asr"
+
+
+# ── Ticket 04: _clean() policy enforcement ────────────────────────
+
+
+def _make_clean_config(
+    *,
+    mode: str = "online",
+    clean_backend: str = "openai:gpt-4o-mini",
+    llm_proofread: bool | None = None,
+    llm_hotword: bool = False,
+    asr_backend: str = "mlx-qwen-asr",
+):
+    """Build a minimal config for _clean() tests."""
+    return SimpleNamespace(
+        mode=mode,
+        llm_proofread=llm_proofread,
+        llm_hotword=llm_hotword,
+        asr=SimpleNamespace(backend=asr_backend),
+        clean=SimpleNamespace(backend=clean_backend),
+        output=SimpleNamespace(subtitle_language="zh"),
+    )
+
+
+def _patch_clean_deps(monkeypatch, config):
+    """Patch load_config and Pipeline for _clean() tests.
+
+    Returns captured dict where captured["pipeline"] is the FakePipeline
+    instance and captured["run_stage_kwargs"] records the dispatch kwargs.
+    """
+    monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
+
+    captured: dict = {}
+
+    class FakeWorkspace:
+        def __init__(self, root):
+            self.root = root
+            self.asr_jsonl = root / "asr" / "asr.jsonl"
+
+        def ensure_dirs(self):
+            self.asr_jsonl.parent.mkdir(parents=True, exist_ok=True)
+            self.root.mkdir(parents=True, exist_ok=True)
+
+    class FakePipeline:
+        def __init__(self, _config, work_dir, **kwargs):
+            self.workspace = FakeWorkspace(work_dir)
+            self.external_policy = kwargs.get("external_policy")
+            captured["pipeline"] = self
+
+        def run_stage(self, stage, **kwargs):
+            captured["run_stage_kwargs"] = kwargs
+            assert stage == "clean"
+            self.workspace.cleaned_jsonl = self.workspace.root / "cleaned.jsonl"
+            self.workspace.cleaned_jsonl.write_text("cleaned\n", encoding="utf-8")
+            return {
+                "segment_count": 1,
+                "cleaned_jsonl": str(self.workspace.cleaned_jsonl),
+            }
+
+    monkeypatch.setattr("subtap.core.pipeline.Pipeline", FakePipeline)
+    return captured
+
+
+def _patch_clean_denied(monkeypatch, config):
+    """Patch config and install sentinels for denied-path _clean() tests.
+
+    Returns (pipeline_calls, llm_factory_calls).
+    """
+    monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
+    pipeline_calls: list[bool] = []
+    llm_factory_calls: list[bool] = []
+
+    def _pipeline_sentinel(*_args, **_kwargs):
+        pipeline_calls.append(True)
+        raise AssertionError("Pipeline must not be constructed when LLM is denied")
+
+    def _llm_factory_sentinel(*_args, **_kwargs):
+        llm_factory_calls.append(True)
+        raise AssertionError("get_llm_backend must not be called when LLM is denied")
+
+    monkeypatch.setattr("subtap.core.pipeline.Pipeline", _pipeline_sentinel)
+    monkeypatch.setattr("subtap.backends.llm.get_llm_backend", _llm_factory_sentinel)
+    return pipeline_calls, llm_factory_calls
+
+
+# ── A. Disable aliases ──────────────────────────────────────────
+
+
+@pytest.mark.parametrize("alias", ["off", "none", "false"])
+def test_clean_disable_alias(tmp_path, monkeypatch, alias):
+    """A. --llm off/none/false → enhance_mode=off, no LLM, no disclosure."""
+    asr_path = tmp_path / "asr.jsonl"
+    asr_path.write_text("{}\n", encoding="utf-8")
+    config = _make_clean_config()
+    captured = _patch_clean_deps(monkeypatch, config)
+
+    result = runner.invoke(
+        app, ["clean", str(asr_path), "-w", str(tmp_path / "work"), "--llm", alias]
+    )
+    assert result.exit_code == 0, result.output
+
+    pipeline = captured["pipeline"]
+    policy = pipeline.external_policy
+    assert policy is not None
+    assert policy.enhance_mode.value == "off"
+    assert policy.llm_proofread is False
+    assert policy.llm_hotword is False
+    assert policy.sends_text is False
+    assert captured["run_stage_kwargs"]["llm_backend"] is None
+    assert len(policy.disclosure_lines()) == 0
+
+
+# ── B. Disable alias overrides enabled config ───────────────────
+
+
+@pytest.mark.parametrize("alias", ["off", "none", "false"])
+def test_clean_disable_alias_overrides_enabled_config(tmp_path, monkeypatch, alias):
+    """B. --llm off/none/false overrides config llm_proofread=True, llm_hotword=True."""
+    asr_path = tmp_path / "asr.jsonl"
+    asr_path.write_text("{}\n", encoding="utf-8")
+    config = _make_clean_config(llm_proofread=True, llm_hotword=True)
+    captured = _patch_clean_deps(monkeypatch, config)
+
+    result = runner.invoke(
+        app, ["clean", str(asr_path), "-w", str(tmp_path / "work"), "--llm", alias]
+    )
+    assert result.exit_code == 0, result.output
+
+    policy = captured["pipeline"].external_policy
+    assert policy.llm_proofread is False
+    assert policy.llm_hotword is False
+
+
+# ── C. Concrete CLI backend ─────────────────────────────────────
+
+
+def test_clean_concrete_backend(tmp_path, monkeypatch):
+    """C. --llm openai:gpt-4o-mini → enhance_mode=api, proofread=True, hotword=False."""
+    asr_path = tmp_path / "asr.jsonl"
+    asr_path.write_text("{}\n", encoding="utf-8")
+    config = _make_clean_config()
+    captured = _patch_clean_deps(monkeypatch, config)
+
+    result = runner.invoke(
+        app,
+        [
+            "clean",
+            str(asr_path),
+            "-w",
+            str(tmp_path / "work"),
+            "--llm",
+            "openai:gpt-4o-mini",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    pipeline = captured["pipeline"]
+    policy = pipeline.external_policy
+    assert policy is not None
+    assert policy.enhance_mode.value == "api"
+    assert policy.llm_proofread is True
+    assert policy.llm_hotword is False
+    assert policy.sends_text is True
+    assert captured["run_stage_kwargs"]["llm_backend"] == "openai:gpt-4o-mini"
+    # Disclosure derives from the exact policy passed to Pipeline
+    assert len(policy.disclosure_lines()) > 0
+    for line in policy.disclosure_lines():
+        assert line in _strip_ansi(result.output)
+
+
+# ── D. Default unset config ─────────────────────────────────────
+
+
+def test_clean_default_unset_config(tmp_path, monkeypatch):
+    """D. No --llm, config defaults → enhance_mode=local, no LLM enabled."""
+    asr_path = tmp_path / "asr.jsonl"
+    asr_path.write_text("{}\n", encoding="utf-8")
+    config = _make_clean_config(
+        llm_proofread=None, llm_hotword=False, clean_backend="openai:gpt-4o-mini"
+    )
+    captured = _patch_clean_deps(monkeypatch, config)
+
+    result = runner.invoke(app, ["clean", str(asr_path), "-w", str(tmp_path / "work")])
+    assert result.exit_code == 0, result.output
+
+    pipeline = captured["pipeline"]
+    policy = pipeline.external_policy
+    assert policy is not None
+    assert policy.enhance_mode.value == "local"
+    assert policy.llm_proofread is False
+    assert policy.llm_hotword is False
+    assert policy.sends_text is False
+    assert captured["run_stage_kwargs"]["llm_backend"] is None
+    assert len(policy.disclosure_lines()) == 0
+
+
+# ── E. Config proofread enabled ─────────────────────────────────
+
+
+def test_clean_config_proofread_enabled(tmp_path, monkeypatch):
+    """E. No --llm, config llm_proofread=True → enhance_mode=api, proofread=True."""
+    asr_path = tmp_path / "asr.jsonl"
+    asr_path.write_text("{}\n", encoding="utf-8")
+    config = _make_clean_config(
+        llm_proofread=True, llm_hotword=False, clean_backend="openai:gpt-4o-mini"
+    )
+    captured = _patch_clean_deps(monkeypatch, config)
+
+    result = runner.invoke(app, ["clean", str(asr_path), "-w", str(tmp_path / "work")])
+    assert result.exit_code == 0, result.output
+
+    pipeline = captured["pipeline"]
+    policy = pipeline.external_policy
+    assert policy.enhance_mode.value == "api"
+    assert policy.llm_proofread is True
+    assert policy.llm_hotword is False
+    assert captured["run_stage_kwargs"]["llm_backend"] == "openai:gpt-4o-mini"
+    assert len(policy.disclosure_lines()) > 0
+
+
+# ── F. Config hotword enabled independently ─────────────────────
+
+
+def test_clean_config_hotword_enabled_independently(tmp_path, monkeypatch):
+    """F. No --llm, config llm_hotword=True, proofread=False → api, hotword only."""
+    asr_path = tmp_path / "asr.jsonl"
+    asr_path.write_text("{}\n", encoding="utf-8")
+    config = _make_clean_config(
+        llm_proofread=False, llm_hotword=True, clean_backend="openai:gpt-4o-mini"
+    )
+    captured = _patch_clean_deps(monkeypatch, config)
+
+    result = runner.invoke(app, ["clean", str(asr_path), "-w", str(tmp_path / "work")])
+    assert result.exit_code == 0, result.output
+
+    policy = captured["pipeline"].external_policy
+    assert policy.enhance_mode.value == "api"
+    assert policy.llm_proofread is False
+    assert policy.llm_hotword is True
+
+
+# ── G. Explicit concrete backend overrides disabled config ──────
+
+
+def test_clean_concrete_backend_overrides_disabled_config(tmp_path, monkeypatch):
+    """G. --llm openai:gpt-4o-mini with config flags both False → proofread=True."""
+    asr_path = tmp_path / "asr.jsonl"
+    asr_path.write_text("{}\n", encoding="utf-8")
+    config = _make_clean_config(llm_proofread=False, llm_hotword=False)
+    captured = _patch_clean_deps(monkeypatch, config)
+
+    result = runner.invoke(
+        app,
+        [
+            "clean",
+            str(asr_path),
+            "-w",
+            str(tmp_path / "work"),
+            "--llm",
+            "openai:gpt-4o-mini",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    policy = captured["pipeline"].external_policy
+    assert policy.llm_proofread is True
+    assert policy.llm_hotword is False
+
+
+# ── H. Explicit local-only denial ───────────────────────────────
+
+
+def test_clean_local_only_denies_concrete_llm(tmp_path, monkeypatch):
+    """H. --local-only + --llm openai:gpt-4o-mini → denied before Pipeline."""
+    asr_path = tmp_path / "asr.jsonl"
+    asr_path.write_text("{}\n", encoding="utf-8")
+    config = _make_clean_config()
+    pipeline_calls, llm_calls = _patch_clean_denied(monkeypatch, config)
+
+    result = runner.invoke(
+        app,
+        [
+            "clean",
+            str(asr_path),
+            "-w",
+            str(tmp_path / "work"),
+            "--local-only",
+            "--llm",
+            "openai:gpt-4o-mini",
+        ],
+    )
+    assert result.exit_code == 1
+    assert len(pipeline_calls) == 0, "Pipeline was constructed under local-only"
+    assert len(llm_calls) == 0, "get_llm_backend was called under local-only"
+    # Workspace ASR JSONL must not be copied
+    assert not (tmp_path / "work" / "asr" / "asr.jsonl").exists()
+
+
+# ── I. Config offline denial ────────────────────────────────────
+
+
+def test_clean_config_offline_denies_concrete_llm(tmp_path, monkeypatch):
+    """I. config.mode=offline + --llm openai:gpt-4o-mini → denied before Pipeline."""
+    asr_path = tmp_path / "asr.jsonl"
+    asr_path.write_text("{}\n", encoding="utf-8")
+    config = _make_clean_config(mode="offline")
+    pipeline_calls, llm_calls = _patch_clean_denied(monkeypatch, config)
+
+    result = runner.invoke(
+        app,
+        [
+            "clean",
+            str(asr_path),
+            "-w",
+            str(tmp_path / "work"),
+            "--llm",
+            "openai:gpt-4o-mini",
+        ],
+    )
+    assert result.exit_code == 1
+    assert len(pipeline_calls) == 0, "Pipeline was constructed under offline"
+    assert len(llm_calls) == 0, "get_llm_backend was called under offline"
+
+
+# ── J. Offline config cannot be widened by config flags ─────────
+
+
+def test_clean_offline_config_cannot_be_widened(tmp_path, monkeypatch):
+    """J. config.mode=offline + config.llm_proofread=True → denied."""
+    asr_path = tmp_path / "asr.jsonl"
+    asr_path.write_text("{}\n", encoding="utf-8")
+    config = _make_clean_config(mode="offline", llm_proofread=True)
+    pipeline_calls, llm_calls = _patch_clean_denied(monkeypatch, config)
+
+    result = runner.invoke(app, ["clean", str(asr_path), "-w", str(tmp_path / "work")])
+    assert result.exit_code == 1
+    assert len(pipeline_calls) == 0
+    assert len(llm_calls) == 0
+
+
+# ── K. Offline local clean remains functional ───────────────────
+
+
+def test_clean_offline_local_remains_functional(tmp_path, monkeypatch):
+    """K. config.mode=offline, no external LLM → local clean succeeds."""
+    asr_path = tmp_path / "asr.jsonl"
+    asr_path.write_text("{}\n", encoding="utf-8")
+    config = _make_clean_config(mode="offline", llm_proofread=None, llm_hotword=False)
+    captured = _patch_clean_deps(monkeypatch, config)
+
+    result = runner.invoke(app, ["clean", str(asr_path), "-w", str(tmp_path / "work")])
+    assert result.exit_code == 0, result.output
+
+    pipeline = captured["pipeline"]
+    policy = pipeline.external_policy
+    assert policy.local_only is True
+    assert policy.llm_proofread is False
+    assert policy.llm_hotword is False
+    assert len(policy.disclosure_lines()) == 0
+
+
+# ── L. Policy and disclosure identity ───────────────────────────
+
+
+def test_clean_policy_disclosure_identity(tmp_path, monkeypatch):
+    """L. Disclosure derives from the exact policy object passed to Pipeline."""
+    asr_path = tmp_path / "asr.jsonl"
+    asr_path.write_text("{}\n", encoding="utf-8")
+    config = _make_clean_config()
+    captured = _patch_clean_deps(monkeypatch, config)
+
+    result = runner.invoke(
+        app,
+        [
+            "clean",
+            str(asr_path),
+            "-w",
+            str(tmp_path / "work"),
+            "--llm",
+            "openai:gpt-4o-mini",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    pipeline = captured["pipeline"]
+    policy = pipeline.external_policy
+    assert policy is not None
+    expected_lines = policy.disclosure_lines()
+    assert len(expected_lines) > 0
+    for line in expected_lines:
+        assert line in _strip_ansi(result.output)
+
+
+# ── M. Output and glossary regression ───────────────────────────
+
+
+def test_clean_output_and_glossary_regression(tmp_path, monkeypatch):
+    """M. Preserve glossary_path propagation and output copy behavior."""
+    asr_path = tmp_path / "asr.jsonl"
+    asr_path.write_text("{}\n", encoding="utf-8")
+    output_path = tmp_path / "custom" / "cleaned.jsonl"
+    glossary_path = tmp_path / "glossary.yaml"
+    glossary_path.write_text("terms: []\n", encoding="utf-8")
+    config = _make_clean_config(llm_proofread=None, llm_hotword=False)
+    captured = _patch_clean_deps(monkeypatch, config)
+
+    result = runner.invoke(
+        app,
+        [
+            "clean",
+            str(asr_path),
+            "-w",
+            str(tmp_path / "work"),
+            "-o",
+            str(output_path),
+            "--glossary",
+            str(glossary_path),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert output_path.read_text(encoding="utf-8") == "cleaned\n"
+    assert captured["run_stage_kwargs"]["glossary_path"] == str(glossary_path)
+
+
+def test_clean_missing_input_error(tmp_path, monkeypatch):
+    """M. Missing input file → error exit."""
+    config = _make_clean_config()
+    monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
+
+    result = runner.invoke(
+        app,
+        ["clean", str(tmp_path / "nonexistent.jsonl"), "-w", str(tmp_path / "work")],
+    )
+    assert result.exit_code == 1
+    assert "文件未找到" in _strip_ansi(result.output)

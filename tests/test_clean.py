@@ -455,14 +455,13 @@ def test_local_clean_no_glossary():
 
 
 def test_cli_clean_runnable(test_config: SubtapConfig, tmp_path: Path, monkeypatch):
-    """CLI clean command raises MissingExternalProcessingPolicyError.
+    """CLI clean command with --llm off succeeds under policy enforcement.
 
-    The CLI _clean() command does not yet build a policy (Ticket 04).
-    Until then, Pipeline enforcement correctly rejects the missing policy.
+    Ticket 04 added policy construction to _clean(), so the command now
+    builds a policy and dispatches through the clean stage.
     """
     from typer.testing import CliRunner
     from subtap.cli import app
-    from subtap.runtime.external_policy import MissingExternalProcessingPolicyError
 
     ws = Workspace(test_config, base_dir=tmp_path / "work")
     ws.ensure_dirs()
@@ -491,10 +490,9 @@ def test_cli_clean_runnable(test_config: SubtapConfig, tmp_path: Path, monkeypat
             "off",
         ],
     )
-    # Ticket 04 will add policy construction to _clean(); until then,
-    # Pipeline correctly rejects the missing policy.
-    assert result.exit_code == 1
-    assert isinstance(result.exception, MissingExternalProcessingPolicyError)
+    # With Ticket 04 policy enforcement, --llm off builds a valid policy
+    # and succeeds through the clean stage.
+    assert result.exit_code == 0, result.output
 
 
 # ── Independent LLM config tests ──
