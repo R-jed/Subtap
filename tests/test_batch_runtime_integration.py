@@ -15,8 +15,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
-
 import pytest
 from typer.testing import CliRunner
 
@@ -226,37 +224,13 @@ class TestBatchRealRunner:
         self, tmp_path, monkeypatch, skip_runtime_model_validation
     ):
         """Batch item policy and config flags are set correctly."""
-        original_init = Pipeline.__init__
-        instrumented = _seed_asr_init(original_init, ["policy  test"])
-
-        monkeypatch.setattr(Pipeline, "__init__", instrumented)
-        monkeypatch.setattr("subtap.core.media.prepare_media", _stub_prepare)
-        monkeypatch.setattr("subtap.core.vad.split_chunks", _stub_chunks)
-        monkeypatch.setattr("subtap.core.asr.run_asr", _stub_asr)
-        monkeypatch.setattr("subtap.core.align.run_align", _stub_align)
-        monkeypatch.setattr("subtap.core.hotword.run_hotword", _stub_hotword)
-        monkeypatch.setattr(
-            "subtap.core.models.validate_runtime_models", lambda _c: None
-        )
-        monkeypatch.setattr("subtap.core.models.apply_asr_mode", lambda _c, _m: None)
-        monkeypatch.setattr("subtap.core.models.asr_mode_for_model", lambda _m: "fast")
-
-        # Capture build_policy calls in batch_cli module
+        # Capture policy/config from Pipeline.__init__
         captured_policies = []
         captured_configs = []
-        original_pipeline_init = Pipeline.__init__
-
-        def capturing_pipeline_init(self, config, work_dir, **kwargs):
-            original_pipeline_init(self, config, work_dir, **kwargs)
-            if kwargs.get("external_policy") is not None:
-                captured_policies.append(kwargs["external_policy"])
-                captured_configs.append(config)
-
-        # Re-patch Pipeline.__init__ to capture policy/config after seeding
-        original_init2 = Pipeline.__init__
+        original_init = Pipeline.__init__
 
         def instrumented_with_capture(self, config, work_dir, **kwargs):
-            original_init2(self, config, work_dir, **kwargs)
+            original_init(self, config, work_dir, **kwargs)
             self.workspace.ensure_dirs()
             self.workspace.asr_dir.mkdir(parents=True, exist_ok=True)
             with open(self.workspace.asr_jsonl, "w") as f:
@@ -273,6 +247,16 @@ class TestBatchRealRunner:
                 captured_configs.append(config)
 
         monkeypatch.setattr(Pipeline, "__init__", instrumented_with_capture)
+        monkeypatch.setattr("subtap.core.media.prepare_media", _stub_prepare)
+        monkeypatch.setattr("subtap.core.vad.split_chunks", _stub_chunks)
+        monkeypatch.setattr("subtap.core.asr.run_asr", _stub_asr)
+        monkeypatch.setattr("subtap.core.align.run_align", _stub_align)
+        monkeypatch.setattr("subtap.core.hotword.run_hotword", _stub_hotword)
+        monkeypatch.setattr(
+            "subtap.core.models.validate_runtime_models", lambda _c: None
+        )
+        monkeypatch.setattr("subtap.core.models.apply_asr_mode", lambda _c, _m: None)
+        monkeypatch.setattr("subtap.core.models.asr_mode_for_model", lambda _m: "fast")
 
         audio = tmp_path / "voice.wav"
         audio.write_bytes(b"audio")
@@ -301,12 +285,11 @@ class TestBatchRealRunner:
         policy = captured_policies[0]
         config = captured_configs[0]
 
-        # Verify policy flags are synced to config
-        assert config.llm_proofread == policy.llm_proofread
-        assert config.llm_hotword == policy.llm_hotword
-
-        # Verify pipeline.external_policy is the same object
-        # (identity, not equality)
+        # Verify local enhance mode → LLM features disabled
+        assert policy.llm_proofread is False
+        assert policy.llm_hotword is False
+        assert config.llm_proofread is False
+        assert config.llm_hotword is False
 
     def test_batch_default_local_clean_produces_artifact(
         self, tmp_path, monkeypatch, skip_runtime_model_validation
