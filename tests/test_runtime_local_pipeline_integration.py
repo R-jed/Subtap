@@ -236,6 +236,19 @@ class TestRunnerDrivenPipeline:
 
         return observed, output_dir
 
+    # Expected complete stage order for config without script_path/translate
+    _EXPECTED_STAGES = [
+        "prepare",
+        "chunk",
+        "asr",
+        "clean",
+        "segment",
+        "align",
+        "hotword",
+        "learn",
+        "export",
+    ]
+
     @pytest.mark.parametrize(
         "enhance,local_only",
         [
@@ -253,20 +266,8 @@ class TestRunnerDrivenPipeline:
             tmp_path, monkeypatch, enhance=enhance, local_only=local_only
         )
 
-        # Verify stage order through runner
-        assert "prepare" in observed
-        assert "chunk" in observed
-        assert "asr" in observed
-        assert "clean" in observed
-        assert "segment" in observed
-        assert "align" in observed
-        assert "export" in observed
-
-        # Verify stage counts
-        assert observed.count("clean") == 1
-        assert observed.count("segment") == 1
-        assert observed.count("align") == 1
-        assert observed.count("export") == 1
+        # Verify observed stages match expected complete order exactly
+        assert observed == self._EXPECTED_STAGES
 
         # Verify artifacts
         work_dir = tmp_path / "work"
@@ -281,9 +282,14 @@ class TestRunnerDrivenPipeline:
         assert srt_text.strip()
 
         # Verify causal chain: cleaned text appears in SRT
-        # The input had "hello  world  test" — real run_clean normalizes
-        # double spaces.  The SRT must contain the cleaned form.
-        assert "hello" in srt_text.lower() or "world" in srt_text.lower()
+        # Input had "hello  world  test" — real run_clean normalizes
+        # double spaces to single.  SRT must contain cleaned form,
+        # and must NOT contain the original double-space form.
+        srt_lower = srt_text.lower()
+        assert "hello world" in srt_lower
+        assert (
+            "hello  world" not in srt_lower
+        ), f"SRT still contains uncleaned double-space text: {srt_text[:200]}"
 
         # Verify LLM was never called
         # (fail_if_llm raises AssertionError if called)

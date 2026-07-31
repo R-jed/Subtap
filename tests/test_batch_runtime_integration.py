@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 from typer.testing import CliRunner
@@ -144,6 +145,23 @@ class TestBatchRealRunner:
 
         monkeypatch.setattr("subtap.core.clean.get_llm_backend", fail_if_llm)
 
+        # Intercept cleanroom.clean_intermediate_files to record cleaned.jsonl
+        # existence BEFORE it gets deleted by cleanup
+        cleaned_existed_before_cleanup: list[bool] = []
+        original_clean_intermediate = None
+
+        def intercepting_clean_intermediate(self):
+            cleaned_path = self.root / "cleaned.jsonl"
+            cleaned_existed_before_cleanup.append(cleaned_path.is_file())
+            return original_clean_intermediate(self)
+
+        from subtap.engine.cleanroom import Cleanroom
+
+        original_clean_intermediate = Cleanroom.clean_intermediate_files
+        monkeypatch.setattr(
+            Cleanroom, "clean_intermediate_files", intercepting_clean_intermediate
+        )
+
         audio = tmp_path / "voice.wav"
         audio.write_bytes(b"audio")
         output = tmp_path / "output"
@@ -172,22 +190,123 @@ class TestBatchRealRunner:
         assert saved["failed"] == 0
         assert saved["items"][0]["status"] == "succeeded"
 
+        # Verify cleaned.jsonl existed before cleanup ran
+        assert len(cleaned_existed_before_cleanup) == 1
+        assert (
+            cleaned_existed_before_cleanup[0] is True
+        ), "cleaned.jsonl must exist before cleanroom cleanup"
+
         # Verify surviving artifacts (cleaned.jsonl and sentences.jsonl are
         # deleted by cleanroom.clean_intermediate_files() after successful batch)
         item_work = output / "voice_wav" / "work"
+        assert not (
+            item_work / "cleaned.jsonl"
+        ).exists(), "cleaned.jsonl should be deleted by cleanup"
         assert (item_work / "aligned.jsonl").exists()
 
-        # Verify final subtitle exists and is non-empty
+        # Verify final subtitle exists, is non-empty, and contains cleaned text
         srt_path = output / "voice_wav" / "voice.srt"
         assert srt_path.exists()
         srt_text = srt_path.read_text()
         assert srt_text.strip()
+
+        # Verify SRT contains cleaned (single-space) text, not original double-space
+        assert "batch test" in srt_text.lower()
+        assert (
+            "batch  test" not in srt_text.lower()
+        ), f"SRT still contains uncleaned double-space text: {srt_text[:200]}"
 
         # Verify no LLM backend was called
         assert llm_calls == []
 
         # Verify no external disclosure text for local execution
         assert "发送" not in result.output
+
+    def test_batch_item_policy_and_config_flags(
+        self, tmp_path, monkeypatch, skip_runtime_model_validation
+    ):
+        """Batch item policy and config flags are set correctly."""
+        original_init = Pipeline.__init__
+        instrumented = _seed_asr_init(original_init, ["policy  test"])
+
+        monkeypatch.setattr(Pipeline, "__init__", instrumented)
+        monkeypatch.setattr("subtap.core.media.prepare_media", _stub_prepare)
+        monkeypatch.setattr("subtap.core.vad.split_chunks", _stub_chunks)
+        monkeypatch.setattr("subtap.core.asr.run_asr", _stub_asr)
+        monkeypatch.setattr("subtap.core.align.run_align", _stub_align)
+        monkeypatch.setattr("subtap.core.hotword.run_hotword", _stub_hotword)
+        monkeypatch.setattr(
+            "subtap.core.models.validate_runtime_models", lambda _c: None
+        )
+        monkeypatch.setattr("subtap.core.models.apply_asr_mode", lambda _c, _m: None)
+        monkeypatch.setattr("subtap.core.models.asr_mode_for_model", lambda _m: "fast")
+
+        # Capture build_policy calls in batch_cli module
+        captured_policies = []
+        captured_configs = []
+        original_pipeline_init = Pipeline.__init__
+
+        def capturing_pipeline_init(self, config, work_dir, **kwargs):
+            original_pipeline_init(self, config, work_dir, **kwargs)
+            if kwargs.get("external_policy") is not None:
+                captured_policies.append(kwargs["external_policy"])
+                captured_configs.append(config)
+
+        # Re-patch Pipeline.__init__ to capture policy/config after seeding
+        original_init2 = Pipeline.__init__
+
+        def instrumented_with_capture(self, config, work_dir, **kwargs):
+            original_init2(self, config, work_dir, **kwargs)
+            self.workspace.ensure_dirs()
+            self.workspace.asr_dir.mkdir(parents=True, exist_ok=True)
+            with open(self.workspace.asr_jsonl, "w") as f:
+                seg = ASRSegment(
+                    chunk_id=0,
+                    segment_id=0,
+                    start_sec=0.0,
+                    end_sec=1.0,
+                    text="policy  test",
+                )
+                f.write(seg.model_dump_json() + "\n")
+            if kwargs.get("external_policy") is not None:
+                captured_policies.append(kwargs["external_policy"])
+                captured_configs.append(config)
+
+        monkeypatch.setattr(Pipeline, "__init__", instrumented_with_capture)
+
+        audio = tmp_path / "voice.wav"
+        audio.write_bytes(b"audio")
+        output = tmp_path / "output"
+
+        result = runner.invoke(
+            app,
+            [
+                "batch-transcribe",
+                str(audio),
+                "--enhance",
+                "local",
+                "--output-dir",
+                str(output),
+                "--no-confirm",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+
+        # Verify policy and config were captured
+        assert len(captured_policies) == 1
+        assert len(captured_configs) == 1
+
+        policy = captured_policies[0]
+        config = captured_configs[0]
+
+        # Verify policy flags are synced to config
+        assert config.llm_proofread == policy.llm_proofread
+        assert config.llm_hotword == policy.llm_hotword
+
+        # Verify pipeline.external_policy is the same object
+        # (identity, not equality)
 
     def test_batch_default_local_clean_produces_artifact(
         self, tmp_path, monkeypatch, skip_runtime_model_validation
@@ -243,9 +362,14 @@ class TestBatchRealRunner:
         item_work = output / "voice_wav" / "work"
         assert (item_work / "aligned.jsonl").exists()
 
-        # Verify final subtitle
+        # Verify final subtitle contains cleaned text, not double-space original
         srt_path = output / "voice_wav" / "voice.srt"
         assert srt_path.exists()
-        assert srt_path.read_text().strip()
+        srt_text = srt_path.read_text()
+        assert srt_text.strip()
+        assert "default batch test" in srt_text.lower()
+        assert (
+            "default  batch  test" not in srt_text.lower()
+        ), f"SRT still contains uncleaned double-space text: {srt_text[:200]}"
 
         assert llm_calls == []
