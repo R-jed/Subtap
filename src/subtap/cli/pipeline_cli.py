@@ -1450,8 +1450,34 @@ def _demo(
     typer.echo(f"  输入：{input_file.name}")
     typer.echo()
 
+    # ── load and normalize config for local-only demo ─────────────
     config = load_config(Path.home() / ".subtap" / "config.yaml")
-    pipeline = Pipeline(config, work_dir=Path("./demo_work"))
+
+    demo_asr_backend = "mlx-qwen-asr"
+    demo_enhance_mode = "local"
+
+    config.asr.backend = demo_asr_backend
+    config.llm_proofread = False
+    config.llm_hotword = False
+
+    # ── build authoritative local-only policy ─────────────────────
+    policy = build_policy(
+        local_only=True,
+        enhance_mode=demo_enhance_mode,
+        asr_backend=demo_asr_backend,
+        llm_proofread=False,
+        llm_hotword=False,
+        translation=False,
+    )
+
+    _warn_external_api_use(policy)
+
+    # ── construct pipeline with policy ────────────────────────────
+    pipeline = Pipeline(
+        config,
+        work_dir=Path("./demo_work"),
+        external_policy=policy,
+    )
     pipeline.workspace.ensure_dirs()
 
     from subtap.ui.tui import RichRunner
@@ -1464,6 +1490,9 @@ def _demo(
             input_file,
             output_dir,
             fmt="srt",
+            enhance=policy.enhance_mode.value,
+            translate_to=None,
+            bilingual="off",
         )
     except SystemExit:
         raise

@@ -305,7 +305,7 @@ app.command("resume", rich_help_panel="任务维护")(resume_cmd)
 app.command("retry", rich_help_panel="任务维护")(retry_cmd)
 app.command(
     "demo",
-    help="运行演示：默认本地不联网，输出 demo final.srt",
+    help="运行演示：默认本地不联网，不调用 LLM API，输出 final.srt",
     rich_help_panel="帮助与检查",
 )(demo_cmd)
 app.command("cleanup", rich_help_panel="任务维护")(clean_workspace_cmd)
