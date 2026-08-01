@@ -2269,7 +2269,8 @@ def _patch_clean_denied(monkeypatch, config):
     """Patch config and install sentinels for denied-path _clean() tests.
 
     Returns (pipeline_calls, llm_factory_calls, copy_calls).
-    Patches the actual LLM factory call site: subtap.core.clean.get_llm_backend.
+    Patches the actual LLM factory call site: subtap.core.clean.get_llm_backend
+    and the actual copy call site: subtap.cli.pipeline_cli.shutil.copy2.
     """
     monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
     pipeline_calls: list[bool] = []
@@ -2284,8 +2285,15 @@ def _patch_clean_denied(monkeypatch, config):
         llm_factory_calls.append(True)
         raise AssertionError("get_llm_backend must not be called when LLM is denied")
 
+    def _copy_sentinel(*_args, **_kwargs):
+        copy_calls.append(True)
+        raise AssertionError(
+            "shutil.copy2 must not run before denied clean requests exit"
+        )
+
     monkeypatch.setattr("subtap.core.pipeline.Pipeline", _pipeline_sentinel)
     monkeypatch.setattr("subtap.core.clean.get_llm_backend", _llm_factory_sentinel)
+    monkeypatch.setattr("subtap.cli.pipeline_cli.shutil.copy2", _copy_sentinel)
     return pipeline_calls, llm_factory_calls, copy_calls
 
 
@@ -2498,6 +2506,7 @@ def test_clean_local_only_denies_concrete_llm(tmp_path, monkeypatch):
     assert result.exit_code == 1
     assert len(pipeline_calls) == 0, "Pipeline was constructed under local-only"
     assert len(llm_calls) == 0, "get_llm_backend was called under local-only"
+    assert len(copy_calls) == 0, "shutil.copy2 was called under local-only"
     # Workspace ASR JSONL must not be copied
     assert not (tmp_path / "work" / "asr" / "asr.jsonl").exists()
 
@@ -2526,6 +2535,7 @@ def test_clean_config_offline_denies_concrete_llm(tmp_path, monkeypatch):
     assert result.exit_code == 1
     assert len(pipeline_calls) == 0, "Pipeline was constructed under offline"
     assert len(llm_calls) == 0, "get_llm_backend was called under offline"
+    assert len(copy_calls) == 0, "shutil.copy2 was called under offline"
 
 
 # ── J. Offline config cannot be widened by config flags ─────────
@@ -2540,8 +2550,29 @@ def test_clean_offline_config_cannot_be_widened(tmp_path, monkeypatch):
 
     result = runner.invoke(app, ["clean", str(asr_path), "-w", str(tmp_path / "work")])
     assert result.exit_code == 1
-    assert len(pipeline_calls) == 0
-    assert len(llm_calls) == 0
+    assert len(pipeline_calls) == 0, "Pipeline was constructed under offline proofread"
+    assert len(llm_calls) == 0, "get_llm_backend was called under offline proofread"
+    assert len(copy_calls) == 0, "shutil.copy2 was called under offline proofread"
+
+
+# ── J2. Offline hotword-only denial ─────────────────────────────
+
+
+def test_clean_offline_hotword_only_denial(tmp_path, monkeypatch):
+    """J2. config.mode=offline, llm_proofread=False, llm_hotword=True, no --llm → denied."""
+    asr_path = tmp_path / "asr.jsonl"
+    asr_path.write_text("{}\n", encoding="utf-8")
+    config = _make_clean_config(mode="offline", llm_proofread=False, llm_hotword=True)
+    pipeline_calls, llm_calls, copy_calls = _patch_clean_denied(monkeypatch, config)
+
+    result = runner.invoke(app, ["clean", str(asr_path), "-w", str(tmp_path / "work")])
+    assert result.exit_code == 1
+    assert (
+        len(pipeline_calls) == 0
+    ), "Pipeline was constructed under offline hotword-only"
+    assert len(llm_calls) == 0, "get_llm_backend was called under offline hotword-only"
+    assert len(copy_calls) == 0, "shutil.copy2 was called under offline hotword-only"
+    assert not (tmp_path / "work" / "asr" / "asr.jsonl").exists()
 
 
 # ── K. Offline local clean remains functional ───────────────────
@@ -2717,6 +2748,7 @@ def test_clean_invalid_backend_fails_early(tmp_path, monkeypatch, invalid_value)
     assert "openai:" in output or "off" in output or "none" in output
     assert len(pipeline_calls) == 0, f"Pipeline was constructed for {invalid_value!r}"
     assert len(llm_calls) == 0, f"get_llm_backend was called for {invalid_value!r}"
+    assert len(copy_calls) == 0, f"shutil.copy2 was called for {invalid_value!r}"
 
 
 # ── H. Single-stage clean disclosure is command-scoped ───────────
@@ -2781,11 +2813,13 @@ def test_clean_api_no_audio_disclosure(tmp_path, monkeypatch):
 
 
 def test_clean_real_pipeline_api_backend(tmp_path, monkeypatch):
-    """I1. Real Pipeline + real _stage_clean dispatch, canonical backend.
+    """I1. Real CLI → Pipeline → _stage_clean → run_clean → get_llm_backend.
 
-    Patches run_clean to verify canonical backend reaches core.
-    Uses real Pipeline and real Pipeline._stage_clean dispatch.
+    Only the external LLM factory seam (subtap.core.clean.get_llm_backend)
+    is replaced.  run_clean, Pipeline, _stage_clean, shutil.copy2, and the
+    cleaned-jsonl writer are all real.
     """
+    from helpers import MockLLMBackend
     from subtap.schemas.config import load_config
 
     asr_path = tmp_path / "asr.jsonl"
@@ -2794,25 +2828,19 @@ def test_clean_real_pipeline_api_backend(tmp_path, monkeypatch):
         '"text":"hello world","confidence":0.95}\n',
         encoding="utf-8",
     )
-    # Use real config so Pipeline can be constructed
     config_path = tmp_path / "config.yaml"
     config_path.write_text("mode: online\n")
     config = load_config(config_path)
     monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
 
-    # Patch run_clean to capture the backend name and return deterministic result
-    clean_calls = []
+    mock_llm = MockLLMBackend()
+    factory_calls: list[tuple] = []
 
-    def _fake_run_clean(workspace, config, **kwargs):
-        clean_calls.append(kwargs)
-        workspace.cleaned_jsonl.write_text(
-            '{"chunk_id":0,"segment_id":0,"start_sec":0.0,"end_sec":1.0,'
-            '"text":"cleaned: hello world"}\n',
-            encoding="utf-8",
-        )
-        return {"segment_count": 1}
+    def _capture_factory(clean_config, remote_api=None, **kwargs):
+        factory_calls.append((clean_config, remote_api))
+        return mock_llm
 
-    monkeypatch.setattr("subtap.core.clean.run_clean", _fake_run_clean)
+    monkeypatch.setattr("subtap.core.clean.get_llm_backend", _capture_factory)
 
     result = runner.invoke(
         app,
@@ -2826,20 +2854,40 @@ def test_clean_real_pipeline_api_backend(tmp_path, monkeypatch):
         ],
     )
     assert result.exit_code == 0, result.output
-    # Canonical backend reaches core
-    assert len(clean_calls) == 1
-    assert clean_calls[0]["llm_backend_name"] == "openai:gpt-4o-mini"
-    # cleaned.jsonl is produced
+
+    # Factory called exactly once with canonical backend
+    assert len(factory_calls) == 1
+    clean_config_arg, remote_api_arg = factory_calls[0]
+    assert clean_config_arg.backend == "openai:gpt-4o-mini"
+    assert remote_api_arg is not None
+
+    # Proofread operations were invoked through real run_clean
+    assert mock_llm.select_suspicious_segments_called is True
+    assert mock_llm.repair_segments_called is True
+    assert mock_llm.replace_hotwords_called is False
+
+    # Input ASR JSONL copied into workspace
     work_dir = tmp_path / "work"
+    assert (work_dir / "asr" / "asr.jsonl").exists()
+
+    # Real workspace cleaned.jsonl produced
     cleaned = work_dir / "cleaned.jsonl"
     assert cleaned.exists()
-    # Text disclosure appears
+
+    # Text disclosure present, audio disclosure absent
     output = _strip_ansi(result.output)
     assert "字幕" in output or "subtitle" in output.lower() or "text" in output.lower()
+    assert "音频" not in output
+    assert "audio" not in output.lower()
 
 
 def test_clean_real_pipeline_local_off(tmp_path, monkeypatch):
-    """I2. Real Pipeline + --llm off → local clean, no LLM factory called."""
+    """I2. Real CLI → Pipeline → _stage_clean → run_clean local path.
+
+    --llm off disables LLM; get_llm_backend must not be called.
+    Only the factory seam is replaced with a fail sentinel; everything else
+    (Pipeline, _stage_clean, run_clean local path, shutil.copy2) is real.
+    """
     from subtap.schemas.config import load_config
 
     asr_path = tmp_path / "asr.jsonl"
@@ -2848,34 +2896,37 @@ def test_clean_real_pipeline_local_off(tmp_path, monkeypatch):
         '"text":"hello world","confidence":0.95}\n',
         encoding="utf-8",
     )
-    # Use real config so Pipeline can be constructed
     config_path = tmp_path / "config.yaml"
     config_path.write_text("mode: online\n")
     config = load_config(config_path)
     monkeypatch.setattr("subtap.schemas.config.load_config", lambda _: config)
 
-    # Patch run_clean to capture calls and return deterministic result
-    clean_calls = []
+    factory_calls: list[bool] = []
 
-    def _fake_run_clean(workspace, config, **kwargs):
-        clean_calls.append(kwargs)
-        workspace.cleaned_jsonl.write_text(
-            '{"chunk_id":0,"segment_id":0,"start_sec":0.0,"end_sec":1.0,'
-            '"text":"cleaned: hello world"}\n',
-            encoding="utf-8",
-        )
-        return {"segment_count": 1}
+    def _fail_sentinel(*_args, **_kwargs):
+        factory_calls.append(True)
+        raise AssertionError("get_llm_backend must not be called for --llm off")
 
-    monkeypatch.setattr("subtap.core.clean.run_clean", _fake_run_clean)
+    monkeypatch.setattr("subtap.core.clean.get_llm_backend", _fail_sentinel)
 
     result = runner.invoke(
         app,
         ["clean", str(asr_path), "-w", str(tmp_path / "work"), "--llm", "off"],
     )
     assert result.exit_code == 0, result.output
-    assert len(clean_calls) == 1
-    assert clean_calls[0]["llm_backend_name"] is None
-    # cleaned.jsonl is produced
+
+    # Factory never called
+    assert len(factory_calls) == 0
+
+    # Workspace ASR JSONL and cleaned.jsonl exist
     work_dir = tmp_path / "work"
+    assert (work_dir / "asr" / "asr.jsonl").exists()
     cleaned = work_dir / "cleaned.jsonl"
     assert cleaned.exists()
+    cleaned_text = cleaned.read_text(encoding="utf-8")
+    assert "hello world" in cleaned_text
+
+    # No disclosure
+    output = _strip_ansi(result.output)
+    assert "字幕" not in output
+    assert "音频" not in output
